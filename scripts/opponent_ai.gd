@@ -125,7 +125,7 @@ func _replan() -> void:
 func _check_hit() -> void:
 	var plane_z := me.position.z + Athlete.CONTACT_FORWARD
 	var rel := ball.state.pos.z - plane_z
-	if _prev_rel > 0.0 and rel <= 0.0 and ball.state.vel.z < 0.0:
+	if _prev_rel > 0.0 and rel <= 0.0 and ball.state.vel.z < 0.0 and not game.serve_flight:
 		var bp := ball.state.pos
 		var flat_d := Vector2(bp.x - me.position.x, bp.z - me.position.z).length()
 		if flat_d <= Athlete.REACH and bp.y > 0.05 and bp.y < 2.5:

@@ -11,6 +11,8 @@ func _init() -> void:
 	test_topspin_kicks_on_bounce()
 	test_solver_accuracy()
 	test_net_collision()
+	test_scoring()
+	test_service_box()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -114,3 +116,30 @@ func test_net_collision() -> void:
 		if ev == BallPhysics.Event.BOUNCE:
 			break
 	check(got_net and s.pos.z > 0.0, "low ball hits the net and drops on hitter's side (z=%.2f)" % s.pos.z)
+
+
+func test_scoring() -> void:
+	print("tennis scoring")
+	var sc := TennisScore.new()
+	for i in 3:
+		sc.add_point(0)
+	check(sc.point_text() == "YOU  40 : 0  CPU", "40-0: '%s'" % sc.point_text())
+	for i in 3:
+		sc.add_point(1)
+	check(sc.point_text() == "DEUCE", "deuce: '%s'" % sc.point_text())
+	sc.add_point(1)
+	check(sc.point_text() == "AD CPU" and not sc.deuce_side(), "advantage CPU served from ad side")
+	sc.add_point(0)
+	check(sc.point_text() == "DEUCE", "back to deuce")
+	sc.add_point(0)
+	var game := sc.add_point(0)
+	check(game and sc.games == [1, 0] and sc.server == 1, "game to player, server switches")
+
+
+func test_service_box() -> void:
+	print("service boxes")
+	# Player serving from the deuce side (x > 0) must land in the CPU box with x < 0.
+	check(Court.in_service_box(Vector3(-2.0, 0, -5.0), -1, -1.0, BallPhysics.RADIUS), "diagonal box: in")
+	check(not Court.in_service_box(Vector3(2.0, 0, -5.0), -1, -1.0, BallPhysics.RADIUS), "wrong box: fault")
+	check(not Court.in_service_box(Vector3(-2.0, 0, -7.0), -1, -1.0, BallPhysics.RADIUS), "past service line: fault")
+	check(Court.in_service_box(Vector3(0.01, 0, -6.42), -1, -1.0, BallPhysics.RADIUS), "touching lines: in")

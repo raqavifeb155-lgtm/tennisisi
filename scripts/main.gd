@@ -8,11 +8,16 @@ extends Node3D
 ## launch, execution errors perturb it, and from then on the ball flies on real physics.
 
 enum Who { NONE = -1, PLAYER = 0, CPU = 1 }
-enum Phase { WAIT, RALLY, OVER }
+enum Phase { WAIT, SERVE, RALLY, OVER }
 enum ShotType { TOPSPIN, FLAT, SLICE }
 
 const PLAYER_HOME := Vector3(0.0, 0.0, 12.6)
 const CPU_HOME := Vector3(0.0, 0.0, -12.6)
+const PLAYER_AREA := Rect2(-9.0, 0.6, 18.0, 17.0)
+const CPU_AREA := Rect2(-9.0, -17.6, 18.0, 17.0)
+const TOSS_SPEED := 5.2         # m/s straight up from the hand
+const TOSS_HAND_H := 1.5
+const SERVE_CONTACT_H := 2.62   # ideal contact: on the way down, just below the apex
 const COLOR_GOOD := Color(1, 1, 1)
 const COLOR_WARN := Color(1.0, 0.6, 0.25)
 const COLOR_BAD := Color(1.0, 0.35, 0.3)
@@ -35,8 +40,21 @@ var bounces := 0
 var net_touched := false
 var rally := 0
 var best_rally := 0
-var score := [0, 0]
+var score := [0, 0]             # total points won (stats)
+var scoreboard := TennisScore.new()
 var shot_type := ShotType.TOPSPIN
+
+# Serve state
+var server := Who.PLAYER
+var serve_attempt := 1
+var serve_flight := false       # the serve is in the air and hasn't bounced yet
+var toss_active := false
+var toss_ideal := 0.0           # game time when the toss passes the ideal contact height
+var box_side := -1.0            # x sign of the target service box
+var _replay_serve := false
+var _cpu_serve_timer := 0.0
+var _cpu_toss_offset := 0.0
+var _points_played := 0
 
 # Player hitting state
 var incoming: BallPhysics.Prediction
@@ -92,12 +110,12 @@ func _ready() -> void:
 
 	player = Athlete.new()
 	add_child(player)
-	player.setup(-1.0, Color(0.92, 0.36, 0.26), Rect2(-9.0, 0.6, 18.0, 17.0))
+	player.setup(-1.0, Color(0.92, 0.36, 0.26), PLAYER_AREA)
 	player.position = PLAYER_HOME
 
 	cpu = Athlete.new()
 	add_child(cpu)
-	cpu.setup(1.0, Color(0.22, 0.28, 0.42), Rect2(-9.0, -17.6, 18.0, 17.0))
+	cpu.setup(1.0, Color(0.22, 0.28, 0.42), CPU_AREA)
 	cpu.position = CPU_HOME
 
 	ai = OpponentAI.new()
@@ -119,8 +137,9 @@ func _ready() -> void:
 	hud.touch.swiped.connect(_on_swipe)
 	hud.touch.swipe_moved.connect(_on_swipe_moved)
 	hud.touch.swipe_ended.connect(_on_swipe_ended)
+	hud.touch.swipe_started.connect(_on_swipe_started)
 	hud.shot_type_changed.connect(func(t: int) -> void: shot_type = t as ShotType)
-	hud.set_score(0, 0)
+	hud.set_score(scoreboard.point_text())
 
 	_build_helpers()
 	_last_real_us = Time.get_ticks_usec()
@@ -235,16 +254,25 @@ func _physics_process(delta: float) -> void:
 		Phase.WAIT:
 			phase_timer -= delta
 			if phase_timer <= 0.0:
-				_feed()
+				_setup_serve()
+		Phase.SERVE:
+			_update_serve(delta)
 		Phase.OVER:
 			phase_timer -= delta
 			if phase_timer <= 0.0:
-				_reset_point()
+				if _replay_serve:
+					_replay_serve = false
+					_setup_serve()
+				else:
+					_reset_point()
 	ball.step(delta)
 	if phase == Phase.RALLY and ball.state.rolling:
 		_end_point(last_hitter, "WINNER")
 	_update_player_hitting()
-	ai.tick(delta, phase == Phase.RALLY and last_hitter == Who.PLAYER and ball.active)
+	if phase == Phase.SERVE:
+		cpu.move_input = Vector2.ZERO
+	else:
+		ai.tick(delta, phase == Phase.RALLY and last_hitter == Who.PLAYER and ball.active)
 	_update_player_movement()
 	if autoplay:
 		_autoplay_tick()
@@ -256,7 +284,7 @@ func _process(_delta: float) -> void:
 	_last_real_us = now
 	_update_slowmo(rd)
 	_update_helpers()
-	hud.set_rally(rally, best_rally)
+	hud.set_rally("%s   ·   rally %d   ·   best %d" % [scoreboard.games_text(), rally, best_rally])
 	if Tuning.show_debug_text:
 		hud.set_debug_text(_debug_string())
 	else:
@@ -306,6 +334,8 @@ func _update_player_hitting() -> void:
 
 
 func _on_ball_crossed() -> void:
+	if serve_flight:
+		return  # the receiver must let the serve bounce
 	var bp := ball.state.pos
 	if bp.y > 2.6 or bp.y < 0.04:
 		return
@@ -327,6 +357,10 @@ func _on_ball_crossed() -> void:
 
 func _on_swipe(vec: Vector2, dur: float) -> void:
 	hud.hide_hint()
+	if phase == Phase.SERVE:
+		if server == Who.PLAYER and toss_active:
+			_player_serve(vec, dur)
+		return
 	if not _player_can_hit():
 		return
 	if late_until > 0.0:
@@ -427,8 +461,16 @@ func swipe_intent(vec: Vector2, dur: float) -> Dictionary:
 func _on_swipe_moved(vec: Vector2) -> void:
 	if not Tuning.show_aim:
 		return
-	var it := swipe_intent(vec, 1.0)
-	_set_aim(Vector3(it["tx"], 0.0, it["tz"]))
+	if phase == Phase.SERVE:
+		if server != Who.PLAYER:
+			return
+		var si := serve_intent(vec, 1.0)
+		var sp := Vector3(si["tx"], 0.0, si["tz"])
+		_set_aim(sp, Court.in_service_box(sp, -1, box_side, 0.0))
+	else:
+		var it := swipe_intent(vec, 1.0)
+		var p := Vector3(it["tx"], 0.0, it["tz"])
+		_set_aim(p, Court.is_in_singles(p, -1, 0.0))
 	_aim_hold = INF
 
 
@@ -436,10 +478,9 @@ func _on_swipe_ended() -> void:
 	_aim_hold = 0.6  # keep the aim visible briefly so it can be compared with the landing spot
 
 
-func _set_aim(p: Vector3) -> void:
+func _set_aim(p: Vector3, inside: bool) -> void:
 	_aim.visible = true
 	_aim.global_position = Vector3(p.x, 0.012, p.z)
-	var inside := Court.is_in_singles(Vector3(p.x, 0.0, p.z), -1, 0.0)
 	_aim_mat.albedo_color = AIM_IN if inside else AIM_OUT
 	_aim_line_target = p
 
@@ -488,6 +529,10 @@ func _ideal_contact() -> Vector3:
 func _update_player_movement() -> void:
 	player.max_speed = Tuning.player_speed
 	var mv := hud.touch.move_vector
+	if phase == Phase.SERVE and server == Who.PLAYER:
+		# Serving: slide along the baseline until the toss.
+		player.move_input = Vector2(mv.x, 0.0) if not toss_active and not autoplay else Vector2.ZERO
+		return
 	var assist := Tuning.assist
 	if autoplay:
 		mv = Vector2.ZERO
@@ -580,6 +625,13 @@ func _on_bounce(pos: Vector3, speed: float) -> void:
 		_land_dot.global_position = Vector3(pos.x, 0.01, pos.z)
 		_land_dot.visible = true
 		_land_hold = 1.2
+	if serve_flight:
+		serve_flight = false
+		if not Court.in_service_box(pos, receiver_half, box_side, BallPhysics.RADIUS):
+			_fault("NET" if net_touched else "FAULT")
+		elif net_touched:
+			_let()
+		return
 	if bounces == 1:
 		if not Court.is_in_singles(pos, receiver_half, BallPhysics.RADIUS):
 			_end_point(_other(last_hitter), "NET" if net_touched else "OUT")
@@ -600,63 +652,240 @@ func _end_point(winner: int, reason: String) -> void:
 	if phase != Phase.RALLY:
 		return
 	phase = Phase.OVER
-	phase_timer = 0.4 if autoplay else 1.7
+	phase_timer = 0.4 if autoplay else 1.9
 	score[winner] += 1
+	_points_played += 1
 	best_rally = maxi(best_rally, rally)
 	pending_swing = {}
 	late_until = -1.0
+	serve_flight = false
+	if reason == "WINNER" and rally == 1 and winner == server:
+		reason = "ACE"
 	var text: String
 	if winner == Who.PLAYER:
-		text = {"OUT": "CPU OUT", "NET": "CPU NET", "WINNER": "WINNER!"}[reason]
-		hud.show_message(text, COLOR_WIN)
-		sfx.play("point", -8.0)
+		text = {"OUT": "CPU OUT", "NET": "CPU NET", "WINNER": "WINNER!", "ACE": "ACE!", "DOUBLE FAULT": "CPU DOUBLE FAULT"}[reason]
 	else:
-		text = {"OUT": "OUT", "NET": "NET", "WINNER": "MISSED"}[reason]
-		hud.show_message(text, COLOR_BAD)
-		sfx.play("miss", -10.0)
-	hud.set_score(score[0], score[1])
+		text = {"OUT": "OUT", "NET": "NET", "WINNER": "MISSED", "ACE": "CPU ACE", "DOUBLE FAULT": "DOUBLE FAULT"}[reason]
+	var game_over := scoreboard.add_point(winner)
+	if game_over:
+		text += "\nGAME " + ("YOU" if winner == Who.PLAYER else "CPU")
+		server = scoreboard.server as Who
+	hud.show_message(text, COLOR_WIN if winner == Who.PLAYER else COLOR_BAD)
+	sfx.play("point" if winner == Who.PLAYER else "miss", -8.0 if winner == Who.PLAYER else -10.0)
+	hud.set_score(scoreboard.point_text())
 
 	_stats["rallies"].append(rally)
-	var key := ("YOU " if winner == Who.PLAYER else "CPU ") + "wins: " + text
+	var key := ("YOU " if winner == Who.PLAYER else "CPU ") + "wins: " + text.split("\n")[0]
 	_stats["reasons"][key] = _stats["reasons"].get(key, 0) + 1
 	if autoplay:
-		print("point %d: %s (rally %d)" % [score[0] + score[1], key, rally])
-		if score[0] + score[1] >= autoplay_points:
+		print("point %d: %s (rally %d) -> %s %s" % [_points_played, key, rally, scoreboard.point_text(), scoreboard.games_text()])
+		if _points_played >= autoplay_points:
 			_print_autoplay_summary()
 			get_tree().quit()
 
 
+func _fault(kind: String) -> void:
+	var by := server
+	if serve_attempt == 1:
+		serve_attempt = 2
+		_replay_serve = true
+		phase = Phase.OVER
+		phase_timer = 0.5 if autoplay else 1.2
+		hud.show_message("FAULT" if kind != "NET" else "NET · FAULT", COLOR_WARN)
+		sfx.play("miss", -14.0)
+		if autoplay:
+			print("  fault by %s" % ("YOU" if by == Who.PLAYER else "CPU"))
+	else:
+		_end_point(_other(by), "DOUBLE FAULT")
+
+
+func _let() -> void:
+	_replay_serve = true
+	phase = Phase.OVER
+	phase_timer = 0.5 if autoplay else 1.2
+	hud.show_message("LET", COLOR_GOOD)
+
+
 func _reset_point() -> void:
 	phase = Phase.WAIT
-	phase_timer = 0.3 if autoplay else 0.9
+	phase_timer = 0.2 if autoplay else 0.5
+	serve_attempt = 1
 	ball.park()
+
+
+# --- Serve ----------------------------------------------------------------------
+
+func _server_athlete() -> Athlete:
+	return player if server == Who.PLAYER else cpu
+
+
+func _hand_position(a: Athlete) -> Vector3:
+	return a.position + a.right() * 0.25 + a.forward() * 0.35 + Vector3.UP * TOSS_HAND_H
+
+
+## Place both players for the serve: server behind the baseline on the deuce/ad side,
+## receiver diagonally opposite.
+func _setup_serve() -> void:
+	phase = Phase.SERVE
 	last_hitter = Who.NONE
 	bounces = 0
 	rally = 0
 	ball_used = false
 	pending_swing = {}
 	late_until = -1.0
-	player.position = PLAYER_HOME
-	player.velocity = Vector3.ZERO
-	cpu.position = CPU_HOME + Vector3(rng.randf_range(-1.5, 1.5), 0.0, 0.0)
-	cpu.velocity = Vector3.ZERO
-
-
-func _feed() -> void:
-	phase = Phase.RALLY
-	var contact := cpu.position + cpu.forward() * 0.5 + cpu.right() * 0.6 + Vector3.UP
-	var target := Vector3(rng.randf_range(-2.5, 2.5), BallPhysics.RADIUS, rng.randf_range(7.0, 9.5))
-	var r := ShotSolver.solve(contact, target, rng.randf_range(21.0, 25.0), 180.0)
-	ball.launch(contact, r.velocity, r.spin)
-	cpu.swing(1, 0.02, 1.0)
-	last_hitter = Who.CPU
-	bounces = 0
+	serve_flight = false
+	toss_active = false
 	net_touched = false
-	ball_used = false
-	rally = 0
-	sfx.play("hit", -6.0)
-	ai.on_cpu_hit(target.x)
+	incoming = null
+	t_contact = INF
+	var srv := _server_athlete()
+	var rcv := cpu if server == Who.PLAYER else player
+	var side := 1.0 if scoreboard.deuce_side() else -1.0
+	var sx := srv.right().x * side * 0.9
+	box_side = -signf(sx)
+	var srv_z := 12.3 if server == Who.PLAYER else -12.3
+	srv.position = Vector3(sx, 0.0, srv_z)
+	rcv.position = Vector3(box_side * 2.4, 0.0, -signf(srv_z) * 12.7)
+	srv.velocity = Vector3.ZERO
+	rcv.velocity = Vector3.ZERO
+	srv.relax()
+	rcv.relax()
+	if server == Who.PLAYER:
+		var x0 := 0.3 if sx > 0.0 else -4.0
+		player.area = Rect2(x0, srv_z, 3.7, 0.01)
+		hud.set_serve_hint("ПОДАЧА%s: зажми справа — подброс, веди — прицел в квадрат, отпусти в верхней точке" % ("  (2-я)" if serve_attempt == 2 else ""))
+	else:
+		player.area = PLAYER_AREA
+		_cpu_serve_timer = 0.5 if autoplay else 1.2
+		hud.set_serve_hint("")
+	ball.hold(_hand_position(srv))
+	ai.on_cpu_hit(0.0)
+
+
+func _update_serve(delta: float) -> void:
+	var srv := _server_athlete()
+	if not toss_active:
+		ball.hold(_hand_position(srv))
+		if server == Who.CPU:
+			_cpu_serve_timer -= delta
+			if _cpu_serve_timer <= 0.0:
+				_start_toss()
+		return
+	if server == Who.CPU:
+		if game_time >= toss_ideal + _cpu_toss_offset:
+			_cpu_serve_hit()
+		return
+	# The toss fell too low without a swing: catch it and toss again (no fault).
+	if ball.state.vel.y < 0.0 and ball.state.pos.y < 1.7:
+		toss_active = false
+		hud.popup("TOSS AGAIN", COLOR_WARN)
+
+
+func _start_toss() -> void:
+	var srv := _server_athlete()
+	var hand := _hand_position(srv)
+	ball.launch(hand, Vector3(0.0, TOSS_SPEED, 0.0), Vector3.ZERO)
+	toss_active = true
+	var g := BallPhysics.GRAVITY
+	var disc := maxf(0.0, TOSS_SPEED * TOSS_SPEED - 2.0 * g * (SERVE_CONTACT_H - hand.y))
+	toss_ideal = game_time + (TOSS_SPEED + sqrt(disc)) / g
+	srv.prepare(1)
+	if server == Who.CPU:
+		_cpu_toss_offset = rng.randfn(0.0, lerpf(0.06, 0.02, Tuning.ai_skill))
+	elif autoplay:
+		_bot_offset = rng.randfn(0.0, 0.03)
+
+
+func _on_swipe_started() -> void:
+	if phase == Phase.SERVE and server == Who.PLAYER and not toss_active:
+		_start_toss()
+
+
+## Serve aim: straight swipe = near the T, sideways toward the box's outer side = wide,
+## length = depth in the box (too long = long fault). Gesture speed = pace.
+func serve_intent(vec: Vector2, dur: float) -> Dictionary:
+	var fwd := maxf(-vec.y, 0.02)
+	var ang := rad_to_deg(atan2(vec.x, fwd))
+	var length := vec.length()
+	var tx := box_side * 0.7 + clampf(ang / Tuning.swipe_side_angle, -1.5, 1.5) * 3.6
+	var depth_k := (length - 0.05) / maxf(Tuning.swipe_deep_len - 0.05, 0.01)
+	var dz := lerpf(3.4, 6.1, clampf(depth_k, 0.0, 1.0))
+	if depth_k > 1.0:
+		dz += (depth_k - 1.0) * 3.0
+	return {"tx": tx, "tz": -dz, "pace_k": clampf((length / dur - 0.6) / 2.9, 0.0, 1.0)}
+
+
+func _player_serve(vec: Vector2, dur: float) -> void:
+	var bp := ball.state.pos
+	if bp.y < 1.7:
+		return
+	var err := game_time - toss_ideal
+	var tq := timing_quality(err)
+	var q: float = tq[0]
+	var label: String = tq[1]
+	var it := serve_intent(vec, dur)
+	var pace_k: float = it["pace_k"]
+	var pace: float
+	var top: float
+	match shot_type:
+		ShotType.FLAT:
+			pace = lerpf(38.0, 54.0, pace_k)
+			top = 60.0
+		ShotType.SLICE:
+			pace = lerpf(30.0, 40.0, pace_k)
+			top = 120.0
+		_:
+			pace = lerpf(30.0, 42.0, pace_k)
+			top = lerpf(280.0, 380.0, pace_k)
+	player.swing(1, 0.02, bp.y)
+	var r := execute_shot(Who.PLAYER, player, bp, Vector3(it["tx"], BallPhysics.RADIUS, it["tz"]), pace, top, q, err, 1)
+	_after_serve_hit()
+	ai.on_player_hit()
+	_stats["labels"][label] = _stats["labels"].get(label, 0) + 1
+	var color := Hud.GOLD if label == "PERFECT" else (COLOR_WARN if label == "EARLY" or label == "LATE" else COLOR_GOOD)
+	hud.popup(label, color, "serve %d km/h" % roundi(r.speed * 3.6))
+	cam.impulse(1.0 if label == "PERFECT" else 0.4)
+	if label == "PERFECT":
+		Input.vibrate_handheld(35)
+	last_shot = {
+		"label": label, "err_ms": err * 1000.0, "q_t": q, "q_p": 1.0, "q_m": 1.0, "q": q,
+		"side": "SRV", "speed": r.speed * 3.6, "elev": r.elevation_deg,
+		"target": Vector2(it["tx"], it["tz"]), "type": Hud.SHOT_NAMES[shot_type],
+	}
+
+
+func _cpu_serve_hit() -> void:
+	var s := Tuning.ai_skill
+	var bp := ball.state.pos
+	var q: float = timing_quality(_cpu_toss_offset)[0]
+	var tx: float
+	var tz: float
+	var pace: float
+	var top: float
+	if serve_attempt == 1:
+		var wide := rng.randf() < 0.5
+		tx = box_side * (rng.randf_range(2.6, 3.6) if wide else rng.randf_range(0.4, 1.2))
+		tz = rng.randf_range(4.6, 5.9)
+		pace = lerpf(32.0, 46.0, s) * rng.randf_range(0.9, 1.05)
+		top = 120.0
+	else:
+		tx = box_side * rng.randf_range(0.9, 2.6)
+		tz = rng.randf_range(4.2, 5.4)
+		pace = lerpf(26.0, 34.0, s)
+		top = 320.0
+	cpu.swing(1, 0.02, bp.y)
+	execute_shot(Who.CPU, cpu, bp, Vector3(tx, BallPhysics.RADIUS, tz), pace, top, q, _cpu_toss_offset, 1)
+	_after_serve_hit()
+	ai.on_cpu_hit(tx)
 	player.split_step()
+
+
+func _after_serve_hit() -> void:
+	phase = Phase.RALLY
+	serve_flight = true
+	toss_active = false
+	player.area = PLAYER_AREA
+	hud.set_serve_hint("")
 
 
 # --- Slow motion, helpers, debug ----------------------------------------------
@@ -672,6 +901,9 @@ func _update_slowmo(rd: float) -> void:
 		elif t_contact <= Tuning.slowmo_lead:
 			want = absf(player.lateral_of(contact_pred)) < 2.8 and contact_pred.y < 2.7
 	var target := Tuning.slowmo_scale if want else 1.0
+	if Tuning.slowmo_enabled and not autoplay and phase == Phase.SERVE and server == Who.PLAYER and toss_active:
+		if game_time > toss_ideal - 0.35:
+			target = lerpf(1.0, Tuning.slowmo_scale, 0.6)
 	var rate := 7.0 if target < Engine.time_scale else 3.5
 	Engine.time_scale = move_toward(Engine.time_scale, target, rd * rate)
 
@@ -725,6 +957,15 @@ func _debug_string() -> String:
 # --- Autoplay bot (automated testing) ------------------------------------------
 
 func _autoplay_tick() -> void:
+	if phase == Phase.SERVE and server == Who.PLAYER:
+		if not toss_active:
+			_start_toss()
+		elif game_time >= toss_ideal + _bot_offset:
+			var want_x := box_side * rng.randf_range(0.8, 3.2)
+			var ang := deg_to_rad((want_x - box_side * 0.7) / 3.6 * Tuning.swipe_side_angle)
+			var length := 0.05 + rng.randf_range(0.4, 0.75) * (Tuning.swipe_deep_len - 0.05)
+			_on_swipe(Vector2(sin(ang), -cos(ang)) * length, 0.12)
+		return
 	if not _player_can_hit():
 		_bot_armed = false
 		return
@@ -745,7 +986,7 @@ func _print_autoplay_summary() -> void:
 	for r in rallies:
 		total += r
 	print("\n=== AUTOPLAY SUMMARY ===")
-	print("points: %d  score YOU %d : %d CPU" % [rallies.size(), score[0], score[1]])
+	print("points: %d  won YOU %d : %d CPU   %s" % [rallies.size(), score[0], score[1], scoreboard.games_text()])
 	print("avg rally (hits incl. CPU): %.1f   best: %d" % [float(total) / maxf(rallies.size(), 1), best_rally])
 	print("player hits: %d   cpu hits: %d" % [_stats["player_hits"], _stats["cpu_hits"]])
 	print("timing labels: %s" % str(_stats["labels"]))

@@ -17,6 +17,7 @@ var _popup: Label
 var _popup_sub: Label
 var _message: Label
 var _hint: Label
+var _serve_hint: Label
 var _debug_text: Label
 var _debug_panel: PanelContainer
 var _debug_btn: Button
@@ -61,6 +62,14 @@ func _ready() -> void:
 	_hint.offset_bottom = -30.0
 	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_hint.modulate.a = 1.0
+
+	_serve_hint = _label(24, HORIZONTAL_ALIGNMENT_CENTER)
+	_anchor_band(_serve_hint, 0.70, 90.0)
+	_serve_hint.offset_left = 24.0
+	_serve_hint.offset_right = -24.0
+	_serve_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_serve_hint.modulate = Color(1.0, 0.95, 0.7)
+	_serve_hint.visible = false
 
 	# Shot type selector: a row under the score, above the far court.
 	var box := HBoxContainer.new()
@@ -112,12 +121,17 @@ func _ready() -> void:
 	_build_debug_panel()
 
 
-func set_score(you: int, cpu: int) -> void:
-	_score.text = "YOU  %d  :  %d  CPU" % [you, cpu]
+func set_score(text: String) -> void:
+	_score.text = text
 
 
-func set_rally(rally: int, best: int) -> void:
-	_rally.text = "rally %d   ·   best %d" % [rally, best]
+func set_rally(text: String) -> void:
+	_rally.text = text
+
+
+func set_serve_hint(text: String) -> void:
+	_serve_hint.text = text
+	_serve_hint.visible = text != ""
 
 
 func set_debug_text(t: String) -> void:

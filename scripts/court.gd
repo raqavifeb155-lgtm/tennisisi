@@ -32,6 +32,16 @@ static func is_in_singles(p: Vector3, half: int, radius: float) -> bool:
 	return z >= 0.0 and z <= HALF_LENGTH + radius
 
 
+## True if a ball touching the ground at p is inside the service box of the given half.
+## box_side: sign of x for the box (-1 = x < 0 box, +1 = x > 0 box).
+static func in_service_box(p: Vector3, half: int, box_side: float, radius: float) -> bool:
+	var z := p.z * half
+	if z < 0.0 or z > SERVICE_LINE + radius:
+		return false
+	var x := p.x * box_side
+	return x >= -radius and x <= SINGLES_HALF_WIDTH + radius
+
+
 func _ready() -> void:
 	_box(Vector3(40.0, 0.02, 60.0), Vector3(0, -0.012, 0), COLOR_SURROUND)
 	_box(Vector3(DOUBLES_HALF_WIDTH * 2.0 + 7.0, 0.02, HALF_LENGTH * 2.0 + 12.0), Vector3(0, -0.008, 0), COLOR_RUNOFF)

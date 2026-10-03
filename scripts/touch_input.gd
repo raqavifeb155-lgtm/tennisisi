@@ -8,6 +8,7 @@ extends Control
 signal swiped(vec: Vector2, duration: float)
 signal swipe_moved(vec: Vector2)   # live, while the finger is down (for the aim marker)
 signal swipe_ended
+signal swipe_started               # finger down on the swipe half (used to toss on serve)
 
 const JOY_RADIUS := 90.0
 const MIN_SWIPE := 0.035  # fraction of screen height
@@ -55,6 +56,7 @@ func _input(event: InputEvent) -> void:
 				_swipe_start = t.position
 				_swipe_start_ms = Time.get_ticks_msec()
 				_swipe_points = PackedVector2Array([t.position])
+				swipe_started.emit()
 		else:
 			if t.index == _joy_index:
 				_joy_index = -1

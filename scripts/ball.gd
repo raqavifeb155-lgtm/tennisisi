@@ -56,6 +56,13 @@ func launch(pos: Vector3, vel: Vector3, spin: Vector3) -> void:
 	visible = true
 
 
+## Show the ball held in a hand (not simulated).
+func hold(pos: Vector3) -> void:
+	state = BallPhysics.State.new(pos, Vector3.ZERO, Vector3.ZERO)
+	active = false
+	visible = true
+
+
 func park() -> void:
 	active = false
 	visible = false
