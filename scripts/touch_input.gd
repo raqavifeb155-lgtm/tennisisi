@@ -1,28 +1,26 @@
 class_name TouchInput
 extends Control
-## Two-thumb mobile controls.
-##  - Left half of the screen: floating virtual joystick (movement).
-##  - Right half: swipe to hit. Released swipe = swing.
-## Desktop fallback: WASD / arrows to move, mouse drag on the right half to swipe.
+## One-finger controls (works anywhere on the screen):
+##  - tap              -> tapped(pos): run there / toss on serve
+##  - hold still       -> held(pos): keep running toward the finger
+##  - swipe / slide    -> swiped(start, end, speed): hit along the swiped direction;
+##                        speed (screen heights per second) sets the power
+## Desktop: WASD / arrows move, mouse click = tap, mouse drag = swipe.
 
-signal swiped(vec: Vector2, duration: float)
-signal swipe_moved(vec: Vector2)   # live, while the finger is down (for the aim marker)
-signal swipe_ended
-signal swipe_started               # finger down on the swipe half (used to toss on serve)
+signal tapped(pos: Vector2)
+signal held(pos: Vector2)
+signal swiped(start: Vector2, end: Vector2, speed: float)
+signal swipe_progress(start: Vector2, current: Vector2)
 
-const JOY_RADIUS := 90.0
-const MIN_SWIPE := 0.035  # fraction of screen height
+const SWIPE_MIN := 0.04     # fraction of screen height before a touch counts as a swipe
+const HOLD_MS := 300        # a still touch longer than this becomes "hold to run"
+const TAP_MAX_MS := 350
+const SPEED_WINDOW_MS := 140
 
-var move_vector := Vector2.ZERO
+var move_vector := Vector2.ZERO  # keyboard movement (desktop)
 var blocked_controls: Array[Control] = []
 
-var _joy_index := -1
-var _joy_origin := Vector2.ZERO
-var _joy_pos := Vector2.ZERO
-var _swipe_index := -1
-var _swipe_start := Vector2.ZERO
-var _swipe_start_ms := 0
-var _swipe_points := PackedVector2Array()
+var _touches := {}               # finger index -> Dictionary
 var _trail := PackedVector2Array()
 var _trail_fade := 0.0
 
@@ -40,81 +38,89 @@ func _is_blocked(pos: Vector2) -> bool:
 
 
 func _input(event: InputEvent) -> void:
-	var size_px := get_viewport_rect().size
+	var h := get_viewport_rect().size.y
+	var now := Time.get_ticks_msec()
 	if event is InputEventScreenTouch:
 		var t := event as InputEventScreenTouch
 		if t.pressed:
 			if _is_blocked(t.position):
 				return
-			if t.position.x < size_px.x * 0.5:
-				if _joy_index == -1:
-					_joy_index = t.index
-					_joy_origin = t.position
-					_joy_pos = t.position
-			elif _swipe_index == -1:
-				_swipe_index = t.index
-				_swipe_start = t.position
-				_swipe_start_ms = Time.get_ticks_msec()
-				_swipe_points = PackedVector2Array([t.position])
-				swipe_started.emit()
-		else:
-			if t.index == _joy_index:
-				_joy_index = -1
-				move_vector = Vector2.ZERO
-			elif t.index == _swipe_index:
-				_swipe_index = -1
-				_finish_swipe(t.position, size_px)
+			_touches[t.index] = {
+				"start": t.position, "ms": now, "pos": t.position, "swipe": false,
+				"points": [t.position], "times": [now],
+			}
+		elif _touches.has(t.index):
+			var d: Dictionary = _touches[t.index]
+			_touches.erase(t.index)
+			if d["swipe"]:
+				_finish_swipe(d, t.position, now, h)
+			elif now - int(d["ms"]) <= TAP_MAX_MS:
+				tapped.emit(t.position)
 		queue_redraw()
 	elif event is InputEventScreenDrag:
-		var d := event as InputEventScreenDrag
-		if d.index == _joy_index:
-			_joy_pos = d.position
-			var v := (_joy_pos - _joy_origin) / JOY_RADIUS
-			if v.length() > 1.0:
-				_joy_origin = _joy_pos - v.normalized() * JOY_RADIUS
-				v = v.normalized()
-			move_vector = v
-		elif d.index == _swipe_index:
-			_swipe_points.append(d.position)
-			swipe_moved.emit((d.position - _swipe_start) / size_px.y)
+		var dr := event as InputEventScreenDrag
+		if not _touches.has(dr.index):
+			return
+		var d: Dictionary = _touches[dr.index]
+		d["pos"] = dr.position
+		(d["points"] as Array).append(dr.position)
+		(d["times"] as Array).append(now)
+		var start: Vector2 = d["start"]
+		if not d["swipe"] and (dr.position - start).length() > SWIPE_MIN * h:
+			d["swipe"] = true
+		if d["swipe"]:
+			swipe_progress.emit(start, dr.position)
 		queue_redraw()
 
 
-func _finish_swipe(end_pos: Vector2, size_px: Vector2) -> void:
-	var vec := (end_pos - _swipe_start) / size_px.y
-	var dur := maxf((Time.get_ticks_msec() - _swipe_start_ms) / 1000.0, 0.03)
-	_trail = _swipe_points.duplicate()
+func _finish_swipe(d: Dictionary, end_pos: Vector2, now: int, h: float) -> void:
+	# Power comes from how fast the finger was moving at the end of the gesture,
+	# so resting the finger before swiping doesn't weaken the shot.
+	var points: Array = d["points"]
+	var times: Array = d["times"]
+	var ref: Vector2 = points[0]
+	var ref_ms: int = times[0]
+	for i in range(points.size() - 1, -1, -1):
+		ref = points[i]
+		ref_ms = times[i]
+		if now - ref_ms >= SPEED_WINDOW_MS:
+			break
+	var dt := maxf((now - ref_ms) / 1000.0, 0.03)
+	var speed := (end_pos - ref).length() / h / dt
+	_trail = PackedVector2Array(points)
 	_trail.append(end_pos)
 	_trail_fade = 1.0
-	swipe_ended.emit()
-	if vec.length() >= MIN_SWIPE:
-		swiped.emit(vec, dur)
+	swiped.emit(d["start"], end_pos, speed)
 
 
 func _process(delta: float) -> void:
-	if _joy_index == -1:
-		var k := Vector2.ZERO
-		if Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT):
-			k.x -= 1.0
-		if Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT):
-			k.x += 1.0
-		if Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP):
-			k.y -= 1.0
-		if Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN):
-			k.y += 1.0
-		move_vector = k.normalized()
+	var k := Vector2.ZERO
+	if Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT):
+		k.x -= 1.0
+	if Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT):
+		k.x += 1.0
+	if Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP):
+		k.y -= 1.0
+	if Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN):
+		k.y += 1.0
+	move_vector = k.normalized()
+
+	var now := Time.get_ticks_msec()
+	for idx in _touches:
+		var d: Dictionary = _touches[idx]
+		if not d["swipe"] and now - int(d["ms"]) > HOLD_MS:
+			held.emit(d["pos"])
+
 	if _trail_fade > 0.0:
 		_trail_fade = maxf(0.0, _trail_fade - delta * 3.0 / maxf(Engine.time_scale, 0.05))
 		queue_redraw()
 
 
 func _draw() -> void:
-	if _joy_index != -1:
-		draw_circle(_joy_origin, JOY_RADIUS, Color(1, 1, 1, 0.12))
-		draw_arc(_joy_origin, JOY_RADIUS, 0, TAU, 48, Color(1, 1, 1, 0.35), 3.0)
-		var knob := _joy_origin + move_vector * JOY_RADIUS
-		draw_circle(knob, 38.0, Color(1, 1, 1, 0.45))
-	if _swipe_index != -1 and _swipe_points.size() > 1:
-		draw_polyline(_swipe_points, Color(1, 1, 1, 0.7), 6.0, true)
-	elif _trail_fade > 0.0 and _trail.size() > 1:
-		draw_polyline(_trail, Color(1, 1, 0.6, 0.6 * _trail_fade), 6.0, true)
+	for idx in _touches:
+		var d: Dictionary = _touches[idx]
+		var pts: Array = d["points"]
+		if d["swipe"] and pts.size() > 1:
+			draw_polyline(PackedVector2Array(pts), Color(1, 1, 1, 0.75), 7.0, true)
+	if _trail_fade > 0.0 and _trail.size() > 1:
+		draw_polyline(_trail, Color(1, 1, 0.6, 0.6 * _trail_fade), 7.0, true)

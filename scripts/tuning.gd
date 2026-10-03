@@ -21,7 +21,7 @@ var swipe_side_angle := 38.0   # swipe angle (deg from vertical) that aims at th
 
 # Player
 var player_speed := 6.2
-var assist := 0.35             # auto-positioning help, 0 = none
+var assist := 0.6              # auto-positioning help, 0 = none (a tap overrides it for that ball)
 
 # Opponent
 var ai_skill := 0.5

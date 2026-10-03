@@ -9,6 +9,7 @@ const SHOT_NAMES := ["TOPSPIN", "FLAT", "SLICE"]
 const GOLD := Color(1.0, 0.85, 0.25)
 
 var touch: TouchInput
+var ring: TimingRing
 
 var _root: Control
 var _score: Label
@@ -32,6 +33,8 @@ func _ready() -> void:
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_root)
 
+	ring = TimingRing.new()
+	_root.add_child(ring)
 	touch = TouchInput.new()
 	_root.add_child(touch)
 
@@ -54,7 +57,7 @@ func _ready() -> void:
 	_popup_sub.modulate.a = 0.0
 
 	_hint = _label(24, HORIZONTAL_ALIGNMENT_CENTER)
-	_hint.text = "левый палец: бег   ·   правый палец: свайп-удар\nведи палец — жёлтый круг покажет, куда полетит мяч (красный = аут)"
+	_hint.text = "ТАП — бежать туда   ·   СВАЙП — удар по линии от игрока\nсвайпни, когда кольцо сожмётся до круга · быстрый свайп = сильнее"
 	_hint.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 	_hint.offset_left = 16.0
 	_hint.offset_right = -16.0

@@ -17,8 +17,8 @@ var _last_us := 0
 
 func _ready() -> void:
 	fov = _base_fov
-	near = 0.1
-	far = 120.0
+	near = 1.0
+	far = 90.0
 	_last_us = Time.get_ticks_usec()
 
 

@@ -1,11 +1,15 @@
 extends Node3D
-## Game orchestration for Phase 1-2 ("tennis toy" + "first satisfying hit"):
-## rally rules, player hitting (position + timing + swipe -> shot), slow-motion
-## window, hit feedback, and a bot for automated testing (--autoplay).
+## Game orchestration: rally rules, serve, scoring, player hitting, slow motion,
+## feedback, and a bot for automated testing (--autoplay).
 ##
-## Hitting model: the swipe expresses intent (direction, depth, pace), the timing
-## and body position decide execution quality, the shot solver turns intent into a
-## launch, execution errors perturb it, and from then on the ball flies on real physics.
+## Controls (one finger is enough):
+##   tap    -> run to that spot (hold the finger to keep running toward it)
+##   swipe  -> hit: the ball travels along the swiped line *from the player*;
+##             swipe speed = power; depth is chosen automatically (deep, safely in)
+##   timing -> a ring shrinks onto the contact point: swipe when it meets the circle
+##   serve  -> tap = toss, swipe = serve (the ring sits on the tossed ball)
+## A perfect shot along a line that points into the court lands in; timing and
+## position errors are what make balls miss.
 
 enum Who { NONE = -1, PLAYER = 0, CPU = 1 }
 enum Phase { WAIT, SERVE, RALLY, OVER }
@@ -56,6 +60,12 @@ var _cpu_serve_timer := 0.0
 var _cpu_toss_offset := 0.0
 var _points_played := 0
 
+# Movement by taps
+var _move_target := Vector3.INF
+var _assist_suppressed := false   # the player tapped somewhere: don't auto-position for this ball
+var _tap_marker: MeshInstance3D
+var _tap_marker_hold := 0.0
+
 # Player hitting state
 var incoming: BallPhysics.Prediction
 var t_contact := INF            # predicted game seconds until the ball reaches the contact plane
@@ -77,6 +87,7 @@ var _aim: MeshInstance3D
 var _aim_mat: StandardMaterial3D
 var _aim_hold := 0.0
 var _aim_line_target := Vector3.ZERO
+var _aim_line_origin := Vector3.ZERO
 var _aim_line_im: ImmediateMesh
 var _land_dot: MeshInstance3D
 var _land_hold := 0.0
@@ -135,9 +146,9 @@ func _ready() -> void:
 	hud = Hud.new()
 	add_child(hud)
 	hud.touch.swiped.connect(_on_swipe)
-	hud.touch.swipe_moved.connect(_on_swipe_moved)
-	hud.touch.swipe_ended.connect(_on_swipe_ended)
-	hud.touch.swipe_started.connect(_on_swipe_started)
+	hud.touch.swipe_progress.connect(_on_swipe_progress)
+	hud.touch.tapped.connect(_on_tap)
+	hud.touch.held.connect(_on_hold)
 	hud.shot_type_changed.connect(func(t: int) -> void: shot_type = t as ShotType)
 	hud.set_score(scoreboard.point_text())
 
@@ -245,6 +256,24 @@ func _build_helpers() -> void:
 	_land_dot.visible = false
 	add_child(_land_dot)
 
+	# Where the player tapped to run.
+	_tap_marker = MeshInstance3D.new()
+	var tmm := TorusMesh.new()
+	tmm.inner_radius = 0.22
+	tmm.outer_radius = 0.3
+	tmm.rings = 24
+	tmm.ring_segments = 4
+	_tap_marker.mesh = tmm
+	_tap_marker.scale = Vector3(1.0, 0.05, 1.0)
+	var tmat := StandardMaterial3D.new()
+	tmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	tmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	tmat.no_depth_test = true
+	tmat.albedo_color = Color(0.6, 0.95, 1.0, 0.8)
+	_tap_marker.material_override = tmat
+	_tap_marker.visible = false
+	add_child(_tap_marker)
+
 
 # --- Main loop --------------------------------------------------------------
 
@@ -284,6 +313,7 @@ func _process(_delta: float) -> void:
 	_last_real_us = now
 	_update_slowmo(rd)
 	_update_helpers()
+	_update_timing_ring()
 	hud.set_rally("%s   ·   rally %d   ·   best %d" % [scoreboard.games_text(), rally, best_rally])
 	if Tuning.show_debug_text:
 		hud.set_debug_text(_debug_string())
@@ -349,31 +379,163 @@ func _on_ball_crossed() -> void:
 		late_cross_time = game_time
 	else:
 		var err: float = pending_swing["time"] - game_time
-		if err < -Tuning.early_limit:
-			_miss("TOO EARLY")
-		else:
-			_player_hit(err, pending_swing["vec"], pending_swing["dur"])
+		_player_hit(err, pending_swing["dir"], pending_swing["pace_k"])
 
 
-func _on_swipe(vec: Vector2, dur: float) -> void:
+func _on_tap(pos: Vector2) -> void:
 	hud.hide_hint()
+	if phase == Phase.SERVE and server == Who.PLAYER:
+		if not toss_active:
+			_start_toss()
+		return
+	_set_move_target(pos)
+
+
+func _on_hold(pos: Vector2) -> void:
+	if phase == Phase.SERVE and server == Who.PLAYER:
+		return
+	_set_move_target(pos)
+
+
+func _set_move_target(screen_pos: Vector2) -> void:
+	var g := _screen_to_ground(screen_pos)
+	if g == Vector3.INF:
+		return
+	var a := player.area
+	_move_target = Vector3(clampf(g.x, a.position.x, a.end.x), 0.0, clampf(g.z, a.position.y, a.end.y))
+	_assist_suppressed = true
+	_tap_marker.global_position = Vector3(_move_target.x, 0.05, _move_target.z)
+	_tap_marker.visible = true
+	_tap_marker_hold = 0.6
+
+
+func _screen_to_ground(screen_pos: Vector2) -> Vector3:
+	var from := cam.project_ray_origin(screen_pos)
+	var dir := cam.project_ray_normal(screen_pos)
+	if dir.y > -0.01:
+		return Vector3.INF
+	return from + dir * (-from.y / dir.y)
+
+
+## The swipe drawn on screen, mapped onto the court: the direction the ball will travel.
+func _swipe_world_dir(start: Vector2, end: Vector2) -> Vector3:
+	var a := _screen_to_ground(start)
+	var d := Vector3.ZERO
+	if a != Vector3.INF:
+		for k in [1.0, 0.75, 0.5, 0.3]:
+			var b := _screen_to_ground(start.lerp(end, k))
+			if b != Vector3.INF:
+				d = b - a
+				break
+	d.y = 0.0
+	if d.length() < 0.05:
+		var v := end - start
+		d = Vector3(v.x, 0.0, v.y)
+	d = d.normalized()
+	if d.z > -0.3:  # always toward the opponent
+		d = Vector3(d.x, 0.0, -0.3).normalized() if absf(d.x) > 0.01 else Vector3(0, 0, -1)
+	return d
+
+
+func _pace_from_speed(speed: float) -> float:
+	return clampf((speed - 0.8) / 3.2, 0.0, 1.0)
+
+
+func _on_swipe(start: Vector2, end: Vector2, speed: float) -> void:
+	hud.hide_hint()
+	var dir := _swipe_world_dir(start, end)
+	var pace_k := _pace_from_speed(speed)
+	_aim_hold = 0.7
 	if phase == Phase.SERVE:
 		if server == Who.PLAYER and toss_active:
-			_player_serve(vec, dur)
+			_player_serve(dir, pace_k)
 		return
+	_swing_input(dir, pace_k)
+
+
+func _swing_input(dir: Vector3, pace_k: float) -> void:
 	if not _player_can_hit():
 		return
 	if late_until > 0.0:
-		_player_hit(game_time - late_cross_time, vec, dur)
+		_player_hit(game_time - late_cross_time, dir, pace_k)
 		return
-	if pending_swing.is_empty() and t_contact < Tuning.early_limit + 0.25:
-		pending_swing = {"time": game_time, "vec": vec, "dur": dur}
+	if t_contact > Tuning.early_limit:
+		if t_contact < 3.0:
+			hud.popup("РАНО", COLOR_WARN, "свайпни, когда кольцо дойдёт до круга")
+		return
+	if pending_swing.is_empty():
+		pending_swing = {"time": game_time, "dir": dir, "pace_k": pace_k}
 		var side := 1 if player.lateral_of(contact_pred) >= 0.0 else -1
 		player.swing(side, t_contact, contact_pred.y)
 		sfx.play("swing", -12.0, rng.randf_range(0.95, 1.1))
 
 
-func _player_hit(err: float, vec: Vector2, dur: float) -> void:
+## Rally target: along the line from the contact point, landing deep but safely inside.
+## A line that crosses a sideline deep in the other half becomes an angled shot landing
+## just inside it; a wider line goes into that deep corner. So with perfect timing the
+## ball goes where the line points and stays in; errors are what make it miss.
+func rally_target(origin: Vector3, d: Vector3, pace_k: float) -> Vector3:
+	var w := Court.SINGLES_HALF_WIDTH - 0.6
+	var zt := -(Court.HALF_LENGTH - lerpf(2.6, 1.5, pace_k))
+	var p := origin + d * ((zt - origin.z) / d.z)
+	if absf(p.x) > w:
+		var ps := origin + d * ((signf(p.x) * w - origin.x) / d.x) if absf(d.x) > 0.001 else p
+		# Crosses the sideline deep in the other half: angled shot. Otherwise: into the deep corner.
+		p = ps if ps.z <= -5.0 and ps.z >= zt else Vector3(signf(p.x) * w, 0.0, zt)
+	p.y = BallPhysics.RADIUS
+	return p
+
+
+## Serve target: along the line from the server into the diagonal box, near the service line.
+## A wide line is pulled onto the box's outer edge and a line slightly toward the
+## wrong box onto the T; only a line clearly into the wrong box faults.
+func serve_target(origin: Vector3, d: Vector3, pace_k: float) -> Vector3:
+	var zt := -(Court.SERVICE_LINE - lerpf(1.1, 0.6, pace_k))
+	var p := origin + d * ((zt - origin.z) / d.z)
+	var lo := 0.3
+	var hi := Court.SINGLES_HALF_WIDTH - 0.3
+	var bx := p.x * box_side
+	if bx < lo and bx > lo - 1.5:
+		p.x = box_side * lo
+	elif bx > hi:
+		p.x = box_side * hi
+	p.y = BallPhysics.RADIUS
+	return p
+
+
+func _aim_origin() -> Vector3:
+	if phase == Phase.SERVE:
+		return Vector3(player.position.x, 0.0, player.position.z - 0.3)
+	if t_contact < 10.0:
+		return Vector3(contact_pred.x, 0.0, contact_pred.z)
+	return player.position + player.forward() * Athlete.CONTACT_FORWARD
+
+
+func _on_swipe_progress(start: Vector2, current: Vector2) -> void:
+	if not Tuning.show_aim:
+		return
+	var dir := _swipe_world_dir(start, current)
+	var origin := _aim_origin()
+	if phase == Phase.SERVE:
+		if server != Who.PLAYER:
+			return
+		var sp := serve_target(origin, dir, 0.5)
+		_set_aim(origin, sp, Court.in_service_box(sp, -1, box_side, 0.0))
+	else:
+		var p := rally_target(origin, dir, 0.5)
+		_set_aim(origin, p, Court.is_in_singles(p, -1, 0.0))
+	_aim_hold = INF
+
+
+func _set_aim(origin: Vector3, p: Vector3, inside: bool) -> void:
+	_aim.visible = true
+	_aim.global_position = Vector3(p.x, 0.05, p.z)
+	_aim_mat.albedo_color = AIM_IN if inside else AIM_OUT
+	_aim_line_origin = origin
+	_aim_line_target = p
+
+
+func _player_hit(err: float, dir: Vector3, pace_k: float) -> void:
 	var bp := ball.state.pos
 	pending_swing = {}
 	late_until = -1.0
@@ -390,30 +552,32 @@ func _player_hit(err: float, vec: Vector2, dur: float) -> void:
 	var q_m := movement_quality(player.velocity.length())
 	var q := q_t * q_p * q_m
 
-	var intent := swipe_intent(vec, dur)
-	var tx: float = intent["tx"]
-	var tz: float = intent["tz"]
-	var pace_k: float = intent["pace_k"]
+	var origin := Vector3(bp.x, 0.0, bp.z)
+	var target := rally_target(origin, dir, pace_k)
 	var pace: float
 	var top: float
 	match shot_type:
 		ShotType.FLAT:
-			pace = lerpf(25.0, 42.0, pace_k)
+			pace = lerpf(24.0, 40.0, pace_k)
 			top = 40.0
 		ShotType.SLICE:
-			pace = lerpf(18.0, 28.0, pace_k)
+			pace = lerpf(17.0, 27.0, pace_k)
 			top = -lerpf(140.0, 210.0, pace_k)
 		_:
-			pace = lerpf(22.0, 36.0, pace_k)
-			top = lerpf(180.0, 340.0, pace_k)
+			pace = lerpf(21.0, 35.0, pace_k)
+			top = lerpf(190.0, 340.0, pace_k)
 
 	if not player.is_swinging():
 		player.swing(side, 0.02, bp.y)
-	var r := execute_shot(Who.PLAYER, player, bp, Vector3(tx, BallPhysics.RADIUS, tz), pace, top, q, err, side)
+	var r := execute_shot(Who.PLAYER, player, bp, target, pace, top, q, err, side)
 	ai.on_player_hit()
+	_assist_suppressed = false
 	_hits_total += 1
 	_stats["player_hits"] += 1
 	_stats["labels"][label] = _stats["labels"].get(label, 0) + 1
+	if Tuning.show_aim:
+		_set_aim(origin, target, Court.is_in_singles(target, -1, 0.0))
+		_aim_hold = 0.8
 
 	# Feedback
 	var color := COLOR_GOOD
@@ -423,9 +587,9 @@ func _player_hit(err: float, vec: Vector2, dur: float) -> void:
 		color = COLOR_WARN
 	var notes := []
 	if q_p < 0.75:
-		notes.append("bad position")
+		notes.append("далеко от мяча")
 	if q_m < 0.85:
-		notes.append("on the run")
+		notes.append("на бегу")
 	var sub := "%d km/h  ·  %d%%" % [roundi(r.speed * 3.6), roundi(q * 100.0)]
 	if not notes.is_empty():
 		sub += "  ·  " + ", ".join(notes)
@@ -441,48 +605,8 @@ func _player_hit(err: float, vec: Vector2, dur: float) -> void:
 	last_shot = {
 		"label": label, "err_ms": err * 1000.0, "q_t": q_t, "q_p": q_p, "q_m": q_m, "q": q,
 		"side": "FH" if side > 0 else "BH", "speed": r.speed * 3.6, "elev": r.elevation_deg,
-		"target": Vector2(tx, tz), "type": Hud.SHOT_NAMES[shot_type],
+		"target": Vector2(target.x, target.z), "type": Hud.SHOT_NAMES[shot_type],
 	}
-
-
-## Swipe -> intent. Direction = aim (absolute court x), length = depth, gesture speed = pace.
-func swipe_intent(vec: Vector2, dur: float) -> Dictionary:
-	var fwd := maxf(-vec.y, 0.02)
-	var ang := rad_to_deg(atan2(vec.x, fwd))
-	var length := vec.length()
-	var tx := clampf(ang / Tuning.swipe_side_angle, -1.6, 1.6) * (Court.SINGLES_HALF_WIDTH - 0.35)
-	var depth_k := (length - 0.05) / maxf(Tuning.swipe_deep_len - 0.05, 0.01)
-	var tz := -lerpf(4.2, Court.HALF_LENGTH - 0.7, clampf(depth_k, 0.0, 1.0))
-	if depth_k > 1.0:
-		tz -= (depth_k - 1.0) * 3.0
-	return {"tx": tx, "tz": tz, "pace_k": clampf((length / dur - 0.6) / 2.9, 0.0, 1.0)}
-
-
-func _on_swipe_moved(vec: Vector2) -> void:
-	if not Tuning.show_aim:
-		return
-	if phase == Phase.SERVE:
-		if server != Who.PLAYER:
-			return
-		var si := serve_intent(vec, 1.0)
-		var sp := Vector3(si["tx"], 0.0, si["tz"])
-		_set_aim(sp, Court.in_service_box(sp, -1, box_side, 0.0))
-	else:
-		var it := swipe_intent(vec, 1.0)
-		var p := Vector3(it["tx"], 0.0, it["tz"])
-		_set_aim(p, Court.is_in_singles(p, -1, 0.0))
-	_aim_hold = INF
-
-
-func _on_swipe_ended() -> void:
-	_aim_hold = 0.6  # keep the aim visible briefly so it can be compared with the landing spot
-
-
-func _set_aim(p: Vector3, inside: bool) -> void:
-	_aim.visible = true
-	_aim.global_position = Vector3(p.x, 0.012, p.z)
-	_aim_mat.albedo_color = AIM_IN if inside else AIM_OUT
-	_aim_line_target = p
 
 
 func _miss(reason: String) -> void:
@@ -528,29 +652,36 @@ func _ideal_contact() -> Vector3:
 
 func _update_player_movement() -> void:
 	player.max_speed = Tuning.player_speed
-	var mv := hud.touch.move_vector
 	if phase == Phase.SERVE and server == Who.PLAYER:
-		# Serving: slide along the baseline until the toss.
-		player.move_input = Vector2(mv.x, 0.0) if not toss_active and not autoplay else Vector2.ZERO
+		player.move_input = Vector2.ZERO
 		return
+	var mv := hud.touch.move_vector
+	if mv != Vector2.ZERO:
+		_move_target = Vector3.INF
+	elif _move_target != Vector3.INF:
+		var d := Vector2(_move_target.x - player.position.x, _move_target.z - player.position.z)
+		if d.length() < 0.15:
+			_move_target = Vector3.INF
+		else:
+			mv = d.normalized() * clampf(d.length() / 0.7, 0.3, 1.0)
 	var assist := Tuning.assist
 	if autoplay:
 		mv = Vector2.ZERO
 		assist = 1.0
-	if assist > 0.0 and _player_can_hit() and t_contact < 2.5:
+	var free := mv == Vector2.ZERO and (autoplay or not _assist_suppressed)
+	if free and assist > 0.0 and _player_can_hit() and t_contact < 2.5:
+		# Auto-positioning toward a comfortable contact point.
 		var ideal := _ideal_contact()
 		var side := 1 if player.lateral_of(ideal) >= 0.0 else -1
-		if autoplay or absf(player.lateral_of(ideal)) > 0.25:
-			var stance := player.stance_for(ideal, side)
-			var d := Vector2(stance.x - player.position.x, stance.z - player.position.z)
-			if not autoplay:
-				d.y *= 0.35  # forward/back is mostly the player's job
-			var a := d.normalized() * clampf(d.length() / 0.6, 0.0, 1.0) if d.length() > 0.02 else Vector2.ZERO
-			var w := assist * (0.4 if mv.length() > 0.1 else 1.0)
-			mv = (mv + a * w).limit_length(1.0)
-	elif autoplay and phase == Phase.RALLY:
+		var stance := player.stance_for(ideal, side)
+		var d := Vector2(stance.x - player.position.x, stance.z - player.position.z)
+		if d.length() > 0.05:
+			mv = d.normalized() * clampf(d.length() / 0.6, 0.0, 1.0) * assist
+	elif free and assist > 0.0 and phase == Phase.RALLY and last_hitter == Who.PLAYER:
+		# Recover toward the middle of the baseline while the opponent plays.
 		var home := Vector2(clampf(ball.state.pos.x * 0.3, -1.5, 1.5) - player.position.x, 12.4 - player.position.z)
-		mv = home.limit_length(1.0)
+		if home.length() > 0.3:
+			mv = home.limit_length(1.0) * (0.6 + 0.4 * assist)
 	player.move_input = mv
 	if not _player_can_hit() and pending_swing.is_empty():
 		player.relax()
@@ -589,23 +720,28 @@ func execute_shot(who: int, hitter: Athlete, contact: Vector3, target: Vector3, 
 	var flat := target - contact
 	flat.y = 0.0
 	var dist := flat.length()
-	var bias := clampf(t_err / Tuning.good_window, -2.5, 2.5) * deg_to_rad(3.0) * float(side)
+	# Deterministic pull/push grows outside the perfect window; random scatter grows
+	# steeply as quality drops, so PERFECT/GOOD stay in and EARLY/LATE start to miss.
+	var off := maxf(absf(t_err) - Tuning.perfect_window, 0.0) * signf(t_err)
+	var bias := clampf(off / Tuning.good_window, -2.5, 2.5) * deg_to_rad(1.3) * float(side)
 	target += hitter.right() * (tan(bias) * dist)
-	target += hitter.right() * rng.randfn(0.0, 0.1 + (1.0 - q) * 1.3)
-	target += hitter.forward() * rng.randfn(0.0, 0.15 + (1.0 - q) * 1.7)
+	var miss := pow(1.0 - q, 1.5)
+	target += hitter.right() * rng.randfn(0.0, 0.06 + miss * 1.6)
+	target += hitter.forward() * rng.randfn(0.0, 0.1 + miss * 2.0)
 	pace *= lerpf(0.72, 1.06, q)
 	top *= lerpf(0.6, 1.0, q)
-	var r := ShotSolver.solve(contact, target, pace, top)
+	var r := ShotSolver.solve(contact, target, pace, top, 0.3)
 	var v := r.velocity
 	var axis := Vector3.UP.cross(v).normalized()
 	if axis.length() > 0.5:
-		v = v.rotated(axis, deg_to_rad(rng.randfn(0.0, 0.3 + (1.0 - q) * 2.2)))
+		v = v.rotated(axis, deg_to_rad(rng.randfn(0.0, 0.12 + pow(1.0 - q, 1.5) * 2.0)))
 	ball.launch(contact, v, r.spin)
 	last_hitter = who as Who
 	bounces = 0
 	net_touched = false
 	if who == Who.CPU:
 		ball_used = false
+		_assist_suppressed = false
 		_stats["cpu_hits"] += 1
 	rally += 1
 	var vol := lerpf(-9.0, 0.0, clampf(r.speed / 35.0, 0.0, 1.0))
@@ -622,7 +758,7 @@ func _on_bounce(pos: Vector3, speed: float) -> void:
 	bounces += 1
 	var receiver_half := 1 if last_hitter == Who.CPU else -1
 	if bounces == 1 and last_hitter == Who.PLAYER and Tuning.show_aim:
-		_land_dot.global_position = Vector3(pos.x, 0.01, pos.z)
+		_land_dot.global_position = Vector3(pos.x, 0.05, pos.z)
 		_land_dot.visible = true
 		_land_hold = 1.2
 	if serve_flight:
@@ -753,7 +889,7 @@ func _setup_serve() -> void:
 	if server == Who.PLAYER:
 		var x0 := 0.3 if sx > 0.0 else -4.0
 		player.area = Rect2(x0, srv_z, 3.7, 0.01)
-		hud.set_serve_hint("ПОДАЧА%s: зажми справа — подброс, веди — прицел в квадрат, отпусти в верхней точке" % ("  (2-я)" if serve_attempt == 2 else ""))
+		hud.set_serve_hint("ПОДАЧА%s: ТАП — подброс, потом СВАЙП в диагональный квадрат, когда кольцо сожмётся" % ("  (2-я)" if serve_attempt == 2 else ""))
 	else:
 		player.area = PLAYER_AREA
 		_cpu_serve_timer = 0.5 if autoplay else 1.2
@@ -796,26 +932,7 @@ func _start_toss() -> void:
 		_bot_offset = rng.randfn(0.0, 0.03)
 
 
-func _on_swipe_started() -> void:
-	if phase == Phase.SERVE and server == Who.PLAYER and not toss_active:
-		_start_toss()
-
-
-## Serve aim: straight swipe = near the T, sideways toward the box's outer side = wide,
-## length = depth in the box (too long = long fault). Gesture speed = pace.
-func serve_intent(vec: Vector2, dur: float) -> Dictionary:
-	var fwd := maxf(-vec.y, 0.02)
-	var ang := rad_to_deg(atan2(vec.x, fwd))
-	var length := vec.length()
-	var tx := box_side * 0.7 + clampf(ang / Tuning.swipe_side_angle, -1.5, 1.5) * 3.6
-	var depth_k := (length - 0.05) / maxf(Tuning.swipe_deep_len - 0.05, 0.01)
-	var dz := lerpf(3.4, 6.1, clampf(depth_k, 0.0, 1.0))
-	if depth_k > 1.0:
-		dz += (depth_k - 1.0) * 3.0
-	return {"tx": tx, "tz": -dz, "pace_k": clampf((length / dur - 0.6) / 2.9, 0.0, 1.0)}
-
-
-func _player_serve(vec: Vector2, dur: float) -> void:
+func _player_serve(dir: Vector3, pace_k: float) -> void:
 	var bp := ball.state.pos
 	if bp.y < 1.7:
 		return
@@ -823,34 +940,37 @@ func _player_serve(vec: Vector2, dur: float) -> void:
 	var tq := timing_quality(err)
 	var q: float = tq[0]
 	var label: String = tq[1]
-	var it := serve_intent(vec, dur)
-	var pace_k: float = it["pace_k"]
+	var origin := Vector3(bp.x, 0.0, bp.z)
+	var target := serve_target(origin, dir, pace_k)
 	var pace: float
 	var top: float
 	match shot_type:
 		ShotType.FLAT:
-			pace = lerpf(38.0, 54.0, pace_k)
+			pace = lerpf(36.0, 52.0, pace_k)
 			top = 60.0
 		ShotType.SLICE:
-			pace = lerpf(30.0, 40.0, pace_k)
+			pace = lerpf(29.0, 39.0, pace_k)
 			top = 120.0
 		_:
-			pace = lerpf(30.0, 42.0, pace_k)
+			pace = lerpf(29.0, 41.0, pace_k)
 			top = lerpf(280.0, 380.0, pace_k)
 	player.swing(1, 0.02, bp.y)
-	var r := execute_shot(Who.PLAYER, player, bp, Vector3(it["tx"], BallPhysics.RADIUS, it["tz"]), pace, top, q, err, 1)
+	var r := execute_shot(Who.PLAYER, player, bp, target, pace, top, q, err, 1)
 	_after_serve_hit()
 	ai.on_player_hit()
 	_stats["labels"][label] = _stats["labels"].get(label, 0) + 1
+	if Tuning.show_aim:
+		_set_aim(origin, target, Court.in_service_box(target, -1, box_side, 0.0))
+		_aim_hold = 0.8
 	var color := Hud.GOLD if label == "PERFECT" else (COLOR_WARN if label == "EARLY" or label == "LATE" else COLOR_GOOD)
-	hud.popup(label, color, "serve %d km/h" % roundi(r.speed * 3.6))
+	hud.popup(label, color, "подача %d km/h" % roundi(r.speed * 3.6))
 	cam.impulse(1.0 if label == "PERFECT" else 0.4)
 	if label == "PERFECT":
 		Input.vibrate_handheld(35)
 	last_shot = {
 		"label": label, "err_ms": err * 1000.0, "q_t": q, "q_p": 1.0, "q_m": 1.0, "q": q,
 		"side": "SRV", "speed": r.speed * 3.6, "elev": r.elevation_deg,
-		"target": Vector2(it["tx"], it["tz"]), "type": Hud.SHOT_NAMES[shot_type],
+		"target": Vector2(target.x, target.z), "type": Hud.SHOT_NAMES[shot_type],
 	}
 
 
@@ -917,10 +1037,13 @@ func _update_helpers() -> void:
 	if _land_hold > 0.0:
 		_land_hold -= rd
 		_land_dot.visible = _land_hold > 0.0
+	if _tap_marker_hold > 0.0:
+		_tap_marker_hold -= rd
+		_tap_marker.visible = _tap_marker_hold > 0.0 and _move_target != Vector3.INF
 	_aim_line_im.clear_surfaces()
 	if _aim.visible:
-		var a := player.global_position + Vector3(0, 0.012, 0)
-		var b := Vector3(_aim_line_target.x, 0.012, _aim_line_target.z)
+		var a := Vector3(_aim_line_origin.x, 0.05, _aim_line_origin.z)
+		var b := Vector3(_aim_line_target.x, 0.05, _aim_line_target.z)
 		_aim_line_im.surface_begin(Mesh.PRIMITIVE_LINES)
 		var n := 24
 		for i in n:
@@ -932,7 +1055,7 @@ func _update_helpers() -> void:
 	_landing.visible = show_landing
 	if show_landing:
 		var b := incoming.bounce_points[0]
-		_landing.global_position = Vector3(b.x, 0.006, b.z)
+		_landing.global_position = Vector3(b.x, 0.05, b.z)
 	_path_im.clear_surfaces()
 	if Tuning.show_path and ball.active:
 		var pr := incoming if incoming != null else BallPhysics.predict(ball.state, 2.5, 1.0 / 60.0, 2)
@@ -941,6 +1064,24 @@ func _update_helpers() -> void:
 			for p in pr.points:
 				_path_im.surface_add_vertex(p)
 			_path_im.surface_end()
+
+
+func _update_timing_ring() -> void:
+	var ring := hud.ring
+	if autoplay:
+		ring.hide_ring()
+		return
+	if phase == Phase.SERVE and server == Who.PLAYER and toss_active:
+		ring.show_ring(cam.unproject_position(ball.state.pos), toss_ideal - game_time, Tuning.perfect_window, Tuning.good_window)
+		return
+	if _player_can_hit():
+		if late_until > 0.0:
+			ring.show_ring(cam.unproject_position(ball.state.pos), late_cross_time - game_time, Tuning.perfect_window, Tuning.good_window)
+			return
+		if t_contact < 1.1 and absf(player.lateral_of(contact_pred)) < 3.0 and contact_pred.y < 2.7:
+			ring.show_ring(cam.unproject_position(contact_pred), t_contact, Tuning.perfect_window, Tuning.good_window)
+			return
+	ring.hide_ring()
 
 
 func _debug_string() -> String:
@@ -956,15 +1097,18 @@ func _debug_string() -> String:
 
 # --- Autoplay bot (automated testing) ------------------------------------------
 
+func _bot_dir(max_deg: float) -> Vector3:
+	var a := deg_to_rad(rng.randf_range(-max_deg, max_deg))
+	return Vector3(sin(a), 0.0, -cos(a))
+
+
 func _autoplay_tick() -> void:
 	if phase == Phase.SERVE and server == Who.PLAYER:
 		if not toss_active:
 			_start_toss()
 		elif game_time >= toss_ideal + _bot_offset:
-			var want_x := box_side * rng.randf_range(0.8, 3.2)
-			var ang := deg_to_rad((want_x - box_side * 0.7) / 3.6 * Tuning.swipe_side_angle)
-			var length := 0.05 + rng.randf_range(0.4, 0.75) * (Tuning.swipe_deep_len - 0.05)
-			_on_swipe(Vector2(sin(ang), -cos(ang)) * length, 0.12)
+			var to_box := Vector3(box_side * 2.0 - player.position.x, 0.0, -5.2 - player.position.z).normalized()
+			_player_serve(to_box.rotated(Vector3.UP, deg_to_rad(rng.randf_range(-6.0, 6.0))), rng.randf_range(0.3, 0.8))
 		return
 	if not _player_can_hit():
 		_bot_armed = false
@@ -972,12 +1116,13 @@ func _autoplay_tick() -> void:
 	if not _bot_armed:
 		_bot_armed = true
 		_bot_offset = rng.randfn(0.0, 0.035)  # bot timing error, + = late
-	var vec := Vector2(rng.randf_range(-0.12, 0.12), -rng.randf_range(0.17, 0.27))
+	var dir := _bot_dir(22.0)
+	var pk := rng.randf_range(0.2, 0.7)
 	if late_until > 0.0:
 		if game_time - late_cross_time >= _bot_offset:
-			_on_swipe(vec, 0.13)
+			_swing_input(dir, pk)
 	elif _bot_offset <= 0.0 and pending_swing.is_empty() and t_contact <= -_bot_offset:
-		_on_swipe(vec, 0.13)
+		_swing_input(dir, pk)
 
 
 func _print_autoplay_summary() -> void:

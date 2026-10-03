@@ -99,7 +99,7 @@ func _process(delta: float) -> void:
 		_spin_visual = Basis(state.spin.normalized(), state.spin.length() * delta) * _spin_visual
 		_mesh.basis = _spin_visual.orthonormalized()
 	var h := state.pos.y
-	_shadow.global_position = Vector3(state.pos.x, 0.004, state.pos.z)
+	_shadow.global_position = Vector3(state.pos.x, 0.045, state.pos.z)
 	var k := clampf(1.0 - h / 6.0, 0.25, 1.0)
 	_shadow.scale = Vector3.ONE * (1.0 + (1.0 - k) * 1.2)
 	_shadow_mat.albedo_color.a = 0.55 * k

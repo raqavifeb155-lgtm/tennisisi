@@ -27,6 +27,7 @@ fi
 cd "$ROOT"
 "$GODOT" --headless --path . --import >/dev/null 2>&1 || true
 "$GODOT" --headless --path . -s tests/run_tests.gd
+"$GODOT" --headless --path . --fixed-fps 60 -s tests/input_test.gd | grep -E "INPUT TEST|labels|outcomes"
 if [ "${1:-}" = "--autoplay" ]; then
 	"$GODOT" --headless --path . --fixed-fps 60 -- --autoplay --points=40 | tail -8
 fi

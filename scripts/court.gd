@@ -42,25 +42,32 @@ static func in_service_box(p: Vector3, half: int, box_side: float, radius: float
 	return x >= -radius and x <= SINGLES_HALF_WIDTH + radius
 
 
+## Visual layers are separated by whole centimetres so phones (low depth precision)
+## never z-fight: surround 0.00, run-off 0.01, court 0.02, lines 0.03.
+## Physics still treats the ground as y = 0; the offset is invisible.
+const Y_RUNOFF := 0.01
+const Y_COURT := 0.02
+const Y_LINES := 0.03
+
+
 func _ready() -> void:
-	_box(Vector3(40.0, 0.02, 60.0), Vector3(0, -0.012, 0), COLOR_SURROUND)
-	_box(Vector3(DOUBLES_HALF_WIDTH * 2.0 + 7.0, 0.02, HALF_LENGTH * 2.0 + 12.0), Vector3(0, -0.008, 0), COLOR_RUNOFF)
-	_box(Vector3(DOUBLES_HALF_WIDTH * 2.0, 0.02, HALF_LENGTH * 2.0), Vector3(0, -0.006, 0), COLOR_COURT)
+	_slab(Vector2(60.0, 80.0), 0.0, COLOR_SURROUND)
+	_slab(Vector2(DOUBLES_HALF_WIDTH * 2.0 + 7.0, HALF_LENGTH * 2.0 + 12.0), Y_RUNOFF, COLOR_RUNOFF)
+	_slab(Vector2(DOUBLES_HALF_WIDTH * 2.0, HALF_LENGTH * 2.0), Y_COURT, COLOR_COURT)
 
 	var lw := LINE_WIDTH
-	var y := 0.002
-	# Baselines (a bit wider, like real courts)
+	# Baselines (a bit wider, like real courts) + centre marks
 	for s in [-1.0, 1.0]:
-		_box(Vector3(DOUBLES_HALF_WIDTH * 2.0, 0.004, lw * 1.6), Vector3(0, y, s * HALF_LENGTH), COLOR_LINE)
-		_box(Vector3(lw, 0.004, 0.25), Vector3(0, y, s * (HALF_LENGTH - 0.125)), COLOR_LINE)
+		_line(Vector2(DOUBLES_HALF_WIDTH * 2.0, lw * 1.6), Vector2(0, s * HALF_LENGTH))
+		_line(Vector2(lw, 0.25), Vector2(0, s * (HALF_LENGTH - 0.125)))
 	# Sidelines
 	for s in [-1.0, 1.0]:
-		_box(Vector3(lw, 0.004, HALF_LENGTH * 2.0), Vector3(s * DOUBLES_HALF_WIDTH, y, 0), COLOR_LINE)
-		_box(Vector3(lw, 0.004, HALF_LENGTH * 2.0), Vector3(s * SINGLES_HALF_WIDTH, y, 0), COLOR_LINE)
-	# Service lines + center service line
+		_line(Vector2(lw, HALF_LENGTH * 2.0), Vector2(s * DOUBLES_HALF_WIDTH, 0))
+		_line(Vector2(lw, HALF_LENGTH * 2.0), Vector2(s * SINGLES_HALF_WIDTH, 0))
+	# Service lines + centre service line
 	for s in [-1.0, 1.0]:
-		_box(Vector3(SINGLES_HALF_WIDTH * 2.0, 0.004, lw), Vector3(0, y, s * SERVICE_LINE), COLOR_LINE)
-	_box(Vector3(lw, 0.004, SERVICE_LINE * 2.0), Vector3(0, y, 0), COLOR_LINE)
+		_line(Vector2(SINGLES_HALF_WIDTH * 2.0, lw), Vector2(0, s * SERVICE_LINE))
+	_line(Vector2(lw, SERVICE_LINE * 2.0), Vector2(0, 0))
 
 	# Net: mesh panel, white tape, posts
 	var net_mat := StandardMaterial3D.new()
@@ -80,15 +87,41 @@ func _ready() -> void:
 		_box(Vector3(0.08, NET_HEIGHT_POST, 0.08), Vector3(s * (NET_HALF_WIDTH + 0.05), NET_HEIGHT_POST * 0.5, 0), Color(0.15, 0.15, 0.17))
 
 
+func _slab(size: Vector2, top_y: float, color: Color) -> void:
+	var mi := MeshInstance3D.new()
+	var pm := PlaneMesh.new()
+	pm.size = size
+	mi.mesh = pm
+	mi.material_override = _flat(color)
+	mi.position = Vector3(0, top_y, 0)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
+
+
+func _line(size: Vector2, center: Vector2) -> void:
+	var mi := MeshInstance3D.new()
+	var pm := PlaneMesh.new()
+	pm.size = size
+	mi.mesh = pm
+	mi.material_override = _flat(COLOR_LINE)
+	mi.position = Vector3(center.x, Y_LINES, center.y)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
+
+
+func _flat(color: Color) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	mat.roughness = 0.9
+	return mat
+
+
 func _box(size: Vector3, pos: Vector3, color: Color) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	var bm := BoxMesh.new()
 	bm.size = size
 	mi.mesh = bm
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mat.roughness = 0.9
-	mi.material_override = mat
+	mi.material_override = _flat(color)
 	mi.position = pos
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)

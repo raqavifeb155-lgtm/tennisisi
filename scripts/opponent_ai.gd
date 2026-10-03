@@ -137,9 +137,10 @@ func _hit(bp: Vector3) -> void:
 	var s := skill()
 	var lateral := me.lateral_of(bp)
 	var side := 1 if lateral >= 0.0 else -1
-	var t_err := rng.randfn(0.0, lerpf(0.075, 0.025, s))
+	var t_err := rng.randfn(0.0, lerpf(0.10, 0.04, s))
 	var tq: Array = game.timing_quality(t_err)
 	var q: float = tq[0] * game.position_quality(lateral, bp.y) * game.movement_quality(me.velocity.length())
+	q *= lerpf(0.72, 0.92, s)  # the CPU never plays quite as cleanly as a perfect swipe
 
 	var player_x: float = game.player.position.x
 	var tx: float
@@ -156,7 +157,7 @@ func _hit(bp: Vector3) -> void:
 		var open_side := -signf(player_x) if absf(player_x) > 0.8 else (1.0 if rng.randf() < 0.5 else -1.0)
 		if rng.randf() > 0.35 + s * 0.6:
 			open_side = -open_side
-		tx = open_side * lerpf(1.2, 3.4, rng.randf() * (0.4 + s * 0.6))
+		tx = open_side * lerpf(1.2, 3.6, rng.randf() * (0.4 + s * 0.6))
 		tz = lerpf(6.8, 10.8, clampf(rng.randf_range(0.3, 1.0) * (0.55 + 0.45 * s), 0.0, 1.0))
 		pace = lerpf(22.0, 32.0, s) * rng.randf_range(0.88, 1.1)
 		top = rng.randf_range(160.0, 300.0)

@@ -179,7 +179,7 @@ func _build(shirt: Color) -> void:
 
 	# Ground shadow
 	var sh := _mesh_cyl(0.35, 0.002, Color(0, 0, 0, 0.35), true)
-	sh.position.y = 0.004
+	sh.position.y = 0.04
 	add_child(sh)
 
 	for sx in [-0.11, 0.11]:
