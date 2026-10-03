@@ -6,6 +6,8 @@ extends Control
 ## Desktop fallback: WASD / arrows to move, mouse drag on the right half to swipe.
 
 signal swiped(vec: Vector2, duration: float)
+signal swipe_moved(vec: Vector2)   # live, while the finger is down (for the aim marker)
+signal swipe_ended
 
 const JOY_RADIUS := 90.0
 const MIN_SWIPE := 0.035  # fraction of screen height
@@ -72,6 +74,7 @@ func _input(event: InputEvent) -> void:
 			move_vector = v
 		elif d.index == _swipe_index:
 			_swipe_points.append(d.position)
+			swipe_moved.emit((d.position - _swipe_start) / size_px.y)
 		queue_redraw()
 
 
@@ -81,6 +84,7 @@ func _finish_swipe(end_pos: Vector2, size_px: Vector2) -> void:
 	_trail = _swipe_points.duplicate()
 	_trail.append(end_pos)
 	_trail_fade = 1.0
+	swipe_ended.emit()
 	if vec.length() >= MIN_SWIPE:
 		swiped.emit(vec, dur)
 

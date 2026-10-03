@@ -53,7 +53,7 @@ func _ready() -> void:
 	_popup_sub.modulate.a = 0.0
 
 	_hint = _label(24, HORIZONTAL_ALIGNMENT_CENTER)
-	_hint.text = "левый палец: бег   ·   правый палец: свайп-удар\nнаправление свайпа = куда, длина = глубина, скорость = сила"
+	_hint.text = "левый палец: бег   ·   правый палец: свайп-удар\nведи палец — жёлтый круг покажет, куда полетит мяч (красный = аут)"
 	_hint.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 	_hint.offset_left = 16.0
 	_hint.offset_right = -16.0
@@ -244,6 +244,7 @@ func _build_debug_panel() -> void:
 	_slider(v, "Автопомощь в беге", "assist", 0.0, 1.0, 0.05)
 	_slider(v, "Сила соперника", "ai_skill", 0.0, 1.0, 0.05)
 	_check(v, "Hit-stop на PERFECT", "hitstop")
+	_check(v, "Прицел при свайпе", "show_aim")
 	_check(v, "Маркер приземления", "show_landing")
 	_check(v, "Траектория мяча", "show_path")
 	_check(v, "Debug-текст", "show_debug_text")

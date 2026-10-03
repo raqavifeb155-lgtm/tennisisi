@@ -53,6 +53,15 @@ var _last_real_us := 0
 var _hits_total := 0
 
 # Visual helpers
+const AIM_IN := Color(1.0, 0.92, 0.25, 0.9)
+const AIM_OUT := Color(1.0, 0.3, 0.25, 0.9)
+var _aim: MeshInstance3D
+var _aim_mat: StandardMaterial3D
+var _aim_hold := 0.0
+var _aim_line_target := Vector3.ZERO
+var _aim_line_im: ImmediateMesh
+var _land_dot: MeshInstance3D
+var _land_hold := 0.0
 var _path_mesh: MeshInstance3D
 var _path_im: ImmediateMesh
 var _landing: MeshInstance3D
@@ -108,6 +117,8 @@ func _ready() -> void:
 	hud = Hud.new()
 	add_child(hud)
 	hud.touch.swiped.connect(_on_swipe)
+	hud.touch.swipe_moved.connect(_on_swipe_moved)
+	hud.touch.swipe_ended.connect(_on_swipe_ended)
 	hud.shot_type_changed.connect(func(t: int) -> void: shot_type = t as ShotType)
 	hud.set_score(0, 0)
 
@@ -159,6 +170,61 @@ func _build_helpers() -> void:
 	_landing.material_override = lm
 	_landing.visible = false
 	add_child(_landing)
+
+	# Aim marker: where the current swipe is aiming (yellow = in, red = out).
+	_aim = MeshInstance3D.new()
+	var am := TorusMesh.new()
+	am.inner_radius = 0.30
+	am.outer_radius = 0.42
+	am.rings = 28
+	am.ring_segments = 4
+	_aim.mesh = am
+	_aim.scale = Vector3(1.0, 0.05, 1.0)
+	_aim_mat = StandardMaterial3D.new()
+	_aim_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_aim_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_aim_mat.no_depth_test = true
+	_aim_mat.render_priority = 2
+	_aim_mat.albedo_color = AIM_IN
+	_aim.material_override = _aim_mat
+	_aim.visible = false
+	add_child(_aim)
+	var dot := MeshInstance3D.new()
+	var dm := CylinderMesh.new()
+	dm.top_radius = 0.09
+	dm.bottom_radius = 0.09
+	dm.height = 0.02
+	dot.mesh = dm
+	dot.material_override = _aim_mat
+	_aim.add_child(dot)
+
+	# Thin ground line from the player to the aim point.
+	_aim_line_im = ImmediateMesh.new()
+	var line := MeshInstance3D.new()
+	line.mesh = _aim_line_im
+	var lm2 := StandardMaterial3D.new()
+	lm2.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	lm2.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	lm2.no_depth_test = true
+	lm2.albedo_color = Color(1, 1, 1, 0.35)
+	line.material_override = lm2
+	add_child(line)
+
+	# Where the player's last shot actually landed.
+	_land_dot = MeshInstance3D.new()
+	var ld := CylinderMesh.new()
+	ld.top_radius = 0.16
+	ld.bottom_radius = 0.16
+	ld.height = 0.01
+	_land_dot.mesh = ld
+	var ldm := StandardMaterial3D.new()
+	ldm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	ldm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	ldm.no_depth_test = true
+	ldm.albedo_color = Color(1, 1, 1, 0.85)
+	_land_dot.material_override = ldm
+	_land_dot.visible = false
+	add_child(_land_dot)
 
 
 # --- Main loop --------------------------------------------------------------
@@ -290,16 +356,10 @@ func _player_hit(err: float, vec: Vector2, dur: float) -> void:
 	var q_m := movement_quality(player.velocity.length())
 	var q := q_t * q_p * q_m
 
-	# Swipe -> intent. Direction = aim, length = depth, gesture speed = pace.
-	var fwd := maxf(-vec.y, 0.02)
-	var ang := rad_to_deg(atan2(vec.x, fwd))
-	var length := vec.length()
-	var pace_k := clampf((length / dur - 0.6) / 2.9, 0.0, 1.0)
-	var tx := clampf(ang / Tuning.swipe_side_angle, -1.6, 1.6) * (Court.SINGLES_HALF_WIDTH - 0.35)
-	var depth_k := (length - 0.05) / maxf(Tuning.swipe_deep_len - 0.05, 0.01)
-	var tz := -lerpf(4.2, Court.HALF_LENGTH - 0.7, clampf(depth_k, 0.0, 1.0))
-	if depth_k > 1.0:
-		tz -= (depth_k - 1.0) * 3.0
+	var intent := swipe_intent(vec, dur)
+	var tx: float = intent["tx"]
+	var tz: float = intent["tz"]
+	var pace_k: float = intent["pace_k"]
 	var pace: float
 	var top: float
 	match shot_type:
@@ -349,6 +409,39 @@ func _player_hit(err: float, vec: Vector2, dur: float) -> void:
 		"side": "FH" if side > 0 else "BH", "speed": r.speed * 3.6, "elev": r.elevation_deg,
 		"target": Vector2(tx, tz), "type": Hud.SHOT_NAMES[shot_type],
 	}
+
+
+## Swipe -> intent. Direction = aim (absolute court x), length = depth, gesture speed = pace.
+func swipe_intent(vec: Vector2, dur: float) -> Dictionary:
+	var fwd := maxf(-vec.y, 0.02)
+	var ang := rad_to_deg(atan2(vec.x, fwd))
+	var length := vec.length()
+	var tx := clampf(ang / Tuning.swipe_side_angle, -1.6, 1.6) * (Court.SINGLES_HALF_WIDTH - 0.35)
+	var depth_k := (length - 0.05) / maxf(Tuning.swipe_deep_len - 0.05, 0.01)
+	var tz := -lerpf(4.2, Court.HALF_LENGTH - 0.7, clampf(depth_k, 0.0, 1.0))
+	if depth_k > 1.0:
+		tz -= (depth_k - 1.0) * 3.0
+	return {"tx": tx, "tz": tz, "pace_k": clampf((length / dur - 0.6) / 2.9, 0.0, 1.0)}
+
+
+func _on_swipe_moved(vec: Vector2) -> void:
+	if not Tuning.show_aim:
+		return
+	var it := swipe_intent(vec, 1.0)
+	_set_aim(Vector3(it["tx"], 0.0, it["tz"]))
+	_aim_hold = INF
+
+
+func _on_swipe_ended() -> void:
+	_aim_hold = 0.6  # keep the aim visible briefly so it can be compared with the landing spot
+
+
+func _set_aim(p: Vector3) -> void:
+	_aim.visible = true
+	_aim.global_position = Vector3(p.x, 0.012, p.z)
+	var inside := Court.is_in_singles(Vector3(p.x, 0.0, p.z), -1, 0.0)
+	_aim_mat.albedo_color = AIM_IN if inside else AIM_OUT
+	_aim_line_target = p
 
 
 func _miss(reason: String) -> void:
@@ -483,6 +576,10 @@ func _on_bounce(pos: Vector3, speed: float) -> void:
 		return
 	bounces += 1
 	var receiver_half := 1 if last_hitter == Who.CPU else -1
+	if bounces == 1 and last_hitter == Who.PLAYER and Tuning.show_aim:
+		_land_dot.global_position = Vector3(pos.x, 0.01, pos.z)
+		_land_dot.visible = true
+		_land_hold = 1.2
 	if bounces == 1:
 		if not Court.is_in_singles(pos, receiver_half, BallPhysics.RADIUS):
 			_end_point(_other(last_hitter), "NET" if net_touched else "OUT")
@@ -580,6 +677,25 @@ func _update_slowmo(rd: float) -> void:
 
 
 func _update_helpers() -> void:
+	var rd := 1.0 / maxf(Engine.get_frames_per_second(), 30.0)
+	if _aim_hold != INF:
+		_aim_hold -= rd
+		if _aim_hold <= 0.0:
+			_aim.visible = false
+	if _land_hold > 0.0:
+		_land_hold -= rd
+		_land_dot.visible = _land_hold > 0.0
+	_aim_line_im.clear_surfaces()
+	if _aim.visible:
+		var a := player.global_position + Vector3(0, 0.012, 0)
+		var b := Vector3(_aim_line_target.x, 0.012, _aim_line_target.z)
+		_aim_line_im.surface_begin(Mesh.PRIMITIVE_LINES)
+		var n := 24
+		for i in n:
+			if i % 2 == 0:
+				_aim_line_im.surface_add_vertex(a.lerp(b, float(i) / n))
+				_aim_line_im.surface_add_vertex(a.lerp(b, float(i + 1) / n))
+		_aim_line_im.surface_end()
 	var show_landing := Tuning.show_landing and incoming != null and bounces == 0 and not incoming.bounce_points.is_empty()
 	_landing.visible = show_landing
 	if show_landing:

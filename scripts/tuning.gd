@@ -30,6 +30,7 @@ var ai_skill := 0.5
 var hitstop := true
 var show_path := false
 var show_landing := true
+var show_aim := true           # aim marker while swiping + where the shot landed
 var show_debug_text := false
 
 
