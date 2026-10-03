@@ -1,0 +1,9 @@
+# Godot
+.godot/
+/android/
+export_credentials.cfg
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
