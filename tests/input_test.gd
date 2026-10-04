@@ -62,6 +62,7 @@ func _process(_delta: float) -> bool:
 	# Tap-to-move check, once, while the CPU is serving or the rally runs.
 	if not tap_test_done and frame > 900 and main.phase == main.Phase.RALLY and main.last_hitter == main.Who.PLAYER:
 		tap_test_done = true
+		root.get_node("Tuning").tap_controls = true
 		_move_before_x = main.player.position.x
 		_tap(Vector2(vp.x * 0.85, vp.y * 0.62))
 		_move_check_until = frame + 42
@@ -73,6 +74,7 @@ func _process(_delta: float) -> bool:
 	# Joystick check: left thumb lands under the player and slides right.
 	if tap_test_done and not stick_test_done and frame > 1500 and main.phase == main.Phase.RALLY and main.last_hitter == main.Who.PLAYER:
 		stick_test_done = true
+		root.get_node("Tuning").tap_controls = false
 		var before_s: Vector3 = main.player.position
 		var a := Vector2(vp.x * 0.5, vp.y * 0.96)
 		var e := _touch(a, true)

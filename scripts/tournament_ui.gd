@@ -62,16 +62,29 @@ func show_menu() -> void:
 	_button("ТУРНИР", "start_tournament", 0, true)
 	_button("ИГРОК  ·  уровень %d" % Skills.total_level(), "character")
 	_button("ТРЕНИРОВКА", "practice")
+	_button("УПРАВЛЕНИЕ: %s" % ("ТАПЫ" if Tuning.tap_controls else "ДЖОЙСТИК"), "controls_menu")
 	_gap(30)
 	var best: String = "—" if SaveData.best_round < 0 else Opponents.ROUND_NAMES[SaveData.best_round]
 	_label("Золото: %d   ·   Титулы: %d" % [SaveData.gold, SaveData.titles], 24, DIM)
 	_label("Турниров: %d   ·   Лучший результат: %s" % [SaveData.played, best], 22, DIM)
 
 
+## Control scheme, asked on the first launch (and from the menu). Can be changed later.
+func show_controls() -> void:
+	_open()
+	_label("УПРАВЛЕНИЕ", 52, GOLD)
+	_label("Как удобнее бегать? Удар в обоих режимах — свайп", 24, DIM, true)
+	_gap(10)
+	_card({"tag": "ГЕЙМПАД", "title": "Джойстик", "desc": "Большой палец внизу, под игроком: веди — игрок бежит. Отпустил — сам подстроится под мяч."}, "controls", 0, GOLD if not Tuning.tap_controls else DIM)
+	_card({"tag": "ТАПЫ", "title": "Тап по корту", "desc": "Тапни по корту — игрок бежит туда. Держи палец — бежит за пальцем."}, "controls", 1, GOLD if Tuning.tap_controls else DIM)
+	_gap(8)
+	_label("Поменять можно в меню и в «НАСТР»", 20, DIM)
+
+
 func show_bracket(t: Tournament) -> void:
 	_open()
 	_label(Tournament.TIER_NAME.to_upper(), 40, GOLD)
-	var info := "Вайлд-карды: %d" % t.wildcards
+	var info := "Ракетка: %s   ·   Вайлд-карды: %d" % ["стандартная" if t.racket.is_empty() else t.racket["name"], t.wildcards]
 	if not t.perks.is_empty():
 		var names: Array[String] = []
 		for id in t.perks:
@@ -97,7 +110,12 @@ func show_result(t: Tournament, won: bool, score_text: String, stats: Dictionary
 	_label("PERFECT: %d   ·   эйсы: %d   ·   лучший розыгрыш: %d" % [stats.get("perfect", 0), stats.get("aces", 0), stats.get("best_rally", 0)], 22, DIM, true)
 	if won:
 		_label("+%d золота" % t.gold_for_win(t.stage - 1), 28, GOLD)
+	if won and not t.pending_loot.is_empty():
+		_label("Трофей: %s" % t.pending_loot["name"], 26, Gear.color(t.pending_loot), true)
 	_gap(30)
+	if won and not t.pending_loot.is_empty():
+		_button("ЗАБРАТЬ ТРОФЕЙ", "to_loot", 0, true)
+		return
 	match t.state:
 		Tournament.State.REWARD:
 			_button("ВЫБРАТЬ НАГРАДУ", "to_reward", 0, true)
@@ -124,6 +142,8 @@ func show_character() -> void:
 	_open()
 	_label("ИГРОК", 52, GOLD)
 	_label("Уровень %d  ·  навык растёт от того, чем бьёшь" % Skills.total_level(), 22, DIM, true)
+	if Skills.points > 0:
+		_label("Стартовые очки: %d — вложи их в навыки (+1)" % Skills.points, 24, GOLD, true)
 	_gap(6)
 	for id in Skills.LIST:
 		_skill_row(id)
@@ -146,6 +166,27 @@ func show_skill_perk(skill: String, offer: Array) -> void:
 		_card({"tag": "ПЕРК НАВЫКА", "title": p["title"], "desc": p["desc"]}, "perk", i, GOLD)
 
 
+## The racket the beaten opponent dropped: take it or keep your own.
+func show_loot(t: Tournament) -> void:
+	_open()
+	var item: Dictionary = t.pending_loot
+	_label("ТРОФЕЙ", 56, Gear.color(item))
+	_label("Ракетка соперника теперь твоя", 24, DIM, true)
+	_gap(8)
+	_item_panel(item, "ВЫПАЛО")
+	_item_panel(t.racket, "СЕЙЧАС В РУКАХ")
+	_gap(14)
+	_button("ВЗЯТЬ", "loot", 1, true)
+	_button("ОСТАВИТЬ СВОЮ", "loot", 0)
+
+
+func _item_panel(item: Dictionary, tag: String) -> void:
+	var c := {"tag": tag, "title": "Стандартная ракетка", "desc": "без бонусов"}
+	if not item.is_empty():
+		c = {"tag": "%s  ·  %s" % [tag, Gear.RARITIES[item["rarity"]]["name"].to_upper()], "title": item["name"], "desc": Gear.describe(item)}
+	_card(c, "", -1, Gear.color(item) if not item.is_empty() else DIM)
+
+
 func show_reward(t: Tournament) -> void:
 	_open()
 	_label("НАГРАДА", 56, GOLD)
@@ -153,8 +194,17 @@ func show_reward(t: Tournament) -> void:
 	_gap(10)
 	for i in t.offer.size():
 		var c: Dictionary = t.offer[i]
-		var wildcard: bool = c["kind"] == "wildcard"
-		_card({"tag": "ВАЙЛД-КАРД" if wildcard else "ПЕРК ТУРНИРА", "title": c["title"], "desc": c["desc"]}, "reward", i, Color(0.55, 0.8, 1.0) if wildcard else GOLD)
+		match c["kind"]:
+			"wildcard":
+				_card({"tag": "ВАЙЛД-КАРД", "title": c["title"], "desc": c["desc"]}, "reward", i, Color(0.55, 0.8, 1.0))
+			"item":
+				var item: Dictionary = c["item"]
+				var tag := "РАКЕТКА  ·  %s" % String(Gear.RARITIES[item["rarity"]]["name"]).to_upper()
+				if not t.racket.is_empty():
+					tag += "  ·  заменит «%s»" % t.racket["name"].get_slice("«", 1).trim_suffix("»")
+				_card({"tag": tag, "title": c["title"], "desc": c["desc"]}, "reward", i, Gear.color(item))
+			_:
+				_card({"tag": "ПЕРК ТУРНИРА", "title": c["title"], "desc": c["desc"]}, "reward", i, GOLD)
 
 
 func show_summary(t: Tournament) -> void:
@@ -258,6 +308,24 @@ func _bracket_row(t: Tournament, i: int) -> void:
 	name_l.add_theme_font_size_override("font_size", 30)
 	name_l.add_theme_color_override("font_color", Color.WHITE if current or done else Color(1, 1, 1, 0.75))
 	v.add_child(name_l)
+	if not done and i < t.lineup.size():
+		var lu: Dictionary = t.lineup[i]
+		if not lu["mods"].is_empty():
+			var names: Array[String] = []
+			for m in lu["mods"]:
+				names.append(Tournament.MODIFIERS[m]["name"])
+			var ml := Label.new()
+			ml.text = "Модификаторы: " + ", ".join(names)
+			ml.add_theme_font_size_override("font_size", 18)
+			ml.add_theme_color_override("font_color", Color(1.0, 0.55, 0.3))
+			v.add_child(ml)
+		if not lu["racket"].is_empty():
+			var rl := Label.new()
+			rl.text = "В руках: " + lu["racket"]["name"]
+			rl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			rl.add_theme_font_size_override("font_size", 19)
+			rl.add_theme_color_override("font_color", Gear.color(lu["racket"]))
+			v.add_child(rl)
 	if current:
 		var lesson := Label.new()
 		lesson.text = o["lesson"]
@@ -318,7 +386,12 @@ func _card(c: Dictionary, action: String, i: int, border: Color) -> void:
 	v.add_child(desc)
 	for l in [tag, title, desc]:
 		(l as Label).mouse_filter = Control.MOUSE_FILTER_IGNORE
-	b.pressed.connect(func() -> void: chosen.emit(action, i))
+	if action == "":
+		b.disabled = true
+		b.add_theme_stylebox_override("disabled", _style(bg, border))
+		b.custom_minimum_size = Vector2(0, 120)
+	else:
+		b.pressed.connect(func() -> void: chosen.emit(action, i))
 	_box.add_child(b)
 
 
@@ -343,6 +416,19 @@ func _skill_row(id: String) -> void:
 	lv_l.add_theme_font_size_override("font_size", 24)
 	lv_l.add_theme_color_override("font_color", GOLD)
 	h.add_child(lv_l)
+	if Skills.points > 0:
+		var plus := Button.new()
+		plus.text = " +1 "
+		plus.focus_mode = Control.FOCUS_NONE
+		plus.add_theme_font_size_override("font_size", 24)
+		plus.add_theme_stylebox_override("normal", _style(GOLD))
+		plus.add_theme_stylebox_override("pressed", _style(GOLD.darkened(0.2)))
+		plus.add_theme_stylebox_override("hover", _style(GOLD.lightened(0.1)))
+		for k in ["font_color", "font_hover_color", "font_pressed_color"]:
+			plus.add_theme_color_override(k, Color(0.1, 0.08, 0.02))
+		var idx := Skills.LIST.find(id)
+		plus.pressed.connect(func() -> void: chosen.emit("point", idx))
+		h.add_child(plus)
 	var bar := ProgressBar.new()
 	bar.show_percentage = false
 	bar.custom_minimum_size = Vector2(0, 12)

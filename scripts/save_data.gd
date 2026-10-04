@@ -11,6 +11,8 @@ static var titles := 0
 static var best_round := -1       # furthest round reached (index), -1 = none yet
 static var _loaded := false
 static var enabled := true        # off in automated test runs
+static var control_chosen := false # the first-launch control choice was made
+static var tap_controls := false
 
 
 static func load_once() -> void:
@@ -24,9 +26,12 @@ static func load_once() -> void:
 	played = cf.get_value("meta", "played", 0)
 	titles = cf.get_value("meta", "titles", 0)
 	best_round = cf.get_value("meta", "best_round", -1)
+	control_chosen = cf.get_value("settings", "control_chosen", false)
+	tap_controls = cf.get_value("settings", "tap_controls", false)
 	Skills.xp = cf.get_value("skills", "xp", {})
 	Skills.perks = cf.get_value("skills", "perks", [])
 	Skills.pending = cf.get_value("skills", "pending", [])
+	Skills.points = cf.get_value("skills", "points", Skills.START_POINTS)
 
 
 static func save() -> void:
@@ -37,9 +42,12 @@ static func save() -> void:
 	cf.set_value("meta", "played", played)
 	cf.set_value("meta", "titles", titles)
 	cf.set_value("meta", "best_round", best_round)
+	cf.set_value("settings", "control_chosen", control_chosen)
+	cf.set_value("settings", "tap_controls", tap_controls)
 	cf.set_value("skills", "xp", Skills.xp)
 	cf.set_value("skills", "perks", Skills.perks)
 	cf.set_value("skills", "pending", Skills.pending)
+	cf.set_value("skills", "points", Skills.points)
 	cf.save(FILE)
 
 

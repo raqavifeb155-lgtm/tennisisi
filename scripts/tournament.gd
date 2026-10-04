@@ -28,7 +28,23 @@ const FORMATS := [
 	},
 ]
 
+## Difficulty modifiers an opponent may come with. Each one makes the match harder and
+## raises the chance that the opponent carries rare loot. ("Удвоение" — two opponents
+## playing doubles — is the rarest one; it needs a doubles AI and comes later.)
+const MODIFIERS := {
+	"fast": {"name": "Быстрые ноги", "desc": "бегает на 12% быстрее", "speed": 1.12, "loot": 0.08},
+	"steady": {"name": "Железный", "desc": "реже ошибается", "skill": 0.12, "loot": 0.08},
+	"bomber": {"name": "Бомбардир", "desc": "подаёт на 12% быстрее", "serve": 1.12, "loot": 0.06},
+}
+const EPIC_CHANCE := 0.06         # an opponent walks on court with an epic racket
+const LEGENDARY_CHANCE := 0.015   # ... or a legendary one
+const BOSS_LOOT_BONUS := 0.12
+
 var format := 0                   # index into FORMATS
+var lineup: Array = []            # per opponent: {"mods": [ids], "racket": item or {}}
+var racket := {}                  # the player's racket this run (Gear item), {} = the stock one
+var pending_loot := {}            # racket dropped by the opponent just beaten
+var rng := RandomNumberGenerator.new()
 var state := State.BRACKET
 var stage := 0                    # index into Opponents.ROSTER
 var wildcards := 0
@@ -51,8 +67,65 @@ func rounds() -> int:
 	return Opponents.ROSTER.size()
 
 
-func _init(format_index := 0) -> void:
+func _init(format_index := 0, seed_value := 0) -> void:
 	format = clampi(format_index, 0, FORMATS.size() - 1)
+	if seed_value != 0:
+		rng.seed = seed_value
+	else:
+		rng.randomize()
+	roll_lineup()
+
+
+## Rolls every opponent's modifiers and the loot they carry, so it can be shown in the
+## bracket before the match. The first opponent is the tutorial: no modifiers.
+func roll_lineup() -> void:
+	lineup = []
+	for i in rounds():
+		var mods: Array = []
+		if i > 0:
+			var n := 0
+			var roll := rng.randf()
+			if roll < 0.08 + 0.03 * i:
+				n = 2
+			elif roll < 0.3 + 0.05 * i:
+				n = 1
+			var ids: Array = MODIFIERS.keys()
+			for k in n:
+				var id: String = ids[rng.randi_range(0, ids.size() - 1)]
+				if not mods.has(id):
+					mods.append(id)
+		var bonus := 0.0
+		for id in mods:
+			bonus += float(MODIFIERS[id]["loot"])
+		if Opponents.ROSTER[i].get("boss", false):
+			bonus += BOSS_LOOT_BONUS
+		var item := {}
+		var r := rng.randf()
+		if r < LEGENDARY_CHANCE + bonus * 0.25:
+			item = Gear.roll(Gear.LEGENDARY, rng)
+		elif r < LEGENDARY_CHANCE + EPIC_CHANCE + bonus:
+			item = Gear.roll(Gear.EPIC, rng)
+		lineup.append({"mods": mods, "racket": item})
+
+
+func current_lineup() -> Dictionary:
+	return lineup[mini(stage, lineup.size() - 1)]
+
+
+## Multiplier / bonus from the current opponent's modifiers ("speed", "serve", "skill").
+func modifier_value(key: String) -> float:
+	var v := 0.0 if key == "skill" else 1.0
+	for id in current_lineup()["mods"]:
+		var m: Dictionary = MODIFIERS[id]
+		if m.has(key):
+			v = v + float(m[key]) if key == "skill" else v * float(m[key])
+	return v
+
+
+func take_loot(equip: bool) -> void:
+	if equip and not pending_loot.is_empty():
+		racket = pending_loot
+	pending_loot = {}
 
 
 func format_info() -> Dictionary:
@@ -71,9 +144,10 @@ func gold_for_win(i: int) -> int:
 
 
 ## Records a finished match and moves the run on.
-func record_match(won: bool, score_text: String, rng: RandomNumberGenerator) -> void:
+func record_match(won: bool, score_text: String, r: RandomNumberGenerator) -> void:
 	results.append({"stage": stage, "won": won, "score": score_text})
 	if won:
+		pending_loot = current_lineup()["racket"]
 		gold += gold_for_win(stage)
 		stage += 1
 		if stage >= rounds():
@@ -81,7 +155,8 @@ func record_match(won: bool, score_text: String, rng: RandomNumberGenerator) -> 
 			gold += roundi(CHAMPION_BONUS * float(format_info()["reward"]))
 			state = State.OVER
 		else:
-			offer = Rewards.offer(perks, rng)
+			offer = Rewards.offer(perks, r)
+			offer.insert(1, _item_card(r))
 			state = State.REWARD
 	else:
 		state = State.LOST if wildcards > 0 else State.OVER
@@ -93,6 +168,8 @@ func take_reward(i: int) -> void:
 	var card: Dictionary = offer[i]
 	if card["kind"] == "wildcard":
 		wildcards += 1
+	elif card["kind"] == "item":
+		racket = card["item"]
 	elif card["kind"] == "perk":
 		perks.append(card["id"])
 	offer = []
@@ -106,6 +183,12 @@ func use_wildcard() -> bool:
 	wildcards -= 1
 	state = State.BRACKET
 	return true
+
+
+## The gear card of the reward offer: usually common, sometimes rare.
+func _item_card(r: RandomNumberGenerator) -> Dictionary:
+	var item := Gear.roll(Gear.RARE if r.randf() < 0.3 else Gear.COMMON, r)
+	return {"kind": "item", "item": item, "title": item["name"], "desc": Gear.describe(item)}
 
 
 func give_up() -> void:

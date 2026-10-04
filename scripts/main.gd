@@ -64,6 +64,7 @@ var _after_perks := ""            # screen to open once the pending skill perk c
 var _perk_choice := {}
 var _practice_skill := 0.5
 var _autoplay_format := 0
+var _cpu_serve_mult := 1.0        # difficulty modifier "Бомбардир"
 var _run_dist := 0.0              # metres run this rally (experience for "Ноги")
 var shot_type := ShotType.TOPSPIN
 
@@ -189,13 +190,21 @@ func _ready() -> void:
 	_build_helpers()
 	SaveData.enabled = not autoplay and not _headless()  # test runs never touch the save
 	SaveData.load_once()
+	if SaveData.control_chosen:
+		Tuning.tap_controls = SaveData.tap_controls
 	_practice_skill = Tuning.ai_skill
 	if not autoplay and not _headless():
 		sfx.set_ambience(Tuning.ambience)
 		Tuning.changed.connect(func() -> void: sfx.set_ambience(Tuning.ambience))
+		Tuning.changed.connect(func() -> void:
+			if SaveData.tap_controls != Tuning.tap_controls:
+				SaveData.tap_controls = Tuning.tap_controls
+				SaveData.save())
 	_last_real_us = Time.get_ticks_usec()
 	if autoplay_tournament:
-		Skills.reset()  # the bot always starts as a beginner
+		Skills.reset()  # the bot always starts as a beginner, spending its starting points
+		for id in ["forehand", "backhand", "serve"]:
+			Skills.spend_point(id)
 		_start_tournament(_autoplay_format)
 	elif autoplay or _headless():
 		_start_practice()
@@ -441,13 +450,15 @@ func _on_tap(pos: Vector2) -> void:
 		elif not toss_active:
 			_start_toss()
 		return
-	_set_move_target(pos)
+	if Tuning.tap_controls:
+		_set_move_target(pos)
 
 
 func _on_hold(pos: Vector2) -> void:
 	if phase == Phase.SERVE and server == Who.PLAYER and toss_active:
 		return
-	_set_move_target(pos)
+	if Tuning.tap_controls:
+		_set_move_target(pos)
 
 
 func _set_move_target(screen_pos: Vector2) -> void:
@@ -1240,7 +1251,7 @@ func _cpu_serve_hit() -> void:
 		var wide := rng.randf() < 0.5
 		tx = box_side * (rng.randf_range(2.6, 3.6) if wide else rng.randf_range(0.4, 1.2))
 		tz = rng.randf_range(4.6, 5.9)
-		pace = lerpf(32.0, 46.0, s) * rng.randf_range(0.9, 1.05)
+		pace = lerpf(32.0, 46.0, s) * rng.randf_range(0.9, 1.05) * _cpu_serve_mult
 		top = 120.0
 		if wide and rng.randf() < 0.5:
 			pace *= 0.85
@@ -1304,6 +1315,7 @@ func _show_menu() -> void:
 	tournament = null
 	tournament_mode = false
 	_stop_match()
+	_set_opponent_mods(1.0, 1.0, {})
 	Rewards.restore()
 	Tuning.ai_skill = _practice_skill
 	cpu_label = "CPU"
@@ -1325,6 +1337,7 @@ func _start_practice() -> void:
 	tournament = null
 	tournament_mode = false
 	Rewards.restore()
+	_set_opponent_mods(1.0, 1.0, {})
 	Tuning.ai_skill = _practice_skill
 	cpu_label = "CPU"
 	scoreboard = MatchScore.new(1, 99, 0, Who.PLAYER, cpu_label)
@@ -1345,12 +1358,23 @@ func _start_tournament(format_index: int) -> void:
 func _play_match() -> void:
 	var opp := tournament.opponent()
 	Rewards.apply(tournament.perks)
-	Tuning.ai_skill = opp["skill"]
+	Tuning.ai_skill = clampf(float(opp["skill"]) + tournament.modifier_value("skill"), 0.0, 1.0)
+	_set_opponent_mods(tournament.modifier_value("speed"), tournament.modifier_value("serve"), tournament.current_lineup()["racket"])
 	cpu_label = opp["short"]
 	scoreboard = tournament.new_score(rng.randi_range(0, 1))
 	ui.close()
 	_begin_match()
 	hud.show_message("%s\n%s" % [tournament.round_name(), opp["name"]], Color.WHITE)
+
+
+## Opponent difficulty modifiers and the racket in their hand; the player's racket too.
+func _set_opponent_mods(speed: float, serve: float, cpu_racket: Dictionary) -> void:
+	ai.speed_mult = speed
+	_cpu_serve_mult = serve
+	cpu.set_racket_look(Gear.color(cpu_racket), Gear.glow(cpu_racket))
+	var mine: Dictionary = tournament.racket if tournament_mode and tournament != null else {}
+	Skills.gear = mine.get("mods", {})
+	player.set_racket_look(Gear.color(mine), Gear.glow(mine))
 
 
 func _begin_match() -> void:
@@ -1398,6 +1422,15 @@ func _on_ui(action: String, arg: int) -> void:
 			_start_practice()
 		"character":
 			ui.show_character()
+		"controls_menu":
+			ui.show_controls()
+		"controls":
+			Tuning.tap_controls = arg == 1
+			SaveData.tap_controls = Tuning.tap_controls
+			SaveData.control_chosen = true
+			SaveData.save()
+			Tuning.notify_changed()
+			ui.show_menu()
 		"menu":
 			_show_menu()
 		"play":
@@ -1418,6 +1451,15 @@ func _on_ui(action: String, arg: int) -> void:
 		"wildcard":
 			if tournament.use_wildcard():
 				ui.show_bracket(tournament)
+		"to_loot":
+			ui.show_loot(tournament)
+		"loot":
+			tournament.take_loot(arg == 1)
+			_next_screen("summary" if tournament.state == Tournament.State.OVER else "reward")
+		"point":
+			Skills.spend_point(Skills.LIST[arg])
+			SaveData.save()
+			ui.show_character()
 		"perk":
 			Skills.take_perk(_perk_choice["offer"][arg]["id"])
 			SaveData.save()
@@ -1437,7 +1479,10 @@ func _next_screen(target: String) -> void:
 		"summary":
 			ui.show_summary(tournament)
 		_:
-			ui.show_menu()
+			if SaveData.control_chosen or not SaveData.enabled:
+				ui.show_menu()
+			else:
+				ui.show_controls()  # first launch: pick the controls before anything else
 
 
 func _levels_text() -> String:
@@ -1458,11 +1503,14 @@ func _autoplay_after_match(won: bool, st: String) -> void:
 			break
 		Skills.take_perk(c["offer"][0]["id"])
 		print("  build perk (%s): %s" % [Skills.NAMES[c["skill"]], c["offer"][0]["title"]])
+	if not tournament.pending_loot.is_empty():
+		print("  loot: %s" % tournament.pending_loot["name"])
+		tournament.take_loot(true)
 	if tournament.results.size() > 25:
 		tournament.give_up()
 	match tournament.state:
 		Tournament.State.REWARD:
-			var pick := 2 if tournament.wildcards == 0 else 0
+			var pick := 2 if tournament.wildcards == 0 else (1 if tournament.racket.is_empty() else 0)
 			print("  reward: %s" % tournament.offer[pick]["title"])
 			tournament.take_reward(pick)
 			_play_match()
@@ -1541,7 +1589,10 @@ func _update_timing_ring() -> void:
 	ring.anchor = anchor
 	# Everything below the player's feet is the joystick zone for the left thumb.
 	var vh := get_viewport().get_visible_rect().size.y
-	hud.touch.stick_zone_top = clampf(cam.unproject_position(player.global_position).y + 28.0, vh * 0.55, vh * 0.9)
+	if Tuning.tap_controls:
+		hud.touch.stick_zone_top = INF  # tap mode: no joystick, the whole screen is court
+	else:
+		hud.touch.stick_zone_top = clampf(cam.unproject_position(player.global_position).y + 28.0, vh * 0.55, vh * 0.9)
 	if autoplay:
 		ring.hide_ring()
 		return

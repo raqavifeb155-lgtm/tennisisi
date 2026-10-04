@@ -20,6 +20,9 @@ var _prev_rel := INF
 
 # What the CPU has learned about the player's serve
 var _serve_speeds: Array[float] = []
+
+## Difficulty modifier "Быстрые ноги" (Tournament.MODIFIERS).
+var speed_mult := 1.0
 var _drop_memory := 0.0
 
 
@@ -74,7 +77,7 @@ func on_cpu_hit(target_x: float) -> void:
 
 
 func tick(delta: float, incoming: bool) -> void:
-	me.max_speed = lerpf(5.0, 6.8, skill())
+	me.max_speed = lerpf(5.0, 6.8, skill()) * speed_mult
 	if incoming:
 		if _reaction > 0.0:
 			_reaction -= delta

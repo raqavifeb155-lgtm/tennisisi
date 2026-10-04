@@ -7,6 +7,7 @@ class_name Skills
 ## Saved by SaveData.
 
 const MAX_LEVEL := 30
+const START_POINTS := 3           # a new player places a couple of levels where they like
 const PERK_EVERY := 5
 const BASE_XP := 1.0              # per hit, before timing / opponent / format multipliers
 const RUN_XP_PER_M := 0.15        # "Ноги": per metre run during rallies
@@ -79,12 +80,26 @@ const PERKS := {
 static var xp := {}               # skill -> total experience
 static var perks: Array = []      # taken build perk ids
 static var pending: Array = []    # skills waiting for a perk choice (one entry per milestone)
+static var points := START_POINTS # starting points: each buys one level of any skill
+static var gear := {}             # mods from the racket in hand this run (Gear item "mods")
 
 
 static func reset() -> void:
 	xp = {}
 	perks = []
 	pending = []
+	points = START_POINTS
+	gear = {}
+
+
+## Spends a starting point: the skill goes straight to its next level.
+static func spend_point(id: String) -> bool:
+	if points <= 0 or level(id) >= MAX_LEVEL:
+		return false
+	var pr := progress(id)
+	points -= 1
+	add_xp(id, pr.y - pr.x + 0.001)
+	return true
 
 
 ## Experience needed to go from level n-1 to n. Level 1 is about a hundred hits;
@@ -162,7 +177,7 @@ static func next_pending(rng: RandomNumberGenerator) -> Dictionary:
 
 
 static func mod(key: String) -> float:
-	var total := 0.0
+	var total := float(gear.get(key, 0.0))
 	for id in perks:
 		var p := find_perk(id)
 		total += float(p.get("mods", {}).get(key, 0.0))
@@ -182,9 +197,9 @@ static func find_perk(perk_id: String) -> Dictionary:
 static func stroke(id: String) -> Dictionary:
 	var k := float(level(id)) / MAX_LEVEL
 	return {
-		"window": lerpf(0.75, 1.3, k) * (1.0 + mod(id + "_window")),
+		"window": lerpf(0.8, 1.3, k) * (1.0 + mod(id + "_window")),
 		"pace": lerpf(0.88, 1.08, k) * (1.0 + mod(id + "_pace")),
-		"scatter": maxf(lerpf(1.5, 0.7, k) * (1.0 + mod(id + "_scatter")), 0.3),
+		"scatter": maxf(lerpf(1.35, 0.7, k) * (1.0 + mod(id + "_scatter")), 0.3),
 		"spin": lerpf(0.8, 1.1, k) * (1.0 + mod(id + "_spin")),
 	}
 

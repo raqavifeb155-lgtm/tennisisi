@@ -9,7 +9,7 @@ const DONE_FILE := "user://tutorial_done_v2"  # v2: joystick controls
 const PAGES := [
 	{
 		"title": "Бег",
-		"text": "Большой палец левой руки — внизу, под игроком: это джойстик. Веди пальцем, и игрок бежит.\nОтпустишь — он сам подстроится под мяч. Можно и просто тапнуть по корту выше игрока.",
+		"text": "Большой палец левой руки — внизу, под игроком: это джойстик. Веди пальцем, и игрок бежит.\nОтпустишь — он сам подстроится под мяч. Режим управления меняется в меню и в «НАСТР».",
 		"pic": "run",
 	},
 	{
@@ -33,6 +33,8 @@ const PAGES := [
 		"pic": "net",
 	},
 ]
+
+const TAP_RUN_TEXT := "Тапни по корту — игрок побежит туда. Держи палец — бежит за пальцем.\nОтпустишь — он сам подстроится под мяч. Режим управления меняется в меню и в «НАСТР»."
 
 var _page := 0
 var _t := 0.0
@@ -136,7 +138,7 @@ func _advance() -> void:
 func _show_page() -> void:
 	var p: Dictionary = PAGES[_page]
 	_title.text = p["title"]
-	_text.text = p["text"]
+	_text.text = TAP_RUN_TEXT if p["pic"] == "run" and Tuning.tap_controls else p["text"]
 	_dots.text = "%d / %d" % [_page + 1, PAGES.size()]
 	_next.text = "ИГРАТЬ" if _page == PAGES.size() - 1 else "ДАЛЬШЕ"
 	_t = 0.0
@@ -165,6 +167,19 @@ func _draw_pic() -> void:
 	var sz := _pic.size
 	var c := sz * 0.5
 	match PAGES[_page]["pic"]:
+		"run" when Tuning.tap_controls:
+			# Tap mode: a finger taps a spot on the court, the player runs there.
+			_court(sz)
+			var u := fmod(_t, 2.4) / 2.4
+			var spots := [Vector2(c.x + 140, sz.y - 120), Vector2(c.x - 140, sz.y - 90)]
+			var k := int(fmod(_t, 4.8) / 2.4)
+			var target: Vector2 = spots[k]
+			var from: Vector2 = spots[1 - k]
+			var player := from.lerp(target, clampf((u - 0.15) / 0.6, 0.0, 1.0))
+			_pic.draw_circle(player, 16, Color(0.92, 0.36, 0.26))
+			if u < 0.5:
+				_pic.draw_arc(target, 18 + u * 30, 0, TAU, 32, Color(C_FINGER, 1.0 - u * 2.0), 4)
+				_pic.draw_circle(target, 14, C_FINGER)
 		"run":
 			# The court above, the joystick under the player: the thumb slides, he runs.
 			var court := Vector2(sz.x, sz.y - 95)

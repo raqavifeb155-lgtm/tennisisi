@@ -17,6 +17,7 @@ func _init() -> void:
 	test_classic_set()
 	test_tournament_flow()
 	test_skills()
+	test_gear_and_loot()
 	test_service_box()
 	test_gestures()
 	test_net_cord()
@@ -274,6 +275,55 @@ func test_skills() -> void:
 	check(Skills.level("backhand") == Skills.MAX_LEVEL and Skills.pending.size() == 6, "capped at 30, six perk choices on the way")
 	for id in Skills.LIST:
 		check(Skills.PERKS[id].size() >= 6, "%s has a perk for every milestone" % id)
+	Skills.reset()
+
+
+func test_gear_and_loot() -> void:
+	print("gear and loot")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 3
+	var leg := Gear.roll(Gear.LEGENDARY, rng)
+	check(leg["mods"].size() == 4 and leg["lines"].size() == 4 and leg["name"].begins_with("Легендарная"), "legendary racket: 4 affixes '%s'" % leg["name"])
+	check(Gear.glow(leg) > 1.0 and Gear.glow(Gear.roll(Gear.COMMON, rng)) == 0.0, "legendary glows, common does not")
+	check(Gear.AFFIXES.size() >= 20, "%d affixes in the pool" % Gear.AFFIXES.size())
+	var t := Tournament.new(0, 11)
+	check(t.lineup.size() == 5 and t.lineup[0]["mods"].is_empty(), "lineup rolled up front, the tutorial opponent has no modifiers")
+	t.lineup[0]["racket"] = leg
+	t.record_match(true, "7:2", rng)
+	check(t.pending_loot == leg, "beating the opponent drops their racket for sure")
+	t.take_loot(true)
+	check(t.racket == leg and t.pending_loot.is_empty(), "trophy equipped")
+	check(t.offer[1]["kind"] == "item", "reward offer: perk, racket, wildcard")
+	t.take_reward(1)
+	check(t.racket.get("rarity", -1) <= Gear.RARE, "a reward racket replaces the one in hand")
+	t.lineup[1]["racket"] = leg
+	t.record_match(false, "3:7", rng)
+	check(t.state == Tournament.State.OVER and t.pending_loot.is_empty(), "lose and the racket is gone")
+	# Modifiers make loot likelier: count carried rackets over many lineups.
+	var with_loot := 0
+	var boss_loot := 0
+	var mods_seen := 0
+	for k in 400:
+		var tt := Tournament.new(1, k + 1)
+		for i in tt.rounds():
+			if not tt.lineup[i]["racket"].is_empty():
+				with_loot += 1
+				if i == tt.rounds() - 1:
+					boss_loot += 1
+			mods_seen += tt.lineup[i]["mods"].size()
+	check(with_loot > 100 and with_loot < 900, "rare rackets show up now and then: %d of 2000 opponents" % with_loot)
+	check(boss_loot > 400 * 0.12, "the boss carries loot more often: %d of 400" % boss_loot)
+	check(mods_seen > 300, "opponents come with modifiers: %d" % mods_seen)
+	var tm := Tournament.new(1, 5)
+	tm.lineup[0]["mods"] = ["fast", "steady"]
+	check(is_equal_approx(tm.modifier_value("speed"), 1.12) and is_equal_approx(tm.modifier_value("skill"), 0.12) and tm.modifier_value("serve") == 1.0, "modifier values")
+	Skills.reset()
+	check(Skills.points == Skills.START_POINTS, "a new player gets %d starting points" % Skills.START_POINTS)
+	Skills.spend_point("serve")
+	check(Skills.level("serve") == 1 and Skills.points == Skills.START_POINTS - 1, "a point buys one level")
+	Skills.gear = leg["mods"]
+	var key: String = leg["mods"].keys()[0]
+	check(Skills.mod(key) == leg["mods"][key], "the racket's affixes feed the stroke model")
 	Skills.reset()
 
 

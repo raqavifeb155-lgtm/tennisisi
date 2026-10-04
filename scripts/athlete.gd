@@ -76,6 +76,8 @@ var _lhand_actual := Vector3(0.05, 1.05, -0.38)
 var _model: Node3D
 var _bones := {}
 var _racket: Node3D
+var _racket_mat: StandardMaterial3D
+var _racket_light: OmniLight3D
 var _head: Node3D
 var _hand_r: MeshInstance3D
 var _hand_l: MeshInstance3D
@@ -652,14 +654,32 @@ func _build(shirt: Color) -> void:
 	tm.rings = 20
 	tm.ring_segments = 6
 	ring.mesh = tm
-	ring.material_override = _mat(Color(0.15, 0.15, 0.2))
+	_racket_mat = _mat(Color(0.15, 0.15, 0.2))
+	ring.material_override = _racket_mat
 	ring.basis = Basis(Vector3.RIGHT, PI * 0.5) * Basis.from_scale(Vector3(1.0, 1.0, 1.3))
 	ring.position = Vector3(0, RACKET_REACH - 0.02, 0)
 	_racket.add_child(ring)
+	_racket_light = OmniLight3D.new()
+	_racket_light.position = ring.position
+	_racket_light.omni_range = 1.2
+	_racket_light.shadow_enabled = false
+	_racket_light.visible = false
+	_racket.add_child(_racket_light)
 	var strings := _mesh_cyl(0.105, 0.004, Color(0.95, 0.95, 0.9, 0.45), true)
 	strings.basis = ring.basis
 	strings.position = ring.position
 	_racket.add_child(strings)
+
+
+## Racket frame colour by rarity; epic and legendary rackets glow (see Gear).
+func set_racket_look(c: Color, glow: float) -> void:
+	_racket_mat.albedo_color = c
+	_racket_mat.emission_enabled = glow > 0.0
+	_racket_mat.emission = c
+	_racket_mat.emission_energy_multiplier = glow
+	_racket_light.visible = glow > 1.0
+	_racket_light.light_color = c
+	_racket_light.light_energy = glow * 0.8
 
 
 func _bone_mesh(bone: String, r: float, c: Color) -> void:

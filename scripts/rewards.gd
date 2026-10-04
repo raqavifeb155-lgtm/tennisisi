@@ -1,6 +1,6 @@
 class_name Rewards
-## Rewards between matches: pick 1 of 3. Until gear exists (roadmap step "Шмотки"),
-## the offer is two run perks and a wildcard (one spare life).
+## Rewards between matches: pick 1 of 3 — a run perk, a racket (added by Tournament)
+## and a wildcard (one spare life).
 ## Run perks turn the same knobs as the settings panel (Tuning) and last one tournament.
 
 const WILDCARD := {
@@ -38,7 +38,7 @@ static func offer(owned_ids: Array, rng: RandomNumberGenerator) -> Array:
 		pool[i] = pool[j]
 		pool[j] = t
 	var cards: Array = []
-	for p in pool.slice(0, 2):
+	for p in pool.slice(0, 1):
 		var c: Dictionary = p.duplicate()
 		c["kind"] = "perk"
 		cards.append(c)
