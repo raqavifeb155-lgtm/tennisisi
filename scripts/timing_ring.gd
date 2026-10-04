@@ -1,11 +1,11 @@
 class_name TimingRing
 extends Control
-## Top Spin-style timing cue: a ring shrinks onto a fixed circle at the contact point.
+## Top Spin-style timing cue: a ring shrinks onto a fixed circle hanging above the player.
 ## Swipe when the ring meets the circle. The ring runs on game time, so it slows down
 ## together with the slow-motion window.
 
-const INNER := 36.0          # target circle radius (px)
-const PX_PER_SEC := 200.0    # ring radius per game second remaining
+const INNER := 30.0          # target circle radius (px)
+const PX_PER_SEC := 105.0    # ring radius per game second remaining
 const GOLD := Color(1.0, 0.85, 0.25)
 const GOOD := Color(0.55, 1.0, 0.6)
 const LATE := Color(1.0, 0.55, 0.25)

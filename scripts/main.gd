@@ -65,6 +65,8 @@ var _cpu_serve_timer := 0.0
 var _cpu_toss_offset := 0.0
 var _points_played := 0
 var _close_call := {}
+var _dribble_t := 0.0
+var _dribble_u := 0.0
 var last_serve_kmh := 150.0      # speed of the latest serve (the receiver's return suffers on big serves)            # last close line call, shown after the point
 
 # Movement by taps
@@ -161,6 +163,8 @@ func _ready() -> void:
 	_build_helpers()
 	if not autoplay and DisplayServer.get_name() != "headless":
 		hud.show_tutorial_once()
+		sfx.set_ambience(Tuning.ambience)
+		Tuning.changed.connect(func() -> void: sfx.set_ambience(Tuning.ambience))
 	_last_real_us = Time.get_ticks_usec()
 	_reset_point()
 
@@ -969,6 +973,33 @@ func _server_athlete() -> Athlete:
 	return player if server == Who.PLAYER else cpu
 
 
+## Before the toss the server bounces the ball: three bounces, a short pause in the
+## hand, again, until the toss. Each touch on the court plays a real bounce recording.
+func _dribble(srv: Athlete, delta: float) -> void:
+	var hand := _ball_in_hand(srv)
+	_dribble_t += delta
+	var period := 0.85
+	var cycle := int(_dribble_t / period)
+	var u := fmod(_dribble_t, period) / period
+	var y := hand.y
+	if cycle % 4 != 3:
+		if u < 0.5:
+			var k := u / 0.5
+			y = lerpf(hand.y, BallPhysics.RADIUS, k * k)
+		else:
+			var k := (u - 0.5) / 0.5
+			y = lerpf(BallPhysics.RADIUS, hand.y, 1.0 - (1.0 - k) * (1.0 - k))
+		if u >= 0.5 and _dribble_u < 0.5:
+			sfx.play("bounce", -9.0 if server == Who.PLAYER else -17.0, rng.randf_range(0.95, 1.05))
+	_dribble_u = u
+	ball.hold(Vector3(hand.x, y, hand.z))
+
+
+## The ball rests on the server's left hand until the toss.
+func _ball_in_hand(a: Athlete) -> Vector3:
+	return a.left_hand_world() + Vector3(0.0, 0.07, 0.0)
+
+
 func _hand_position(a: Athlete) -> Vector3:
 	# Toss from the left hand, just in front and slightly right of the head (right-hander).
 	return a.position + a.right() * 0.1 + a.forward() * 0.4 + Vector3.UP * TOSS_HAND_H
@@ -978,6 +1009,8 @@ func _hand_position(a: Athlete) -> Vector3:
 ## receiver diagonally opposite.
 func _setup_serve() -> void:
 	phase = Phase.SERVE
+	_dribble_t = 0.0
+	_dribble_u = 0.0
 	_close_call = {}
 	last_hitter = Who.NONE
 	bounces = 0
@@ -1004,6 +1037,7 @@ func _setup_serve() -> void:
 	rcv.velocity = Vector3.ZERO
 	srv.relax()
 	rcv.relax()
+	srv.serve_ready()
 	if server == Who.PLAYER:
 		# Rules: behind the baseline, between the centre mark and the sideline on this side.
 		var x0 := 0.15 if sx > 0.0 else -Court.SINGLES_HALF_WIDTH
@@ -1012,15 +1046,16 @@ func _setup_serve() -> void:
 		pass
 	else:
 		player.area = PLAYER_AREA
-		_cpu_serve_timer = 0.5 if autoplay else 1.2
-		ball.hold(_hand_position(srv))
+		_cpu_serve_timer = 0.5 if autoplay else 1.9
+	ball.hold(_ball_in_hand(srv))
 	ai.on_cpu_hit(0.0)
 
 
 func _update_serve(delta: float) -> void:
 	var srv := _server_athlete()
 	if not toss_active:
-		ball.hold(_hand_position(srv))
+		srv.serve_ready()
+		_dribble(srv, delta)
 		if server == Who.CPU:
 			_cpu_serve_timer -= delta
 			if _cpu_serve_timer <= 0.0:
@@ -1038,7 +1073,7 @@ func _update_serve(delta: float) -> void:
 
 func _start_toss() -> void:
 	var srv := _server_athlete()
-	var hand := _hand_position(srv)
+	var hand := _ball_in_hand(srv)
 	ball.launch(hand, Vector3(0.0, TOSS_SPEED, 0.0), Vector3.ZERO)
 	toss_active = true
 	var g := BallPhysics.GRAVITY
@@ -1221,15 +1256,19 @@ func _update_timing_ring() -> void:
 	if autoplay:
 		ring.hide_ring()
 		return
+	# The ring hangs above the player (never over the body or the ball's path) and
+	# leans toward the side of the stroke: right for forehands, left for backhands.
+	var anchor := cam.unproject_position(player.global_position + Vector3(0.0, 2.35, 0.0)) + Vector2(0.0, -70.0)
 	if phase == Phase.SERVE and server == Who.PLAYER and toss_active:
-		ring.show_ring(cam.unproject_position(ball.state.pos), toss_ideal - game_time, Tuning.perfect_window, Tuning.good_window)
+		ring.show_ring(anchor, toss_ideal - game_time, Tuning.perfect_window, Tuning.good_window)
 		return
 	if _player_can_hit():
+		var lean := 55.0 if player.lateral_of(contact_pred) >= 0.0 else -55.0
 		if late_until > 0.0:
-			ring.show_ring(cam.unproject_position(ball.state.pos), late_cross_time - game_time, Tuning.perfect_window, Tuning.good_window)
+			ring.show_ring(anchor + Vector2(lean, 0.0), late_cross_time - game_time, Tuning.perfect_window, Tuning.good_window)
 			return
-		if t_contact < 1.1 and absf(player.lateral_of(contact_pred)) < 3.0 and contact_pred.y < MAX_CONTACT_H:
-			ring.show_ring(cam.unproject_position(contact_pred), t_contact, Tuning.perfect_window, Tuning.good_window)
+		if t_contact < 0.85 and absf(player.lateral_of(contact_pred)) < 3.0 and contact_pred.y < MAX_CONTACT_H:
+			ring.show_ring(anchor + Vector2(lean, 0.0), t_contact, Tuning.perfect_window, Tuning.good_window)
 			return
 	ring.hide_ring()
 

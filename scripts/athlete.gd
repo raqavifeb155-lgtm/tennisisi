@@ -54,7 +54,7 @@ var _lean := 0.0
 var _head_yaw := 0.0
 var _head_pitch := 0.0
 
-var _mode := 0                 # 0 ready, 1 prepared, 2 swinging, 3 serve setup
+var _mode := 0                 # 0 ready, 1 prepared, 2 swinging, 3 tossing, 4 holding the ball to serve
 var _side := 1
 var _style := Style.TOPSPIN
 var _clock := 0.0
@@ -70,6 +70,7 @@ var _slide := 0.0              # 1 at the start of a slide, decays to 0
 var _slide_dir := Vector3.ZERO # model-local direction of the slide
 var _dust: CPUParticles3D
 var _last_vel := Vector3.ZERO
+var _lhand_actual := Vector3(0.05, 1.05, -0.38)
 
 # Visual nodes
 var _model: Node3D
@@ -120,7 +121,18 @@ func prepare(side: int, style := Style.TOPSPIN) -> void:
 	_style = style
 
 
-## Serve setup: sideways stance, tossing arm ready.
+## Before the toss: ball held in the left hand in front, racket ready.
+func serve_ready() -> void:
+	if _mode != 2:
+		_mode = 4
+
+
+## Where the left hand is right now (the ball sits in it before the toss).
+func left_hand_world() -> Vector3:
+	return _model.to_global(_lhand_actual) if _model else global_position + Vector3.UP
+
+
+## Toss: sideways stance, tossing arm going up.
 func prepare_serve() -> void:
 	if _mode == 2:
 		return
@@ -172,7 +184,7 @@ func _physics_process(delta: float) -> void:
 	# A hard stop from a sprint (or swinging on the run) turns into a slide.
 	var speed := velocity.length()
 	var decel := (_prev_speed - speed) / maxf(delta, 0.0001)
-	if _slide < 0.2 and _prev_speed > 3.8 and (decel > 14.0 or (_mode == 2 and _prev_speed > 4.5)):
+	if _slide < 0.2 and _prev_speed > 4.6 and (decel > 20.0 or (_mode == 2 and _prev_speed > 5.2)):
 		_slide = 1.0
 		var v_dir := velocity if speed > 0.5 else _last_vel
 		_slide_dir = (global_basis.inverse() * v_dir).normalized()
@@ -364,7 +376,9 @@ func _process(delta: float) -> void:
 	# --- Left hand ---
 	var lh := _hand + _rdir * 0.2 + Vector3(-0.05, 0.0, 0.0)  # on the throat
 	var swinging_before := _mode == 2 and _clock < _contact_at
-	if _mode == 3 or (swinging_before and (_style == Style.SERVE or _style == Style.SMASH)):
+	if _mode == 4:
+		lh = Vector3(0.05, 1.05, -0.38)                      # holding the ball in front
+	elif _mode == 3 or (swinging_before and (_style == Style.SERVE or _style == Style.SMASH)):
 		lh = Vector3(0.0, 1.95, -0.42)                       # tossing / pointing up at the ball
 	elif _two_handed() and (_mode == 1 or _mode == 2):
 		lh = _hand + _rdir * 0.11                            # both hands on the grip
@@ -396,7 +410,7 @@ func _process(delta: float) -> void:
 		target_crouch += 0.24 * sl
 		target_lean += -_slide_dir.x * 0.22 * sl
 		if _dust:
-			_dust.emitting = _slide > 0.35
+			_dust.emitting = _slide > 0.7
 	_crouch = lerpf(_crouch, target_crouch, k)
 	_lean = lerpf(_lean, target_lean, k)
 	var lift := 0.0
@@ -487,6 +501,7 @@ func _pose(local_v: Vector3, amt: float, near_contact: float) -> void:
 	_set_bone("upper_l", l_sh, l_elbow)
 	_set_bone("fore_l", l_elbow, lhand)
 	_hand_l.position = lhand
+	_lhand_actual = lhand
 
 	# Racket: handle along the racket direction, face turned toward the shot (open for slice).
 	var y := rdir
@@ -559,16 +574,16 @@ func _build(shirt: Color) -> void:
 	# Dust kicked up by slides
 	_dust = CPUParticles3D.new()
 	_dust.emitting = false
-	_dust.amount = 18
-	_dust.lifetime = 0.5
+	_dust.amount = 6
+	_dust.lifetime = 0.3
 	_dust.explosiveness = 0.3
 	_dust.direction = Vector3(0, 1, 0)
 	_dust.spread = 70.0
 	_dust.initial_velocity_min = 0.4
 	_dust.initial_velocity_max = 1.2
 	_dust.gravity = Vector3(0, -1.5, 0)
-	_dust.scale_amount_min = 0.6
-	_dust.scale_amount_max = 1.2
+	_dust.scale_amount_min = 0.4
+	_dust.scale_amount_max = 0.8
 	var dm := SphereMesh.new()
 	dm.radius = 0.05
 	dm.height = 0.1
@@ -576,7 +591,7 @@ func _build(shirt: Color) -> void:
 	dm.rings = 3
 	_dust.mesh = dm
 	var dmat := StandardMaterial3D.new()
-	dmat.albedo_color = Color(0.85, 0.85, 0.9, 0.45)
+	dmat.albedo_color = Color(0.85, 0.85, 0.9, 0.22)
 	dmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	dmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_dust.material_override = dmat
