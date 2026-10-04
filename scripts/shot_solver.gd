@@ -36,6 +36,9 @@ static func _simulate(p0: Vector3, v0: Vector3, spin: Vector3, dir: Vector3) -> 
 			clearance = s.pos.y - BallPhysics.RADIUS - Court.net_height(s.pos.x)
 		if s.pos.y <= BallPhysics.RADIUS and s.vel.y < 0.0:
 			break
+	if not crossed:
+		# Landed before reaching the net (every shot here must cross it): treat as netted.
+		clearance = -10.0
 	var d := s.pos - p0
 	d.y = 0.0
 	return Vector2(d.dot(dir), clearance)
@@ -83,7 +86,30 @@ static func _solve_elevation(p0: Vector3, dir: Vector3, dist: float, speed: floa
 
 
 ## top_spin: rad/s, positive = topspin, negative = backspin (slice).
-static func solve(p0: Vector3, target: Vector3, speed: float, top_spin: float, net_margin := 0.12) -> Result:
+## side_spin (rad/s around the vertical) curves the ball sideways; the aim is corrected
+## so it still lands on target.
+static func solve(p0: Vector3, target: Vector3, speed: float, top_spin: float, net_margin := 0.12, side_spin := 0.0) -> Result:
+	var res := _solve_straight(p0, target, speed, top_spin, net_margin, side_spin, Vector3.ZERO)
+	if side_spin == 0.0:
+		return res
+	var aim := target
+	for i in 2:
+		var landing := _landing(p0, res.velocity, res.spin)
+		aim += Vector3(target.x - landing.x, 0.0, target.z - landing.z)
+		res = _solve_straight(p0, aim, speed, top_spin, net_margin, side_spin, Vector3.ZERO)
+	return res
+
+
+static func _landing(p0: Vector3, v0: Vector3, spin: Vector3) -> Vector3:
+	var s := BallPhysics.State.new(p0, v0, spin)
+	for i in 600:
+		BallPhysics.integrate_free(s, SIM_DT)
+		if s.pos.y <= BallPhysics.RADIUS and s.vel.y < 0.0:
+			break
+	return s.pos
+
+
+static func _solve_straight(p0: Vector3, target: Vector3, speed: float, top_spin: float, net_margin: float, side_spin: float, _unused: Vector3) -> Result:
 	var res := Result.new()
 	var flat := target - p0
 	flat.y = 0.0
@@ -92,7 +118,7 @@ static func solve(p0: Vector3, target: Vector3, speed: float, top_spin: float, n
 		flat = Vector3(0, 0, -signf(p0.z) if p0.z != 0.0 else -1.0)
 		dist = 1.0
 	var dir := flat / dist
-	var spin := BallPhysics.topspin_vector(dir, top_spin)
+	var spin := BallPhysics.topspin_vector(dir, top_spin) + Vector3.UP * side_spin
 	var spd := speed
 	var elev := [0.0]
 	for i in 30:
@@ -108,4 +134,29 @@ static func solve(p0: Vector3, target: Vector3, speed: float, top_spin: float, n
 	res.elevation_deg = elev[0]
 	res.velocity = _launch(dir, spd, elev[0])
 	res.spin = spin
+	return res
+
+
+## Lob: a high, slow arc. Elevation is fixed and the speed is solved for the distance.
+## max_speed only caps the search; a lob is as slow as it needs to be.
+static func solve_lob(p0: Vector3, target: Vector3, top_spin: float, max_speed := 30.0, elev_deg := 40.0) -> Result:
+	var res := Result.new()
+	var flat := target - p0
+	flat.y = 0.0
+	var dist := maxf(flat.length(), 1.0)
+	var dir := flat.normalized() if flat.length() > 0.01 else Vector3(0, 0, -signf(p0.z))
+	var spin := BallPhysics.topspin_vector(dir, top_spin)
+	var lo := 5.0
+	var hi := maxf(max_speed, 8.0)
+	for i in 18:
+		var mid := (lo + hi) * 0.5
+		if _simulate(p0, _launch(dir, mid, elev_deg), spin, dir).x < dist:
+			lo = mid
+		else:
+			hi = mid
+	res.speed = (lo + hi) * 0.5
+	res.elevation_deg = elev_deg
+	res.velocity = _launch(dir, res.speed, elev_deg)
+	res.spin = spin
+	res.ok = true
 	return res

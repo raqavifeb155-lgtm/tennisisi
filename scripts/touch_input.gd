@@ -3,19 +3,18 @@ extends Control
 ## One-finger controls (works anywhere on the screen):
 ##  - tap              -> tapped(pos): run there / toss on serve
 ##  - hold still       -> held(pos): keep running toward the finger
-##  - swipe / slide    -> swiped(start, end, speed): hit along the swiped direction;
-##                        speed (screen heights per second) sets the power
+##  - swipe / slide    -> swiped(points, times): the whole finger path, read by
+##                        ShotGesture (direction, power, flat / topspin / slice)
 ## Desktop: WASD / arrows move, mouse click = tap, mouse drag = swipe.
 
 signal tapped(pos: Vector2)
 signal held(pos: Vector2)
-signal swiped(start: Vector2, end: Vector2, speed: float)
-signal swipe_progress(start: Vector2, current: Vector2)
+signal swiped(points: PackedVector2Array, times: PackedInt32Array)
+signal swipe_progress(points: PackedVector2Array)
 
 const SWIPE_MIN := 0.04     # fraction of screen height before a touch counts as a swipe
 const HOLD_MS := 300        # a still touch longer than this becomes "hold to run"
 const TAP_MAX_MS := 350
-const SPEED_WINDOW_MS := 140
 
 var move_vector := Vector2.ZERO  # keyboard movement (desktop)
 var blocked_controls: Array[Control] = []
@@ -69,28 +68,19 @@ func _input(event: InputEvent) -> void:
 		if not d["swipe"] and (dr.position - start).length() > SWIPE_MIN * h:
 			d["swipe"] = true
 		if d["swipe"]:
-			swipe_progress.emit(start, dr.position)
+			swipe_progress.emit(PackedVector2Array(d["points"]))
 		queue_redraw()
 
 
-func _finish_swipe(d: Dictionary, end_pos: Vector2, now: int, h: float) -> void:
-	# Power comes from how fast the finger was moving at the end of the gesture,
-	# so resting the finger before swiping doesn't weaken the shot.
-	var points: Array = d["points"]
-	var times: Array = d["times"]
-	var ref: Vector2 = points[0]
-	var ref_ms: int = times[0]
-	for i in range(points.size() - 1, -1, -1):
-		ref = points[i]
-		ref_ms = times[i]
-		if now - ref_ms >= SPEED_WINDOW_MS:
-			break
-	var dt := maxf((now - ref_ms) / 1000.0, 0.03)
-	var speed := (end_pos - ref).length() / h / dt
-	_trail = PackedVector2Array(points)
-	_trail.append(end_pos)
+func _finish_swipe(d: Dictionary, end_pos: Vector2, now: int, _h: float) -> void:
+	var points := PackedVector2Array(d["points"])
+	var times := PackedInt32Array(d["times"])
+	if points[points.size() - 1] != end_pos:
+		points.append(end_pos)
+		times.append(now)
+	_trail = points
 	_trail_fade = 1.0
-	swiped.emit(d["start"], end_pos, speed)
+	swiped.emit(points, times)
 
 
 func _process(delta: float) -> void:

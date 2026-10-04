@@ -15,9 +15,9 @@ var good_window := 0.09
 var early_limit := 0.30        # swing released earlier than this = whiff
 var late_limit := 0.12         # how long after the ideal moment a swing still connects
 
-# Swipe mapping
-var swipe_deep_len := 0.30     # swipe length (fraction of screen height) that aims at the baseline
-var swipe_side_angle := 38.0   # swipe angle (deg from vertical) that aims at the sideline
+# Swipe shape -> stroke (see ShotGesture)
+var curve_min := 0.14          # sideways bulge / length above which a swipe is a topspin "C"
+var hook_min := 0.15           # how far the finger must come back (of the forward length) for a slice
 
 # Player
 var player_speed := 6.2
@@ -30,6 +30,7 @@ var ai_skill := 0.5
 var hitstop := true
 var show_path := false
 var show_landing := true
+var hawkeye_range := 0.15      # show the line-call replay when the mark is this close to a line (m)
 var show_aim := true           # aim marker while swiping + where the shot landed
 var show_debug_text := false
 

@@ -3,13 +3,11 @@ extends CanvasLayer
 ## On-screen UI: score, rally counter, hit feedback popups, shot-type selector,
 ## controls hint, and the debug/tuning panel.
 
-signal shot_type_changed(t: int)
-
-const SHOT_NAMES := ["TOPSPIN", "FLAT", "SLICE"]
 const GOLD := Color(1.0, 0.85, 0.25)
 
 var touch: TouchInput
 var ring: TimingRing
+var _hawkeye: HawkEye
 
 var _root: Control
 var _score: Label
@@ -22,7 +20,8 @@ var _serve_hint: Label
 var _debug_text: Label
 var _debug_panel: PanelContainer
 var _debug_btn: Button
-var _shot_buttons: Array[Button] = []
+var _gesture_label: Label
+var _legend: Label
 var _popup_tween: Tween
 var _message_tween: Tween
 
@@ -35,6 +34,8 @@ func _ready() -> void:
 
 	ring = TimingRing.new()
 	_root.add_child(ring)
+	_hawkeye = HawkEye.new()
+	_root.add_child(_hawkeye)
 	touch = TouchInput.new()
 	_root.add_child(touch)
 
@@ -57,7 +58,7 @@ func _ready() -> void:
 	_popup_sub.modulate.a = 0.0
 
 	_hint = _label(24, HORIZONTAL_ALIGNMENT_CENTER)
-	_hint.text = "ТАП — бежать туда   ·   СВАЙП — удар по линии от игрока\nсвайпни, когда кольцо сожмётся до круга · быстрый свайп = сильнее"
+	_hint.text = "ТАП — бежать   ·   СВАЙП — удар по линии от игрока\nбей, когда кольцо сожмётся до круга"
 	_hint.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 	_hint.offset_left = 16.0
 	_hint.offset_right = -16.0
@@ -74,28 +75,16 @@ func _ready() -> void:
 	_serve_hint.modulate = Color(1.0, 0.95, 0.7)
 	_serve_hint.visible = false
 
-	# Shot type selector: a row under the score, above the far court.
-	var box := HBoxContainer.new()
-	box.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	box.offset_left = -246.0
-	box.offset_right = 246.0
-	box.offset_top = 116.0
-	box.offset_bottom = 166.0
-	box.alignment = BoxContainer.ALIGNMENT_CENTER
-	box.add_theme_constant_override("separation", 10)
-	_root.add_child(box)
-	for i in SHOT_NAMES.size():
-		var b := Button.new()
-		b.text = SHOT_NAMES[i]
-		b.toggle_mode = true
-		b.custom_minimum_size = Vector2(150, 50)
-		b.add_theme_font_size_override("font_size", 22)
-		b.focus_mode = Control.FOCUS_NONE
-		b.pressed.connect(_on_shot_pressed.bind(i))
-		box.add_child(b)
-		_shot_buttons.append(b)
-		touch.blocked_controls.append(b)
-	_shot_buttons[0].button_pressed = true
+	# Gesture legend (replaces stroke buttons: the swipe's shape picks the stroke)
+	_legend = _label(20, HORIZONTAL_ALIGNMENT_CENTER)
+	_anchor_top(_legend, 112.0, 30.0)
+	_legend.text = "прямой свайп = FLAT   ·   дуга «C» = TOPSPIN   ·   крючок назад = SLICE"
+	_legend.modulate = Color(1, 1, 1, 0.85)
+
+	# Live name of the stroke being drawn
+	_gesture_label = _label(34, HORIZONTAL_ALIGNMENT_CENTER)
+	_anchor_band(_gesture_label, 0.62, 50.0)
+	_gesture_label.modulate = Color(0.75, 0.95, 1.0)
 
 	# Debug toggle + panel
 	_debug_btn = Button.new()
@@ -178,10 +167,12 @@ func show_message(text: String, color: Color) -> void:
 	_message_tween.tween_property(_message, "modulate:a", 0.0, 0.4)
 
 
-func _on_shot_pressed(i: int) -> void:
-	for j in _shot_buttons.size():
-		_shot_buttons[j].set_pressed_no_signal(j == i)
-	shot_type_changed.emit(i)
+func hawkeye(margin: float, axis: int) -> void:
+	_hawkeye.show_call(margin, axis)
+
+
+func set_gesture_label(text: String) -> void:
+	_gesture_label.text = text
 
 
 func _toggle_debug() -> void:
@@ -255,8 +246,8 @@ func _build_debug_panel() -> void:
 	_slider(v, "Когда включать (с до удара)", "slowmo_lead", 0.1, 0.8, 0.01)
 	_slider(v, "Окно PERFECT (с)", "perfect_window", 0.01, 0.1, 0.005)
 	_slider(v, "Окно GOOD (с)", "good_window", 0.03, 0.2, 0.005)
-	_slider(v, "Длина свайпа до задней линии", "swipe_deep_len", 0.12, 0.5, 0.01)
-	_slider(v, "Угол свайпа до боковой (°)", "swipe_side_angle", 15.0, 60.0, 1.0)
+	_slider(v, "Изгиб дуги для TOPSPIN", "curve_min", 0.05, 0.4, 0.01)
+	_slider(v, "Возврат крючка для SLICE", "hook_min", 0.08, 0.6, 0.01)
 	_slider(v, "Скорость игрока (м/с)", "player_speed", 3.0, 9.0, 0.1)
 	_slider(v, "Автопомощь в беге", "assist", 0.0, 1.0, 0.05)
 	_slider(v, "Сила соперника", "ai_skill", 0.0, 1.0, 0.05)

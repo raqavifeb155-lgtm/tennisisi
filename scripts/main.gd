@@ -5,7 +5,10 @@ extends Node3D
 ## Controls (one finger is enough):
 ##   tap    -> run to that spot (hold the finger to keep running toward it)
 ##   swipe  -> hit: the ball travels along the swiped line *from the player*;
-##             swipe speed = power; depth is chosen automatically (deep, safely in)
+##             swipe speed = power; depth is chosen automatically (deep, safely in);
+##             the swipe's shape picks the stroke: straight = flat, "C" arc = topspin,
+##             hook back toward you = slice (see ShotGesture)
+##   net    -> balls taken before the bounce are volleys; high balls are smashed
 ##   timing -> a ring shrinks onto the contact point: swipe when it meets the circle
 ##   serve  -> tap = toss, swipe = serve (the ring sits on the tossed ball)
 ## A perfect shot along a line that points into the court lands in; timing and
@@ -22,6 +25,8 @@ const CPU_AREA := Rect2(-9.0, -17.6, 18.0, 17.0)
 const TOSS_SPEED := 5.6         # m/s straight up from the hand
 const TOSS_HAND_H := 1.5
 const SERVE_CONTACT_H := 2.62   # ideal contact: on the way down, just below the apex
+const SMASH_MIN_H := 2.2        # contact above this height is an overhead smash
+const MAX_CONTACT_H := 3.4      # highest ball the player can reach with a jump smash
 const COLOR_GOOD := Color(1, 1, 1)
 const COLOR_WARN := Color(1.0, 0.6, 0.25)
 const COLOR_BAD := Color(1.0, 0.35, 0.3)
@@ -149,7 +154,6 @@ func _ready() -> void:
 	hud.touch.swipe_progress.connect(_on_swipe_progress)
 	hud.touch.tapped.connect(_on_tap)
 	hud.touch.held.connect(_on_hold)
-	hud.shot_type_changed.connect(func(t: int) -> void: shot_type = t as ShotType)
 	hud.set_score(scoreboard.point_text())
 
 	_build_helpers()
@@ -367,7 +371,7 @@ func _on_ball_crossed() -> void:
 	if serve_flight:
 		return  # the receiver must let the serve bounce
 	var bp := ball.state.pos
-	if bp.y > 2.6 or bp.y < 0.04:
+	if bp.y > MAX_CONTACT_H or bp.y < 0.04:
 		return
 	var flat_d := Vector2(bp.x - player.position.x, bp.z - player.position.z).length()
 	if flat_d > Athlete.REACH + 0.6:
@@ -379,7 +383,7 @@ func _on_ball_crossed() -> void:
 		late_cross_time = game_time
 	else:
 		var err: float = pending_swing["time"] - game_time
-		_player_hit(err, pending_swing["dir"], pending_swing["pace_k"])
+		_player_hit(err, pending_swing["dir"], pending_swing["pace_k"], pending_swing["type"])
 
 
 func _on_tap(pos: Vector2) -> void:
@@ -392,7 +396,7 @@ func _on_tap(pos: Vector2) -> void:
 
 
 func _on_hold(pos: Vector2) -> void:
-	if phase == Phase.SERVE and server == Who.PLAYER:
+	if phase == Phase.SERVE and server == Who.PLAYER and toss_active:
 		return
 	_set_move_target(pos)
 
@@ -441,32 +445,39 @@ func _pace_from_speed(speed: float) -> float:
 	return clampf((speed - 0.8) / 3.2, 0.0, 1.0)
 
 
-func _on_swipe(start: Vector2, end: Vector2, speed: float) -> void:
+func _read_gesture(points: PackedVector2Array, times: PackedInt32Array) -> ShotGesture.Result:
+	return ShotGesture.classify(points, times, get_viewport().get_visible_rect().size.y, Tuning.curve_min, Tuning.hook_min)
+
+
+func _on_swipe(points: PackedVector2Array, times: PackedInt32Array) -> void:
 	hud.hide_hint()
-	var dir := _swipe_world_dir(start, end)
-	var pace_k := _pace_from_speed(speed)
+	hud.set_gesture_label("")
+	var g := _read_gesture(points, times)
+	var dir := _swipe_world_dir(g.start, g.apex)
+	var pace_k := _pace_from_speed(g.speed)
+	shot_type = g.type as ShotType
 	_aim_hold = 0.7
 	if phase == Phase.SERVE:
 		if server == Who.PLAYER and toss_active:
-			_player_serve(dir, pace_k)
+			_player_serve(dir, pace_k, shot_type)
 		return
-	_swing_input(dir, pace_k)
+	_swing_input(dir, pace_k, shot_type)
 
 
-func _swing_input(dir: Vector3, pace_k: float) -> void:
+func _swing_input(dir: Vector3, pace_k: float, type: int) -> void:
 	if not _player_can_hit():
 		return
 	if late_until > 0.0:
-		_player_hit(game_time - late_cross_time, dir, pace_k)
+		_player_hit(game_time - late_cross_time, dir, pace_k, type)
 		return
 	if t_contact > Tuning.early_limit:
 		if t_contact < 3.0:
 			hud.popup("РАНО", COLOR_WARN, "свайпни, когда кольцо дойдёт до круга")
 		return
 	if pending_swing.is_empty():
-		pending_swing = {"time": game_time, "dir": dir, "pace_k": pace_k}
+		pending_swing = {"time": game_time, "dir": dir, "pace_k": pace_k, "type": type}
 		var side := 1 if player.lateral_of(contact_pred) >= 0.0 else -1
-		player.swing(side, t_contact, contact_pred.y)
+		player.swing(side, t_contact, contact_pred.y, _swing_style(type, contact_pred.y))
 		sfx.play("swing", -12.0, rng.randf_range(0.95, 1.1))
 
 
@@ -511,10 +522,14 @@ func _aim_origin() -> Vector3:
 	return player.position + player.forward() * Athlete.CONTACT_FORWARD
 
 
-func _on_swipe_progress(start: Vector2, current: Vector2) -> void:
+func _on_swipe_progress(points: PackedVector2Array) -> void:
+	var times := PackedInt32Array()
+	times.resize(points.size())
+	var g := _read_gesture(points, times)
+	hud.set_gesture_label(ShotGesture.NAMES[g.type])
 	if not Tuning.show_aim:
 		return
-	var dir := _swipe_world_dir(start, current)
+	var dir := _swipe_world_dir(g.start, g.apex)
 	var origin := _aim_origin()
 	if phase == Phase.SERVE:
 		if server != Who.PLAYER:
@@ -535,7 +550,13 @@ func _set_aim(origin: Vector3, p: Vector3, inside: bool) -> void:
 	_aim_line_target = p
 
 
-func _player_hit(err: float, dir: Vector3, pace_k: float) -> void:
+func _swing_style(type: int, height: float) -> int:
+	if height > SMASH_MIN_H:
+		return Athlete.Style.SMASH
+	return [Athlete.Style.TOPSPIN, Athlete.Style.FLAT, Athlete.Style.SLICE][type]
+
+
+func _player_hit(err: float, dir: Vector3, pace_k: float, type: int) -> void:
 	var bp := ball.state.pos
 	pending_swing = {}
 	late_until = -1.0
@@ -548,7 +569,9 @@ func _player_hit(err: float, dir: Vector3, pace_k: float) -> void:
 	var tq := timing_quality(err)
 	var q_t: float = tq[0]
 	var label: String = tq[1]
-	var q_p := position_quality(lateral, bp.y)
+	var smash := bp.y > SMASH_MIN_H
+	var volley := bounces == 0 and not smash
+	var q_p := position_quality(lateral, minf(bp.y, 1.2) if smash else bp.y)
 	var q_m := movement_quality(player.velocity.length())
 	var q := q_t * q_p * q_m
 
@@ -556,19 +579,28 @@ func _player_hit(err: float, dir: Vector3, pace_k: float) -> void:
 	var target := rally_target(origin, dir, pace_k)
 	var pace: float
 	var top: float
-	match shot_type:
-		ShotType.FLAT:
-			pace = lerpf(24.0, 40.0, pace_k)
-			top = 40.0
-		ShotType.SLICE:
-			pace = lerpf(17.0, 27.0, pace_k)
-			top = -lerpf(140.0, 210.0, pace_k)
-		_:
-			pace = lerpf(21.0, 35.0, pace_k)
-			top = lerpf(190.0, 340.0, pace_k)
+	if smash:
+		pace = lerpf(30.0, 44.0, pace_k)
+		top = 40.0
+	else:
+		match type:
+			ShotType.FLAT:
+				pace = lerpf(24.0, 40.0, pace_k)
+				top = 40.0
+			ShotType.SLICE:
+				# Slice floats: slower, lots of backspin, stays low after the bounce.
+				pace = lerpf(15.0, 23.0, pace_k)
+				top = -lerpf(180.0, 270.0, pace_k)
+			_:
+				pace = lerpf(21.0, 35.0, pace_k)
+				top = lerpf(190.0, 340.0, pace_k)
+		if volley:
+			# Punch volleys: shorter swing, less pace and spin, more control.
+			pace *= 0.8
+			top *= 0.5
 
 	if not player.is_swinging():
-		player.swing(side, 0.02, bp.y)
+		player.swing(side, 0.02, bp.y, _swing_style(type, bp.y))
 	var r := execute_shot(Who.PLAYER, player, bp, target, pace, top, q, err, side)
 	ai.on_player_hit()
 	_assist_suppressed = false
@@ -590,7 +622,8 @@ func _player_hit(err: float, dir: Vector3, pace_k: float) -> void:
 		notes.append("далеко от мяча")
 	if q_m < 0.85:
 		notes.append("на бегу")
-	var sub := "%d km/h  ·  %d%%" % [roundi(r.speed * 3.6), roundi(q * 100.0)]
+	var stroke: String = "SMASH" if smash else (("VOLLEY " if volley else "") + ShotGesture.NAMES[type])
+	var sub := "%s  ·  %d km/h  ·  %d%%" % [stroke, roundi(r.speed * 3.6), roundi(q * 100.0)]
 	if not notes.is_empty():
 		sub += "  ·  " + ", ".join(notes)
 	hud.popup(label, color, sub)
@@ -605,7 +638,7 @@ func _player_hit(err: float, dir: Vector3, pace_k: float) -> void:
 	last_shot = {
 		"label": label, "err_ms": err * 1000.0, "q_t": q_t, "q_p": q_p, "q_m": q_m, "q": q,
 		"side": "FH" if side > 0 else "BH", "speed": r.speed * 3.6, "elev": r.elevation_deg,
-		"target": Vector2(target.x, target.z), "type": Hud.SHOT_NAMES[shot_type],
+		"target": Vector2(target.x, target.z), "type": stroke,
 	}
 
 
@@ -623,6 +656,10 @@ func _ideal_contact() -> Vector3:
 	# but take it on the rise rather than retreating far behind the baseline.
 	if incoming == null:
 		return contact_pred
+	# At the net (or under a high ball): take it out of the air.
+	if bounces == 0 and t_contact < 10.0 and contact_pred.y > 0.3 and contact_pred.y < MAX_CONTACT_H:
+		if player.position.z < 8.0 or contact_pred.y > SMASH_MIN_H:
+			return contact_pred
 	var pts := incoming.points
 	var start := 0
 	var stop := pts.size() - 1
@@ -652,7 +689,8 @@ func _ideal_contact() -> Vector3:
 
 func _update_player_movement() -> void:
 	player.max_speed = Tuning.player_speed
-	if phase == Phase.SERVE and server == Who.PLAYER:
+	var serving := phase == Phase.SERVE and server == Who.PLAYER
+	if serving and (toss_active or autoplay):
 		player.move_input = Vector2.ZERO
 		return
 	var mv := hud.touch.move_vector
@@ -668,7 +706,7 @@ func _update_player_movement() -> void:
 	if autoplay:
 		mv = Vector2.ZERO
 		assist = 1.0
-	var free := mv == Vector2.ZERO and (autoplay or not _assist_suppressed)
+	var free := mv == Vector2.ZERO and (autoplay or not _assist_suppressed) and not serving
 	if free and assist > 0.0 and _player_can_hit() and t_contact < 2.5:
 		# Auto-positioning toward a comfortable contact point.
 		var ideal := _ideal_contact()
@@ -716,7 +754,7 @@ func movement_quality(speed: float) -> float:
 
 ## Turns intent into a launched ball, adding execution error that scales with (1 - quality).
 ## Timing error is deterministic: early contact pulls the ball, late contact pushes it.
-func execute_shot(who: int, hitter: Athlete, contact: Vector3, target: Vector3, pace: float, top: float, q: float, t_err: float, side: int) -> ShotSolver.Result:
+func execute_shot(who: int, hitter: Athlete, contact: Vector3, target: Vector3, pace: float, top: float, q: float, t_err: float, side: int, lob := false, side_spin := 0.0) -> ShotSolver.Result:
 	var flat := target - contact
 	flat.y = 0.0
 	var dist := flat.length()
@@ -730,7 +768,7 @@ func execute_shot(who: int, hitter: Athlete, contact: Vector3, target: Vector3, 
 	target += hitter.forward() * rng.randfn(0.0, 0.1 + miss * 2.0)
 	pace *= lerpf(0.72, 1.06, q)
 	top *= lerpf(0.6, 1.0, q)
-	var r := ShotSolver.solve(contact, target, pace, top, 0.3)
+	var r := ShotSolver.solve_lob(contact, target, top, pace) if lob else ShotSolver.solve(contact, target, pace, top, 0.3, side_spin)
 	var v := r.velocity
 	var axis := Vector3.UP.cross(v).normalized()
 	if axis.length() > 0.5:
@@ -761,6 +799,8 @@ func _on_bounce(pos: Vector3, speed: float) -> void:
 		_land_dot.global_position = Vector3(pos.x, 0.05, pos.z)
 		_land_dot.visible = true
 		_land_hold = 1.2
+	if bounces == 1:
+		_line_call(pos, receiver_half)
 	if serve_flight:
 		serve_flight = false
 		if not Court.in_service_box(pos, receiver_half, box_side, BallPhysics.RADIUS):
@@ -773,6 +813,31 @@ func _on_bounce(pos: Vector3, speed: float) -> void:
 			_end_point(_other(last_hitter), "NET" if net_touched else "OUT")
 	else:
 		_end_point(last_hitter, "WINNER")
+
+
+## Hawk-Eye: distance from the ball mark to the nearest line that decides the call
+## (positive = in). Close calls get the top-down replay panel.
+func _line_call(pos: Vector3, half: int) -> void:
+	var r := BallPhysics.RADIUS
+	var margin: float
+	var line_axis := 0  # 0 = the deciding line runs along z (a sideline), 1 = along x
+	var z := pos.z * half
+	if serve_flight:
+		var x := pos.x * box_side
+		var m_service := Court.SERVICE_LINE + r - z
+		var m_center := x + r
+		var m_side := Court.SINGLES_HALF_WIDTH + r - x
+		margin = minf(m_service, minf(m_center, m_side))
+		line_axis = 1 if margin == m_service else 0
+	else:
+		var m_side := Court.SINGLES_HALF_WIDTH + r - absf(pos.x)
+		var m_base := Court.HALF_LENGTH + r - z
+		margin = minf(m_side, m_base)
+		line_axis = 1 if m_base < m_side else 0
+	if z < 0.0:
+		return  # landed on the wrong half: not a line call
+	if absf(margin) <= Tuning.hawkeye_range:
+		hud.hawkeye(margin, line_axis)
 
 
 func _on_net(_pos: Vector3) -> void:
@@ -856,7 +921,8 @@ func _server_athlete() -> Athlete:
 
 
 func _hand_position(a: Athlete) -> Vector3:
-	return a.position + a.right() * 0.25 + a.forward() * 0.35 + Vector3.UP * TOSS_HAND_H
+	# Toss from the left hand, just in front and slightly right of the head (right-hander).
+	return a.position + a.right() * 0.1 + a.forward() * 0.4 + Vector3.UP * TOSS_HAND_H
 
 
 ## Place both players for the serve: server behind the baseline on the deuce/ad side,
@@ -880,6 +946,8 @@ func _setup_serve() -> void:
 	var sx := srv.right().x * side * 0.9
 	box_side = -signf(sx)
 	var srv_z := 12.3 if server == Who.PLAYER else -12.3
+	if server == Who.CPU:
+		sx = signf(sx) * rng.randf_range(0.4, 2.2)  # the CPU varies where it serves from
 	srv.position = Vector3(sx, 0.0, srv_z)
 	rcv.position = Vector3(box_side * 2.4, 0.0, -signf(srv_z) * 12.7)
 	srv.velocity = Vector3.ZERO
@@ -887,9 +955,11 @@ func _setup_serve() -> void:
 	srv.relax()
 	rcv.relax()
 	if server == Who.PLAYER:
-		var x0 := 0.3 if sx > 0.0 else -4.0
-		player.area = Rect2(x0, srv_z, 3.7, 0.01)
-		hud.set_serve_hint("ПОДАЧА%s: ТАП — подброс, потом СВАЙП в диагональный квадрат, когда кольцо сожмётся" % ("  (2-я)" if serve_attempt == 2 else ""))
+		# Rules: behind the baseline, between the centre mark and the sideline on this side.
+		var x0 := 0.15 if sx > 0.0 else -Court.SINGLES_HALF_WIDTH
+		player.area = Rect2(x0, Court.HALF_LENGTH + 0.08, Court.SINGLES_HALF_WIDTH - 0.15, 1.6)
+		_move_target = Vector3.INF
+		hud.set_serve_hint("ПОДАЧА%s: держи палец — сменить место · ТАП — подброс · СВАЙП — удар" % ("  (2-я)" if serve_attempt == 2 else ""))
 	else:
 		player.area = PLAYER_AREA
 		_cpu_serve_timer = 0.5 if autoplay else 1.2
@@ -925,14 +995,14 @@ func _start_toss() -> void:
 	var g := BallPhysics.GRAVITY
 	var disc := maxf(0.0, TOSS_SPEED * TOSS_SPEED - 2.0 * g * (SERVE_CONTACT_H - hand.y))
 	toss_ideal = game_time + (TOSS_SPEED + sqrt(disc)) / g
-	srv.prepare(1)
+	srv.prepare_serve()
 	if server == Who.CPU:
 		_cpu_toss_offset = rng.randfn(0.0, lerpf(0.06, 0.02, Tuning.ai_skill))
 	elif autoplay:
 		_bot_offset = rng.randfn(0.0, 0.03)
 
 
-func _player_serve(dir: Vector3, pace_k: float) -> void:
+func _player_serve(dir: Vector3, pace_k: float, type: int) -> void:
 	var bp := ball.state.pos
 	if bp.y < 1.7:
 		return
@@ -944,18 +1014,20 @@ func _player_serve(dir: Vector3, pace_k: float) -> void:
 	var target := serve_target(origin, dir, pace_k)
 	var pace: float
 	var top: float
-	match shot_type:
+	var side_spin := 0.0
+	match type:
 		ShotType.FLAT:
 			pace = lerpf(36.0, 52.0, pace_k)
 			top = 60.0
 		ShotType.SLICE:
 			pace = lerpf(29.0, 39.0, pace_k)
-			top = 120.0
+			top = 80.0
+			side_spin = 260.0  # curves away to the server's left
 		_:
 			pace = lerpf(29.0, 41.0, pace_k)
 			top = lerpf(280.0, 380.0, pace_k)
-	player.swing(1, 0.02, bp.y)
-	var r := execute_shot(Who.PLAYER, player, bp, target, pace, top, q, err, 1)
+	player.swing(1, 0.02, bp.y, Athlete.Style.SERVE)
+	var r := execute_shot(Who.PLAYER, player, bp, target, pace, top, q, err, 1, false, side_spin)
 	_after_serve_hit()
 	ai.on_player_hit()
 	_stats["labels"][label] = _stats["labels"].get(label, 0) + 1
@@ -963,14 +1035,14 @@ func _player_serve(dir: Vector3, pace_k: float) -> void:
 		_set_aim(origin, target, Court.in_service_box(target, -1, box_side, 0.0))
 		_aim_hold = 0.8
 	var color := Hud.GOLD if label == "PERFECT" else (COLOR_WARN if label == "EARLY" or label == "LATE" else COLOR_GOOD)
-	hud.popup(label, color, "подача %d km/h" % roundi(r.speed * 3.6))
+	hud.popup(label, color, "подача %s  ·  %d km/h" % [["KICK", "FLAT", "SLICE"][type], roundi(r.speed * 3.6)])
 	cam.impulse(1.0 if label == "PERFECT" else 0.4)
 	if label == "PERFECT":
 		Input.vibrate_handheld(35)
 	last_shot = {
 		"label": label, "err_ms": err * 1000.0, "q_t": q, "q_p": 1.0, "q_m": 1.0, "q": q,
 		"side": "SRV", "speed": r.speed * 3.6, "elev": r.elevation_deg,
-		"target": Vector2(target.x, target.z), "type": Hud.SHOT_NAMES[shot_type],
+		"target": Vector2(target.x, target.z), "type": ["KICK", "FLAT", "SLICE"][type],
 	}
 
 
@@ -982,19 +1054,23 @@ func _cpu_serve_hit() -> void:
 	var tz: float
 	var pace: float
 	var top: float
+	var side_spin := 0.0
 	if serve_attempt == 1:
 		var wide := rng.randf() < 0.5
 		tx = box_side * (rng.randf_range(2.6, 3.6) if wide else rng.randf_range(0.4, 1.2))
 		tz = rng.randf_range(4.6, 5.9)
 		pace = lerpf(32.0, 46.0, s) * rng.randf_range(0.9, 1.05)
 		top = 120.0
+		if wide and rng.randf() < 0.5:
+			pace *= 0.85
+			side_spin = 240.0 * -box_side  # slice curving out wide
 	else:
 		tx = box_side * rng.randf_range(0.9, 2.6)
 		tz = rng.randf_range(4.2, 5.4)
 		pace = lerpf(26.0, 34.0, s)
 		top = 320.0
-	cpu.swing(1, 0.02, bp.y)
-	execute_shot(Who.CPU, cpu, bp, Vector3(tx, BallPhysics.RADIUS, tz), pace, top, q, _cpu_toss_offset, 1)
+	cpu.swing(1, 0.02, bp.y, Athlete.Style.SERVE)
+	execute_shot(Who.CPU, cpu, bp, Vector3(tx, BallPhysics.RADIUS, tz), pace, top, q, _cpu_toss_offset, 1, false, side_spin)
 	_after_serve_hit()
 	ai.on_cpu_hit(tx)
 	player.split_step()
@@ -1019,7 +1095,7 @@ func _update_slowmo(rd: float) -> void:
 		if late_until > 0.0:
 			want = true
 		elif t_contact <= Tuning.slowmo_lead:
-			want = absf(player.lateral_of(contact_pred)) < 2.8 and contact_pred.y < 2.7
+			want = absf(player.lateral_of(contact_pred)) < 2.8 and contact_pred.y < MAX_CONTACT_H
 	var target := Tuning.slowmo_scale if want else 1.0
 	if Tuning.slowmo_enabled and not autoplay and phase == Phase.SERVE and server == Who.PLAYER and toss_active:
 		if game_time > toss_ideal - 0.35:
@@ -1078,7 +1154,7 @@ func _update_timing_ring() -> void:
 		if late_until > 0.0:
 			ring.show_ring(cam.unproject_position(ball.state.pos), late_cross_time - game_time, Tuning.perfect_window, Tuning.good_window)
 			return
-		if t_contact < 1.1 and absf(player.lateral_of(contact_pred)) < 3.0 and contact_pred.y < 2.7:
+		if t_contact < 1.1 and absf(player.lateral_of(contact_pred)) < 3.0 and contact_pred.y < MAX_CONTACT_H:
 			ring.show_ring(cam.unproject_position(contact_pred), t_contact, Tuning.perfect_window, Tuning.good_window)
 			return
 	ring.hide_ring()
@@ -1108,7 +1184,7 @@ func _autoplay_tick() -> void:
 			_start_toss()
 		elif game_time >= toss_ideal + _bot_offset:
 			var to_box := Vector3(box_side * 2.0 - player.position.x, 0.0, -5.2 - player.position.z).normalized()
-			_player_serve(to_box.rotated(Vector3.UP, deg_to_rad(rng.randf_range(-6.0, 6.0))), rng.randf_range(0.3, 0.8))
+			_player_serve(to_box.rotated(Vector3.UP, deg_to_rad(rng.randf_range(-6.0, 6.0))), rng.randf_range(0.3, 0.8), rng.randi_range(0, 2))
 		return
 	if not _player_can_hit():
 		_bot_armed = false
@@ -1118,11 +1194,12 @@ func _autoplay_tick() -> void:
 		_bot_offset = rng.randfn(0.0, 0.035)  # bot timing error, + = late
 	var dir := _bot_dir(22.0)
 	var pk := rng.randf_range(0.2, 0.7)
+	var ty := rng.randi_range(0, 2)
 	if late_until > 0.0:
 		if game_time - late_cross_time >= _bot_offset:
-			_swing_input(dir, pk)
+			_swing_input(dir, pk, ty)
 	elif _bot_offset <= 0.0 and pending_swing.is_empty() and t_contact <= -_bot_offset:
-		_swing_input(dir, pk)
+		_swing_input(dir, pk, ty)
 
 
 func _print_autoplay_summary() -> void:

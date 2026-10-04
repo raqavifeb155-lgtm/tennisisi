@@ -161,6 +161,20 @@ func _hit(bp: Vector3) -> void:
 		tz = lerpf(6.8, 10.8, clampf(rng.randf_range(0.3, 1.0) * (0.55 + 0.45 * s), 0.0, 1.0))
 		pace = lerpf(22.0, 32.0, s) * rng.randf_range(0.88, 1.1)
 		top = rng.randf_range(160.0, 300.0)
+	var lob := false
+	var player_z: float = game.player.position.z
+	if player_z < 6.5 and q >= 0.45:
+		# Player at the net: lob over them, or pass down the open side hard.
+		if rng.randf() < 0.3 + 0.35 * s:
+			lob = true
+			tx = rng.randf_range(-2.5, 2.5)
+			tz = rng.randf_range(9.0, 10.8)
+			pace = 30.0
+			top = 220.0
+		else:
+			tx = (-signf(player_x) if absf(player_x) > 0.3 else (1.0 if rng.randf() < 0.5 else -1.0)) * rng.randf_range(2.8, 3.5)
+			tz = rng.randf_range(6.0, 9.0)
+			pace *= 1.1
 	me.swing(side, 0.02, bp.y)
-	game.execute_shot(CPU, me, bp, Vector3(tx, BallPhysics.RADIUS, tz), pace, top, q, t_err, side)
+	game.execute_shot(CPU, me, bp, Vector3(tx, BallPhysics.RADIUS, tz), pace, top, q, t_err, side, lob)
 	on_cpu_hit(tx)

@@ -72,12 +72,32 @@ static func substep(s: State, h: float) -> int:
 	var prev := s.pos
 	integrate_free(s, h)
 
-	# Net: the ball centre crossed z = 0 below the net top.
+	# Net: the ball centre crossed z = 0 below the top of the tape.
 	if (prev.z > 0.0) != (s.pos.z > 0.0):
 		var t := prev.z / (prev.z - s.pos.z)
 		var cross := prev.lerp(s.pos, t)
-		if absf(cross.x) <= Court.NET_HALF_WIDTH and cross.y - RADIUS < Court.net_height(cross.x):
+		var top := Court.net_height(cross.x)
+		if absf(cross.x) <= Court.NET_HALF_WIDTH and cross.y - RADIUS < top:
 			var side := 1.0 if prev.z > 0.0 else -1.0
+			var dy := cross.y - top
+			if dy > -RADIUS * 0.6:
+				# Net cord: the ball clips the tape. Bounce off the tape's rounded top;
+				# depending on height and speed it rolls over or drops back.
+				var dz := sqrt(maxf(RADIUS * RADIUS - dy * dy, 0.0))
+				var n := Vector3(0.0, dy, side * dz).normalized()
+				var vn := s.vel.dot(n)
+				if vn < 0.0:
+					var vt := s.vel - n * vn
+					s.vel = vt * 0.85 - n * vn * 0.15  # the tape gives: soft, not springy
+				s.spin *= 0.5
+				if dy >= 0.0 and s.vel.z * -side > 0.5:
+					# Centre above the tape and still moving across: it rolls over.
+					s.pos = Vector3(cross.x, top + dy + 0.002, -side * 0.002)
+				else:
+					# Below the tape's crown: it pops up and drops back.
+					s.pos = Vector3(cross.x, top, 0.0) + n * (RADIUS * 1.02)
+					s.vel.z = side * absf(s.vel.z) * 0.25
+				return Event.NET
 			s.pos = Vector3(cross.x, maxf(cross.y, RADIUS), side * (RADIUS + 0.01))
 			s.vel = Vector3(s.vel.x * 0.25, minf(s.vel.y, 0.0) * 0.2, -s.vel.z * 0.08)
 			s.spin *= 0.2

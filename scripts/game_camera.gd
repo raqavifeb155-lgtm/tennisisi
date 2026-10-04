@@ -16,6 +16,11 @@ var _last_us := 0
 
 
 func _ready() -> void:
+	if "--closecam" in OS.get_cmdline_user_args():
+		# Debug: close-up on the player to inspect animation.
+		height = 2.6
+		back = 3.6
+		look_ahead = 1.0
 	fov = _base_fov
 	near = 1.0
 	far = 90.0
@@ -35,13 +40,13 @@ func snap() -> void:
 
 func _desired_position() -> Vector3:
 	var p := target.global_position
-	return Vector3(p.x * 0.7, height, p.z + back)
+	return Vector3(p.x * (0.7 if look_ahead > 3.0 else 1.0), height, p.z + back)
 
 
 func _look_point() -> Vector3:
 	var p := target.global_position
 	var bx := ball.state.pos.x if ball and ball.active else 0.0
-	return Vector3(p.x * 0.35 + bx * 0.12, 0.0, p.z - look_ahead)
+	return Vector3(p.x * 0.35 + bx * 0.12, 0.0 if look_ahead > 3.0 else 1.0, p.z - look_ahead)
 
 
 func _process(_delta: float) -> void:
