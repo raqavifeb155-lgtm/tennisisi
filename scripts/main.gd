@@ -163,25 +163,14 @@ func _ready() -> void:
 	_build_helpers()
 	if not autoplay and DisplayServer.get_name() != "headless":
 		hud.show_tutorial_once()
+		sfx.set_ambience(Tuning.ambience)
+		Tuning.changed.connect(func() -> void: sfx.set_ambience(Tuning.ambience))
 	_last_real_us = Time.get_ticks_usec()
 	_reset_point()
 
 
 func _build_environment() -> void:
-	var we := WorldEnvironment.new()
-	var e := Environment.new()
-	e.background_mode = Environment.BG_COLOR
-	e.background_color = Color(0.53, 0.72, 0.9)
-	e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	e.ambient_light_color = Color(0.78, 0.82, 0.92)
-	e.ambient_light_energy = 0.65
-	e.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	we.environment = e
-	add_child(we)
-	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-55.0, -30.0, 0.0)
-	sun.light_energy = 1.1
-	add_child(sun)
+	add_child(Scenery.new())
 
 
 func _build_helpers() -> void:

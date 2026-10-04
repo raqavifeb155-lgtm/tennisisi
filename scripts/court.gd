@@ -12,9 +12,9 @@ const NET_HEIGHT_POST := 1.07
 const NET_HALF_WIDTH := 6.40
 
 const LINE_WIDTH := 0.08
-const COLOR_SURROUND := Color(0.17, 0.33, 0.27)
+const COLOR_SURROUND := Color(0.56, 0.54, 0.50)  # concrete around a city court
 const COLOR_RUNOFF := Color(0.24, 0.50, 0.40)
-const COLOR_COURT := Color(0.20, 0.38, 0.66)
+const COLOR_COURT := Color(0.16, 0.33, 0.64)
 const COLOR_LINE := Color(0.96, 0.96, 0.96)
 
 
@@ -51,7 +51,7 @@ const Y_LINES := 0.03
 
 
 func _ready() -> void:
-	_slab(Vector2(60.0, 80.0), 0.0, COLOR_SURROUND)
+	_slab(Vector2(DOUBLES_HALF_WIDTH * 2.0 + 13.0, HALF_LENGTH * 2.0 + 18.0), 0.0, COLOR_SURROUND)  # apron; the park around is Scenery
 	_slab(Vector2(DOUBLES_HALF_WIDTH * 2.0 + 7.0, HALF_LENGTH * 2.0 + 12.0), Y_RUNOFF, COLOR_RUNOFF)
 	_slab(Vector2(DOUBLES_HALF_WIDTH * 2.0, HALF_LENGTH * 2.0), Y_COURT, COLOR_COURT)
 

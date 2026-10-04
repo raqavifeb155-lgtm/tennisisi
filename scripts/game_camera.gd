@@ -5,9 +5,9 @@ extends Camera3D
 
 var target: Node3D
 var ball: Ball
-var height := 11.0
-var back := 9.0
-var look_ahead := 6.0
+var height := 8.0
+var back := 6.0
+var look_ahead := 9.0
 
 var _shake := 0.0
 var _fov_kick := 0.0
@@ -23,7 +23,7 @@ func _ready() -> void:
 		look_ahead = 1.0
 	fov = _base_fov
 	near = 1.0
-	far = 90.0
+	far = 700.0
 	_last_us = Time.get_ticks_usec()
 
 

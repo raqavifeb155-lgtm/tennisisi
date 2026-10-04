@@ -8,4 +8,6 @@
   use, no attribution required; credited here anyway).
 - `assets/sfx/bounce_real_1.wav` … `bounce_real_4.wav` — four bounces cut from
   "Tennis ball bounce" by freesound_community (Pixabay, sound 39028), same license.
+- `assets/sfx/birds.ogg` — a seamless one-minute loop from "Birds chirping calm" by
+  zehendrew (Pixabay, sound 173695), same license.
 - All other sounds in `assets/sfx/` are generated procedurally by `tools/gen_sfx.py`.
