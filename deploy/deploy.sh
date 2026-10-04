@@ -2,20 +2,43 @@
 # Puts the game on a Debian/Ubuntu server behind nginx with a free HTTPS certificate
 # (Telegram Mini Apps need HTTPS). Run from the unpacked archive:
 #
-#   sudo ./deploy.sh                      # no domain: uses <ip>.sslip.io
-#   sudo ./deploy.sh tennis.example.com   # your own domain (A record -> this server)
-#   sudo ./deploy.sh --update             # only replace the game files (new version)
+#   sudo ./deploy.sh                      # first time, no domain: uses <ip>.sslip.io
+#   sudo ./deploy.sh tennis.example.com   # first time, your own domain (A record -> this server)
+#   sudo ./deploy.sh                      # again later: only replaces the game (new version)
+#   sudo ./deploy.sh --update             # same, explicitly
 #
 # Safe for a server that already runs other things: it adds one nginx site and stops
 # if ports 80/443 belong to something other than nginx.
 set -euo pipefail
 cd "$(dirname "$0")"
 WEB_DIR=/var/www/tennis
+SITE=/etc/nginx/sites-available/tennis
 
-if [ "${1:-}" = "--update" ]; then
+if [ "$(id -u)" -ne 0 ]; then
+	echo "Run as root: sudo ./deploy.sh" >&2
+	exit 1
+fi
+if [ ! -f web/index.html ]; then
+	echo "web/index.html not found: run this from the unpacked archive." >&2
+	exit 1
+fi
+
+update_game() {
 	mkdir -p "$WEB_DIR"
 	cp -r web/. "$WEB_DIR/"
-	echo "Updated files in $WEB_DIR"
+	# Older installs: serve the pre-compressed files (.gz) shipped in the archive.
+	if [ -f "$SITE" ] && ! grep -q "gzip_static" "$SITE"; then
+		sed -i 's/^\(\s*\)gzip on;/\1gzip on;\n\1gzip_static on;/' "$SITE"
+	fi
+	if command -v nginx >/dev/null; then
+		nginx -t && systemctl reload nginx
+	fi
+	echo "Game updated in $WEB_DIR"
+	grep -m1 -o "server_name [^;]*" "$SITE" 2>/dev/null | sed 's/server_name /Address: https:\/\//; s/$/\//' || true
+}
+
+if [ "${1:-}" = "--update" ] || { [ -z "${1:-}" ] && [ -f "$SITE" ]; }; then
+	update_game
 	exit 0
 fi
 
@@ -41,8 +64,8 @@ apt-get install -y nginx certbot python3-certbot-nginx
 
 mkdir -p "$WEB_DIR"
 cp -r web/. "$WEB_DIR/"
-sed "s/__DOMAIN__/$DOMAIN/g" nginx-tennis.conf > /etc/nginx/sites-available/tennis
-ln -sf /etc/nginx/sites-available/tennis /etc/nginx/sites-enabled/tennis
+sed "s/__DOMAIN__/$DOMAIN/g" nginx-tennis.conf > "$SITE"
+ln -sf "$SITE" /etc/nginx/sites-enabled/tennis
 nginx -t
 systemctl enable --now nginx
 systemctl reload nginx

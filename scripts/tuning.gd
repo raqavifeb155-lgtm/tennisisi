@@ -22,6 +22,7 @@ var hook_min := 0.15           # how far the finger must come back (of the forwa
 
 # Player
 var player_speed := 6.2
+var one_handed_bh := false     # backhand style: one-handed (Wawrinka) or two-handed
 var tap_controls := false      # true: tap / hold the court to run; false: thumb joystick under the player
 var assist := 0.6              # auto-positioning help, 0 = none (a tap overrides it for that ball)
 

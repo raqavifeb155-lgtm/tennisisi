@@ -41,9 +41,12 @@ const LEGENDARY_CHANCE := 0.015   # ... or a legendary one
 const BOSS_LOOT_BONUS := 0.12
 
 var format := 0                   # index into FORMATS
+var location := "park"            # Locations id: scenery, surface and ball physics
 var lineup: Array = []            # per opponent: {"mods": [ids], "racket": item or {}}
 var racket := {}                  # the player's racket this run (Gear item), {} = the stock one
 var pending_loot := {}            # racket dropped by the opponent just beaten
+var missed_loot := ""             # name of the racket lost in the trophy mini-game
+var banked := false               # the run's gold has been added to the saved total
 var rng := RandomNumberGenerator.new()
 var state := State.BRACKET
 var stage := 0                    # index into Opponents.ROSTER
@@ -128,6 +131,10 @@ func take_loot(equip: bool) -> void:
 	pending_loot = {}
 
 
+func tier_name() -> String:
+	return Locations.find(location)["tour"]
+
+
 func format_info() -> Dictionary:
 	return FORMATS[format]
 
@@ -146,6 +153,7 @@ func gold_for_win(i: int) -> int:
 ## Records a finished match and moves the run on.
 func record_match(won: bool, score_text: String, r: RandomNumberGenerator) -> void:
 	results.append({"stage": stage, "won": won, "score": score_text})
+	missed_loot = ""
 	if won:
 		pending_loot = current_lineup()["racket"]
 		gold += gold_for_win(stage)
@@ -198,5 +206,5 @@ func give_up() -> void:
 ## How far the run got, for the summary screen.
 func finish_text() -> String:
 	if champion:
-		return "Чемпион! %s" % TIER_NAME
+		return "Чемпион! %s" % tier_name()
 	return "Вылет: %s" % round_name()

@@ -5,6 +5,7 @@ extends CanvasLayer
 ## behind a dark veil. Every button reports through `chosen(action, arg)`; Main decides.
 
 signal chosen(action: String, arg: int)
+signal sfx_request(sound: String, volume_db: float, pitch: float)
 
 const GAME_TITLE := "МАТЧБОЛ"
 const GOLD := Color(1.0, 0.85, 0.25)
@@ -14,6 +15,41 @@ const DIM := Color(1, 1, 1, 0.6)
 
 var root: Control
 var _box: VBoxContainer
+var _chip: PanelContainer          # gold balance, top left
+var _chip_label: Label
+var _chip_icon: Control
+var _gold_shown := 0
+var _busy := false                 # a press animation is playing: ignore other taps
+var _rays: Rays
+
+
+## A gold coin, drawn (no textures needed).
+class Coin extends Control:
+	func _draw() -> void:
+		draw_circle(Vector2.ZERO, 13.0, Color(0.8, 0.55, 0.08))
+		draw_circle(Vector2.ZERO, 10.5, Color(1.0, 0.85, 0.25))
+		draw_circle(Vector2(-3.5, -3.5), 3.5, Color(1.0, 1.0, 0.85, 0.9))
+
+
+## Slowly turning light rays behind a rare trophy.
+class Rays extends Control:
+	var color := Color.WHITE
+	var centre := Vector2.ZERO
+	var _t := 0.0
+
+	func _process(delta: float) -> void:
+		_t += delta
+		queue_redraw()
+
+	func _draw() -> void:
+		for i in 14:
+			var a := _t * 0.5 + TAU * i / 14.0
+			var p1 := centre + Vector2.from_angle(a - 0.1) * 700.0
+			var p2 := centre + Vector2.from_angle(a + 0.1) * 700.0
+			draw_colored_polygon(PackedVector2Array([centre, p1, p2]), Color(color, 0.13))
+		var pulse := 0.5 + 0.5 * sin(_t * 3.0)
+		draw_circle(centre, 150.0 + 12.0 * pulse, Color(color, 0.12))
+		draw_circle(centre, 95.0, Color(color, 0.12))
 
 
 func _ready() -> void:
@@ -40,7 +76,40 @@ func _ready() -> void:
 	_box.add_theme_constant_override("separation", 14)
 	_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	margin.add_child(_box)
+	_build_chip()
 	root.visible = false
+
+
+func _build_chip() -> void:
+	_chip = PanelContainer.new()
+	_chip.add_theme_stylebox_override("panel", _style(Color(0.08, 0.1, 0.14, 0.9), GOLD))
+	_chip.position = Vector2(16, 16)
+	_chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_chip)
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 12)
+	_chip.add_child(h)
+	var icon_box := Control.new()
+	icon_box.custom_minimum_size = Vector2(28, 28)
+	h.add_child(icon_box)
+	var coin := Coin.new()
+	coin.position = Vector2(14, 14)
+	icon_box.add_child(coin)
+	_chip_icon = icon_box
+	_chip_label = Label.new()
+	_chip_label.add_theme_font_size_override("font_size", 28)
+	_chip_label.add_theme_color_override("font_color", GOLD)
+	h.add_child(_chip_label)
+
+
+## Gold to show: saved gold plus what the current run has earned but not banked yet.
+func _balance(t: Tournament) -> int:
+	return SaveData.gold + (t.gold if t != null and not t.banked else 0)
+
+
+func _set_chip(v: int) -> void:
+	_gold_shown = v
+	_chip_label.text = str(v)
 
 
 func is_open() -> bool:
@@ -82,8 +151,8 @@ func show_controls() -> void:
 
 
 func show_bracket(t: Tournament) -> void:
-	_open()
-	_label(Tournament.TIER_NAME.to_upper(), 40, GOLD)
+	_open(t)
+	_label(t.tier_name().to_upper(), 34, GOLD, true)
 	var info := "Ракетка: %s   ·   Вайлд-карды: %d" % ["стандартная" if t.racket.is_empty() else t.racket["name"], t.wildcards]
 	if not t.perks.is_empty():
 		var names: Array[String] = []
@@ -101,7 +170,7 @@ func show_bracket(t: Tournament) -> void:
 
 
 func show_result(t: Tournament, won: bool, score_text: String, stats: Dictionary) -> void:
-	_open()
+	_open(t)
 	var opp: Dictionary = Opponents.ROSTER[t.results.back()["stage"]]
 	_label("ПОБЕДА" if won else "ПОРАЖЕНИЕ", 80, WIN if won else LOSE)
 	_label("против: %s" % opp["name"], 28, DIM)
@@ -109,9 +178,15 @@ func show_result(t: Tournament, won: bool, score_text: String, stats: Dictionary
 	_gap(10)
 	_label("PERFECT: %d   ·   эйсы: %d   ·   лучший розыгрыш: %d" % [stats.get("perfect", 0), stats.get("aces", 0), stats.get("best_rally", 0)], 22, DIM, true)
 	if won:
-		_label("+%d золота" % t.gold_for_win(t.stage - 1), 28, GOLD)
+		var gain := t.gold_for_win(t.stage - 1) + (roundi(Tournament.CHAMPION_BONUS * float(t.format_info()["reward"])) if t.champion else 0)
+		var gl := _label("+%d золота" % gain, 30, GOLD)
+		var total := _balance(t)
+		_set_chip(total - gain)
+		_fly_coins(gl, gain, total)
 	if won and not t.pending_loot.is_empty():
 		_label("Трофей: %s" % t.pending_loot["name"], 26, Gear.color(t.pending_loot), true)
+	elif won and t.missed_loot != "":
+		_label("Трофей упущен: %s" % t.missed_loot, 22, LOSE, true)
 	_gap(30)
 	if won and not t.pending_loot.is_empty():
 		_button("ЗАБРАТЬ ТРОФЕЙ", "to_loot", 0, true)
@@ -124,6 +199,19 @@ func show_result(t: Tournament, won: bool, score_text: String, stats: Dictionary
 			_button("ЗАКОНЧИТЬ ТУРНИР", "give_up")
 		_:
 			_button("ИТОГИ", "to_summary", 0, true)
+
+
+func show_locations() -> void:
+	_open()
+	_label("ГДЕ ИГРАЕМ", 48, GOLD)
+	_label("У каждого покрытия своя физика мяча", 22, DIM, true)
+	_gap(10)
+	var colors := {"hard": Color(0.4, 0.62, 1.0), "clay": Color(0.95, 0.55, 0.3), "grass": Color(0.5, 0.85, 0.4)}
+	for i in Locations.LIST.size():
+		var l: Dictionary = Locations.LIST[i]
+		_card({"tag": String(l["surface_name"]).to_upper(), "title": l["name"], "desc": l["desc"]}, "location", i, colors[l["surface"]])
+	_gap(10)
+	_button("НАЗАД", "menu")
 
 
 func show_formats() -> void:
@@ -147,6 +235,8 @@ func show_character() -> void:
 	_gap(6)
 	for id in Skills.LIST:
 		_skill_row(id)
+	_button("БЭКХЕНД: %s" % ("ОДНОРУЧНЫЙ" if Tuning.one_handed_bh else "ДВУРУЧНЫЙ"), "bh_style")
+	_label("Одноручный — мощнее по линии (+6% силы), окно PERFECT чуть уже (−10%)", 18, DIM, true)
 	if not Skills.perks.is_empty():
 		var names: Array[String] = []
 		for p in Skills.perks:
@@ -168,27 +258,41 @@ func show_skill_perk(skill: String, offer: Array) -> void:
 
 ## The racket the beaten opponent dropped: take it or keep your own.
 func show_loot(t: Tournament) -> void:
-	_open()
+	_open(t)
 	var item: Dictionary = t.pending_loot
 	_label("ТРОФЕЙ", 56, Gear.color(item))
 	_label("Ракетка соперника теперь твоя", 24, DIM, true)
 	_gap(8)
-	_item_panel(item, "ВЫПАЛО")
+	var shown := _item_panel(item, "ВЫПАЛО")
 	_item_panel(t.racket, "СЕЙЧАС В РУКАХ")
+	if not item.is_empty() and int(item["rarity"]) >= Gear.EPIC:
+		_rays = Rays.new()
+		_rays.set_anchors_preset(Control.PRESET_FULL_RECT)
+		_rays.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_rays.color = Gear.color(item)
+		root.add_child(_rays)
+		root.move_child(_rays, 1)  # behind the cards, over the dark veil
+		_place_rays.call_deferred(shown)
 	_gap(14)
 	_button("ВЗЯТЬ", "loot", 1, true)
 	_button("ОСТАВИТЬ СВОЮ", "loot", 0)
 
 
-func _item_panel(item: Dictionary, tag: String) -> void:
+func _place_rays(target: Control) -> void:
+	await get_tree().process_frame
+	if _rays and is_instance_valid(target):
+		_rays.centre = target.get_global_rect().get_center()
+
+
+func _item_panel(item: Dictionary, tag: String) -> Control:
 	var c := {"tag": tag, "title": "Стандартная ракетка", "desc": "без бонусов"}
 	if not item.is_empty():
 		c = {"tag": "%s  ·  %s" % [tag, Gear.RARITIES[item["rarity"]]["name"].to_upper()], "title": item["name"], "desc": Gear.describe(item)}
-	_card(c, "", -1, Gear.color(item) if not item.is_empty() else DIM)
+	return _card(c, "", -1, Gear.color(item) if not item.is_empty() else DIM)
 
 
 func show_reward(t: Tournament) -> void:
-	_open()
+	_open(t)
 	_label("НАГРАДА", 56, GOLD)
 	_label("Выбери одну", 26, DIM)
 	_gap(10)
@@ -208,7 +312,7 @@ func show_reward(t: Tournament) -> void:
 
 
 func show_summary(t: Tournament) -> void:
-	_open()
+	_open(t)
 	_label("ЧЕМПИОН!" if t.champion else "ТУРНИР ОКОНЧЕН", 72, GOLD if t.champion else LOSE)
 	_label(t.finish_text(), 30, Color.WHITE, true)
 	_gap(10)
@@ -226,10 +330,100 @@ func show_summary(t: Tournament) -> void:
 
 # --- Building blocks ------------------------------------------------------------
 
-func _open() -> void:
+func _open(t: Tournament = null) -> void:
 	for c in _box.get_children():
 		c.queue_free()
+	if _rays:
+		_rays.queue_free()
+		_rays = null
 	root.visible = true
+	_busy = false
+	SaveData.load_once()
+	_set_chip(_balance(t))
+	_animate_in.call_deferred()
+
+
+## Screens pop in: elements appear one after another with a little overshoot.
+func _animate_in() -> void:
+	var items: Array[Control] = []
+	for c in _box.get_children():
+		if c is Control and not c.is_queued_for_deletion():
+			items.append(c)
+			c.modulate.a = 0.0
+	await get_tree().process_frame
+	var i := 0
+	for c in items:
+		if not is_instance_valid(c):
+			continue
+		c.pivot_offset = c.size * 0.5
+		c.scale = Vector2(0.86, 0.86)
+		var tw := c.create_tween()
+		tw.set_ignore_time_scale(true)
+		tw.tween_interval(0.045 * i)
+		tw.tween_property(c, "modulate:a", 1.0, 0.16)
+		tw.parallel().tween_property(c, "scale", Vector2(1.05, 1.05), 0.16).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		tw.tween_property(c, "scale", Vector2.ONE, 0.1)
+		i += 1
+
+
+## A tap on a button or card: it punches (cards flash, the others fade), then reports.
+func _press(b: Control, action: String, arg: int, card := false) -> void:
+	if _busy:
+		return
+	_busy = true
+	sfx_request.emit("hit", -16.0, 1.6)
+	b.pivot_offset = b.size * 0.5
+	var tw := b.create_tween()
+	tw.set_ignore_time_scale(true)
+	tw.tween_property(b, "scale", Vector2(0.93, 0.93), 0.06)
+	tw.tween_property(b, "scale", Vector2(1.1 if card else 1.03, 1.1 if card else 1.03), 0.1).set_trans(Tween.TRANS_BACK)
+	if card:
+		tw.parallel().tween_property(b, "modulate", Color(1.5, 1.5, 1.5), 0.1)
+		for c in _box.get_children():
+			if c != b and c is Control:
+				var f := (c as Control).create_tween()
+				f.set_ignore_time_scale(true)
+				f.tween_property(c, "modulate:a", 0.25, 0.15)
+		tw.tween_interval(0.18)
+	tw.tween_property(b, "scale", Vector2.ONE, 0.06)
+	await tw.finished
+	_busy = false
+	chosen.emit(action, arg)
+
+
+## Coins burst out of `from` and fly into the balance chip, which counts up to `to_value`.
+func _fly_coins(from: Control, gain: int, to_value: int) -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if not is_instance_valid(from) or gain <= 0:
+		_set_chip(to_value)
+		return
+	var start := from.get_global_rect().get_center()
+	var target := _chip_icon.get_global_rect().get_center()
+	var n := clampi(gain / 2, 6, 18)
+	var base := _gold_shown
+	var landed := [0]
+	for i in n:
+		var coin := Coin.new()
+		coin.position = start
+		root.add_child(coin)
+		var burst := start + Vector2(randf_range(-110, 110), randf_range(-130, -30))
+		var tw := coin.create_tween()
+		tw.set_ignore_time_scale(true)
+		tw.tween_property(coin, "position", burst, 0.25).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		tw.tween_interval(0.03 * i)
+		tw.tween_property(coin, "position", target, 0.42).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		tw.parallel().tween_property(coin, "scale", Vector2(0.7, 0.7), 0.42)
+		tw.tween_callback(func() -> void:
+			coin.queue_free()
+			landed[0] += 1
+			_set_chip(base + roundi(float(gain) * landed[0] / n) if landed[0] < n else to_value)
+			_chip.pivot_offset = _chip.size * 0.5
+			var p := _chip.create_tween()
+			p.set_ignore_time_scale(true)
+			p.tween_property(_chip, "scale", Vector2(1.18, 1.18), 0.05)
+			p.tween_property(_chip, "scale", Vector2.ONE, 0.1)
+			sfx_request.emit("bounce", -12.0, 1.7 + 0.02 * landed[0]))
 
 
 func _label(text: String, font_size: int, color: Color, wrap := false) -> Label:
@@ -278,7 +472,7 @@ func _button(text: String, action: String, arg := 0, primary := false) -> Button
 	b.add_theme_stylebox_override("pressed", _style(bg.darkened(0.2)))
 	for k in ["font_color", "font_hover_color", "font_pressed_color"]:
 		b.add_theme_color_override(k, fg)
-	b.pressed.connect(func() -> void: chosen.emit(action, arg))
+	b.pressed.connect(func() -> void: _press(b, action, arg))
 	_box.add_child(b)
 	return b
 
@@ -354,7 +548,7 @@ func _won_score(t: Tournament, i: int) -> String:
 
 
 ## A big tappable card: small coloured tag, title, description.
-func _card(c: Dictionary, action: String, i: int, border: Color) -> void:
+func _card(c: Dictionary, action: String, i: int, border: Color) -> Button:
 	var b := Button.new()
 	b.custom_minimum_size = Vector2(0, 150)
 	b.focus_mode = Control.FOCUS_NONE
@@ -391,8 +585,9 @@ func _card(c: Dictionary, action: String, i: int, border: Color) -> void:
 		b.add_theme_stylebox_override("disabled", _style(bg, border))
 		b.custom_minimum_size = Vector2(0, 120)
 	else:
-		b.pressed.connect(func() -> void: chosen.emit(action, i))
+		b.pressed.connect(func() -> void: _press(b, action, i, true))
 	_box.add_child(b)
+	return b
 
 
 func _skill_row(id: String) -> void:

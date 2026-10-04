@@ -56,5 +56,10 @@ func _apply() -> void:
 		scenery.set_high_quality(level == 0)
 
 
+## Re-applies the quality level (a new scenery was swapped in).
+func refresh() -> void:
+	_apply()
+
+
 func describe() -> String:
 	return "gfx L%d  3D x%.2f" % [level, scale_3d]

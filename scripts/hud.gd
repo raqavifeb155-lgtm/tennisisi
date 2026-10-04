@@ -233,6 +233,7 @@ func _build_debug_panel() -> void:
 		menu_requested.emit())
 	v.add_child(menu)
 	_check(v, "Управление тапами (вместо джойстика)", "tap_controls")
+	_check(v, "Одноручный бэкхенд", "one_handed_bh")
 	_check(v, "Замедление (slow-mo)", "slowmo_enabled")
 	_slider(v, "Сила замедления", "slowmo_scale", 0.1, 1.0, 0.01)
 	_slider(v, "Когда включать (с до удара)", "slowmo_lead", 0.1, 0.8, 0.01)

@@ -21,6 +21,27 @@ const MAX_STEP := 1.0 / 240.0
 
 enum Event { NONE, BOUNCE, NET }
 
+## Off while the net is lowered (the trophy mini-game).
+static var net_enabled := true
+
+## Court surface (ITF pace classes): clay grips the ball — slower, higher bounce, more
+## kick from topspin; grass lets it skid — faster, lower; hard court in between.
+const SURFACES := {
+	"hard": {"friction": 0.62, "bounce": 0.0, "pace": 1.0},
+	"clay": {"friction": 0.82, "bounce": 0.04, "pace": 0.9},
+	"grass": {"friction": 0.55, "bounce": -0.03, "pace": 1.0},
+}
+static var friction := 0.62
+static var bounce_offset := 0.0
+static var pace := 1.0            # share of the ball's speed along the court kept by the surface
+
+
+static func set_surface(id: String) -> void:
+	var s: Dictionary = SURFACES.get(id, SURFACES["hard"])
+	friction = s["friction"]
+	bounce_offset = s["bounce"]
+	pace = s["pace"]
+
 
 class State:
 	var pos := Vector3.ZERO
@@ -73,7 +94,7 @@ static func substep(s: State, h: float) -> int:
 	integrate_free(s, h)
 
 	# Net: the ball centre crossed z = 0 below the top of the tape.
-	if (prev.z > 0.0) != (s.pos.z > 0.0):
+	if net_enabled and (prev.z > 0.0) != (s.pos.z > 0.0):
 		var t := prev.z / (prev.z - s.pos.z)
 		var cross := prev.lerp(s.pos, t)
 		var top := Court.net_height(cross.x)
@@ -115,15 +136,15 @@ static func substep(s: State, h: float) -> int:
 ## contact-point slip needs a tangential impulse of |slip| / 2.5 (per unit mass).
 static func bounce(s: State) -> void:
 	var vn := -s.vel.y
-	var e := clampf(0.84 - 0.010 * vn, 0.6, 0.82)
+	var e := clampf(0.84 - 0.010 * vn + bounce_offset, 0.55, 0.86)
 	var vt := Vector3(s.vel.x, 0.0, s.vel.z)
 	var slip := vt + s.spin.cross(Vector3(0.0, -RADIUS, 0.0))
 	var jn := (1.0 + e) * vn
-	var jt := minf(COURT_FRICTION * jn, slip.length() / 2.5)
+	var jt := minf(friction * jn, slip.length() / 2.5)
 	var dvt := Vector3.ZERO
 	if slip.length() > 0.00001:
 		dvt = -slip.normalized() * jt
-	s.vel = vt + dvt + Vector3(0.0, e * vn, 0.0)
+	s.vel = (vt + dvt) * pace + Vector3(0.0, e * vn, 0.0)
 	s.spin += Vector3.UP.cross(dvt) * (-1.5 / RADIUS)
 	if e * vn < 0.35:
 		s.vel.y = 0.0

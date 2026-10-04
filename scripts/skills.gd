@@ -192,12 +192,19 @@ static func find_perk(perk_id: String) -> Dictionary:
 	return {}
 
 
-## How well a stroke family is played: multipliers for the timing windows, pace,
-## random scatter and spin. Level 0 is a beginner, level 25 a pro.
+## How well a stroke family is played. Level 0 is a beginner, level 30 a pro.
+##   window      PERFECT window: narrow for a beginner, so PERFECTs are rare at first
+##   good        GOOD window: stays forgiving, so a beginner still gets the ball back
+##   ring        how early the timing ring appears (s): late for a beginner
+##   ring_speed  how fast it closes: a beginner's ring flies in
+##   pace, scatter, spin  power, aim error and spin of the shot
 static func stroke(id: String) -> Dictionary:
 	var k := float(level(id)) / MAX_LEVEL
 	return {
-		"window": lerpf(0.8, 1.3, k) * (1.0 + mod(id + "_window")),
+		"window": lerpf(0.75, 1.3, k) * (1.0 + mod(id + "_window")),
+		"good": lerpf(0.95, 1.25, k) * (1.0 + mod(id + "_window") * 0.5),
+		"ring": lerpf(0.6, 0.95, k),
+		"ring_speed": lerpf(1.4, 0.9, k),
 		"pace": lerpf(0.88, 1.08, k) * (1.0 + mod(id + "_pace")),
 		"scatter": maxf(lerpf(1.35, 0.7, k) * (1.0 + mod(id + "_scatter")), 0.3),
 		"spin": lerpf(0.8, 1.1, k) * (1.0 + mod(id + "_spin")),

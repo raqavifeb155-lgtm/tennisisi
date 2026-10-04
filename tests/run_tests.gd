@@ -19,6 +19,7 @@ func _init() -> void:
 	test_skills()
 	test_gear_and_loot()
 	test_timing_ring_stays_put()
+	test_surfaces()
 	test_service_box()
 	test_gestures()
 	test_net_cord()
@@ -254,6 +255,8 @@ func test_skills() -> void:
 	check(Skills.level("forehand") == 0, "a new player starts at level 0")
 	var weak := Skills.stroke("forehand")
 	check(weak["window"] < 1.0 and weak["scatter"] > 1.0 and weak["pace"] < 1.0, "beginner: narrow window, more scatter, less pace")
+	check(weak["good"] > weak["window"] and weak["good"] >= 0.9, "beginner's GOOD window stays forgiving")
+	check(weak["ring"] < 0.7 and weak["ring_speed"] > 1.2, "beginner's ring shows late and closes fast")
 	var lv := Skills.add_xp("forehand", Skills.cost(1))
 	check(lv == 1 and Skills.level("forehand") == 1, "first level costs %.0f xp" % Skills.cost(1))
 	var to5 := 0.0
@@ -339,6 +342,32 @@ func test_timing_ring_stays_put() -> void:
 	ring.show_ring(Vector2(250, 410), 0.2, 0.035, 0.09)
 	check(ring._pos == Vector2(300, 400) and ring.is_shown(), "a one-frame gap doesn't move it")
 	ring.free()
+
+
+## The same shot on each surface: clay is slow and high, grass fast and low.
+func test_surfaces() -> void:
+	print("surfaces")
+	var res := {}
+	for id in ["clay", "hard", "grass"]:
+		BallPhysics.set_surface(id)
+		var s := BallPhysics.State.new(Vector3(0, 1.2, -1.0), Vector3(0, -3.0, -24.0), BallPhysics.topspin_vector(Vector3(0, 0, -1), 120.0))
+		var bounced := false
+		var apex := 0.0
+		var speed_after := 0.0
+		for i in 4000:
+			var ev := BallPhysics.substep(s, BallPhysics.MAX_STEP)
+			if ev == BallPhysics.Event.BOUNCE:
+				if bounced:
+					break
+				bounced = true
+				speed_after = Vector2(s.vel.x, s.vel.z).length()
+			if bounced:
+				apex = maxf(apex, s.pos.y)
+		res[id] = [speed_after, apex]
+	BallPhysics.set_surface("hard")
+	check(res["clay"][0] < res["hard"][0] and res["hard"][0] < res["grass"][0], "speed after the bounce: clay %.1f < hard %.1f < grass %.1f m/s" % [res["clay"][0], res["hard"][0], res["grass"][0]])
+	check(res["clay"][1] > res["hard"][1] and res["hard"][1] > res["grass"][1], "bounce height: clay %.2f > hard %.2f > grass %.2f m" % [res["clay"][1], res["hard"][1], res["grass"][1]])
+	check(Locations.LIST.size() == 3 and Locations.find("clay")["surface"] == "clay", "three locations")
 
 
 func test_service_box() -> void:

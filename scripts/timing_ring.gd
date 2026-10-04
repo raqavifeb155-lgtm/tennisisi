@@ -28,6 +28,7 @@ var _pos := Vector2.ZERO
 var _t_left := 0.0
 var _perfect := 0.035
 var _good := 0.09
+var _speed := 1.0            # how fast the ring closes (a beginner's flies in)
 
 var _fb_text := ""
 var _fb_sub := ""
@@ -42,7 +43,8 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
-func show_ring(pos: Vector2, t_left: float, perfect_window: float, good_window: float) -> void:
+func show_ring(pos: Vector2, t_left: float, perfect_window: float, good_window: float, speed := 1.0) -> void:
+	_speed = speed
 	if not _active:
 		_pos = pos  # locked here until the ring is hidden
 	_active = true
@@ -114,7 +116,7 @@ func _draw_ring() -> void:
 	draw_arc(_pos, INNER, 0.0, TAU, 48, Color(1, 1, 1, 0.7), 4.0, true)
 	draw_circle(_pos, 5.0, Color(1, 1, 1, 0.9))
 	# Shrinking ring
-	var r := INNER + _t_left * PX_PER_SEC
+	var r := INNER + _t_left * PX_PER_SEC * _speed
 	if r > 6.0:
 		draw_arc(_pos, r, 0.0, TAU, 64, col, 6.0, true)
 	if a <= _perfect:

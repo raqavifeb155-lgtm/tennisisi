@@ -13,6 +13,7 @@ static var _loaded := false
 static var enabled := true        # off in automated test runs
 static var control_chosen := false # the first-launch control choice was made
 static var tap_controls := false
+static var one_handed_bh := false
 
 
 static func load_once() -> void:
@@ -28,6 +29,7 @@ static func load_once() -> void:
 	best_round = cf.get_value("meta", "best_round", -1)
 	control_chosen = cf.get_value("settings", "control_chosen", false)
 	tap_controls = cf.get_value("settings", "tap_controls", false)
+	one_handed_bh = cf.get_value("settings", "one_handed_bh", false)
 	Skills.xp = cf.get_value("skills", "xp", {})
 	Skills.perks = cf.get_value("skills", "perks", [])
 	Skills.pending = cf.get_value("skills", "pending", [])
@@ -44,6 +46,7 @@ static func save() -> void:
 	cf.set_value("meta", "best_round", best_round)
 	cf.set_value("settings", "control_chosen", control_chosen)
 	cf.set_value("settings", "tap_controls", tap_controls)
+	cf.set_value("settings", "one_handed_bh", one_handed_bh)
 	cf.set_value("skills", "xp", Skills.xp)
 	cf.set_value("skills", "perks", Skills.perks)
 	cf.set_value("skills", "pending", Skills.pending)
@@ -53,6 +56,9 @@ static func save() -> void:
 
 static func record_run(t: Tournament) -> void:
 	load_once()
+	if t.banked:
+		return
+	t.banked = true
 	played += 1
 	gold += t.gold
 	if t.champion:
