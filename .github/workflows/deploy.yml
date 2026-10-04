@@ -1,0 +1,31 @@
+# Uploads the committed web build (build/web) to the game server whenever main changes.
+# One-time setup in the repository settings (Settings -> Secrets and variables -> Actions):
+#   variable DEPLOY_HOST     server IP or domain
+#   variable DEPLOY_USER     SSH user (e.g. root)
+#   secret   DEPLOY_SSH_KEY  private key whose public half is in the server's authorized_keys
+# The server must have been prepared once with deploy/deploy.sh.
+name: Deploy game
+
+on:
+  push:
+    branches: [main]
+    paths: ["build/web/**"]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    if: ${{ vars.DEPLOY_HOST != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upload to server
+        env:
+          HOST: ${{ vars.DEPLOY_HOST }}
+          USER: ${{ vars.DEPLOY_USER }}
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
+          rsync -az --delete -e "ssh -i ~/.ssh/id_deploy" build/web/ "$USER@$HOST:/var/www/tennis/"
