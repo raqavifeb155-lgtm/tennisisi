@@ -12,6 +12,11 @@ func _init() -> void:
 	test_solver_accuracy()
 	test_net_collision()
 	test_scoring()
+	test_tiebreak_match()
+	test_short_sets()
+	test_classic_set()
+	test_tournament_flow()
+	test_skills()
 	test_service_box()
 	test_gestures()
 	test_net_cord()
@@ -140,6 +145,136 @@ func test_scoring() -> void:
 	sc.add_point(0)
 	var game := sc.add_point(0)
 	check(game and sc.games == [1, 0] and sc.server == 1, "game to player, server switches")
+
+
+func _win_points(sc: MatchScore, w: int, n: int) -> int:
+	var ev := MatchScore.Event.POINT
+	for i in n:
+		ev = sc.add_point(w)
+	return ev
+
+
+func test_tiebreak_match() -> void:
+	print("tiebreak format")
+	var sc := MatchScore.new(1, 0, 0, 0, "OPP")
+	check(sc.in_tiebreak and sc.server == 0 and sc.deuce_side(), "first point: player serves from deuce side")
+	sc.add_point(0)
+	check(sc.server == 1 and not sc.deuce_side(), "after 1 point: opponent serves from ad side")
+	sc.add_point(1)
+	check(sc.server == 1 and sc.deuce_side(), "after 2 points: opponent still serves, deuce side")
+	sc.add_point(1)
+	check(sc.server == 0, "after 3 points: player serves again")
+	_win_points(sc, 0, 5)
+	_win_points(sc, 1, 4)  # 6:6
+	check(sc.point_text() == "YOU  6 : 6  OPP" and not sc.is_over(), "6:6 goes on (win by two)")
+	check(not sc.match_point_for(0), "6:6 is not a match point")
+	sc.add_point(0)
+	check(sc.match_point_for(0), "7:6 is a match point")
+	var ev := sc.add_point(0)
+	check(ev == MatchScore.Event.MATCH and sc.winner == 0 and sc.final_text() == "8:6", "8:6 wins the match: '%s'" % sc.final_text())
+	var fin := MatchScore.new(2, 0, 0, 0)
+	_win_points(fin, 0, 7)
+	check(not fin.is_over() and fin.sets == [1, 0] and fin.server == 1, "final: first tiebreak won, the other player opens the second")
+
+
+func test_short_sets() -> void:
+	print("best of three short sets (to 4, tiebreak at 3:3)")
+	var sc := MatchScore.new(2, 4, 3, 0)
+	var ev := _win_points(sc, 0, 4)
+	check(ev == MatchScore.Event.GAME and sc.games == [1, 0] and sc.server == 1, "game to player, server switches")
+	for i in 3:
+		_win_points(sc, 0, 4)
+	check(sc.sets == [1, 0] and sc.games == [0, 0] and sc.set_scores[0] == [4, 0], "4:0 takes the set")
+	for i in 3:
+		_win_points(sc, 0, 4)
+		_win_points(sc, 1, 4)
+	check(sc.in_tiebreak and sc.games == [3, 3], "3:3 -> tiebreak")
+	var tb_first := sc.server
+	_win_points(sc, 1, 7)
+	check(sc.sets == [1, 1] and sc.set_scores[1] == [3, 4], "tiebreak gives the set 4:3: %s" % str(sc.set_scores[1]))
+	check(sc.server == 1 - tb_first and not sc.in_tiebreak, "the tiebreak receiver serves the next set")
+	for i in 4:
+		_win_points(sc, 0, 4)
+	check(sc.winner == 0 and sc.final_text() == "4:0 · 3:4 · 4:0", "match 2-1: '%s'" % sc.final_text())
+
+
+func test_classic_set() -> void:
+	print("one set to 6, tiebreak at 6:6")
+	var sc := MatchScore.new(1, 6, 6, 0)
+	for i in 5:
+		_win_points(sc, 0, 4)
+		_win_points(sc, 1, 4)
+	_win_points(sc, 0, 4)
+	check(not sc.in_tiebreak and sc.games == [6, 5] and not sc.is_over(), "6:5 is not enough")
+	_win_points(sc, 1, 4)
+	check(sc.in_tiebreak, "6:6 -> tiebreak")
+	_win_points(sc, 0, 6)
+	check(sc.match_point_for(0), "6:0 in the tiebreak is a match point")
+	sc.add_point(0)
+	check(sc.winner == 0 and sc.final_text() == "7:6", "tiebreak wins the set 7:6: '%s'" % sc.final_text())
+	var b := MatchScore.new(1, 6, 6, 0)
+	for i in 5:
+		_win_points(b, 0, 4)
+		_win_points(b, 1, 4)
+	_win_points(b, 1, 8)
+	check(b.winner == 1 and b.final_text() == "5:7", "7:5 also wins: '%s'" % b.final_text())
+
+
+func test_tournament_flow() -> void:
+	print("tournament")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var t := Tournament.new(0)
+	check(t.opponent()["id"] == "dzumhur" and t.new_score(0).sets_to_win == 1, "level 1: Джумхур, one tiebreak")
+	t.record_match(true, "7:3", rng)
+	check(t.state == Tournament.State.REWARD and t.offer.size() == 3 and t.offer[2]["kind"] == "wildcard", "win -> 3 rewards incl. wildcard")
+	check(t.gold == 4, "quick format pays 40%% gold: %d" % t.gold)
+	t.take_reward(2)
+	check(t.wildcards == 1 and t.state == Tournament.State.BRACKET and t.stage == 1, "wildcard taken, round 2")
+	t.record_match(false, "5:7", rng)
+	check(t.state == Tournament.State.LOST, "loss with a wildcard can be replayed")
+	check(t.use_wildcard() and t.stage == 1 and t.wildcards == 0, "wildcard spent, same opponent again")
+	t.record_match(false, "5:7", rng)
+	check(t.state == Tournament.State.OVER and not t.champion, "loss without a wildcard ends the run")
+	var w := Tournament.new(2)
+	for i in w.rounds():
+		if i == w.rounds() - 1:
+			check(w.opponent()["id"] == "djokovic" and w.new_score(0).sets_to_win == 2 and w.new_score(0).games_per_set == 4, "final: Джокович, best of three short sets")
+		w.record_match(true, "4:2 · 4:1", rng)
+		if w.state == Tournament.State.REWARD:
+			w.take_reward(0)
+	check(w.champion and w.state == Tournament.State.OVER and w.perks.size() == 4, "five wins = champion, perks collected")
+
+
+func test_skills() -> void:
+	print("skills")
+	Skills.reset()
+	check(Skills.level("forehand") == 0, "a new player starts at level 0")
+	var weak := Skills.stroke("forehand")
+	check(weak["window"] < 1.0 and weak["scatter"] > 1.0 and weak["pace"] < 1.0, "beginner: narrow window, more scatter, less pace")
+	var lv := Skills.add_xp("forehand", Skills.cost(1))
+	check(lv == 1 and Skills.level("forehand") == 1, "first level costs %.0f xp" % Skills.cost(1))
+	var to5 := 0.0
+	for n in range(2, 6):
+		to5 += Skills.cost(n)
+	Skills.add_xp("forehand", to5)
+	check(Skills.level("forehand") == 5 and Skills.pending == ["forehand"], "level 5 -> a perk choice is pending")
+	var rng := RandomNumberGenerator.new()
+	var c := Skills.next_pending(rng)
+	check(c["skill"] == "forehand" and c["offer"].size() == 3, "3 forehand perks offered")
+	var before: float = Skills.stroke("forehand")["window"]
+	Skills.take_perk("fh_clean")
+	check(Skills.pending.is_empty() and Skills.stroke("forehand")["window"] > before * 1.15, "perk widens the forehand window")
+	var total := 0.0
+	for n in range(1, Skills.MAX_LEVEL + 1):
+		total += Skills.cost(n)
+	check(Skills.MAX_LEVEL == 30 and total > 80000.0, "level 30 takes %.0f xp: hundreds of matches" % total)
+	check(Skills.cost(1) == 100.0, "level 1 is about a hundred hits")
+	Skills.add_xp("backhand", total * 2.0)
+	check(Skills.level("backhand") == Skills.MAX_LEVEL and Skills.pending.size() == 6, "capped at 30, six perk choices on the way")
+	for id in Skills.LIST:
+		check(Skills.PERKS[id].size() >= 6, "%s has a perk for every milestone" % id)
+	Skills.reset()
 
 
 func test_service_box() -> void:

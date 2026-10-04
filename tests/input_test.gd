@@ -16,6 +16,8 @@ var tap_test_done := false
 var stick_test_done := false
 var stick_ok := false
 var _last_rally := 0
+var _move_check_until := -1     # frame until which the tap-to-move result is watched
+var _move_before_x := 0.0
 var _swipe_armed := false
 
 
@@ -60,9 +62,13 @@ func _process(_delta: float) -> bool:
 	# Tap-to-move check, once, while the CPU is serving or the rally runs.
 	if not tap_test_done and frame > 900 and main.phase == main.Phase.RALLY and main.last_hitter == main.Who.PLAYER:
 		tap_test_done = true
-		var before: Vector3 = main.player.position
+		_move_before_x = main.player.position.x
 		_tap(Vector2(vp.x * 0.85, vp.y * 0.62))
-		_check_move_later(before)
+		_move_check_until = frame + 42
+	# Watched frame by frame for 0.7 s of game time: real-time timers run far ahead of
+	# headless frames, and a short point would already have reset the players.
+	if frame <= _move_check_until and main.player.position.x > _move_before_x + 0.5:
+		moved_ok = true
 
 	# Joystick check: left thumb lands under the player and slides right.
 	if tap_test_done and not stick_test_done and frame > 1500 and main.phase == main.Phase.RALLY and main.last_hitter == main.Who.PLAYER:
@@ -85,12 +91,6 @@ func _process(_delta: float) -> bool:
 		_report()
 		return true
 	return false
-
-
-func _check_move_later(before: Vector3) -> void:
-	await create_timer(0.6).timeout
-	if main.player.position.x > before.x + 0.5:
-		moved_ok = true
 
 
 func _check_stick_later(before: Vector3) -> void:

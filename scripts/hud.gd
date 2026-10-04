@@ -3,6 +3,8 @@ extends CanvasLayer
 ## On-screen UI: score, rally counter, hit feedback popups, timing ring, line-call
 ## replay, the first-launch tutorial and the settings panel. No permanent hints.
 
+signal menu_requested
+
 const GOLD := Color(1.0, 0.85, 0.25)
 
 var touch: TouchInput
@@ -18,6 +20,7 @@ var _debug_text: Label
 var _debug_panel: PanelContainer
 var _debug_btn: Button
 var _message_tween: Tween
+var _level_ups: Array[Label] = []
 
 
 func _ready() -> void:
@@ -101,6 +104,35 @@ func set_debug_text(t: String) -> void:
 ## Hit / miss verdict, shown at the timing ring above the player.
 func popup(text: String, color: Color, sub := "") -> void:
 	ring.feedback(text, color, sub, 2 if text == "PERFECT" else (1 if text == "GOOD" else 0))
+
+
+## Skill level-up: a small gold line under the hit verdict ("+1 ФОРХЕНД · ур. 7").
+## Several at once stack downward. `milestone` (every 5 levels) adds the perk note.
+func level_up(text: String, milestone := false) -> void:
+	var l := Label.new()
+	l.text = text + ("  ·  перк после матча" if milestone else "")
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.add_theme_font_size_override("font_size", 26)
+	l.add_theme_color_override("font_color", GOLD)
+	l.add_theme_color_override("font_outline_color", Color(0.2, 0.12, 0.0, 0.9))
+	l.add_theme_constant_override("outline_size", 6)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(l)
+	var w := get_viewport().get_visible_rect().size.x
+	l.size = Vector2(w, 36)
+	var y := 214.0 + 34.0 * _level_ups.size()
+	_level_ups.append(l)
+	l.position = Vector2(0.0, y + 12.0)
+	l.modulate.a = 0.0
+	var tw := create_tween()
+	tw.set_ignore_time_scale(true)
+	tw.tween_property(l, "modulate:a", 1.0, 0.15)
+	tw.parallel().tween_property(l, "position:y", y, 0.2)
+	tw.tween_interval(1.6)
+	tw.tween_property(l, "modulate:a", 0.0, 0.5)
+	tw.tween_callback(func() -> void:
+		_level_ups.erase(l)
+		l.queue_free())
 
 
 func show_message(text: String, color: Color) -> void:
@@ -191,6 +223,15 @@ func _build_debug_panel() -> void:
 	tut.focus_mode = Control.FOCUS_NONE
 	tut.pressed.connect(open_tutorial)
 	v.add_child(tut)
+	var menu := Button.new()
+	menu.text = "Выйти в меню"
+	menu.custom_minimum_size = Vector2(400, 56)
+	menu.add_theme_font_size_override("font_size", 22)
+	menu.focus_mode = Control.FOCUS_NONE
+	menu.pressed.connect(func() -> void:
+		_debug_panel.visible = false
+		menu_requested.emit())
+	v.add_child(menu)
 	_check(v, "Замедление (slow-mo)", "slowmo_enabled")
 	_slider(v, "Сила замедления", "slowmo_scale", 0.1, 1.0, 0.01)
 	_slider(v, "Когда включать (с до удара)", "slowmo_lead", 0.1, 0.8, 0.01)

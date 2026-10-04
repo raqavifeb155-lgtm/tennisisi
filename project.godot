@@ -10,8 +10,8 @@ config_version=5
 
 [application]
 
-config/name="Tennis Roguelike"
-config/description="Mobile physics tennis prototype (Phase 1-2: tennis toy + first satisfying hit)."
+config/name="Матчбол"
+config/description="Mobile physics tennis roguelike: knockout tournament, skills that grow from your strokes, build perks."
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.4", "GL Compatibility")
 config/icon="res://icon.svg"

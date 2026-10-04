@@ -15,7 +15,7 @@ extends Node3D
 ## position errors are what make balls miss.
 
 enum Who { NONE = -1, PLAYER = 0, CPU = 1 }
-enum Phase { WAIT, SERVE, RALLY, OVER }
+enum Phase { WAIT, SERVE, RALLY, OVER, IDLE }  # IDLE: menus are open, no match running
 enum ShotType { TOPSPIN, FLAT, SLICE, DROP }
 
 const PLAYER_HOME := Vector3(0.0, 0.0, 12.6)
@@ -50,7 +50,21 @@ var net_touched := false
 var rally := 0
 var best_rally := 0
 var score := [0, 0]             # total points won (stats)
-var scoreboard := TennisScore.new()
+var scoreboard := MatchScore.new(1, 99, 0)  # practice: one endless set
+
+# Tournament / menus (TournamentUI) and skills (Skills)
+var ui: TournamentUI
+var tournament: Tournament
+var tournament_mode := false
+var autoplay_tournament := false
+var cpu_label := "CPU"
+var _match_over := false
+var _match_stats := {}
+var _after_perks := ""            # screen to open once the pending skill perk choices are made
+var _perk_choice := {}
+var _practice_skill := 0.5
+var _autoplay_format := 0
+var _run_dist := 0.0              # metres run this rally (experience for "Ноги")
 var shot_type := ShotType.TOPSPIN
 
 # Serve state
@@ -119,6 +133,10 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a == "--autoplay":
 			autoplay = true
+		elif a == "--tournament":
+			autoplay_tournament = true
+		elif a.begins_with("--format="):
+			_autoplay_format = int(a.get_slice("=", 1))
 		elif a.begins_with("--points="):
 			autoplay_points = int(a.get_slice("=", 1))
 
@@ -161,14 +179,28 @@ func _ready() -> void:
 	hud.touch.tapped.connect(_on_tap)
 	hud.touch.held.connect(_on_hold)
 	hud.set_score(scoreboard.point_text())
+	hud.menu_requested.connect(_show_menu)
+
+	ui = TournamentUI.new()
+	add_child(ui)
+	ui.chosen.connect(_on_ui)
+	hud.touch.blocked_controls.append(ui.root)
 
 	_build_helpers()
-	if not autoplay and DisplayServer.get_name() != "headless":
-		hud.show_tutorial_once()
+	SaveData.enabled = not autoplay and not _headless()  # test runs never touch the save
+	SaveData.load_once()
+	_practice_skill = Tuning.ai_skill
+	if not autoplay and not _headless():
 		sfx.set_ambience(Tuning.ambience)
 		Tuning.changed.connect(func() -> void: sfx.set_ambience(Tuning.ambience))
 	_last_real_us = Time.get_ticks_usec()
-	_reset_point()
+	if autoplay_tournament:
+		Skills.reset()  # the bot always starts as a beginner
+		_start_tournament(_autoplay_format)
+	elif autoplay or _headless():
+		_start_practice()
+	else:
+		_show_menu()
 
 
 func _build_environment() -> void:
@@ -295,12 +327,16 @@ func _physics_process(delta: float) -> void:
 		Phase.OVER:
 			phase_timer -= delta
 			if phase_timer <= 0.0:
-				if _replay_serve:
+				if _match_over:
+					_finish_match()
+				elif _replay_serve:
 					_replay_serve = false
 					_setup_serve()
 				else:
 					_reset_point()
 	ball.step(delta)
+	if phase == Phase.RALLY:
+		_run_dist += player.velocity.length() * delta
 	if phase == Phase.RALLY and ball.state.rolling:
 		_end_point(last_hitter, "WINNER")
 	_update_player_hitting()
@@ -323,7 +359,13 @@ func _process(_delta: float) -> void:
 	var look := ball.state.pos if ball.visible else Vector3.INF
 	player.look_target = look
 	cpu.look_target = look
-	hud.set_rally("%s   ·   rally %d   ·   best %d" % [scoreboard.games_text(), rally, best_rally])
+	if phase == Phase.IDLE:
+		hud.set_rally("")
+	else:
+		var mp := ""
+		if tournament_mode and phase != Phase.OVER:
+			mp = "   ·   МАТЧБОЛ" if scoreboard.match_point_for(0) else ("   ·   матчбол у соперника" if scoreboard.match_point_for(1) else "")
+		hud.set_rally("%s   ·   rally %d%s" % [scoreboard.games_text(), rally, mp])
 	if Tuning.show_debug_text:
 		hud.set_debug_text(_debug_string())
 	else:
@@ -585,13 +627,15 @@ func _player_hit(err: float, dir: Vector3, pace_k: float, type: int) -> void:
 		_miss("TOO FAR")
 		return
 	var side := 1 if lateral >= 0.0 else -1
-	var tq := timing_quality(err)
-	var q_t: float = tq[0]
-	var label: String = tq[1]
 	var smash := bp.y > SMASH_MIN_H
 	var volley := bounces == 0 and not smash
+	var skill := stroke_skill(side, type, smash, volley)
+	var sk := Skills.stroke(skill)
+	var tq := timing_quality(err, sk["window"])
+	var q_t: float = tq[0]
+	var label: String = tq[1]
 	var q_p := position_quality(lateral, minf(bp.y, 1.2) if smash else bp.y)
-	var q_m := movement_quality(player.velocity.length())
+	var q_m := movement_quality(player.velocity.length(), Skills.move_penalty_mult())
 	var q := q_t * q_p * q_m
 
 	var origin := Vector3(bp.x, 0.0, bp.z)
@@ -622,11 +666,17 @@ func _player_hit(err: float, dir: Vector3, pace_k: float, type: int) -> void:
 			# Punch volleys: shorter swing, less pace and spin, more control.
 			pace *= 0.8
 			top *= 0.5
+	if not drop:
+		pace *= sk["pace"]
+	top *= sk["spin"]
 
 	if not player.is_swinging():
 		player.swing(side, 0.02, bp, _swing_style(type, bp.y))
 	player.update_contact(bp)
-	var r := execute_shot(Who.PLAYER, player, bp, target, pace, top, q, err, side, false, 0.0, drop)
+	var r := execute_shot(Who.PLAYER, player, bp, target, pace, top, q, err, side, false, 0.0, drop, 0.3, sk["scatter"])
+	_gain_xp(skill, label)
+	if label == "PERFECT":
+		_match_stats["perfect"] = _match_stats.get("perfect", 0) + 1
 	ai.on_player_hit()
 	_assist_suppressed = false
 	_hits_total += 1
@@ -720,7 +770,7 @@ func _ideal_contact() -> Vector3:
 
 
 func _update_player_movement() -> void:
-	player.max_speed = Tuning.player_speed
+	player.max_speed = Tuning.player_speed * Skills.run_speed_mult()
 	var serving := phase == Phase.SERVE and server == Who.PLAYER
 	if serving and (toss_active or autoplay):
 		player.move_input = Vector2.ZERO
@@ -762,10 +812,11 @@ func _update_player_movement() -> void:
 # --- Quality model (shared with the AI) ---------------------------------------
 
 ## Returns [quality 0..1, label].
-func timing_quality(err: float) -> Array:
+## `window_scale` widens or narrows the PERFECT/GOOD windows (the player's skill level).
+func timing_quality(err: float, window_scale := 1.0) -> Array:
 	var a := absf(err)
-	var pw := Tuning.perfect_window
-	var gw := Tuning.good_window
+	var pw := Tuning.perfect_window * window_scale
+	var gw := Tuning.good_window * window_scale
 	if a <= pw:
 		return [1.0, "PERFECT"]
 	if a <= gw:
@@ -782,13 +833,15 @@ func position_quality(lateral: float, height: float) -> float:
 	return q * clampf(1.0 - h_pen, 0.45, 1.0)
 
 
-func movement_quality(speed: float) -> float:
-	return clampf(1.0 - maxf(0.0, speed - 2.5) * 0.07, 0.65, 1.0)
+## `penalty` scales the cost of hitting on the run (the player's "Ноги" skill).
+func movement_quality(speed: float, penalty := 1.0) -> float:
+	return clampf(1.0 - maxf(0.0, speed - 2.5) * 0.07 * penalty, 0.65, 1.0)
 
 
 ## Turns intent into a launched ball, adding execution error that scales with (1 - quality).
 ## Timing error is deterministic: early contact pulls the ball, late contact pushes it.
-func execute_shot(who: int, hitter: Athlete, contact: Vector3, target: Vector3, pace: float, top: float, q: float, t_err: float, side: int, lob := false, side_spin := 0.0, drop := false, net_margin := 0.3) -> ShotSolver.Result:
+## `scatter` scales the random part of the error (the player's skill level).
+func execute_shot(who: int, hitter: Athlete, contact: Vector3, target: Vector3, pace: float, top: float, q: float, t_err: float, side: int, lob := false, side_spin := 0.0, drop := false, net_margin := 0.3, scatter := 1.0) -> ShotSolver.Result:
 	var flat := target - contact
 	flat.y = 0.0
 	var dist := flat.length()
@@ -798,8 +851,8 @@ func execute_shot(who: int, hitter: Athlete, contact: Vector3, target: Vector3, 
 	var bias := clampf(off / Tuning.good_window, -2.5, 2.5) * deg_to_rad(1.3) * float(side)
 	target += hitter.right() * (tan(bias) * dist)
 	var miss := pow(1.0 - q, 1.5)
-	target += hitter.right() * rng.randfn(0.0, 0.06 + miss * 1.6)
-	target += hitter.forward() * rng.randfn(0.0, 0.1 + miss * 2.0)
+	target += hitter.right() * rng.randfn(0.0, (0.06 + miss * 1.6) * scatter)
+	target += hitter.forward() * rng.randfn(0.0, (0.1 + miss * 2.0) * scatter)
 	pace *= lerpf(0.72, 1.06, q)
 	top *= lerpf(0.6, 1.0, q)
 	var r: ShotSolver.Result
@@ -812,7 +865,7 @@ func execute_shot(who: int, hitter: Athlete, contact: Vector3, target: Vector3, 
 	var v := r.velocity
 	var axis := Vector3.UP.cross(v).normalized()
 	if axis.length() > 0.5:
-		v = v.rotated(axis, deg_to_rad(rng.randfn(0.0, 0.12 + pow(1.0 - q, 1.5) * 2.0)))
+		v = v.rotated(axis, deg_to_rad(rng.randfn(0.0, (0.12 + pow(1.0 - q, 1.5) * 2.0) * scatter)))
 	ball.launch(contact, v, r.spin)
 	last_hitter = who as Who
 	bounces = 0
@@ -904,14 +957,30 @@ func _end_point(winner: int, reason: String) -> void:
 	if reason == "WINNER" and rally == 1 and winner == server:
 		reason = "ACE"
 	var text: String
+	var o := cpu_label
 	if winner == Who.PLAYER:
-		text = {"OUT": "CPU OUT", "NET": "CPU NET", "WINNER": "WINNER!", "ACE": "ACE!", "DOUBLE FAULT": "CPU DOUBLE FAULT"}[reason]
+		text = {"OUT": o + " OUT", "NET": o + " NET", "WINNER": "WINNER!", "ACE": "ACE!", "DOUBLE FAULT": o + " DOUBLE FAULT"}[reason]
 	else:
-		text = {"OUT": "OUT", "NET": "NET", "WINNER": "MISSED", "ACE": "CPU ACE", "DOUBLE FAULT": "DOUBLE FAULT"}[reason]
-	var game_over := scoreboard.add_point(winner)
-	if game_over:
-		text += "\nGAME " + ("YOU" if winner == Who.PLAYER else "CPU")
-		server = scoreboard.server as Who
+		text = {"OUT": "OUT", "NET": "NET", "WINNER": "MISSED", "ACE": o + " ACE", "DOUBLE FAULT": "DOUBLE FAULT"}[reason]
+	if winner == Who.PLAYER and reason == "ACE":
+		_match_stats["aces"] = _match_stats.get("aces", 0) + 1
+	_match_stats["best_rally"] = maxi(_match_stats.get("best_rally", 0), rally)
+	if _run_dist > 0.0:
+		_gain_xp("feet", "", _run_dist * Skills.RUN_XP_PER_M)
+		_run_dist = 0.0
+	var who := "YOU" if winner == Who.PLAYER else o
+	var ev: int = scoreboard.add_point(winner)
+	match ev:
+		MatchScore.Event.GAME:
+			text += "\nGAME " + who
+		MatchScore.Event.SET:
+			text += "\nСЕТ " + who
+		MatchScore.Event.MATCH:
+			text += "\nМАТЧ " + who
+	server = scoreboard.server as Who
+	if tournament_mode and scoreboard.is_over():
+		_match_over = true
+		phase_timer = 0.4 if autoplay else 2.4
 	hud.show_message(text, COLOR_WIN if winner == Who.PLAYER else COLOR_BAD)
 	if not _close_call.is_empty() and reason != "NET":
 		hud.hawkeye(_close_call["margin"], _close_call["axis"])
@@ -925,7 +994,7 @@ func _end_point(winner: int, reason: String) -> void:
 	_stats["serve"][srv_key + outcome] = _stats["serve"].get(srv_key + outcome, 0) + 1
 	var key := ("YOU " if winner == Who.PLAYER else "CPU ") + "wins: " + text.split("\n")[0]
 	_stats["reasons"][key] = _stats["reasons"].get(key, 0) + 1
-	if autoplay:
+	if autoplay and not autoplay_tournament:
 		print("point %d: %s (rally %d) -> %s %s" % [_points_played, key, rally, scoreboard.point_text(), scoreboard.games_text()])
 		if _points_played >= autoplay_points:
 			_print_autoplay_summary()
@@ -1088,7 +1157,8 @@ func _player_serve(dir: Vector3, pace_k: float, type: int) -> void:
 	if bp.y < 1.7:
 		return
 	var err := game_time - toss_ideal
-	var tq := timing_quality(err)
+	var sk := Skills.stroke("serve")
+	var tq := timing_quality(err, sk["window"])
 	var q: float = tq[0]
 	var label: String = tq[1]
 	var origin := Vector3(bp.x, 0.0, bp.z)
@@ -1107,9 +1177,14 @@ func _player_serve(dir: Vector3, pace_k: float, type: int) -> void:
 		_:
 			pace = lerpf(30.0, 42.0, pace_k)
 			top = lerpf(300.0, 420.0, pace_k)  # kick: dives in, jumps up high
+	pace *= sk["pace"]
+	top *= sk["spin"]
 	player.swing(1, 0.02, bp, Athlete.Style.SERVE)
-	var r := execute_shot(Who.PLAYER, player, bp, target, pace, top, q, err, 1, false, side_spin, false, 0.12)
+	var r := execute_shot(Who.PLAYER, player, bp, target, pace, top, q, err, 1, false, side_spin, false, 0.12, sk["scatter"])
 	_after_serve_hit()
+	_gain_xp("serve", label)
+	if label == "PERFECT":
+		_match_stats["perfect"] = _match_stats.get("perfect", 0) + 1
 	last_serve_kmh = r.speed * 3.6
 	ai.on_player_serve(last_serve_kmh, false)
 	_stats["labels"][label] = _stats["labels"].get(label, 0) + 1
@@ -1190,6 +1265,216 @@ func _after_serve_hit() -> void:
 	player.area = PLAYER_AREA
 
 
+# --- Tournament flow, menus and skills -------------------------------------------
+
+func _headless() -> bool:
+	return DisplayServer.get_name() == "headless"
+
+
+## Which skill a stroke trains (and is played with).
+func stroke_skill(side: int, type: int, smash: bool, volley: bool) -> String:
+	if smash or volley:
+		return "net"
+	if type == ShotType.SLICE or type == ShotType.DROP:
+		return "touch"
+	return "forehand" if side > 0 else "backhand"
+
+
+## Experience multiplier: tougher opponents and longer formats pay more; practice pays little.
+func _xp_mult() -> float:
+	if not tournament_mode or tournament == null:
+		return 0.3
+	return (1.0 + 0.25 * tournament.stage) * float(tournament.format_info()["reward"])
+
+
+## Experience for a hit (by timing label) or a raw amount (running).
+func _gain_xp(skill: String, label: String, raw := -1.0) -> void:
+	if phase == Phase.IDLE:
+		return
+	var amount := raw if raw >= 0.0 else Skills.BASE_XP * float(Skills.TIMING_XP.get(label, 1.0))
+	var lv := Skills.add_xp(skill, amount * _xp_mult())
+	if lv > 0:
+		hud.level_up("+1 %s  ·  ур. %d" % [String(Skills.NAMES[skill]).to_upper(), lv], lv % Skills.PERK_EVERY == 0)
+		_haptic("perfect")
+		cam.impulse(0.6)
+		SaveData.save()
+
+
+func _show_menu() -> void:
+	tournament = null
+	tournament_mode = false
+	_stop_match()
+	Rewards.restore()
+	Tuning.ai_skill = _practice_skill
+	cpu_label = "CPU"
+	_next_screen("menu")
+
+
+func _stop_match() -> void:
+	_match_over = false
+	_replay_serve = false
+	phase = Phase.IDLE
+	ball.park()
+	pending_swing = {}
+	late_until = -1.0
+	Engine.time_scale = 1.0
+	hud.set_score("")
+
+
+func _start_practice() -> void:
+	tournament = null
+	tournament_mode = false
+	Rewards.restore()
+	Tuning.ai_skill = _practice_skill
+	cpu_label = "CPU"
+	scoreboard = MatchScore.new(1, 99, 0, Who.PLAYER, cpu_label)
+	ui.close()
+	_begin_match()
+
+
+func _start_tournament(format_index: int) -> void:
+	tournament = Tournament.new(format_index)
+	tournament_mode = true
+	Rewards.restore()
+	if autoplay:
+		_play_match()
+	else:
+		ui.show_bracket(tournament)
+
+
+func _play_match() -> void:
+	var opp := tournament.opponent()
+	Rewards.apply(tournament.perks)
+	Tuning.ai_skill = opp["skill"]
+	cpu_label = opp["short"]
+	scoreboard = tournament.new_score(rng.randi_range(0, 1))
+	ui.close()
+	_begin_match()
+	hud.show_message("%s\n%s" % [tournament.round_name(), opp["name"]], Color.WHITE)
+
+
+func _begin_match() -> void:
+	score = [0, 0]
+	rally = 0
+	best_rally = 0
+	_points_played = 0
+	_match_over = false
+	_replay_serve = false
+	_run_dist = 0.0
+	_match_stats = {"perfect": 0, "aces": 0, "best_rally": 0}
+	server = scoreboard.server as Who
+	player.area = PLAYER_AREA
+	player.position = PLAYER_HOME
+	cpu.position = CPU_HOME
+	hud.set_score(scoreboard.point_text())
+	if not autoplay and not _headless():
+		hud.show_tutorial_once()
+	_reset_point()
+
+
+func _finish_match() -> void:
+	var won: bool = scoreboard.winner == Who.PLAYER
+	var st: String = scoreboard.final_text()
+	_stop_match()
+	tournament.record_match(won, st, rng)
+	if tournament.state == Tournament.State.OVER:
+		SaveData.record_run(tournament)
+		Rewards.restore()
+	else:
+		SaveData.save()
+	if autoplay:
+		_autoplay_after_match(won, st)
+		return
+	ui.show_result(tournament, won, st, _match_stats)
+
+
+func _on_ui(action: String, arg: int) -> void:
+	match action:
+		"start_tournament":
+			ui.show_formats()
+		"format":
+			_start_tournament(arg)
+		"practice":
+			_start_practice()
+		"character":
+			ui.show_character()
+		"menu":
+			_show_menu()
+		"play":
+			_play_match()
+		"give_up":
+			if tournament.state != Tournament.State.OVER:
+				tournament.give_up()
+				SaveData.record_run(tournament)
+				Rewards.restore()
+			_next_screen("summary")
+		"to_reward":
+			_next_screen("reward")
+		"to_summary":
+			_next_screen("summary")
+		"reward":
+			tournament.take_reward(arg)
+			ui.show_bracket(tournament)
+		"wildcard":
+			if tournament.use_wildcard():
+				ui.show_bracket(tournament)
+		"perk":
+			Skills.take_perk(_perk_choice["offer"][arg]["id"])
+			SaveData.save()
+			_next_screen(_after_perks)
+
+
+## Opens a screen, but first lets the player pick the build perks they earned.
+func _next_screen(target: String) -> void:
+	_perk_choice = Skills.next_pending(rng)
+	if not _perk_choice.is_empty():
+		_after_perks = target
+		ui.show_skill_perk(_perk_choice["skill"], _perk_choice["offer"])
+		return
+	match target:
+		"reward":
+			ui.show_reward(tournament)
+		"summary":
+			ui.show_summary(tournament)
+		_:
+			ui.show_menu()
+
+
+func _levels_text() -> String:
+	var parts: Array[String] = []
+	for id in Skills.LIST:
+		parts.append("%s %d" % [Skills.NAMES[id], Skills.level(id)])
+	return ", ".join(parts)
+
+
+## --autoplay --tournament: the bot plays a whole tournament, picking rewards itself.
+func _autoplay_after_match(won: bool, st: String) -> void:
+	var last: Dictionary = tournament.results.back()
+	var opp: Dictionary = Opponents.ROSTER[last["stage"]]
+	print("MATCH %s vs %s: %s %s   [%s]" % [Opponents.ROUND_NAMES[last["stage"]], opp["name"], "WON" if won else "LOST", st, _levels_text()])
+	while true:
+		var c := Skills.next_pending(rng)
+		if c.is_empty():
+			break
+		Skills.take_perk(c["offer"][0]["id"])
+		print("  build perk (%s): %s" % [Skills.NAMES[c["skill"]], c["offer"][0]["title"]])
+	if tournament.results.size() > 25:
+		tournament.give_up()
+	match tournament.state:
+		Tournament.State.REWARD:
+			var pick := 2 if tournament.wildcards == 0 else 0
+			print("  reward: %s" % tournament.offer[pick]["title"])
+			tournament.take_reward(pick)
+			_play_match()
+		Tournament.State.LOST:
+			tournament.use_wildcard()
+			print("  wildcard used, replaying")
+			_play_match()
+		_:
+			print("\n=== TOURNAMENT ===\n%s  ·  gold %d  ·  matches %d\nskills: %s" % [tournament.finish_text(), tournament.gold, tournament.results.size(), _levels_text()])
+			get_tree().quit()
+
+
 # --- Slow motion, helpers, debug ----------------------------------------------
 
 func _update_slowmo(rd: float) -> void:
@@ -1261,15 +1546,20 @@ func _update_timing_ring() -> void:
 		ring.hide_ring()
 		return
 	if phase == Phase.SERVE and server == Who.PLAYER and toss_active:
-		ring.show_ring(anchor, toss_ideal - game_time, Tuning.perfect_window, Tuning.good_window)
+		var ws := float(Skills.stroke("serve")["window"])
+		ring.show_ring(anchor, toss_ideal - game_time, Tuning.perfect_window * ws, Tuning.good_window * ws)
 		return
 	if _player_can_hit():
-		var lean := 55.0 if player.lateral_of(contact_pred) >= 0.0 else -55.0
+		var fh := player.lateral_of(contact_pred) >= 0.0
+		var lean := 55.0 if fh else -55.0
+		var w := float(Skills.stroke("forehand" if fh else "backhand")["window"])
+		var pw := Tuning.perfect_window * w
+		var gw := Tuning.good_window * w
 		if late_until > 0.0:
-			ring.show_ring(anchor + Vector2(lean, 0.0), late_cross_time - game_time, Tuning.perfect_window, Tuning.good_window)
+			ring.show_ring(anchor + Vector2(lean, 0.0), late_cross_time - game_time, pw, gw)
 			return
 		if t_contact < 0.85 and absf(player.lateral_of(contact_pred)) < 3.0 and contact_pred.y < MAX_CONTACT_H:
-			ring.show_ring(anchor + Vector2(lean, 0.0), t_contact, Tuning.perfect_window, Tuning.good_window)
+			ring.show_ring(anchor + Vector2(lean, 0.0), t_contact, pw, gw)
 			return
 	ring.hide_ring()
 
