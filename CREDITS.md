@@ -8,6 +8,4 @@
   use, no attribution required; credited here anyway).
 - `assets/sfx/bounce_real_1.wav` … `bounce_real_4.wav` — four bounces cut from
   "Tennis ball bounce" by freesound_community (Pixabay, sound 39028), same license.
-- `assets/sfx/ambience.ogg` — a quiet 21 s loop from "Tennis hitting balls, running, birds"
-  by freesound_community (Pixabay, sound 22566), same license.
 - All other sounds in `assets/sfx/` are generated procedurally by `tools/gen_sfx.py`.

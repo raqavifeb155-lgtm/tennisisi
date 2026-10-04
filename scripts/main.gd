@@ -163,8 +163,6 @@ func _ready() -> void:
 	_build_helpers()
 	if not autoplay and DisplayServer.get_name() != "headless":
 		hud.show_tutorial_once()
-		sfx.set_ambience(Tuning.ambience)
-		Tuning.changed.connect(func() -> void: sfx.set_ambience(Tuning.ambience))
 	_last_real_us = Time.get_ticks_usec()
 	_reset_point()
 

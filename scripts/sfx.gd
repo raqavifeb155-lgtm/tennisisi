@@ -15,7 +15,6 @@ var _last_hit := -1
 var _last_bounce := -1
 var _players: Array[AudioStreamPlayer] = []
 var _next := 0
-var _ambience: AudioStreamPlayer
 
 
 func _ready() -> void:
@@ -29,20 +28,7 @@ func _ready() -> void:
 		var p := AudioStreamPlayer.new()
 		add_child(p)
 		_players.append(p)
-	# Club atmosphere: birds and a distant game on another court, looped quietly.
-	_ambience = AudioStreamPlayer.new()
-	var amb: AudioStreamOggVorbis = load("res://assets/sfx/ambience.ogg")
-	amb.loop = true
-	_ambience.stream = amb
-	_ambience.volume_db = -14.0
-	add_child(_ambience)
 
-
-func set_ambience(on: bool) -> void:
-	if on and not _ambience.playing:
-		_ambience.play()
-	elif not on and _ambience.playing:
-		_ambience.stop()
 
 
 func play(sound: String, volume_db := 0.0, pitch := 1.0) -> void:

@@ -226,7 +226,6 @@ func _build_debug_panel() -> void:
 	_slider(v, "Сила соперника", "ai_skill", 0.0, 1.0, 0.05)
 	_check(v, "Hit-stop на PERFECT", "hitstop")
 	_check(v, "Вибрация при ударе", "vibration")
-	_check(v, "Фон корта (птицы, соседний корт)", "ambience")
 	_check(v, "Прицел при свайпе", "show_aim")
 	_check(v, "Маркер приземления", "show_landing")
 	_check(v, "Траектория мяча", "show_path")

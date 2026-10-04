@@ -30,7 +30,6 @@ var ai_skill := 0.5
 # Feedback / debug
 var hitstop := true
 var vibration := true
-var ambience := true            # quiet club atmosphere in the background
 var show_path := false
 var show_landing := true
 var hawkeye_range := 0.15      # show the line-call replay when the mark is this close to a line (m)
