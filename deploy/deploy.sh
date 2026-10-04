@@ -27,11 +27,14 @@ update_game() {
 	mkdir -p "$WEB_DIR"
 	cp -r web/. "$WEB_DIR/"
 	# Older installs: serve the pre-compressed files (.gz) shipped in the archive.
+	if [ -f "$SITE" ] && [ ! -s /proc/net/if_inet6 ]; then
+		sed -i '/\[::\]/d' "$SITE"
+	fi
 	if [ -f "$SITE" ] && ! grep -q "gzip_static" "$SITE"; then
 		sed -i 's/^\(\s*\)gzip on;/\1gzip on;\n\1gzip_static on;/' "$SITE"
 	fi
 	if command -v nginx >/dev/null; then
-		nginx -t && systemctl reload nginx
+		nginx -t && { systemctl reload nginx 2>/dev/null || nginx -s reload 2>/dev/null || nginx; }
 	fi
 	echo "Game updated in $WEB_DIR"
 	grep -m1 -o "server_name [^;]*" "$SITE" 2>/dev/null | sed 's/server_name /Address: https:\/\//; s/$/\//' || true
@@ -65,10 +68,13 @@ apt-get install -y nginx certbot python3-certbot-nginx
 mkdir -p "$WEB_DIR"
 cp -r web/. "$WEB_DIR/"
 sed "s/__DOMAIN__/$DOMAIN/g" nginx-tennis.conf > "$SITE"
+if [ ! -s /proc/net/if_inet6 ]; then
+	sed -i '/\[::\]/d' "$SITE"  # no IPv6 on this server: nginx would refuse to start
+fi
 ln -sf "$SITE" /etc/nginx/sites-enabled/tennis
 nginx -t
-systemctl enable --now nginx
-systemctl reload nginx
+systemctl enable --now nginx 2>/dev/null || pgrep -x nginx >/dev/null || nginx
+systemctl reload nginx 2>/dev/null || nginx -s reload
 
 if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
 	ufw allow 80/tcp && ufw allow 443/tcp
