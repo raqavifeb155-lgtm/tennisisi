@@ -15,6 +15,7 @@ var _mesh: MeshInstance3D
 var _shadow: MeshInstance3D
 var _shadow_mat: StandardMaterial3D
 var _spin_visual := Basis()
+var _prev_pos := Vector3.ZERO     # position at the previous physics tick, for smooth rendering
 
 
 func _ready() -> void:
@@ -51,6 +52,7 @@ func _ready() -> void:
 
 
 func launch(pos: Vector3, vel: Vector3, spin: Vector3) -> void:
+	_prev_pos = pos
 	state = BallPhysics.State.new(pos, vel, spin)
 	active = true
 	visible = true
@@ -58,6 +60,7 @@ func launch(pos: Vector3, vel: Vector3, spin: Vector3) -> void:
 
 ## Show the ball held in a hand (not simulated).
 func hold(pos: Vector3) -> void:
+	_prev_pos = state.pos if state.pos.distance_to(pos) < 1.0 else pos
 	state = BallPhysics.State.new(pos, Vector3.ZERO, Vector3.ZERO)
 	active = false
 	visible = true
@@ -71,6 +74,7 @@ func park() -> void:
 func step(delta: float) -> void:
 	if not active:
 		return
+	_prev_pos = state.pos
 	var remaining := delta
 	while remaining > 0.000001:
 		var h := minf(remaining, BallPhysics.MAX_STEP)
@@ -93,13 +97,20 @@ func spin_rpm() -> float:
 	return state.spin.length() * 60.0 / TAU
 
 
+## Drawn between the last two physics ticks: in slow motion physics runs only ~20 times
+## a second of real time, and the ball would otherwise move in visible steps.
+func render_pos() -> Vector3:
+	return _prev_pos.lerp(state.pos, Engine.get_physics_interpolation_fraction())
+
+
 func _process(delta: float) -> void:
-	global_position = state.pos
+	var rp := render_pos()
+	global_position = rp
 	if state.spin.length() > 0.1:
 		_spin_visual = Basis(state.spin.normalized(), state.spin.length() * delta) * _spin_visual
 		_mesh.basis = _spin_visual.orthonormalized()
 	var h := state.pos.y
-	_shadow.global_position = Vector3(state.pos.x, 0.045, state.pos.z)
+	_shadow.global_position = Vector3(rp.x, 0.045, rp.z)
 	var k := clampf(1.0 - h / 6.0, 0.25, 1.0)
 	_shadow.scale = Vector3.ONE * (1.0 + (1.0 - k) * 1.2)
 	_shadow_mat.albedo_color.a = 0.55 * k

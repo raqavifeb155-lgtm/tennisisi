@@ -18,6 +18,7 @@ func _init() -> void:
 	test_tournament_flow()
 	test_skills()
 	test_gear_and_loot()
+	test_timing_ring_stays_put()
 	test_service_box()
 	test_gestures()
 	test_net_cord()
@@ -325,6 +326,19 @@ func test_gear_and_loot() -> void:
 	var key: String = leg["mods"].keys()[0]
 	check(Skills.mod(key) == leg["mods"][key], "the racket's affixes feed the stroke model")
 	Skills.reset()
+
+
+func test_timing_ring_stays_put() -> void:
+	print("timing ring")
+	var ring := TimingRing.new()
+	ring.show_ring(Vector2(300, 400), 0.5, 0.035, 0.09)
+	ring.show_ring(Vector2(355, 396), 0.4, 0.035, 0.09)
+	ring.show_ring(Vector2(245, 403), 0.3, 0.035, 0.09)
+	check(ring._pos == Vector2(300, 400), "the ring stays where it appeared (no shake)")
+	ring.hide_ring()
+	ring.show_ring(Vector2(250, 410), 0.2, 0.035, 0.09)
+	check(ring._pos == Vector2(300, 400) and ring.is_shown(), "a one-frame gap doesn't move it")
+	ring.free()
 
 
 func test_service_box() -> void:

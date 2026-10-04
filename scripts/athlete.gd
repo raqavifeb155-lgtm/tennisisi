@@ -71,6 +71,7 @@ var _slide_dir := Vector3.ZERO # model-local direction of the slide
 var _dust: CPUParticles3D
 var _last_vel := Vector3.ZERO
 var _lhand_actual := Vector3(0.05, 1.05, -0.38)
+var _prev_pos := Vector3.ZERO  # position at the previous physics tick, for smooth rendering
 
 # Visual nodes
 var _model: Node3D
@@ -170,6 +171,7 @@ func split_step() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	_prev_pos = position
 	var target_v := Vector3(move_input.x, 0.0, move_input.y).limit_length(1.0) * max_speed
 	var speeding_up := target_v.length() > velocity.length() and target_v.dot(velocity) >= 0.0
 	var rate := accel if speeding_up else decel
@@ -319,6 +321,10 @@ func _key(style: int, phase: String, side: int) -> Array:
 func _process(delta: float) -> void:
 	if _model == null:
 		return
+	# Draw the body between the last two physics ticks (smooth in slow motion); a jump
+	# (placed for the serve) is not smoothed.
+	var off := (_prev_pos - position) * (1.0 - Engine.get_physics_interpolation_fraction())
+	_model.position = global_basis.inverse() * off if off.length() < 1.0 else Vector3.ZERO
 	var speed := velocity.length()
 	var k := 1.0 - exp(-12.0 * delta)
 

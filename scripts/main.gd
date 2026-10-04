@@ -1567,10 +1567,14 @@ func _update_helpers() -> void:
 				_aim_line_im.surface_add_vertex(a.lerp(b, float(i + 1) / n))
 		_aim_line_im.surface_end()
 	var show_landing := Tuning.show_landing and incoming != null and bounces == 0 and not incoming.bounce_points.is_empty()
-	_landing.visible = show_landing
 	if show_landing:
+		# Placed once per ball: the prediction wobbles by a few centimetres every tick.
+		# Only a real change (a net cord) moves it.
 		var b := incoming.bounce_points[0]
-		_landing.global_position = Vector3(b.x, 0.05, b.z)
+		var spot := Vector3(b.x, 0.05, b.z)
+		if not _landing.visible or _landing.global_position.distance_to(spot) > 0.35:
+			_landing.global_position = spot
+	_landing.visible = show_landing
 	_path_im.clear_surfaces()
 	if Tuning.show_path and ball.active:
 		var pr := incoming if incoming != null else BallPhysics.predict(ball.state, 2.5, 1.0 / 60.0, 2)
@@ -1583,6 +1587,8 @@ func _update_helpers() -> void:
 
 func _update_timing_ring() -> void:
 	var ring := hud.ring
+	# Game time between physics ticks, so the ring shrinks smoothly in slow motion too.
+	var lag := Engine.get_physics_interpolation_fraction() / Engine.physics_ticks_per_second
 	# The ring hangs above the player (never over the body or the ball's path) and
 	# leans toward the side of the stroke: right for forehands, left for backhands.
 	var anchor := cam.unproject_position(player.global_position + Vector3(0.0, 2.35, 0.0)) + Vector2(0.0, -70.0)
@@ -1598,7 +1604,7 @@ func _update_timing_ring() -> void:
 		return
 	if phase == Phase.SERVE and server == Who.PLAYER and toss_active:
 		var ws := float(Skills.stroke("serve")["window"])
-		ring.show_ring(anchor, toss_ideal - game_time, Tuning.perfect_window * ws, Tuning.good_window * ws)
+		ring.show_ring(anchor, toss_ideal - game_time - lag, Tuning.perfect_window * ws, Tuning.good_window * ws)
 		return
 	if _player_can_hit():
 		var fh := player.lateral_of(contact_pred) >= 0.0
@@ -1607,10 +1613,10 @@ func _update_timing_ring() -> void:
 		var pw := Tuning.perfect_window * w
 		var gw := Tuning.good_window * w
 		if late_until > 0.0:
-			ring.show_ring(anchor + Vector2(lean, 0.0), late_cross_time - game_time, pw, gw)
+			ring.show_ring(anchor + Vector2(lean, 0.0), late_cross_time - game_time - lag, pw, gw)
 			return
 		if t_contact < 0.85 and absf(player.lateral_of(contact_pred)) < 3.0 and contact_pred.y < MAX_CONTACT_H:
-			ring.show_ring(anchor + Vector2(lean, 0.0), t_contact, pw, gw)
+			ring.show_ring(anchor + Vector2(lean, 0.0), t_contact - lag, pw, gw)
 			return
 	ring.hide_ring()
 

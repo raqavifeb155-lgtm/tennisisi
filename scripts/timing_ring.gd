@@ -1,6 +1,8 @@
 class_name TimingRing
 extends Control
 ## Top Spin-style timing cue: a ring shrinks onto a fixed circle hanging above the player.
+## The circle stays where it appeared until it is gone: it does not follow the player's
+## small steps or the forehand/backhand side, so it never shakes.
 ## Swipe when the ring meets the circle. The ring runs on game time, so it slows down
 ## together with the slow-motion window.
 ##
@@ -21,6 +23,7 @@ const FB_FX := 0.55          # size of the verdict's rings and sparks relative t
 var anchor := Vector2.ZERO
 
 var _active := false
+var _hide_left := 0.0        # a brief grace before hiding, so a one-frame gap doesn't move the ring
 var _pos := Vector2.ZERO
 var _t_left := 0.0
 var _perfect := 0.035
@@ -40,8 +43,10 @@ func _ready() -> void:
 
 
 func show_ring(pos: Vector2, t_left: float, perfect_window: float, good_window: float) -> void:
+	if not _active:
+		_pos = pos  # locked here until the ring is hidden
 	_active = true
-	_pos = pos
+	_hide_left = 0.0
 	_t_left = t_left
 	_perfect = perfect_window
 	_good = good_window
@@ -49,9 +54,12 @@ func show_ring(pos: Vector2, t_left: float, perfect_window: float, good_window: 
 
 
 func hide_ring() -> void:
-	if _active:
-		_active = false
-		queue_redraw()
+	if _active and _hide_left <= 0.0:
+		_hide_left = 0.12
+
+
+func is_shown() -> bool:
+	return _active
 
 
 ## Show a verdict at the ring. kind: 0 plain text, 1 soft pulse, 2 PERFECT burst.
@@ -69,6 +77,11 @@ func feedback(text: String, color: Color, sub := "", kind := 0) -> void:
 
 
 func _process(delta: float) -> void:
+	if _hide_left > 0.0:
+		_hide_left -= minf(delta / maxf(Engine.time_scale, 0.01), 0.1)
+		if _hide_left <= 0.0:
+			_active = false
+			queue_redraw()
 	if _fb_age_s < FEEDBACK_TIME:
 		# Unscaled time: slow-motion and hit-stop must not stretch the animation.
 		_fb_age_s += minf(delta / maxf(Engine.time_scale, 0.01), 0.1)
