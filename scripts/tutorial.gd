@@ -5,16 +5,16 @@ extends Control
 
 signal finished
 
-const DONE_FILE := "user://tutorial_done"
+const DONE_FILE := "user://tutorial_done_v2"  # v2: joystick controls
 const PAGES := [
 	{
 		"title": "Бег",
-		"text": "Тапни по корту, и игрок побежит туда. Если держать палец, он бежит за пальцем.\nПока ты никуда не тапнул, игрок сам подстраивается под мяч.",
+		"text": "Большой палец левой руки — внизу, под игроком: это джойстик. Веди пальцем, и игрок бежит.\nОтпустишь — он сам подстроится под мяч. Можно и просто тапнуть по корту выше игрока.",
 		"pic": "run",
 	},
 	{
 		"title": "Удар",
-		"text": "Свайпни в любом месте экрана: мяч полетит по этой линии от игрока. Чем быстрее свайп, тем сильнее удар.\nБей, когда кольцо сожмётся до круга: будет PERFECT.",
+		"text": "Правым пальцем свайпни выше игрока: мяч полетит по этой линии от игрока. Чем быстрее свайп, тем сильнее удар.\nБей, когда кольцо сожмётся до круга: будет PERFECT.",
 		"pic": "ring",
 	},
 	{
@@ -24,12 +24,12 @@ const PAGES := [
 	},
 	{
 		"title": "Подача",
-		"text": "Держи палец, чтобы встать в другое место за линией. Тап — подброс. Свайп в диагональный квадрат, когда кольцо сожмётся.\nПрямо — плоская (до 200+ км/ч), дуга — кик, крючок — резаная, уходит в сторону.\nКороткий крючок ДО подброса — подача снизу, как у Бублика.",
+		"text": "Джойстиком встань в другое место за линией. Тап — подброс. Свайп в диагональный квадрат, когда кольцо сожмётся.\nПрямо — плоская (до 200+ км/ч), дуга — кик, крючок — резаная, уходит в сторону.\nКороткий крючок ДО подброса — подача снизу, как у Бублика.",
 		"pic": "serve",
 	},
 	{
 		"title": "У сетки",
-		"text": "Подбеги к сетке тапом: мячи до отскока станут ударом с лёта.\nВысокий мяч над головой — смэш.",
+		"text": "Подбеги к сетке джойстиком: мячи до отскока станут ударом с лёта.\nВысокий мяч над головой — смэш.",
 		"pic": "net",
 	},
 ]
@@ -93,6 +93,24 @@ func _ready() -> void:
 	_next.pressed.connect(_advance)
 	v.add_child(_next)
 	_show_page()
+	get_viewport().size_changed.connect(_layout)
+
+
+## Centre the card and shrink it to fit any screen (phone browsers, in-app viewers,
+## landscape windows), instead of trusting fixed offsets.
+func _layout() -> void:
+	var vp := get_viewport_rect().size
+	position = Vector2.ZERO
+	size = vp
+	_card.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_card.scale = Vector2.ONE
+	_card.size = Vector2.ZERO
+	var need := _card.get_combined_minimum_size()
+	_card.size = need
+	var k := minf(1.0, minf((vp.x - 24.0) / need.x, (vp.y - 24.0) / need.y))
+	_card.scale = Vector2(k, k)
+	_card.position = ((vp - need * k) * 0.5).floor()
+	queue_redraw()
 
 
 func open() -> void:
@@ -119,12 +137,10 @@ func _show_page() -> void:
 	var p: Dictionary = PAGES[_page]
 	_title.text = p["title"]
 	_text.text = p["text"]
-	var dots := ""
-	for i in PAGES.size():
-		dots += ("●" if i == _page else "○") + " "
-	_dots.text = dots.strip_edges()
+	_dots.text = "%d / %d" % [_page + 1, PAGES.size()]
 	_next.text = "ИГРАТЬ" if _page == PAGES.size() - 1 else "ДАЛЬШЕ"
 	_t = 0.0
+	_layout.call_deferred()
 
 
 func _process(delta: float) -> void:
@@ -150,14 +166,17 @@ func _draw_pic() -> void:
 	var c := sz * 0.5
 	match PAGES[_page]["pic"]:
 		"run":
-			_court(sz)
-			var player := Vector2(c.x - 90, sz.y - 60)
-			var tap := Vector2(c.x + 110, sz.y - 110)
-			var u := fmod(_t, 2.0) / 2.0
-			_dashed(player, tap)
-			_pic.draw_circle(player.lerp(tap, clampf(u * 1.4, 0.0, 1.0)), 16, Color(0.92, 0.36, 0.26))
-			_pic.draw_arc(tap, 14 + 22 * u, 0, TAU, 32, Color(C_FINGER, 1.0 - u), 4)
-			_pic.draw_circle(tap, 10, C_FINGER)
+			# The court above, the joystick under the player: the thumb slides, he runs.
+			var court := Vector2(sz.x, sz.y - 95)
+			_court(court)
+			var u := fmod(_t, 3.0) / 3.0
+			var dir := Vector2(cos(u * TAU), sin(u * TAU) * 0.5)
+			var player := Vector2(c.x, court.y - 40) + dir * Vector2(110, 30)
+			_pic.draw_circle(player, 16, Color(0.92, 0.36, 0.26))
+			var stick := Vector2(c.x, sz.y - 46)
+			_pic.draw_circle(stick, 44, Color(0, 0, 0, 0.3))
+			_pic.draw_arc(stick, 44, 0, TAU, 40, Color(1, 1, 1, 0.5), 3)
+			_pic.draw_circle(stick + dir * Vector2(26, 40), 20, C_FINGER)
 		"ring":
 			_court(sz)
 			var spot := Vector2(c.x + 40, sz.y - 90)

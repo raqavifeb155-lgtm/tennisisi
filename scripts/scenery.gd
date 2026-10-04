@@ -39,9 +39,7 @@ var rng := RandomNumberGenerator.new()
 var _sun: DirectionalLight3D
 var _cloud_shadow_mat: StandardMaterial3D
 var _water_mat: StandardMaterial3D
-var _crowns: MultiMeshInstance3D
-var _crown_base: Array[Transform3D] = []
-var _crown_phase: Array[float] = []
+var _cloud_shadows: MeshInstance3D
 var _clouds: Array[Node3D] = []
 var _boats: Array[Node3D] = []
 var _birds: Node3D
@@ -94,14 +92,6 @@ func _process(delta: float) -> void:
 		b.position.y = WATER_Y + sin(_t * 1.3 + b.position.x) * 0.05
 		if absf(b.position.x) > 260.0:
 			b.position.x = -signf(speed) * 260.0
-	# Tree crowns sway in the breeze (their shadows on the court move with them).
-	var mm := _crowns.multimesh
-	for i in _crown_base.size():
-		var ph := _crown_phase[i]
-		var sway := sin(_t * 0.9 + ph) * 0.07 + sin(_t * 2.1 + ph * 2.0) * 0.025
-		var tr := _crown_base[i]
-		tr.origin += Vector3(sway, 0.0, sway * 0.4)
-		mm.set_instance_transform(i, tr)
 	_update_birds(delta)
 
 
@@ -147,6 +137,9 @@ func _build_sky_and_sun() -> void:
 	_sun.shadow_opacity = 0.62
 	_sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
 	_sun.directional_shadow_max_distance = 50.0
+	# The sun is never in view; keeping it out of the sky shader means the sky's
+	# reflection map is not re-rendered every frame while the sun moves.
+	_sun.sky_mode = DirectionalLight3D.SKY_MODE_LIGHT_ONLY
 	add_child(_sun)
 
 
@@ -204,6 +197,16 @@ func _build_cloud_shadows() -> void:
 	plane.position = Vector3(0, 0.05, -10.0)
 	plane.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(plane)
+	_cloud_shadows = plane
+
+
+## Lighter rendering for slow phones: hard shadows over a shorter distance, no cloud
+## shadow layer (a full-screen transparent pass).
+func set_high_quality(on: bool) -> void:
+	_cloud_shadows.visible = on
+	_sun.directional_shadow_max_distance = 50.0 if on else 30.0
+	RenderingServer.directional_soft_shadow_filter_set_quality(
+		RenderingServer.SHADOW_QUALITY_SOFT_LOW if on else RenderingServer.SHADOW_QUALITY_HARD)
 
 
 # --- Ground and park --------------------------------------------------------------
@@ -287,10 +290,7 @@ func _build_park() -> void:
 	trunk_mesh.height = 3.2
 	trunk_mesh.radial_segments = 6
 	_mm(trunk_mesh, _plain(Color(0.36, 0.27, 0.2)), trunks)
-	_crowns = _mm(_sphere, _tinted(), crowns, crown_colors)
-	_crown_base = crowns
-	for i in crowns.size():
-		_crown_phase.append(rng.randf() * TAU)
+	_mm(_sphere, _swaying_leaves(), crowns, crown_colors)
 	_mm(_sphere, _tinted(), bushes, bush_colors)
 
 	# Flower beds by the court gate.
@@ -315,7 +315,7 @@ func _build_park() -> void:
 		lamps.append(Transform3D(Basis.from_scale(Vector3(0.12, 4.0, 0.12)), Vector3(x, LAWN_Y + 2.0, SHORE_Z + 3.6)))
 		lamps.append(Transform3D(Basis.from_scale(Vector3(0.35, 0.45, 0.35)), Vector3(x, LAWN_Y + 4.2, SHORE_Z + 3.6)))
 		x += 12.0
-	_mm(_unit_box, _plain(Color(0.14, 0.15, 0.16)), lamps)
+	_mm(_unit_box, _plain(Color(0.14, 0.15, 0.16)), lamps).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 # --- River, bridge, city ----------------------------------------------------------
@@ -349,7 +349,7 @@ func _build_river() -> void:
 		rail.append(Transform3D(Basis.from_scale(Vector3(0.06, 1.0, 0.06)), Vector3(x, LAWN_Y + 0.5, SHORE_Z + 0.3)))
 		x += 2.0
 	rail.append(Transform3D(Basis.from_scale(Vector3(200.0, 0.06, 0.08)), Vector3(0, LAWN_Y + 1.0, SHORE_Z + 0.3)))
-	_mm(_unit_box, _plain(Color(0.12, 0.13, 0.14)), rail)
+	_mm(_unit_box, _plain(Color(0.12, 0.13, 0.14)), rail).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# Boats: a couple of sailboats and a small ferry.
 	_boat(Vector3(-60.0, WATER_Y, -78.0), 2.2, true)
 	_boat(Vector3(70.0, WATER_Y, -112.0), -1.6, true)
@@ -389,13 +389,13 @@ func _build_bridge() -> void:
 	var tower_h := 31.0
 	var span := 52.0  # tower x in local space (±)
 	var stone := _plain(Color(0.74, 0.64, 0.52))
-	_box(Vector3(500.0, 1.4, 10.0), Vector3(0, deck_y, 0), _plain(Color(0.4, 0.38, 0.37)), true, bridge)
+	_box(Vector3(500.0, 1.4, 10.0), Vector3(0, deck_y, 0), _plain(Color(0.4, 0.38, 0.37)), false, bridge)
 	for tx in [-span, span]:
-		_box(Vector3(9.0, 4.0, 13.0), Vector3(tx, WATER_Y + 1.0, 0), stone, true, bridge)  # pier
+		_box(Vector3(9.0, 4.0, 13.0), Vector3(tx, WATER_Y + 1.0, 0), stone, false, bridge)  # pier
 		for side in [-1.0, 1.0]:
-			_box(Vector3(4.5, tower_h, 3.0), Vector3(tx, tower_h * 0.5, side * 4.0), stone, true, bridge)
-		_box(Vector3(4.6, 4.0, 11.0), Vector3(tx, tower_h - 2.0, 0), stone, true, bridge)
-		_box(Vector3(4.6, 2.5, 11.0), Vector3(tx, deck_y + 9.0, 0), stone, true, bridge)
+			_box(Vector3(4.5, tower_h, 3.0), Vector3(tx, tower_h * 0.5, side * 4.0), stone, false, bridge)
+		_box(Vector3(4.6, 4.0, 11.0), Vector3(tx, tower_h - 2.0, 0), stone, false, bridge)
+		_box(Vector3(4.6, 2.5, 11.0), Vector3(tx, deck_y + 9.0, 0), stone, false, bridge)
 	var top := tower_h - 1.0
 	var cable_y := func(x: float) -> float:
 		var a := absf(x)
@@ -413,7 +413,7 @@ func _build_bridge() -> void:
 			if absf(x) < 170.0 and a.y > deck_y + 1.5:
 				segs.append(_segment(Vector3(x, deck_y + 0.7, side), a, 0.08))
 			x += step
-	_mm(_unit_box, _plain(Color(0.3, 0.3, 0.31)), segs, [], bridge)
+	_mm(_unit_box, _plain(Color(0.3, 0.3, 0.31)), segs, [], bridge).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 func _build_city() -> void:
@@ -449,7 +449,7 @@ func _build_city() -> void:
 			if h < 40.0 and rng.randf() < 0.45:
 				tanks.append(Vector3(x + w * 0.5 + rng.randf_range(-2.0, 2.0), y, z))
 			x += w + (rng.randf_range(0.0, 2.0) if row == 0 else rng.randf_range(3.0, 9.0))
-	_mm(_unit_box, _facade(), boxes, colors)
+	_mm(_unit_box, _facade(), boxes, colors).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# Rooftop water tanks: wooden barrels on legs with cone hats.
 	var barrels: Array[Transform3D] = []
 	var hats: Array[Transform3D] = []
@@ -461,13 +461,13 @@ func _build_city() -> void:
 	barrel.bottom_radius = 1.0
 	barrel.height = 2.0
 	barrel.radial_segments = 8
-	_mm(barrel, _plain(Color(0.45, 0.32, 0.22)), barrels)
+	_mm(barrel, _plain(Color(0.45, 0.32, 0.22)), barrels).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var hat := CylinderMesh.new()
 	hat.top_radius = 0.05
 	hat.bottom_radius = 1.1
 	hat.height = 1.0
 	hat.radial_segments = 8
-	_mm(hat, _plain(Color(0.3, 0.25, 0.2)), hats)
+	_mm(hat, _plain(Color(0.3, 0.25, 0.2)), hats).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 # --- Court ------------------------------------------------------------------------
@@ -744,6 +744,31 @@ func _tinted() -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.vertex_color_use_as_albedo = true
 	m.roughness = 0.9
+	return m
+
+
+## Leaf crowns tinted per instance that sway in the breeze on the GPU (no per-frame
+## CPU work); the shadow pass runs the same vertex code, so shadows sway too.
+func _swaying_leaves() -> ShaderMaterial:
+	var sh := Shader.new()
+	sh.code = """
+shader_type spatial;
+render_mode diffuse_lambert, specular_disabled;
+void vertex() {
+	vec3 o = MODEL_MATRIX[3].xyz;
+	float ph = o.x * 0.37 + o.z * 0.23;
+	float s = sin(TIME * 0.9 + ph) * 0.07 + sin(TIME * 2.1 + ph * 2.0) * 0.025;
+	float bend = VERTEX.y * 0.5 + 0.5;
+	VERTEX.x += s * bend / length(MODEL_MATRIX[0].xyz);
+	VERTEX.z += s * 0.4 * bend / length(MODEL_MATRIX[2].xyz);
+}
+void fragment() {
+	ALBEDO = COLOR.rgb;
+	ROUGHNESS = 0.9;
+}
+"""
+	var m := ShaderMaterial.new()
+	m.shader = sh
 	return m
 
 

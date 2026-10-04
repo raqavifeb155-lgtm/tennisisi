@@ -1,10 +1,14 @@
 class_name TouchInput
 extends Control
-## One-finger controls (works anywhere on the screen):
-##  - tap              -> tapped(pos): run there / toss on serve
-##  - hold still       -> held(pos): keep running toward the finger
-##  - swipe / slide    -> swiped(points, times): the whole finger path, read by
+## Two-thumb controls:
+##  - below the player: a floating joystick for the left thumb (move_vector).
+##    It appears where the thumb lands; a quick tap there still counts as a tap.
+##  - above the player (anywhere else):
+##    - tap            -> tapped(pos): run there / toss on serve
+##    - hold still     -> held(pos): keep running toward the finger
+##    - swipe / slide  -> swiped(points, times): the whole finger path, read by
 ##                        ShotGesture (direction, power, flat / topspin / slice)
+## Both thumbs work at once: run with the left, swing with the right.
 ## Desktop: WASD / arrows move, mouse click = tap, mouse drag = swipe.
 
 signal tapped(pos: Vector2)
@@ -16,8 +20,22 @@ const SWIPE_MIN := 0.04     # fraction of screen height before a touch counts as
 const HOLD_MS := 300        # a still touch longer than this becomes "hold to run"
 const TAP_MAX_MS := 350
 
-var move_vector := Vector2.ZERO  # keyboard movement (desktop)
+const STICK_RADIUS := 75.0      # px of thumb travel for full speed
+const STICK_DEAD := 0.15
+
+var move_vector := Vector2.ZERO  # joystick or keyboard, x = right, y = toward the camera
 var blocked_controls: Array[Control] = []
+## Screen y below which a touch becomes the joystick (just under the player's feet).
+var stick_zone_top := INF
+var stick_active := false
+
+var _stick_index := -1
+var _stick_origin := Vector2.ZERO
+var _stick_pos := Vector2.ZERO
+var _stick_ms := 0
+var _stick_moved := false
+var _stick_vector := Vector2.ZERO
+var _drawn_zone := INF
 
 var _touches := {}               # finger index -> Dictionary
 var _trail := PackedVector2Array()
@@ -41,8 +59,25 @@ func _input(event: InputEvent) -> void:
 	var now := Time.get_ticks_msec()
 	if event is InputEventScreenTouch:
 		var t := event as InputEventScreenTouch
+		if t.index == _stick_index and not t.pressed:
+			_stick_index = -1
+			stick_active = false
+			_stick_vector = Vector2.ZERO
+			if not _stick_moved and now - _stick_ms <= TAP_MAX_MS:
+				tapped.emit(t.position)
+			queue_redraw()
+			return
 		if t.pressed:
 			if _is_blocked(t.position):
+				return
+			if t.position.y > stick_zone_top and _stick_index == -1:
+				_stick_index = t.index
+				_stick_origin = t.position
+				_stick_pos = t.position
+				_stick_ms = now
+				_stick_moved = false
+				stick_active = true
+				queue_redraw()
 				return
 			_touches[t.index] = {
 				"start": t.position, "ms": now, "pos": t.position, "swipe": false,
@@ -58,6 +93,9 @@ func _input(event: InputEvent) -> void:
 		queue_redraw()
 	elif event is InputEventScreenDrag:
 		var dr := event as InputEventScreenDrag
+		if dr.index == _stick_index:
+			_update_stick(dr.position, h)
+			return
 		if not _touches.has(dr.index):
 			return
 		var d: Dictionary = _touches[dr.index]
@@ -70,6 +108,21 @@ func _input(event: InputEvent) -> void:
 		if d["swipe"]:
 			swipe_progress.emit(PackedVector2Array(d["points"]))
 		queue_redraw()
+
+
+func _update_stick(pos: Vector2, h: float) -> void:
+	_stick_pos = pos
+	var off := pos - _stick_origin
+	if off.length() > SWIPE_MIN * h * 0.5:
+		_stick_moved = true
+	# The base follows the thumb when it goes past the edge, so turning back is instant.
+	if off.length() > STICK_RADIUS:
+		_stick_origin = pos - off.normalized() * STICK_RADIUS
+		off = pos - _stick_origin
+	var v := off / STICK_RADIUS
+	var l := v.length()
+	_stick_vector = Vector2.ZERO if l < STICK_DEAD else v / l * ((l - STICK_DEAD) / (1.0 - STICK_DEAD))
+	queue_redraw()
 
 
 func _finish_swipe(d: Dictionary, end_pos: Vector2, now: int, _h: float) -> void:
@@ -93,7 +146,11 @@ func _process(delta: float) -> void:
 		k.y -= 1.0
 	if Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN):
 		k.y += 1.0
-	move_vector = k.normalized()
+	move_vector = k.normalized() if k != Vector2.ZERO else _stick_vector
+
+	if absf(stick_zone_top - _drawn_zone) > 2.0:
+		_drawn_zone = stick_zone_top
+		queue_redraw()
 
 	var now := Time.get_ticks_msec()
 	for idx in _touches:
@@ -107,6 +164,17 @@ func _process(delta: float) -> void:
 
 
 func _draw() -> void:
+	if stick_active:
+		draw_circle(_stick_origin, STICK_RADIUS + 18.0, Color(0, 0, 0, 0.16))
+		draw_arc(_stick_origin, STICK_RADIUS + 18.0, 0.0, TAU, 48, Color(1, 1, 1, 0.35), 3.0, true)
+		var knob := _stick_origin + (_stick_pos - _stick_origin).limit_length(STICK_RADIUS)
+		draw_circle(knob, 34.0, Color(1, 1, 1, 0.5))
+	elif stick_zone_top < get_viewport_rect().size.y - 90.0:
+		# Where the thumb goes: a faint ring under the player.
+		var vp := get_viewport_rect().size
+		var home := Vector2(vp.x * 0.5, minf((stick_zone_top + vp.y) * 0.5 + 20.0, vp.y - 110.0))
+		draw_arc(home, STICK_RADIUS + 18.0, 0.0, TAU, 48, Color(1, 1, 1, 0.13), 3.0, true)
+		draw_circle(home, 34.0, Color(1, 1, 1, 0.08))
 	for idx in _touches:
 		var d: Dictionary = _touches[idx]
 		var pts: Array = d["points"]

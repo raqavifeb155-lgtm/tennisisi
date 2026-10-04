@@ -21,6 +21,7 @@ func _ready() -> void:
 		height = 2.6
 		back = 3.6
 		look_ahead = 1.0
+	process_mode = Node.PROCESS_MODE_ALWAYS  # keep framing the player behind the paused tutorial
 	fov = _base_fov
 	near = 1.0
 	far = 700.0

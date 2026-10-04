@@ -13,6 +13,8 @@ var player_hits := 0
 var swipes_sent := 0
 var moved_ok := false
 var tap_test_done := false
+var stick_test_done := false
+var stick_ok := false
 var _last_rally := 0
 var _swipe_armed := false
 
@@ -62,6 +64,23 @@ func _process(_delta: float) -> bool:
 		_tap(Vector2(vp.x * 0.85, vp.y * 0.62))
 		_check_move_later(before)
 
+	# Joystick check: left thumb lands under the player and slides right.
+	if tap_test_done and not stick_test_done and frame > 1500 and main.phase == main.Phase.RALLY and main.last_hitter == main.Who.PLAYER:
+		stick_test_done = true
+		var before_s: Vector3 = main.player.position
+		var a := Vector2(vp.x * 0.5, vp.y * 0.96)
+		var e := _touch(a, true)
+		e.index = 1
+		script_steps.append([frame, e])
+		for i in range(1, 4):
+			var d := _drag(a + Vector2(30.0 * i, 0.0))
+			d.index = 1
+			script_steps.append([frame + i, d])
+		var up := _touch(a + Vector2(90.0, 0.0), false)
+		up.index = 1
+		script_steps.append([frame + 30, up])
+		_check_stick_later(before_s)
+
 	if frame >= 60 * 50:
 		_report()
 		return true
@@ -72,6 +91,12 @@ func _check_move_later(before: Vector3) -> void:
 	await create_timer(0.6).timeout
 	if main.player.position.x > before.x + 0.5:
 		moved_ok = true
+
+
+func _check_stick_later(before: Vector3) -> void:
+	await create_timer(0.45).timeout
+	if main.player.position.x > before.x + 0.5:
+		stick_ok = true
 
 
 func _flush_events() -> void:
@@ -119,5 +144,6 @@ func _report() -> void:
 	print("point outcomes: %s" % str(outcomes))
 	print("score: %s  %s" % [main.scoreboard.point_text(), main.scoreboard.games_text()])
 	print("tap-to-move: %s" % ("OK" if moved_ok else "FAILED"))
-	var ok := player_hits >= 8 and moved_ok
+	print("joystick: %s" % ("OK" if stick_ok else "FAILED"))
+	var ok := player_hits >= 8 and moved_ok and stick_ok
 	print("INPUT TEST %s" % ("PASSED" if ok else "FAILED"))

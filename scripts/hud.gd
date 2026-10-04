@@ -12,14 +12,11 @@ var _hawkeye: HawkEye
 var _root: Control
 var _score: Label
 var _rally: Label
-var _popup: Label
-var _popup_sub: Label
 var _message: Label
 var _tutorial: Tutorial
 var _debug_text: Label
 var _debug_panel: PanelContainer
 var _debug_btn: Button
-var _popup_tween: Tween
 var _message_tween: Tween
 
 
@@ -45,14 +42,6 @@ func _ready() -> void:
 	_message = _label(64, HORIZONTAL_ALIGNMENT_CENTER)
 	_anchor_band(_message, 0.15, 90.0)
 	_message.modulate.a = 0.0
-	_popup = _label(56, HORIZONTAL_ALIGNMENT_CENTER)
-	_anchor_band(_popup, 0.205, 70.0)
-	_popup.modulate.a = 0.0
-	_popup_sub = _label(26, HORIZONTAL_ALIGNMENT_CENTER)
-	_anchor_band(_popup_sub, 0.205, 40.0)
-	_popup_sub.offset_top += 52.0
-	_popup_sub.offset_bottom += 52.0
-	_popup_sub.modulate.a = 0.0
 
 	# Debug toggle + panel
 	_debug_btn = Button.new()
@@ -109,21 +98,9 @@ func set_debug_text(t: String) -> void:
 		_debug_text.text = t
 
 
+## Hit / miss verdict, shown at the timing ring above the player.
 func popup(text: String, color: Color, sub := "") -> void:
-	if _popup_tween:
-		_popup_tween.kill()
-	_popup.text = text
-	_popup.modulate = color
-	_popup_sub.text = sub
-	_popup_sub.modulate = Color(1, 1, 1, 1)
-	_popup.pivot_offset = _popup.size * 0.5
-	_popup.scale = Vector2(1.35, 1.35)
-	_popup_tween = create_tween()
-	_popup_tween.set_ignore_time_scale(true)
-	_popup_tween.set_parallel(true)
-	_popup_tween.tween_property(_popup, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	_popup_tween.tween_property(_popup, "modulate:a", 0.0, 0.35).set_delay(0.55)
-	_popup_tween.tween_property(_popup_sub, "modulate:a", 0.0, 0.35).set_delay(0.55)
+	ring.feedback(text, color, sub, 2 if text == "PERFECT" else (1 if text == "GOOD" else 0))
 
 
 func show_message(text: String, color: Color) -> void:

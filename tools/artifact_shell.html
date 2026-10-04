@@ -1,0 +1,124 @@
+<title>Tennis Roguelike</title>
+<style>
+  /* Full-screen game shell: the canvas fills the frame, a loading card sits on top until the engine starts. */
+  :root {
+    --court: #2f5fa8;
+    --runoff: #3d8066;
+    --ink: #f4f7fb;
+    --muted: #b9c8dc;
+    --ball: #dcf23a;
+    --panel: rgba(12, 22, 38, 0.82);
+    --font-display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+    --font-body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+    color-scheme: dark;
+  }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: var(--runoff);
+    color: var(--ink);
+    font-family: var(--font-body);
+    touch-action: none;
+    overscroll-behavior: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  #canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
+  #loader {
+    position: fixed; inset: 0; display: grid; place-items: center; padding-inline: 16px;
+    background: linear-gradient(180deg, var(--court) 0%, var(--court) 55%, var(--runoff) 55%);
+  }
+  .card {
+    width: min(360px, 100%); padding: 24px; border-radius: 14px; background: var(--panel);
+    display: grid; gap: 14px; box-sizing: border-box;
+  }
+  .card h1 {
+    margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 34px;
+    letter-spacing: 0.02em; text-transform: uppercase; text-wrap: balance;
+  }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.45; }
+  .bar { height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.15); overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 0; background: var(--ball); transition: width 0.2s; }
+  #status { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .err { color: #ffb3a8 !important; }
+  @media (prefers-reduced-motion: reduce) { .bar > i { transition: none; } }
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600&family=Barlow+Condensed:wght@700&display=swap">
+
+<canvas id="canvas" tabindex="0">Your browser does not support the canvas tag.</canvas>
+<div id="loader">
+  <div class="card">
+    <h1>Tennis Roguelike</h1>
+    <p>Мобильный теннис на физике. Держи телефон вертикально. Левый палец внизу — бег, правый — удары.</p>
+    <div class="bar"><i id="bar"></i></div>
+    <div id="status">Загрузка движка… 0%</div>
+  </div>
+</div>
+
+<script>
+  // The 43 MB engine binary is published in 4 chunks (per-file size limit);
+  // stitch them back together when the engine asks for index.wasm.
+  const PARTS = ["wasm/part0.wasm", "wasm/part1.wasm", "wasm/part2.wasm", "wasm/part3.wasm"];
+  const TOTAL = 43699190;
+  const loaded = new Array(PARTS.length).fill(0);
+  const realFetch = window.fetch.bind(window);
+  const statusEl = document.getElementById("status");
+  const barEl = document.getElementById("bar");
+
+  function report() {
+    const pct = Math.min(100, Math.round((loaded.reduce((a, b) => a + b, 0) / TOTAL) * 100));
+    barEl.style.width = pct + "%";
+    statusEl.textContent = "Загрузка движка… " + pct + "%";
+  }
+
+  async function fetchPart(i) {
+    const r = await realFetch(PARTS[i]);
+    if (!r.ok) throw new Error(PARTS[i] + ": HTTP " + r.status);
+    const reader = r.body.getReader();
+    const chunks = [];
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      loaded[i] += value.length;
+      report();
+    }
+    return new Blob(chunks);
+  }
+
+  window.fetch = async (input, init) => {
+    const url = typeof input === "string" ? input : input.url;
+    if (url.split("?")[0].endsWith("index.wasm")) {
+      const blobs = await Promise.all(PARTS.map((_, i) => fetchPart(i)));
+      const blob = new Blob(blobs, { type: "application/wasm" });
+      return new Response(blob, {
+        status: 200,
+        headers: { "Content-Type": "application/wasm", "Content-Length": String(blob.size) },
+      });
+    }
+    if (url.split("?")[0].endsWith("index.pck")) {
+      // Game data pack, published under a served extension.
+      return realFetch("index.pck.wasm", init);
+    }
+    return realFetch(input, init);
+  };
+</script>
+<script src="index.js"></script>
+<script>
+  const GODOT_CONFIG = {
+    args: [], canvasResizePolicy: 2, ensureCrossOriginIsolationHeaders: false, executable: "index",
+    experimentalVK: false, fileSizes: { "index.pck": 680880, "index.wasm": 43699190 },
+    focusCanvas: true, gdextensionLibs: [],
+  };
+  const engine = new Engine(GODOT_CONFIG);
+  engine.startGame({
+    onProgress: () => {},
+  }).then(() => {
+    document.getElementById("loader").hidden = true;
+  }).catch((err) => {
+    statusEl.classList.add("err");
+    statusEl.textContent = "Не удалось запустить игру: " + (err && err.message ? err.message : err);
+  });
+</script>

@@ -112,6 +112,8 @@ var _bot_offset := 0.0
 var _stats := {"rallies": [], "reasons": {}, "labels": {}, "player_hits": 0, "cpu_hits": 0, "serve": {}}
 
 
+var graphics: GraphicsQuality
+
 func _ready() -> void:
 	rng.randomize()
 	for a in OS.get_cmdline_user_args():
@@ -170,7 +172,12 @@ func _ready() -> void:
 
 
 func _build_environment() -> void:
-	add_child(Scenery.new())
+	TelegramApp.init()
+	var scenery := Scenery.new()
+	add_child(scenery)
+	graphics = GraphicsQuality.new()
+	graphics.scenery = scenery
+	add_child(graphics)
 
 
 func _build_helpers() -> void:
@@ -651,7 +658,7 @@ func _player_hit(err: float, dir: Vector3, pace_k: float, type: int) -> void:
 			_hitstop_until_ms = Time.get_ticks_msec() + 70
 	else:
 		cam.impulse(0.4 * q)
-	_buzz(70 if smash else (45 if label == "PERFECT" else (28 if label == "GOOD" else 15)))
+	_haptic("heavy" if smash else ("perfect" if label == "PERFECT" else ("medium" if label == "GOOD" else "light")))
 
 	last_shot = {
 		"label": label, "err_ms": err * 1000.0, "q_t": q_t, "q_p": q_p, "q_m": q_m, "q": q,
@@ -660,10 +667,11 @@ func _player_hit(err: float, dir: Vector3, pace_k: float, type: int) -> void:
 	}
 
 
-## Phone vibration on contact (Android browsers and app builds; iOS browsers have no vibration API).
-func _buzz(ms: int) -> void:
+## Phone vibration on contact: Telegram haptics inside the Mini App (iPhone too),
+## the browser Vibration API elsewhere (Android). See TelegramApp.
+func _haptic(kind: String) -> void:
 	if Tuning.vibration and not autoplay:
-		Input.vibrate_handheld(ms)
+		TelegramApp.haptic(kind)
 
 
 func _miss(reason: String) -> void:
@@ -718,6 +726,8 @@ func _update_player_movement() -> void:
 		player.move_input = Vector2.ZERO
 		return
 	var mv := hud.touch.move_vector
+	if hud.touch.stick_active:
+		_assist_suppressed = true  # the thumb is steering: no auto-positioning this ball
 	if mv != Vector2.ZERO:
 		_move_target = Vector3.INF
 	elif _move_target != Vector3.INF:
@@ -1109,7 +1119,7 @@ func _player_serve(dir: Vector3, pace_k: float, type: int) -> void:
 	var color := Hud.GOLD if label == "PERFECT" else (COLOR_WARN if label == "EARLY" or label == "LATE" else COLOR_GOOD)
 	hud.popup(label, color, "подача %s  ·  %d km/h" % [["KICK", "FLAT", "SLICE"][type], roundi(r.speed * 3.6)])
 	cam.impulse(1.0 if label == "PERFECT" else 0.4)
-	_buzz(55 if label == "PERFECT" else 30)
+	_haptic("perfect" if label == "PERFECT" else "medium")
 	last_shot = {
 		"label": label, "err_ms": err * 1000.0, "q_t": q, "q_p": 1.0, "q_m": 1.0, "q": q,
 		"side": "SRV", "speed": r.speed * 3.6, "elev": r.elevation_deg,
@@ -1139,7 +1149,7 @@ func _player_underarm_serve(dir: Vector3, pace_k: float) -> void:
 		_set_aim(origin, target, Court.in_service_box(target, -1, box_side, 0.0))
 		_aim_hold = 0.8
 	hud.popup("UNDERARM", COLOR_GOOD, "подача снизу  ·  %d km/h" % roundi(r.speed * 3.6))
-	_buzz(25)
+	_haptic("light")
 
 
 func _cpu_serve_hit() -> void:
@@ -1240,12 +1250,16 @@ func _update_helpers() -> void:
 
 func _update_timing_ring() -> void:
 	var ring := hud.ring
-	if autoplay:
-		ring.hide_ring()
-		return
 	# The ring hangs above the player (never over the body or the ball's path) and
 	# leans toward the side of the stroke: right for forehands, left for backhands.
 	var anchor := cam.unproject_position(player.global_position + Vector3(0.0, 2.35, 0.0)) + Vector2(0.0, -70.0)
+	ring.anchor = anchor
+	# Everything below the player's feet is the joystick zone for the left thumb.
+	var vh := get_viewport().get_visible_rect().size.y
+	hud.touch.stick_zone_top = clampf(cam.unproject_position(player.global_position).y + 28.0, vh * 0.55, vh * 0.9)
+	if autoplay:
+		ring.hide_ring()
+		return
 	if phase == Phase.SERVE and server == Who.PLAYER and toss_active:
 		ring.show_ring(anchor, toss_ideal - game_time, Tuning.perfect_window, Tuning.good_window)
 		return
@@ -1261,7 +1275,7 @@ func _update_timing_ring() -> void:
 
 
 func _debug_string() -> String:
-	var s := "FPS %d   time x%.2f\n" % [Engine.get_frames_per_second(), Engine.time_scale]
+	var s := "FPS %d   time x%.2f   %s\n" % [Engine.get_frames_per_second(), Engine.time_scale, graphics.describe()]
 	s += "ball %.0f km/h  spin %.0f rpm  h %.2f m\n" % [ball.speed_kmh(), ball.spin_rpm(), ball.state.pos.y]
 	s += "player %.1f m/s   t_contact %s\n" % [player.velocity.length(), ("%.2f s" % t_contact) if t_contact < 10.0 else "-"]
 	if not last_shot.is_empty():
