@@ -16,6 +16,7 @@ func _init() -> void:
 	test_gestures()
 	test_net_cord()
 	test_sidespin_solver()
+	test_drop_shot()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -176,6 +177,12 @@ func test_gestures() -> void:
 	check(g2.type == ShotGesture.Type.TOPSPIN, "C arc = TOPSPIN (curve %.2f)" % g2.curve)
 	check(g3.type == ShotGesture.Type.SLICE, "hook back = SLICE (hook %.2f)" % g3.hook)
 	check(g3.apex.y < 640.0, "slice aims at the forward point, not the hooked end")
+	var small_hook := _path(func(u: float) -> Vector2:
+		if u < 0.65:
+			return Vector2(360, 1000 - 110 * (u / 0.65))
+		return Vector2(360 - 40 * (u - 0.65), 890 + 120 * (u - 0.65)))
+	var g4 := ShotGesture.classify(small_hook[0], small_hook[1], h)
+	check(g4.type == ShotGesture.Type.DROP, "short small hook = DROP SHOT")
 
 
 func test_net_cord() -> void:
@@ -211,3 +218,27 @@ func test_sidespin_solver() -> void:
 			break
 	var err := Vector2(s.pos.x - target.x, s.pos.z - target.z).length()
 	check(err < 0.4, "landing error %.2f m with %.0f rpm sidespin" % [err, 260.0 * 60.0 / TAU])
+
+
+func test_drop_shot() -> void:
+	print("drop shot from the baseline dies near the net")
+	var p0 := Vector3(0.5, 0.9, 12.0)
+	var target := Vector3(-1.0, 0.033, -1.8)
+	var r := ShotSolver.solve_drop(p0, target, -300.0)
+	var s := BallPhysics.State.new(p0, r.velocity, r.spin)
+	var bounces: Array[Vector3] = []
+	var netted := false
+	for i in 6000:
+		var ev := BallPhysics.substep(s, BallPhysics.MAX_STEP)
+		if ev == BallPhysics.Event.NET:
+			netted = true
+		if ev == BallPhysics.Event.BOUNCE:
+			bounces.append(s.pos)
+			if bounces.size() == 2:
+				break
+	check(not netted and bounces.size() == 2, "clears the net and bounces twice")
+	if bounces.size() == 2:
+		var b1: Vector3 = bounces[0]
+		var b2: Vector3 = bounces[1]
+		check(absf(b1.z - target.z) < 0.5, "first bounce %.1f m past the net (target %.1f)" % [-b1.z, -target.z])
+		check(b2.z > -5.0, "second bounce only %.1f m past the net: the receiver must sprint" % -b2.z)

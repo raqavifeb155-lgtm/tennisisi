@@ -3,13 +3,14 @@ class_name ShotGesture
 ##   straight push forward             -> FLAT
 ##   forward arc, a "C" bending sideways -> TOPSPIN (brushing up the back of the ball)
 ##   forward then hooking back to you   -> SLICE (cutting under the ball)
+##   a short, small hook                -> DROP shot (same look as a slice: disguised)
 ## The aim is the line from the start of the gesture to its most forward point (the apex),
 ## so a hook that curls back still aims where the forward part pointed.
 ## Points are in screen coordinates (y grows downward).
 
-enum Type { TOPSPIN, FLAT, SLICE }
+enum Type { TOPSPIN, FLAT, SLICE, DROP }
 
-const NAMES := ["TOPSPIN", "FLAT", "SLICE"]
+const NAMES := ["TOPSPIN", "FLAT", "SLICE", "DROP SHOT"]
 
 
 class Result:
@@ -23,7 +24,9 @@ class Result:
 
 ## curve_min: bulge ratio above which a forward stroke counts as topspin.
 ## hook_min: fraction of the forward length the finger must come back for a slice.
-static func classify(points: PackedVector2Array, times: PackedInt32Array, screen_h: float, curve_min := 0.14, hook_min := 0.15) -> Result:
+## drop_len: a slice hook whose forward stroke is shorter than this (fraction of the
+## screen height) becomes a drop shot.
+static func classify(points: PackedVector2Array, times: PackedInt32Array, screen_h: float, curve_min := 0.14, hook_min := 0.15, drop_len := 0.11) -> Result:
 	var r := Result.new()
 	var n := points.size()
 	if n == 0:
@@ -56,7 +59,7 @@ static func classify(points: PackedVector2Array, times: PackedInt32Array, screen
 	r.curve = bulge / maxf(chord_len, 0.001)
 
 	if r.hook >= hook_min and back > screen_h * 0.015:
-		r.type = Type.SLICE
+		r.type = Type.DROP if forward < screen_h * drop_len else Type.SLICE
 	elif r.curve >= curve_min:
 		r.type = Type.TOPSPIN
 	else:

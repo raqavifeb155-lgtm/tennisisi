@@ -160,3 +160,21 @@ static func solve_lob(p0: Vector3, target: Vector3, top_spin: float, max_speed :
 	res.spin = spin
 	res.ok = true
 	return res
+
+
+## Drop shot: the lowest arc that still clears the net with the margin and lands on
+## target. Lower is better (less time for the opponent), so elevations are tried from
+## flat upward and the first safe one wins.
+static func solve_drop(p0: Vector3, target: Vector3, top_spin: float, net_margin := 0.25) -> Result:
+	var flat := target - p0
+	flat.y = 0.0
+	var dir := flat.normalized() if flat.length() > 0.01 else Vector3(0, 0, -signf(p0.z))
+	var best: Result = null
+	var elev := 8.0
+	while elev <= 66.0:
+		var r := solve_lob(p0, target, top_spin, 40.0, elev)
+		best = r
+		if _simulate(p0, r.velocity, r.spin, dir).y >= net_margin:
+			return r
+		elev += 2.0
+	return best

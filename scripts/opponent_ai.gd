@@ -18,6 +18,10 @@ var _goal := Vector3(0, 0, -12.6)
 var _recovery := Vector3(0, 0, -12.6)
 var _prev_rel := INF
 
+# What the CPU has learned about the player's serve
+var _serve_speeds: Array[float] = []
+var _drop_memory := 0.0
+
 
 func setup(g: Node, athlete: Athlete, b: Ball) -> void:
 	game = g
@@ -36,6 +40,31 @@ func on_player_hit() -> void:
 	_plan_timer = 0.0
 	_prev_rel = INF
 	me.split_step()
+
+
+## Called after the player serves: a big serve is read later.
+func on_player_serve(kmh: float, underarm: bool) -> void:
+	on_player_hit()
+	_reaction += clampf((kmh - 140.0) / 350.0, 0.0, 0.16)
+	_serve_speeds.append(kmh)
+	if _serve_speeds.size() > 6:
+		_serve_speeds.pop_front()
+	_drop_memory = 1.0 if underarm else _drop_memory * 0.6
+
+
+## Where to stand to return: deeper against big servers, closer after being caught
+## by an underarm serve (that memory fades), with a little variety.
+func receive_position(box_side: float) -> Vector3:
+	var avg := 150.0
+	if not _serve_speeds.is_empty():
+		avg = 0.0
+		for v in _serve_speeds:
+			avg += v
+		avg /= _serve_speeds.size()
+	var depth := lerpf(12.1, 13.9, clampf((avg - 120.0) / 80.0, 0.0, 1.0))
+	depth -= _drop_memory * 1.8
+	depth += rng.randf_range(-0.35, 0.35)
+	return Vector3(box_side * rng.randf_range(2.1, 2.7), 0.0, -depth)
 
 
 ## Called when the CPU itself hits (or feeds): plan the recovery position.
@@ -128,7 +157,12 @@ func _check_hit() -> void:
 	if _prev_rel > 0.0 and rel <= 0.0 and ball.state.vel.z < 0.0 and not game.serve_flight:
 		var bp := ball.state.pos
 		var flat_d := Vector2(bp.x - me.position.x, bp.z - me.position.z).length()
-		if flat_d <= Athlete.REACH and bp.y > 0.05 and bp.y < 2.5:
+		if game.autoplay and game.rally == 1:
+			print("    AI at serve cross: ball=(%.1f,%.2f,%.1f) me=(%.1f,%.1f) d=%.2f" % [bp.x, bp.y, bp.z, me.position.x, me.position.z, flat_d])
+		# Returning serve there's no time to lunge fully: a smaller reach, so wide or
+		# fast serves can be aces.
+		var reach := lerpf(1.15, 1.35, skill()) if game.rally == 1 else Athlete.REACH
+		if flat_d <= reach and bp.y > 0.05 and bp.y < 2.5:
 			_hit(bp)
 	_prev_rel = rel
 
@@ -141,6 +175,9 @@ func _hit(bp: Vector3) -> void:
 	var tq: Array = game.timing_quality(t_err)
 	var q: float = tq[0] * game.position_quality(lateral, bp.y) * game.movement_quality(me.velocity.length())
 	q *= lerpf(0.72, 0.92, s)  # the CPU never plays quite as cleanly as a perfect swipe
+	if game.rally == 1:
+		# Returning serve: big serves are only blocked back.
+		q *= clampf(1.15 - (game.last_serve_kmh - 120.0) / 130.0, 0.4, 1.0)
 
 	var player_x: float = game.player.position.x
 	var tx: float
@@ -162,7 +199,15 @@ func _hit(bp: Vector3) -> void:
 		pace = lerpf(22.0, 32.0, s) * rng.randf_range(0.88, 1.1)
 		top = rng.randf_range(160.0, 300.0)
 	var lob := false
+	var drop := false
 	var player_z: float = game.player.position.z
+	if q >= 0.6 and player_z > 12.6 and me.position.z > -11.6 and rng.randf() < 0.03 + 0.04 * s:
+		# Player camped far behind the baseline and the CPU is inside the court: drop shot.
+		tx = rng.randf_range(-2.5, 2.5)
+		tz = rng.randf_range(1.6, 2.6)
+		pace = 9.0
+		top = -280.0
+		drop = true
 	if player_z < 6.5 and q >= 0.45:
 		# Player at the net: lob over them, or pass down the open side hard.
 		if rng.randf() < 0.3 + 0.35 * s:
@@ -175,6 +220,14 @@ func _hit(bp: Vector3) -> void:
 			tx = (-signf(player_x) if absf(player_x) > 0.3 else (1.0 if rng.randf() < 0.5 else -1.0)) * rng.randf_range(2.8, 3.5)
 			tz = rng.randf_range(6.0, 9.0)
 			pace *= 1.1
-	me.swing(side, 0.02, bp.y)
-	game.execute_shot(CPU, me, bp, Vector3(tx, BallPhysics.RADIUS, tz), pace, top, q, t_err, side, lob)
+	if game.rally == 1 and rng.randf() < clampf((0.55 - q) * 1.5, 0.0, 0.6):
+		# Overpowered by the serve: a frame shot that flies anywhere.
+		tx = rng.randf_range(-7.0, 7.0)
+		tz = rng.randf_range(8.0, 15.0)
+		pace = rng.randf_range(14.0, 22.0)
+		top = 60.0
+		lob = false
+		drop = false
+	me.swing(side, 0.02, bp, Athlete.Style.SLICE if q < 0.45 else Athlete.Style.TOPSPIN)
+	game.execute_shot(CPU, me, bp, Vector3(tx, BallPhysics.RADIUS, tz), pace, top, q, t_err, side, lob, 0.0, drop)
 	on_cpu_hit(tx)

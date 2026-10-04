@@ -17,6 +17,7 @@ var late_limit := 0.12         # how long after the ideal moment a swing still c
 
 # Swipe shape -> stroke (see ShotGesture)
 var curve_min := 0.14          # sideways bulge / length above which a swipe is a topspin "C"
+var drop_len := 0.11           # a slice hook shorter than this (of screen height) is a drop shot
 var hook_min := 0.15           # how far the finger must come back (of the forward length) for a slice
 
 # Player
@@ -28,6 +29,7 @@ var ai_skill := 0.5
 
 # Feedback / debug
 var hitstop := true
+var vibration := true
 var show_path := false
 var show_landing := true
 var hawkeye_range := 0.15      # show the line-call replay when the mark is this close to a line (m)

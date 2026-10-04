@@ -38,7 +38,8 @@ func _draw() -> void:
 	var left := Time.get_ticks_msec()
 	var alpha := clampf((_until_ms - left) / 300.0, 0.0, 1.0)
 	var vp := get_viewport_rect().size
-	var origin := Vector2((vp.x - PANEL.x) * 0.5, 150.0)
+	# Bottom of the screen, below the player: never over the opponent or the far court.
+	var origin := Vector2((vp.x - PANEL.x) * 0.5, vp.y - PANEL.y - 40.0)
 	var rect := Rect2(origin, PANEL)
 	var font := get_theme_default_font()
 	var is_in := _margin >= 0.0

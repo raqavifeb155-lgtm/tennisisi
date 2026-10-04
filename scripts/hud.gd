@@ -1,7 +1,7 @@
 class_name Hud
 extends CanvasLayer
-## On-screen UI: score, rally counter, hit feedback popups, shot-type selector,
-## controls hint, and the debug/tuning panel.
+## On-screen UI: score, rally counter, hit feedback popups, timing ring, line-call
+## replay, the first-launch tutorial and the settings panel. No permanent hints.
 
 const GOLD := Color(1.0, 0.85, 0.25)
 
@@ -15,13 +15,10 @@ var _rally: Label
 var _popup: Label
 var _popup_sub: Label
 var _message: Label
-var _hint: Label
-var _serve_hint: Label
+var _tutorial: Tutorial
 var _debug_text: Label
 var _debug_panel: PanelContainer
 var _debug_btn: Button
-var _gesture_label: Label
-var _legend: Label
 var _popup_tween: Tween
 var _message_tween: Tween
 
@@ -57,35 +54,6 @@ func _ready() -> void:
 	_popup_sub.offset_bottom += 52.0
 	_popup_sub.modulate.a = 0.0
 
-	_hint = _label(24, HORIZONTAL_ALIGNMENT_CENTER)
-	_hint.text = "ТАП — бежать   ·   СВАЙП — удар по линии от игрока\nбей, когда кольцо сожмётся до круга"
-	_hint.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	_hint.offset_left = 16.0
-	_hint.offset_right = -16.0
-	_hint.offset_top = -120.0
-	_hint.offset_bottom = -30.0
-	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_hint.modulate.a = 1.0
-
-	_serve_hint = _label(24, HORIZONTAL_ALIGNMENT_CENTER)
-	_anchor_band(_serve_hint, 0.70, 90.0)
-	_serve_hint.offset_left = 24.0
-	_serve_hint.offset_right = -24.0
-	_serve_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_serve_hint.modulate = Color(1.0, 0.95, 0.7)
-	_serve_hint.visible = false
-
-	# Gesture legend (replaces stroke buttons: the swipe's shape picks the stroke)
-	_legend = _label(20, HORIZONTAL_ALIGNMENT_CENTER)
-	_anchor_top(_legend, 112.0, 30.0)
-	_legend.text = "прямой свайп = FLAT   ·   дуга «C» = TOPSPIN   ·   крючок назад = SLICE"
-	_legend.modulate = Color(1, 1, 1, 0.85)
-
-	# Live name of the stroke being drawn
-	_gesture_label = _label(34, HORIZONTAL_ALIGNMENT_CENTER)
-	_anchor_band(_gesture_label, 0.62, 50.0)
-	_gesture_label.modulate = Color(0.75, 0.95, 1.0)
-
 	# Debug toggle + panel
 	_debug_btn = Button.new()
 	_debug_btn.text = "НАСТР"
@@ -112,6 +80,10 @@ func _ready() -> void:
 
 	_build_debug_panel()
 
+	_tutorial = Tutorial.new()
+	_tutorial.visible = false
+	add_child(_tutorial)
+
 
 func set_score(text: String) -> void:
 	_score.text = text
@@ -121,22 +93,20 @@ func set_rally(text: String) -> void:
 	_rally.text = text
 
 
-func set_serve_hint(text: String) -> void:
-	_serve_hint.text = text
-	_serve_hint.visible = text != ""
+func show_tutorial_once() -> void:
+	if not Tutorial.is_done():
+		_tutorial.open.call_deferred()
+
+
+func open_tutorial() -> void:
+	_debug_panel.visible = false
+	_tutorial.open()
 
 
 func set_debug_text(t: String) -> void:
 	_debug_text.visible = Tuning.show_debug_text
 	if _debug_text.visible:
 		_debug_text.text = t
-
-
-func hide_hint() -> void:
-	if _hint.modulate.a > 0.0:
-		var tw := create_tween()
-		tw.set_ignore_time_scale(true)
-		tw.tween_property(_hint, "modulate:a", 0.0, 0.8)
 
 
 func popup(text: String, color: Color, sub := "") -> void:
@@ -169,10 +139,6 @@ func show_message(text: String, color: Color) -> void:
 
 func hawkeye(margin: float, axis: int) -> void:
 	_hawkeye.show_call(margin, axis)
-
-
-func set_gesture_label(text: String) -> void:
-	_gesture_label.text = text
 
 
 func _toggle_debug() -> void:
@@ -241,6 +207,13 @@ func _build_debug_panel() -> void:
 	title.add_theme_font_size_override("font_size", 26)
 	v.add_child(title)
 
+	var tut := Button.new()
+	tut.text = "Обучение"
+	tut.custom_minimum_size = Vector2(400, 56)
+	tut.add_theme_font_size_override("font_size", 22)
+	tut.focus_mode = Control.FOCUS_NONE
+	tut.pressed.connect(open_tutorial)
+	v.add_child(tut)
 	_check(v, "Замедление (slow-mo)", "slowmo_enabled")
 	_slider(v, "Сила замедления", "slowmo_scale", 0.1, 1.0, 0.01)
 	_slider(v, "Когда включать (с до удара)", "slowmo_lead", 0.1, 0.8, 0.01)
@@ -252,6 +225,7 @@ func _build_debug_panel() -> void:
 	_slider(v, "Автопомощь в беге", "assist", 0.0, 1.0, 0.05)
 	_slider(v, "Сила соперника", "ai_skill", 0.0, 1.0, 0.05)
 	_check(v, "Hit-stop на PERFECT", "hitstop")
+	_check(v, "Вибрация при ударе", "vibration")
 	_check(v, "Прицел при свайпе", "show_aim")
 	_check(v, "Маркер приземления", "show_landing")
 	_check(v, "Траектория мяча", "show_path")
