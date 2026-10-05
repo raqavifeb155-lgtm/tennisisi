@@ -181,10 +181,10 @@ func _build_light() -> void:
 	e.fog_light_color = MIST
 	e.fog_light_energy = 1.0
 	e.fog_sun_scatter = 0.12
-	e.fog_density = 0.94
-	e.fog_depth_begin = 34.0
-	e.fog_depth_end = 190.0
-	e.fog_depth_curve = 0.8
+	e.fog_density = 0.95
+	e.fog_depth_begin = 30.0
+	e.fog_depth_end = 175.0
+	e.fog_depth_curve = 0.45
 	e.fog_sky_affect = 0.7
 	var we := WorldEnvironment.new()
 	we.environment = e
