@@ -13,6 +13,7 @@ trap 'rm -rf "$STAGE"' EXIT
 
 [ -f "$ROOT/build/web/index.html" ] || { echo "No build/web: run tools/build_web.sh first" >&2; exit 1; }
 mkdir -p "$STAGE/tennis/web" "$OUT"
+touch "$OUT/.gdignore"  # keep Godot from importing (and exporting) the packages
 cp -r "$ROOT/build/web/." "$STAGE/tennis/web/"
 for f in "$STAGE"/tennis/web/*.{wasm,pck,js}; do
 	[ -f "$f" ] && gzip -9 -k -n "$f"

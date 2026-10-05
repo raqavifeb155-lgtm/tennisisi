@@ -7,3 +7,4 @@ export_credentials.cfg
 .DS_Store
 Thumbs.db
 .vscode/
+dist/
