@@ -180,12 +180,12 @@ func _build_light() -> void:
 	e.fog_mode = Environment.FOG_MODE_DEPTH
 	e.fog_light_color = MIST
 	e.fog_light_energy = 1.0
-	e.fog_sun_scatter = 0.12
+	e.fog_sun_scatter = 0.04
 	e.fog_density = 0.95
 	e.fog_depth_begin = 30.0
-	e.fog_depth_end = 175.0
-	e.fog_depth_curve = 0.45
-	e.fog_sky_affect = 0.7
+	e.fog_depth_end = 200.0
+	e.fog_depth_curve = 0.35
+	e.fog_sky_affect = 0.92
 	var we := WorldEnvironment.new()
 	we.environment = e
 	add_child(we)
@@ -208,8 +208,8 @@ func _build_light() -> void:
 	var elev := deg_to_rad(8.0)
 	var pos := az * cos(elev) * 480.0 + Vector3(0.0, 8.0 + sin(elev) * 480.0, 0.0)
 	var ramp := Gradient.new()
-	ramp.offsets = PackedFloat32Array([0.0, 0.05, 0.08, 0.3, 1.0])
-	ramp.colors = PackedColorArray([Color(1, 1, 1, 0.85), Color(1, 1, 1, 0.75), Color(1, 1, 1, 0.3), Color(1, 1, 1, 0.1), Color(1, 1, 1, 0)])
+	ramp.offsets = PackedFloat32Array([0.0, 0.035, 0.07, 0.25, 0.6, 1.0])
+	ramp.colors = PackedColorArray([Color(1, 1, 1, 0.8), Color(1, 1, 1, 0.7), Color(1, 1, 1, 0.32), Color(1, 1, 1, 0.13), Color(1, 1, 1, 0.04), Color(1, 1, 1, 0)])
 	var tex := GradientTexture2D.new()
 	tex.gradient = ramp
 	tex.fill = GradientTexture2D.FILL_RADIAL
@@ -224,7 +224,7 @@ func _build_light() -> void:
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.disable_fog = true
 	var q := QuadMesh.new()
-	q.size = Vector2(150.0, 150.0)
+	q.size = Vector2(230.0, 230.0)
 	var glow := MeshInstance3D.new()
 	glow.mesh = q
 	glow.material_override = mat
@@ -272,7 +272,7 @@ void fragment() {
 	float h = smoothstep(0.0, 1.0, UV.y);
 	float drift = 0.7 + 0.3 * sin(wpos.x * 0.045 + TIME * 0.05 + wpos.z) * sin(wpos.x * 0.017 - TIME * 0.03);
 	ALBEDO = mist;
-	ALPHA = h * h * 0.42 * drift;
+	ALPHA = h * h * 0.6 * drift;
 }
 """
 	var m := ShaderMaterial.new()
@@ -462,7 +462,8 @@ func _build_town() -> void:
 	# Deeper rows behind, taller mansion blocks, each a little further into the mist.
 	var gaps := [[-158.4, SIDE_STREET.x], [SIDE_STREET.y, 158.4]]
 	for row in [[-56.0, 10.0, 3, 4], [-78.0, 10.0, 3, 5], [-100.0, 12.0, 4, 5]]:
-		for g in gaps:
+		var row_gaps := gaps if row[0] != -100.0 else [[-158.4, -81.6], [-26.4, SIDE_STREET.x], [SIDE_STREET.y, 158.4]]
+		for g in row_gaps:
 			var x0: float = g[0]
 			var x1: float = g[1]
 			if row[0] == -78.0 and x0 > 0.0:
@@ -570,8 +571,8 @@ func _shop(p: Vector3, w: float, fascia: Color) -> void:
 
 func _build_landmarks() -> void:
 	var up := STREET_Y
-	var stone := Color(0.6, 0.6, 0.57, 0.0)
-	var dark_slate := Color(0.26, 0.28, 0.31)
+	var stone := Color(0.47, 0.46, 0.43, 0.0)
+	var dark_slate := Color(0.22, 0.24, 0.27)
 	# A church: nave with a steep roof, a square tower with pinnacles and a slender spire.
 	var cx := 28.8
 	_fac_t.append(Transform3D(Basis.from_scale(Vector3(9.0, 11.0, 20.0)), Vector3(cx, up + 5.0, -89.5)))
@@ -592,15 +593,15 @@ func _build_landmarks() -> void:
 	# A clock tower in the manner of Westminster: a tall shaft, the clock stage with four
 	# lit faces, a belfry and a steep iron roof with a needle.
 	var tx := -32.0
-	var tz := -94.0
-	var tstone := Color(0.66, 0.61, 0.49, 0.0)
-	_fac_t.append(Transform3D(Basis.from_scale(Vector3(7.0, 25.0, 7.0)), Vector3(tx, up + 12.0, tz)))
+	var tz := -104.0
+	var tstone := Color(0.44, 0.41, 0.35, 0.0)
+	_fac_t.append(Transform3D(Basis.from_scale(Vector3(7.0, 19.0, 7.0)), Vector3(tx, up + 9.0, tz)))
 	_fac_c.append(tstone)
 	for dx in [-3.4, 3.4]:
 		for dz in [-3.4, 3.4]:
-			_fac_t.append(Transform3D(Basis.from_scale(Vector3(0.9, 25.0, 0.9)), Vector3(tx + dx, up + 12.0, tz + dz)))
+			_fac_t.append(Transform3D(Basis.from_scale(Vector3(0.9, 19.0, 0.9)), Vector3(tx + dx, up + 9.0, tz + dz)))
 			_fac_c.append(tstone.darkened(0.06))
-	var cy := up + 24.5 + 3.6
+	var cy := up + 18.5 + 3.6
 	_fac_t.append(Transform3D(Basis.from_scale(Vector3(8.6, 7.2, 8.6)), Vector3(tx, cy, tz)))
 	_fac_c.append(tstone)
 	for k in 4:
@@ -608,7 +609,7 @@ func _build_landmarks() -> void:
 		var face := Basis(Vector3.UP, yaw)
 		var n := face * Vector3(0, 0, 1)
 		_disc_t.append(Transform3D(face * Basis(Vector3.RIGHT, PI * 0.5) * Basis.from_scale(Vector3(2.7, 0.1, 2.7)), Vector3(tx, cy, tz) + n * 4.3))
-		_disc_c.append(Color(0.96, 0.93, 0.8, 0.5))
+		_disc_c.append(Color(0.62, 0.6, 0.5, 0.5))
 		# Hands at ten to nine... it is always early at the club.
 		for hand in [[1.6, 0.22, -1.1], [2.2, 0.15, 2.0]]:
 			var hb: Basis = face * Basis(Vector3(0, 0, 1), hand[2]) * Basis.from_scale(Vector3(hand[1], hand[0], 0.06))
@@ -625,7 +626,7 @@ func _build_landmarks() -> void:
 	_cone_c.append(Color(0.2, 0.24, 0.25))
 	# A long Gothic hall beside it, with pinnacles along the roof line.
 	_fac_t.append(Transform3D(Basis.from_scale(Vector3(40.0, 15.0, 8.0)), Vector3(tx - 24.0, up + 7.0, tz)))
-	_fac_c.append(Color(0.66, 0.61, 0.49, 1.0))
+	_fac_c.append(Color(0.48, 0.45, 0.38, 1.0))
 	_roof_t.append(Transform3D(Basis(Vector3.UP, PI * 0.5) * Basis.from_scale(Vector3(7.6, 3.5, 40.0)), Vector3(tx - 24.0, up + 14.5 + 1.75, tz)))
 	_roof_c.append(Color(0.24, 0.27, 0.28))
 	var px := tx - 43.5
@@ -1023,7 +1024,7 @@ func _flush() -> void:
 	var halos := _mm(QuadMesh.new(), _halo_material(), _halo_t)
 	halos.cast_shadow = off
 	_extras.append(halos)
-	var paving := _noise_mat(Color(0.47, 0.47, 0.46), 0.1, 6.0)
+	var paving := _noise_mat(Color(0.4, 0.405, 0.4), 0.12, 6.0)
 	paving.roughness = 0.38
 	_mm(_unit_box, paving, _pave_t).cast_shadow = off
 	var puddle := StandardMaterial3D.new()
