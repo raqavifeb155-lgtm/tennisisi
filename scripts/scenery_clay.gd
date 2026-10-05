@@ -386,8 +386,8 @@ func _build_terrain() -> void:
 			else:
 				# Mediterranean scrub: dry ochre grass and darker pine and lentisk.
 				c = Color(0.42, 0.44, 0.26).lerp(Color(0.19, 0.28, 0.15), clampf(dn * 2.2 + 0.6, 0.0, 1.0))
-				if nrm.y < 0.82:
-					c = c.lerp(Color(0.58, 0.5, 0.42), clampf((0.82 - nrm.y) * 5.0, 0.0, 1.0))  # rock
+				if nrm.y < 0.75:
+					c = c.lerp(Color(0.46, 0.42, 0.34), clampf((0.75 - nrm.y) * 4.0, 0.0, 0.8))  # rock
 			colors[j * nx + i] = c
 	var idx := PackedInt32Array()
 	for j in nz - 1:

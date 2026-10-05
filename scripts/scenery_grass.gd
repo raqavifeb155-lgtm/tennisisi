@@ -1009,8 +1009,9 @@ func _flush() -> void:
 	_mm(_cyl, _tinted(), _cyl_t, _cyl_c).cast_shadow = off
 	_mm(_unit_box, _victorian_facade(), _fac_t, _fac_c).cast_shadow = off
 	var prism := PrismMesh.new()
-	_mm(prism, _tinted(), _roof_t, _roof_c).cast_shadow = off
-	_mm(_cone, _tinted(), _cone_t, _cone_c).cast_shadow = off
+	var stretched := _tinted_stretched()
+	_mm(prism, stretched, _roof_t, _roof_c).cast_shadow = off
+	_mm(_cone, stretched, _cone_t, _cone_c).cast_shadow = off
 	var glow := _glow_material()
 	_mm(_unit_box, glow, _glow_t, _glow_c).cast_shadow = off
 	_mm(_sphere, glow, _globe_t, _globe_c).cast_shadow = off
@@ -1039,7 +1040,7 @@ func _flush() -> void:
 	pm.rings = 0
 	_mm(pm, puddle, _puddle_t).cast_shadow = off
 	_mm(_unit_box, _brick_material(), _wall_t, _wall_c).cast_shadow = off
-	_mm(_sphere, _tinted(), _ivy_t, _ivy_c).cast_shadow = off
+	_mm(_sphere, stretched, _ivy_t, _ivy_c).cast_shadow = off
 	_mm(_sphere, _tinted(), _bloom_t, _bloom_c).cast_shadow = off
 	var trunk := CylinderMesh.new()
 	trunk.top_radius = 0.16
@@ -1057,6 +1058,29 @@ func _bx(t: Array[Transform3D], c: Array[Color], size: Vector3, pos: Vector3, co
 
 
 # --- Materials --------------------------------------------------------------------
+
+## Like _tinted(), for meshes with sloped faces stretched unevenly per instance (spires,
+## roofs, flattened ivy). MultiMesh turns normals with the plain instance basis, which
+## tips a tall cone's normals up to the sky and lights it white; dividing by the scale
+## squared gives the true (inverse-transpose) normal.
+func _tinted_stretched() -> ShaderMaterial:
+	var sh := Shader.new()
+	sh.code = """
+shader_type spatial;
+render_mode diffuse_lambert;
+void vertex() {
+	vec3 s = vec3(length(MODEL_MATRIX[0].xyz), length(MODEL_MATRIX[1].xyz), length(MODEL_MATRIX[2].xyz));
+	NORMAL = NORMAL / (s * s);
+}
+void fragment() {
+	ALBEDO = COLOR.rgb;
+	ROUGHNESS = 0.9;
+}
+"""
+	var m := ShaderMaterial.new()
+	m.shader = sh
+	return m
+
 
 ## Brick, stucco and stone tinted per instance, with a world-space grid of sash windows
 ## (some lit warm from inside) on the walls. Instance colour alpha 0 = plain wall
