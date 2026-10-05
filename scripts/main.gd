@@ -217,7 +217,13 @@ func _ready() -> void:
 	ui = TournamentUI.new()
 	add_child(ui)
 	ui.chosen.connect(_on_ui)
-	ui.sfx_request.connect(func(sound: String, db: float, pitch: float) -> void: sfx.play(sound, db, pitch))
+	# UI sounds: a dropped-in coin/reward/click sound if there is one, else a built-in.
+	ui.sfx_request.connect(func(sound: String, db: float, pitch: float) -> void:
+		var alt: String = {"bounce": "coin", "hit": "click"}.get(sound, "")
+		if alt != "" and sfx.has(alt):
+			sfx.play(alt, db + 6.0, 1.0)
+		else:
+			sfx.play(sound, db, pitch))
 	hud.touch.blocked_controls.append(ui.root)
 
 	_build_helpers()
@@ -295,6 +301,7 @@ func set_location(id: String) -> void:
 	graphics.refresh()
 	court.set_surface(loc["surface"])
 	Athlete.surface = loc["surface"]
+	sfx.set_location(location_id)
 
 
 func _build_helpers() -> void:
@@ -1158,6 +1165,12 @@ func _end_point(winner: int, reason: String) -> void:
 		hud.hawkeye(_close_call["margin"], _close_call["axis"])
 	_close_call = {}
 	sfx.play("point" if winner == Who.PLAYER else "miss", -8.0 if winner == Who.PLAYER else -10.0)
+	# The stands: applause for a good point, an "ooh" for a close call.
+	if not autoplay:
+		if not _close_call.is_empty() and int(_close_call.get("rally", -1)) == rally:
+			sfx.play("crowd_ooh", -6.0)
+		elif winner == Who.PLAYER and (rally >= 6 or reason == "ACE" or reason == "WINNER"):
+			sfx.play("applause", -8.0 + minf(rally, 12.0) * 0.4)
 	hud.set_score(scoreboard.point_text())
 
 	_stats["rallies"].append(rally)
@@ -1477,6 +1490,7 @@ func _gain_xp(skill: String, label: String, raw := -1.0) -> void:
 
 
 func _show_menu() -> void:
+	sfx.set_music(true)
 	tournament = null
 	tournament_mode = false
 	_stop_match()
@@ -1549,6 +1563,7 @@ func _set_opponent_mods(speed: float, serve: float, cpu_racket: Dictionary) -> v
 
 
 func _begin_match() -> void:
+	sfx.set_music(false)
 	score = [0, 0]
 	rally = 0
 	best_rally = 0
@@ -1585,6 +1600,7 @@ func _finish_match() -> void:
 		_bonus_score = st
 		_start_bonus()
 		return
+	sfx.play("victory" if won else "defeat", -4.0)
 	ui.show_result(tournament, won, st, _match_stats)
 
 
@@ -1628,6 +1644,7 @@ func _on_ui(action: String, arg: int) -> void:
 				Rewards.restore()
 			_next_screen("summary")
 		"to_reward":
+			sfx.play("reward", -6.0)
 			_next_screen("reward")
 		"to_summary":
 			_next_screen("summary")
@@ -1638,6 +1655,7 @@ func _on_ui(action: String, arg: int) -> void:
 			if tournament.use_wildcard():
 				ui.show_bracket(tournament)
 		"to_loot":
+			sfx.play("reward", -4.0)
 			ui.show_loot(tournament)
 		"loot":
 			tournament.take_loot(arg == 1)
@@ -1934,6 +1952,7 @@ func _end_bonus() -> void:
 		tournament.pending_loot = Gear.roll(Gear.EPIC, rng)
 		_start_bonus()
 		return
+	sfx.play("victory", -4.0)
 	ui.show_result(tournament, true, _bonus_score, _match_stats)
 
 

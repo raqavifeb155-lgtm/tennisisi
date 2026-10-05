@@ -1,0 +1,112 @@
+# «Матчбол» — ТЗ: что доделываем
+
+Состояние на 05.10.2026. Движок — Godot 4.4.1 (GDScript), веб-сборка для Telegram Mini App.
+Дизайн и роадмап — `docs/ROADMAP.md`, обзор систем — `README.md`.
+
+## Как продолжить на своём компьютере (Claude Code)
+
+1. Распакуйте `tennis-project.zip` (или `git clone tennis-full-history.bundle tennis`).
+2. Установите Godot **4.4.1** (именно эту версию): https://godotengine.org/download/archive/4.4.1-stable/
+   — для сборки под веб ещё понадобятся «Export Templates» той же версии
+   (скрипт `tools/build_web.sh` на Linux/macOS скачает всё сам).
+3. Откройте папку в Claude Code и попросите: «прочитай README.md, docs/ROADMAP.md и
+   docs/TZ.md и продолжай с первого незакрытого пункта».
+4. Проверки (запускать после каждой правки):
+   ```bash
+   godot --headless --path . -s tests/run_tests.gd                      # физика, счёт, турнир, навыки, лут
+   godot --headless --path . --fixed-fps 60 -s tests/input_test.gd      # настоящие тапы и свайпы
+   godot --headless --path . --fixed-fps 60 -- --autoplay --points=30   # бот против ИИ
+   godot --headless --path . --fixed-fps 60 -- --autoplay --tournament --format=0
+   godot --headless --path . --fixed-fps 60 -- --autoplay --bonus-test=6
+   godot --headless --path . --fixed-fps 60 -- --autoplay --dive-test --points=20
+   ```
+5. Сборка и выкладка: `tools/build_web.sh` → `tools/package_server.sh` →
+   `dist/tennis-hostkey.zip` (инструкция для сервера внутри, `deploy/README-HOSTKEY.md`).
+6. Отладка анимаций и локаций картинками (нужен рендер; на Windows — просто без xvfb-run):
+   `tools/pose_shots.gd -- --stroke=fh|bh|bh1|sl|serve|walk|dive`,
+   `tools/scene_shot.gd -- --scenery=park|clay|grass`.
+
+## Что уже сделано
+
+Турнир с тремя форматами, 5 соперников, награды, вайлд-карды, золото, сохранение;
+навыки (6 шт., до 30 уровня, перки каждые 5 уровней, стартовые очки), баланс кольца
+от уровня; ракетки с редкостью и аффиксами, лут у соперников, модификаторы сложности,
+мини-игра «Трофей»; ошибки у игрока и ИИ; покрытия с разной физикой, следы на грунте,
+подскальзывание на траве; анимации ударов (форхенд, двуручный/одноручный бэкхенд,
+слайс, подача боком с набивкой, прыжок с падением); экраны с анимациями наград;
+выбор управления (тапы/джойстик); VAR; пакет для своего сервера.
+
+## Что доделываем (по приоритету)
+
+### 1. Звуки локаций и интерфейса — файлы уже ждут в коде
+Положите файлы в `assets/sfx/` с этими именами — код подхватит сам (OGG лучше, MP3/WAV
+тоже можно). Промпты для генератора (Magnific → Audio / Sound Effect / Music Generator,
+вставлять по-английски):
+
+| Файл | Длина | Промпт |
+|---|---|---|
+| `amb_clay.ogg` | 60 с, луп | Seamless loop: gentle Mediterranean sea waves lapping on a beach at sunset, distant seagulls now and then, a soft warm breeze, faint cicadas, a very distant beach café murmur. Calm, warm, relaxing. No music, no close voices. |
+| `amb_grass.ogg` | 60 с, луп | Seamless loop: foggy London afternoon, soft light rain on leaves, distant city traffic hum, a double-decker bus passing far away once, a few crows, one distant church bell. Melancholic and calm. No music. |
+| `amb_park.ogg` | 60 с, луп | Seamless loop: New York riverside park at golden hour, distant city traffic, an occasional far-away car horn, gentle river water, a light breeze in the trees, a few birds, distant people. Warm and lively but calm. No music. |
+| `applause.ogg` | 3 с | Polite tennis crowd applause after a great point, small stadium. |
+| `crowd_ooh.ogg` | 2 с | Small tennis crowd reacting "ooh" to a very close line call. |
+| `coin.ogg` | 0.3 с | Single bright coin pickup, mobile game style, short satisfying sparkle. |
+| `reward.ogg` | 1.5 с | Mobile game reward reveal: magical shimmer and rising whoosh ending in a bright sparkle chime. |
+| `click.ogg` | 0.1 с | Soft pleasant UI button tap, short pop, mobile game. |
+| `victory.ogg` | 3 с | Short uplifting victory fanfare for a mobile sports game, brass and strings. |
+| `defeat.ogg` | 2 с | Short soft defeat sting, gentle descending notes. |
+| `music_menu.ogg` | 60–90 с, луп | Stylish upbeat lo-fi electronic track for a mobile tennis game menu, 90 BPM, warm summer vibe, loopable. |
+
+Проверьте лицензию генератора на коммерческое использование (или берите с Pixabay —
+лицензия Pixabay это разрешает).
+
+### 2. Атмосфера локаций: профиль окружения и варианты времени суток
+Принцип (утверждён): «за 2 секунды понятно, где ты», стиль — stylized cinematic
+(70% стилизации / 30% реализма), детали через материалы/декали/шейдеры, а не полигоны.
+- `EnvironmentProfile` на локацию: свет, небо, туман, ветер, звук фона, музыка.
+- Варианты: Испания — день / закат; Лондон — пасмурно / дождь; Нью-Йорк — день /
+  golden hour (главный «трейлерный» кадр: длинные тени, золотая дорожка на воде,
+  оранжевый контровой свет на игроке) / вечер.
+- Погода чуть влияет на игру: мокрая трава — ниже и быстрее отскок, чаще
+  подскальзывание; сухой грунт — длиннее скольжение.
+- «Hero objects» по 5–7 на локацию (Испания: море, солнце, белая архитектура, пальмы,
+  грунт; Лондон: туман, деревья, трава, кирпич, дождь; Нью-Йорк: вода, мост, skyline,
+  закат, синий хард), остальное — просто.
+- Трава: полосы стрижки (есть), мокрый блеск, след от мяча и примятость от игрока.
+- Бюджет: игрок 15–30k треугольников, ракетка 1–3k, текстуры 512–1024 px, далёкое — очень low-poly.
+
+### 3. Соперники со своим стилем (роадмап, шаг 3)
+Сейчас различаются только силой. Нужно: Басилашвили — риск и сила, Рублёв — тяжёлый
+форхенд, Зверев — подача 220 км/ч, Джокович — «стена», возвращает всё. Цвет формы по
+профилю (`shirt` в `scripts/opponents.gd`). Босс с фазами: ветер с 4:4, «ярость» на
+решающем тай-брейке; вечерний свет для финала.
+Имена реальных теннисистов перед коммерческим релизом заменить (один файл).
+
+### 4. Шмотки: кроссовки, напульсник, уникальные предметы
+Слоты кроссовок и напульсника, 5 уникальных (Ленточка Сетки, Глаз Ястреба, Кеды Призрака,
+Резак, Повязка Берсерка) — описаны в роадмапе. Модификатор соперника «Удвоение» (двое
+против одного, ИИ на пару).
+
+### 5. Выносливость
+Рывки и сильные удары тратят выносливость, на нуле растёт разброс и падает скорость.
+
+### 6. Модели персонажей лучше
+Rigged-модель (ИИ-генератор Meshy/Tripo + Mixamo, или художник), 15–30k треугольников,
+запечённые нормали; нынешний IK-риг (`scripts/athlete.gd`) управляет руками/ногами —
+модель должна иметь гуманоидный скелет. Анимации подачи/ударов уже отлажены покадрово
+(`tools/pose_shots.gd`) — переносить те же ключевые позы.
+
+### 7. Онлайн
+Сначала асинхронный PvP против «призраков» (запись матчей в Supabase), лидерборды,
+ежедневный турнир с одинаковым сидом. Живой PvP — отдельный сервер (позже).
+
+### 8. Монетизация (позже)
+Telegram Stars: косметика (скины ракеток, следы мяча, форма), боевой пропуск.
+Без pay-to-win. Защита от абуза прокачки (лимиты опыта в день и т. п.).
+
+## Известные ограничения и заметки
+- Бот-тестер (`--autoplay`) бьёт почти всегда PERFECT, поэтому против ИИ выигрывает
+  чаще живого игрока — баланс проверять руками на телефоне.
+- В браузерах iPhone вибрации нет, в Telegram — есть.
+- `build/web` хранится в репозитории (Vercel и автодеплой берут его как есть);
+  после правок пересобирайте `tools/build_web.sh`.
