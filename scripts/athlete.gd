@@ -153,6 +153,7 @@ func setup(face: float, appearance, region: Rect2) -> void:
 	look = Looks.from_shirt(appearance) if appearance is Color else Looks.sanitize(appearance)
 	_body = body_style
 	_build()
+	_lighten.call_deferred()
 	rotation.y = 0.0 if facing < 0.0 else PI
 
 
@@ -166,6 +167,7 @@ func set_look(l: Dictionary) -> void:
 	_shadow.queue_free()
 	_bones = {}
 	_build()
+	_lighten.call_deferred()
 	set_racket_look(_racket_color, _racket_glow)
 
 
@@ -2165,6 +2167,32 @@ func _toonify(m: StandardMaterial3D) -> void:
 
 ## Small face details (eyes, nose, ears) without the TOON outline: on something that
 ## small it would draw a ring like a pair of glasses.
+## Fewer draw calls for the same look (docs/PERFORMANCE.md): parts too small to matter
+## at the camera's distance (eyes, ears, nose, hands, wrist bands) cast no shadow, the
+## smallest also lose the outline pass (on a copy of their material: it may be shared);
+## the dust under the feet never casts a shadow. Two players drew ~110 calls a frame.
+const SMALL_NO_SHADOW := 0.25
+const SMALL_NO_OUTLINE := 0.22
+
+
+func _lighten() -> void:
+	if _model == null:
+		return
+	for n in _model.find_children("*", "GeometryInstance3D", true, false):
+		var g := n as GeometryInstance3D
+		if g is CPUParticles3D or g is GPUParticles3D:
+			g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			continue
+		var sz := (g.get_aabb().size * g.global_transform.basis.get_scale()).length()
+		if sz >= SMALL_NO_SHADOW:
+			continue
+		g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var mi := g as MeshInstance3D
+		if mi and sz < SMALL_NO_OUTLINE and mi.material_override is StandardMaterial3D and (mi.material_override as StandardMaterial3D).next_pass:
+			mi.material_override = mi.material_override.duplicate()
+			(mi.material_override as StandardMaterial3D).next_pass = null
+
+
 func _no_outline(mi: MeshInstance3D) -> MeshInstance3D:
 	var m := mi.material_override as StandardMaterial3D
 	if m:

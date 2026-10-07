@@ -338,6 +338,23 @@ func _trim_shadows(root_node: Node) -> void:
 		var c := box.get_center()
 		if Vector2(c.x, c.z).length() > SHADOW_KEEP_RADIUS or box.size.y > 25.0:
 			g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Then fold the static little boxes into one mesh per material (draw calls).
+	# Everything the scenery keeps a reference to (birds, boats, clouds, nodes it hides on
+	# Low) may move or change later: those stay as they are.
+	var keep: Array = []
+	for prop in root_node.get_property_list():
+		if not (int(prop["usage"]) & PROPERTY_USAGE_SCRIPT_VARIABLE):
+			continue
+		var v = root_node.get(prop["name"])
+		if v is Node3D:
+			keep.append(v)
+		elif v is Array:
+			for e in v:
+				if e is Node3D:
+					keep.append(e)
+	var folded := MeshMerge.merge_static(root_node as Node3D, keep)
+	if autoplay or _profile_t > 0.0:
+		print("scenery: folded %d static meshes" % folded)
 
 
 ## Slides and falls leave marks on clay.
