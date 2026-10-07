@@ -2005,6 +2005,8 @@ func _on_ui(action: String, arg: int) -> void:
 			Skills.spend_point(Skills.LIST[arg])
 			SaveData.save()
 			ui.show_character(false)
+		"bag", "bag_item", "bag_back", "equip", "sell":
+			RunBag.ui_action(self, action, arg)  # v0.2 A: the bag between matches
 		"replay", "share":
 			RunHub.ui_action(self, action)  # v0.2 A: the best point's replay and sharing it
 		"perk":

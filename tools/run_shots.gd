@@ -75,4 +75,40 @@ GAME YOU", UiTheme.WIN)  # the verdict shows in the same frame
 	if hub.share_image:
 		hub.share_image.save_png(out + "a1_share_picture.png")
 		print("share caption: ", RunShare.caption(hub.meter.best))
+	await _a2(hub)
 	quit()
+
+
+## A-2: the bracket with the bag row, the bag, an item against the worn one, the trophy,
+## the opponent's stamina bar with damage numbers in a match.
+func _a2(hub: RunHub) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 77
+	var t := Tournament.new(1, 77)
+	t.equip["racket"] = Items.instance(Items.find("sledgehammer"))
+	t.equip["band"] = Gear._affix_item(Gear.COMMON, rng, "band")
+	t.bag = [Gear._affix_item(Gear.RARE, rng, "racket"), Items.instance(Items.find("springs")), Gear._affix_item(Gear.COMMON, rng, "shoes")]
+	t.lineup[1]["gear"]["racket"] = Items.instance(Items.find("cutter"))
+	t.lineup[2]["gear"]["band"] = Items.instance(Items.find("cold_pack"))
+	main.tournament = t
+	main.tournament_mode = true
+	main.ui.show_bracket(t)
+	await _shot("a2_bracket")
+	main._on_ui("bag", 0)
+	await _shot("a2_bag")
+	main._on_ui("bag_item", 10)
+	await _shot("a2_item")
+	t.pending_loot = Items.instance(Items.find("thunderer"))
+	main.ui.show_loot(t)
+	await _shot("a2_loot")
+	t.pending_loot = {}
+	main._play_match()
+	await create_timer(1.0).timeout
+	main.hud._tutorial.visible = false
+	paused = false
+	hub.match_fx._hurt(12.0, "run")
+	await create_timer(0.15).timeout
+	hub.match_fx._hurt(31.0, "item")
+	await _shot("a2_stamina", 0.12)
+	hub.match_fx._hurt(30.0, "heavy")
+	await _shot("a2_stamina_tired", 0.7)

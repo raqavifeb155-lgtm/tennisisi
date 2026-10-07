@@ -1,15 +1,17 @@
 class_name RunHub
 extends Node
 ## The roguelike layer of a match (v0.2 stream A), listening to GameEvents instead of
-## living inside Main: style points now; gear effects, the opponent's stamina and bets
-## later. Main creates it once (run_hub.setup(self)); it reads Main's state and touches
-## only a few things: experience for style, the run's gold.
+## living inside Main: style points, the best point's replay, the gear's effects and the
+## opponent's stamina (MatchEffects, tournament only). Main creates it once
+## (run_hub.setup(self)); it reads Main's state and touches only what MatchEffects
+## describes, experience for style and the run's gold.
 
 signal style_scored(result: Dictionary)
 
 var main: Node
 var meter := StyleMeter.new()
-var boosts := {}                  # style boosts from the gear (RunEffects, A-2)
+var match_fx: MatchEffects         # the gear and the opponent's stamina, this match (tournament)
+var view: OppStaminaView
 var last_match := {}              # the finished match: points, gold, best (for the result screen)
 var overlay: CanvasLayer          # over the HUD (1), under the menus (TournamentUI, 10)
 var plate: StylePlate
@@ -40,8 +42,10 @@ func setup(m: Node) -> void:
 	overlay = CanvasLayer.new()
 	overlay.layer = 5
 	add_child(overlay)
+	view = OppStaminaView.new()
+	overlay.add_child(view)
 	plate = StylePlate.new()
-	overlay.add_child(plate)
+	overlay.add_child(plate)  # over the bar
 	style_scored.connect(func(r: Dictionary) -> void:
 		if not main.autoplay:
 			plate.show_result(r))
@@ -71,6 +75,9 @@ func setup(m: Node) -> void:
 	ev.match_started.connect(_on_match_started)
 	ev.match_finished.connect(_on_match_finished)
 	ev.player_stroke.connect(_on_stroke)
+	ev.shot.connect(func(who: int, info: Dictionary) -> void:
+		if match_fx:
+			match_fx.on_shot(who, info))
 	ev.bounce.connect(meter.on_bounce)
 	ev.knocked.connect(meter.on_knocked)
 	ev.point.connect(_on_point)
@@ -89,16 +96,46 @@ func _on_match_started(_info: Dictionary) -> void:
 	_recording = false
 	_post_roll = -1
 	meter.start_match()
+	if match_fx:
+		match_fx.finish()
+	match_fx = null
+	view.reset()
+	view.shown = false
+	if in_tournament():
+		match_fx = MatchEffects.new(main, main.tournament)
+		match_fx.damaged.connect(_on_damaged)
+		view.shown = not main.autoplay
 
 
 func _on_stroke(info: Dictionary) -> void:
 	meter.on_stroke(info, main.cpu.position, recorder.frame)
+	if match_fx:
+		match_fx.on_stroke(info)
+
+
+func _on_damaged(amount: float, kind: String) -> void:
+	if view.shown:
+		view.hit(amount, kind, match_fx.opp.value)
+
+
+## The bar over the opponent's head follows him on screen.
+func _process_view() -> void:
+	if not view.shown:
+		return
+	var cam: Camera3D = main.cam
+	var head: Vector3 = main.cpu.global_position + Vector3(0, 2.25, 0)
+	if cam == null or cam.is_position_behind(head):
+		return
+	view.anchor = cam.unproject_position(head)
+	view.chest = view.anchor - Vector2(0, OppStaminaView.BAR.y + 26.0)  # a far figure is tiny: out over the bar
 
 
 # --- Recording the rallies -----------------------------------------------------
 
 ## Every rally is recorded from the serve to 1.5 s after the point; the best one is kept.
 func _physics_process(_delta: float) -> void:
+	if match_fx:
+		match_fx.physics(main.phase == main.Phase.RALLY)
 	if _playing:
 		return
 	var live: bool = main.phase == main.Phase.SERVE or main.phase == main.Phase.RALLY
@@ -132,7 +169,10 @@ func _on_point(info: Dictionary) -> void:
 	var sb: MatchScore = main.scoreboard
 	var comeback: bool = not sb.in_tiebreak and sb.points[0] == 0 and sb.points[1] == 3
 	var before := meter.best_index
-	var r := meter.on_point(info, comeback, boosts)
+	var last_type := String(meter.last_stroke().get("type", ""))
+	var r := meter.on_point(info, comeback, match_fx.style_boosts() if match_fx else {})
+	if match_fx:
+		match_fx.on_point(info, r, last_type)
 	if _recording:
 		_post_roll = POST_ROLL
 		_end_frame = recorder.frame
@@ -150,6 +190,12 @@ func _on_match_finished(_info: Dictionary) -> void:
 		return
 	_in_match = false
 	plate.hide_now()  # the menus come next
+	view.shown = false
+	if match_fx:
+		if main.autoplay:
+			print("  OPP STA: lowest %d%%, damage %d" % [roundi(match_fx.lowest), roundi(match_fx.damage_dealt)])
+		match_fx.finish()
+		match_fx = null
 	if not in_tournament():
 		return
 	var t: Tournament = main.tournament
@@ -183,6 +229,7 @@ func play_best(on_done: Callable) -> void:
 
 
 func _process(delta: float) -> void:
+	_process_view()
 	if not _playing:
 		return
 	_play_t += delta / maxf(Engine.time_scale, 0.01)

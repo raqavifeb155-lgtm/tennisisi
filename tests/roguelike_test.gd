@@ -5,7 +5,8 @@ extends SceneTree
 var failures := 0
 
 
-func _init() -> void:
+## _initialize, not _init: the autoloads (Tuning, GameEvents) are in the tree by now.
+func _initialize() -> void:
 	SaveData.enabled = false
 	test_style_rules()
 	test_style_meter()
@@ -18,6 +19,8 @@ func _init() -> void:
 	test_run_effects()
 	test_opp_stamina()
 	test_tournament_gear()
+	test_match_effects()
+	test_opp_view()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -405,3 +408,96 @@ func test_tournament_gear() -> void:
 					m += 1
 		mythics_ok = mythics_ok and m <= 1
 	check(mythics_ok, "at most one mythic in a run")
+
+
+class FakeAthlete extends Node3D:
+	var tired := false
+
+
+class FakeAI extends RefCounted:
+	var speed_mult := 1.0
+
+
+class FakeMain extends Node:
+	const STAMINA_DIVE := 0.03
+	var ai := FakeAI.new()
+	var cpu := FakeAthlete.new()
+	var scoreboard := MatchScore.new(1, 6, 6, 0)
+	var stamina := 0.5
+
+
+func _fake_match(ids: Array) -> Array:
+	var m := FakeMain.new()
+	root.add_child(m)
+	m.add_child(m.cpu)
+	var t := Tournament.new(1, 31)
+	t.equip = _wear(ids)
+	for s in Gear.SLOTS:
+		if not t.equip.has(s):
+			t.equip[s] = {}
+	return [m, t, MatchEffects.new(m, t)]
+
+
+func test_match_effects() -> void:
+	print("match effects")
+	var tuning: Node = root.get_node("Tuning")
+	var skill0: float = tuning.ai_skill
+	var a := _fake_match([])
+	var m: FakeMain = a[0]
+	var me: MatchEffects = a[2]
+	m.cpu.position = Vector3(0, 0, -12)
+	me.physics(false)
+	m.cpu.position = Vector3(3, 0, -8)
+	me.physics(true)
+	me.on_shot(0, {"speed": 150.0 / 3.6})
+	me.on_stroke({"type": "FLAT", "label": "PERFECT"})
+	me.on_shot(1, {"speed": 30.0})
+	check(is_equal_approx(me.opp.value, 91.0), "5 m run + a 150 km/h PERFECT ball: -9 (%.1f)" % me.opp.value)
+	me.opp.value = 20.0
+	me.physics(false)
+	check(is_equal_approx(m.ai.speed_mult, 0.85) and is_equal_approx(tuning.ai_skill, skill0 - 0.06) and m.cpu.tired, "tired at 20%: slower, less steady, hands on knees")
+	me.finish()
+	check(m.ai.speed_mult == 1.0 and tuning.ai_skill == skill0 and not m.cpu.tired, "all put back after the match")
+	m.queue_free()
+
+	a = _fake_match(["sledgehammer", "crown"])
+	m = a[0]
+	me = a[2]
+	var t: Tournament = a[1]
+	for k in 4:
+		me.on_stroke({"type": "FLAT", "label": "GOOD"})
+	check(is_equal_approx(me.opp.value, 92.0) and is_equal_approx(me.damage_dealt, 8.0), "sledgehammer on the 4th stroke")
+	m.scoreboard.points = [3, 0]
+	m.scoreboard.server = 1
+	me.opp.value = 50.0
+	var before := me.opp.value
+	me.on_point({"winner": 0, "reason": "WINNER"}, {}, "FLAT")
+	check(is_equal_approx(float(t.run_mods.get("forehand_pace", 0.0)), 0.02), "a break feeds the crown (run mods %s)" % [t.run_mods])
+	check(is_equal_approx(me.opp.value, before + OppStamina.REST["point"] + OppStamina.REST["change"]), "game 1:0 -> he rests for the point and the change of ends")
+	check(is_equal_approx(float(Skills.gear.get("forehand_pace", 0.0)), 0.02), "run mods reach the stroke model")
+	me.finish()
+	m.queue_free()
+
+	a = _fake_match(["second_wind"])
+	m = a[0]
+	me = a[2]
+	me.opp.value = 50.0
+	m.scoreboard.points = [3, 0]
+	me.on_point({"winner": 0, "reason": "WINNER"}, {}, "FLAT")
+	check(m.stamina == 1.0 and is_equal_approx(me.opp.value, 50.0 + OppStamina.REST["point"]), "second wind: full stamina at the change, he gets no rest")
+	me.finish()
+	m.queue_free()
+	Skills.gear = {}
+
+
+func test_opp_view() -> void:
+	print("opponent stamina view")
+	var v := OppStaminaView.new()
+	root.add_child(v)
+	for k in 12:
+		v.hit(5.0 + k, "run", 100.0 - k * 5.0)
+	check(v.number_count() <= OppStaminaView.POOL, "never more than %d numbers on screen (%d)" % [OppStaminaView.POOL, v.number_count()])
+	check(OppStaminaView.color_for("run") == Color.WHITE and OppStaminaView.color_for("heavy") != OppStaminaView.color_for("item"), "a color for every source")
+	check(OppStaminaView.text_for(12.4) == "−12" and OppStaminaView.text_for(0.6) == "−1", "numbers: −12, never −0")
+	check(v.chip_count() > 0, "the bar sheds a chip on a hit")
+	v.queue_free()
