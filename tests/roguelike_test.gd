@@ -8,6 +8,7 @@ var failures := 0
 func _init() -> void:
 	SaveData.enabled = false
 	test_style_rules()
+	test_style_meter()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -67,3 +68,40 @@ func test_style_rules() -> void:
 	check(_ids(r).has("cannon"), "a lower cannon threshold (gear) counts 195 km/h")
 	var hidden: Array = StyleRules.TRICKS.filter(func(t): return t["hidden"])
 	check(hidden.size() >= 4, "a third of the tricks are hidden (%d of %d)" % [hidden.size(), StyleRules.TRICKS.size()])
+
+
+func _pstroke(type: String, label := "GOOD", kmh := 120.0, skill := "forehand") -> Dictionary:
+	return {"type": type, "label": label, "kmh": kmh, "curl_k": 1.0, "diving": false, "smash": false,
+		"serve": type == "SERVE", "skill": skill}
+
+
+func test_style_meter() -> void:
+	print("style meter")
+	var m := StyleMeter.new()
+	m.start_match()
+	m.on_stroke(_pstroke("SERVE", "PERFECT", 210.0, "serve"), Vector3(0, 0, -12), 3)
+	var r := m.on_point({"winner": 0, "reason": "ACE", "rally": 1, "close_call": {}}, false)
+	check(r["points"] == 20 and r["skill"] == "serve" and r["stroke_frame"] == 3, "ace 210 -> 20 points, serve, frame 3")
+	m.on_stroke(_pstroke("DROP SHOT", "GOOD", 40.0, "touch"), Vector3(0, 0, -11), 10)
+	m.on_bounce({"pos": Vector3(0, 0, -2.0), "bounces": 0, "last_hitter": 0})
+	m.on_bounce({"pos": Vector3(0, 0, -4.5), "bounces": 1, "last_hitter": 0})
+	r = m.on_point({"winner": 0, "reason": "WINNER", "rally": 4, "close_call": {}}, false)
+	check(r["tricks"].size() == 1 and r["tricks"][0]["id"] == "dead_ball", "drop shot: second bounce 4.5 m from the net")
+	check(m.match_points == 33 and m.best_index == 0, "match 20 + 13 = 33, best is the ace (%d, %d)" % [m.match_points, m.best_index])
+	r = m.on_point({"winner": 1, "reason": "WINNER", "rally": 30, "close_call": {}}, false)
+	check(r["points"] == 0 and m.match_points == 33, "a lost point adds nothing")
+	check(m.gold(1.0) == 2 and m.gold(1.25) == 2 and m.gold(0.4) == 1, "33 points -> 2 gold (x1.0)")
+	m.on_stroke(_pstroke("FLAT"), Vector3(0, 0, -11), 40)
+	r = m.on_point({"winner": 0, "reason": "WINNER", "rally": 3, "close_call": {"margin": 0.03, "axis": 0, "rally": 3}}, false)
+	check(not r["tricks"].is_empty() and r["tricks"][0]["id"] == "on_line", "VAR 3 cm inside -> on the line")
+	m.on_stroke(_pstroke("FLAT"), Vector3(0, 0, -11), 50)
+	r = m.on_point({"winner": 0, "reason": "WINNER", "rally": 7, "close_call": {"margin": 0.03, "axis": 0, "rally": 3}}, false)
+	check(r["points"] == 0, "an old call from earlier in the rally does not count")
+	m.on_stroke(_pstroke("FLAT"), Vector3(0, 0, -11), 60)
+	r = m.on_point({"winner": 0, "reason": "WINNER", "rally": 4, "close_call": {}}, true)
+	check(r["tricks"].size() == 1 and r["tricks"][0]["id"] == "comeback", "won at 0:40 -> comeback")
+	m.on_stroke(_pstroke("SLICE"), Vector3(0, 0, -11), 70)
+	r = m.on_point({"winner": 0, "reason": "WINNER", "rally": 4, "close_call": {}}, false, {"knife": 2.0})
+	check(is_equal_approx(r["mult"], 2.4), "gear boosts reach the rules (knife x2 -> 2.4)")
+	m.start_match()
+	check(m.match_points == 0 and m.best.is_empty() and m.best_index == -1, "a new match starts clean")
