@@ -46,6 +46,7 @@ func _ready() -> void:
 	ring = TimingRing.new()
 	_root.add_child(ring)
 	_hawkeye = HawkEye.new()
+	_hawkeye.compact = true  # small, beside the score: the TV strip runs under it
 	_root.add_child(_hawkeye)
 	touch = TouchInput.new()
 	_root.add_child(touch)
@@ -226,6 +227,7 @@ func show_serve_hint(on: bool, tap_controls: bool) -> void:
 
 func set_rally(text: String) -> void:
 	_rally.text = text
+	_rally.visible = not _hawkeye.is_showing()  # VAR sits in the same place
 
 
 func show_tutorial_once() -> void:
@@ -266,7 +268,6 @@ func show_message(text: String, color: Color) -> void:
 ## `mark` = the ball mark (half-length, half-width, |cos| of its angle to the line's
 ## normal), see Main._line_call; zero = a round mark of the ball's size.
 func hawkeye(margin: float, axis: int, mark := Vector3.ZERO) -> void:
-	_hawkeye.top_px = announcer.reserve(HawkEye.PANEL.y, HawkEye.SHOW_SECONDS)
 	_hawkeye.show_call(margin, axis, mark)
 
 
