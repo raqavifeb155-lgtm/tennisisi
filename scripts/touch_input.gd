@@ -32,6 +32,8 @@ var blocked_controls: Array[Control] = []
 ## Screen y below which a touch becomes the joystick (just under the player's feet).
 var stick_zone_top := INF
 var stick_active := false
+## The faint hint where the joystick zone begins (off in the club: the whole lower screen walks).
+var show_zone := true
 ## Set by the game while a hit is due (the ball is close): then a finger moving up out
 ## of the joystick zone is a shot at any speed, not only a quick flick.
 var shot_window := false
@@ -186,7 +188,7 @@ func _draw() -> void:
 		draw_arc(_stick_origin, STICK_RADIUS + 18.0, 0.0, TAU, 48, Color(1, 1, 1, 0.35), 3.0, true)
 		var knob := _stick_origin + (_stick_pos - _stick_origin).limit_length(STICK_RADIUS)
 		draw_circle(knob, 34.0, Color(1, 1, 1, 0.5))
-	elif stick_zone_top < get_viewport_rect().size.y - 90.0:
+	elif show_zone and stick_zone_top < get_viewport_rect().size.y - 90.0:
 		# Where the thumb goes: a faint ring under the player, and a faint line where the
 		# joystick zone begins (above it every touch is a shot or a tap).
 		var vp := get_viewport_rect().size

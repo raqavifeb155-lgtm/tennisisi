@@ -19,7 +19,7 @@ const LIST := [
 	{
 		"id": "coach", "name": "Тренерская", "pos": Vector3(16, 0, 26), "r": 1.8,
 		"action": "character", "label": "Навыки", "unlock": "", "sign": "",
-		"cam": {"pos": Vector3(16, 4.2, 33.5), "look": Vector3(16, 1.0, 26.5)},
+		"cam": {"pos": Vector3(16, 10.5, 35.0), "look": Vector3(16, 0.4, 25.6)},
 	},
 	{
 		"id": "gate", "name": "Вход", "pos": Vector3(0, 0, 36), "r": 1.8,
@@ -28,7 +28,7 @@ const LIST := [
 	{
 		"id": "locker", "name": "Раздевалка", "pos": Vector3(-14, 0, 26), "r": 1.8,
 		"action": "locker", "label": "Раздевалка", "unlock": "played", "sign": "Раздевалка · после первого забега",
-		"cam": {"pos": Vector3(-14, 4.2, 33.5), "look": Vector3(-14, 1.0, 26.5)},
+		"cam": {"pos": Vector3(-14, 10.5, 35.0), "look": Vector3(-14, 0.4, 25.6)},
 	},
 	{
 		"id": "trophy", "name": "Трофейная", "pos": Vector3(-18, 0, -26), "r": 1.8,

@@ -4,6 +4,7 @@ extends SceneTree
 ## The project stretches to a 720-wide canvas, so a phone's height in that canvas is
 ## 720 * h / w: iPhone 17 Pro Max 440x956 -> 720x1564 (default), a small Android
 ## 360x740 -> 720x1480 (--size=1480). PNGs go to the user data folder (path printed).
+## The first shot is the club (the main screen since v0.2 B); -- --old-menu: the old list.
 
 var main: Node
 var h := 1564
@@ -31,8 +32,10 @@ func _run() -> void:
 	root.add_child(main)
 	await create_timer(7.0).timeout  # loading screen
 	SaveData.control_chosen = true
+	SaveData.enabled = false  # look, don't touch the player's progress
 	Skills.points = 2
-	main.ui.show_menu()
+	Skills.pending = []
+	main._show_menu()  # the club (scripts/club); with -- --old-menu the old list
 	await _shot("01_club")
 	main.ui.show_locker()
 	await _shot("02_locker")

@@ -8,6 +8,7 @@ extends RefCounted
 var bounds := Rect2(-60, -44, 120, 100)
 var circles: Array = []   # [Vector2 centre, float radius]
 var boxes: Array = []     # Rect2 in x/z
+var waypoints: Array = [] # Vector2: gates, doors, path corners - where a route may turn
 
 
 func add_circle(c: Vector2, r: float) -> void:
@@ -91,3 +92,59 @@ func _box_push(p: Vector2, b: Rect2, radius: float) -> Vector2:
 		if (o as Vector2).length() < best.length():
 			best = o
 	return best
+
+
+## Whether a body can go straight from a to b (sampled every 25 cm).
+func clear(a: Vector2, b: Vector2, radius := 0.35) -> bool:
+	var n := maxi(1, ceili(a.distance_to(b) / 0.25))
+	for i in n + 1:
+		if blocked(a.lerp(b, float(i) / n), radius):
+			return false
+	return true
+
+
+## A route from `from` to `to`: the turning points to walk through, ending at `to`. Goes
+## straight when nothing is in the way, else through the waypoints (A* over the ones that
+## see each other). [] when `to` can't be reached.
+func route(from: Vector2, to: Vector2, radius := 0.35) -> Array:
+	if blocked(to, radius):
+		return []
+	if clear(from, to, radius):
+		return [to]
+	var nodes: Array = [from, to] + waypoints
+	var n := nodes.size()
+	var dist := {0: 0.0}
+	var prev := {}
+	var open := [0]
+	var done := {}
+	while not open.is_empty():
+		var best := 0
+		for k in open.size():
+			var i: int = open[k]
+			if float(dist[i]) + (nodes[i] as Vector2).distance_to(to) < float(dist[open[best]]) + (nodes[open[best]] as Vector2).distance_to(to):
+				best = k
+		var cur: int = open[best]
+		open.remove_at(best)
+		if cur == 1:
+			break
+		done[cur] = true
+		for j in n:
+			if j == cur or done.has(j):
+				continue
+			var nd: float = float(dist[cur]) + (nodes[cur] as Vector2).distance_to(nodes[j])
+			if dist.has(j) and nd >= float(dist[j]):
+				continue
+			if not clear(nodes[cur], nodes[j], radius):
+				continue
+			dist[j] = nd
+			prev[j] = cur
+			if not open.has(j):
+				open.append(j)
+	if not prev.has(1):
+		return []
+	var out: Array = []
+	var at := 1
+	while at != 0:
+		out.push_front(nodes[at])
+		at = prev[at]
+	return out

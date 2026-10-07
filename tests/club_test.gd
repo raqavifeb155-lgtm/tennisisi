@@ -9,6 +9,7 @@ func _initialize() -> void:
 	test_places()
 	test_walk()
 	await test_world()
+	await test_flow()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -79,10 +80,12 @@ func test_walk() -> void:
 
 func test_world() -> void:
 	print("world")
-	var w := ClubWorld.new()
+	# Loaded at run time: ClubWorld and Club reach Athlete, which needs the autoloads
+	# (a test script compiles before they exist).
+	var w = load("res://scripts/club/club_world.gd").new()
 	root.add_child(w)
 	await process_frame
-	var bm := w.ball_machine()
+	var bm: Transform3D = w.ball_machine()
 	check(bm.origin.z < -5.0 and absf(bm.origin.x) < Court.SINGLES_HALF_WIDTH, "ball machine on the far half of the main court")
 	check((-bm.basis.z).z > 0.9, "the ball machine shoots toward the near baseline")
 	for p in ClubPlaces.LIST:
@@ -95,7 +98,7 @@ func test_world() -> void:
 	var via := [Vector2(0, 22), Vector2(0, 31), Vector2(16, 31), goal]
 	for target in via:
 		for i in 400:
-			var d := w.walk.steer(pos, target)
+			var d: Vector2 = w.walk.steer(pos, target)
 			if d == Vector2.ZERO:
 				break
 			pos = w.walk.resolve(pos, pos + d * 0.1)
@@ -106,3 +109,76 @@ func test_world() -> void:
 		listed = listed or l["id"] == "club"
 	check(not listed, "the club is not on the tournament map")
 	w.queue_free()
+
+
+func _frames(n: int) -> void:
+	for i in n:
+		await physics_frame
+		await process_frame
+
+
+## The club as the main screen: two taps to a match, practice on the club court, walking.
+func test_flow() -> void:
+	print("flow")
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	root.add_child(main)
+	await _frames(5)
+	SaveData.enabled = false
+	SaveData.club = {}
+	SaveData.active = null
+	SaveData.run = {}
+	SaveData.played = 0
+	Skills.pending = []
+	main._show_menu()
+	await _frames(3)
+	var club = main.club
+	check(club.active and main.location_id == "club", "the menu is the club")
+	check(main.player.position.distance_to(club.START) < 0.5, "the hero starts in the court's circle")
+	check(club.hud.current_place() == "court", "the court's button is up")
+	check(club.place_buttons("court")["label"] == "ТУРНИР", "first time: ТУРНИР")
+	# Tap 1: no tournament remembered -> the location screen (the old way).
+	club._on_choice("club_tournament", 0)
+	await _frames(2)
+	check(main.ui.is_open() and main.tournament == null, "no last tournament: the location screen")
+	main._on_ui("location", 1)  # Spain
+	main._on_ui("format", 0)
+	await _frames(3)
+	check(SaveData.club.get("last_location", "") == "clay" and int(SaveData.club.get("last_format", -1)) == 0, "the choice is remembered")
+	check(not club.active, "a tournament's bracket closes the club")
+	# Back to the club, then "Турнир" goes straight to the bracket: tap 1 Турнир, tap 2 Играть.
+	SaveData.active = null
+	SaveData.run = {}
+	main._show_menu()
+	await _frames(3)
+	check(club.active and main.player.position.distance_to(club.START) < 0.5, "back in the club, at the court")
+	check(club.place_buttons("court")["label"].begins_with("ТУРНИР  ·  ИСПАНИЯ"), "the button names the last place")
+	club._on_choice("club_tournament", 0)
+	await _frames(3)
+	check(main.tournament != null and main.location_id == "clay" and main.ui.is_open(), "one tap: the bracket in Spain")
+	SaveData.active = null
+	SaveData.run = {}
+	main._show_menu()
+	await _frames(3)
+	# Practice from the club plays on the club's own court.
+	club._on_choice("practice", 0)
+	await _frames(3)
+	check(main.location_id == "club" and not club.active and main.phase != club._idle, "practice on the club court")
+	check(main.player.area == main.PLAYER_AREA and is_equal_approx(main.player.rotation.y, 0.0), "the match gets its player back")
+	main._show_menu()
+	await _frames(3)
+	# Walking by a tap: the hero heads there and never ends up in a wall.
+	club._move_target = Vector3(16, 0, 31)
+	var inside_wall := false
+	for i in 400:
+		await physics_frame
+		var p: Vector3 = main.player.position
+		if club.world.walk.blocked(Vector2(p.x, p.z), 0.3):
+			inside_wall = true
+	var reached: Vector3 = main.player.position
+	check(not inside_wall, "walking never ends inside a wall")
+	check(Vector2(reached.x - 16, reached.z - 31).length() < 1.0, "walks out through the gate to the pavilions (%.1f m off)" % Vector2(reached.x - 16, reached.z - 31).length())
+	club._travel("coach")
+	await _frames(3)
+	check(club.hud.current_place() == "coach", "quick travel lands in the coach's circle")
+	main.queue_free()
+	await _frames(2)

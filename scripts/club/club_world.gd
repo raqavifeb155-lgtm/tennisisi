@@ -17,6 +17,8 @@ const RESERVED := [                      # no trees here: places, the arena site
 	Rect2(-9, 29, 18, 16),                # gate and the way in
 	Rect2(-24, -32, 12, 12), Rect2(14, -36, 12, 12), Rect2(18, -18, 8, 8),
 	Rect2(-2, 17, 4, 14),                 # the path from the gate to the court
+	Rect2(-17, -32, 8, 52), Rect2(9, -36, 7, 56),     # the paths west and east of the court
+	Rect2(-20, 28, 40, 6),                # past the pavilion doors
 ]
 
 var walk := ClubWalk.new()
@@ -33,9 +35,10 @@ var _keep: Array = []                  # nodes shown and hidden later: MeshMerge
 
 func _ready() -> void:
 	super._ready()
-	# Rounder than needed for a park seen from far: fewer triangles on every crown.
-	_sphere.radial_segments = 8
-	_sphere.rings = 5
+	# Low-poly crowns, bushes and flowers (the club's budget: <= 25k triangles on Low,
+	# docs/PERFORMANCE.md 3): a faceted sphere is the cartoon look anyway.
+	_sphere.radial_segments = 6
+	_sphere.rings = 4
 	_paving = _noise_mat(Color(0.74, 0.7, 0.64), 0.05, 20.0)
 	walk.bounds = Rect2(-55, SHORE_Z + 1.5, 110, 46.0 - SHORE_Z - 1.5)
 	_clear_reserved()
@@ -44,6 +47,7 @@ func _ready() -> void:
 	_build_paths()
 	_build_places()
 	_build_obstacles()
+	_build_waypoints()
 	_build_rings()
 	_ball_machine = Marker3D.new()
 	_ball_machine.name = "ball_machine"
@@ -122,6 +126,38 @@ func set_high_quality(on: bool) -> void:
 	Athlete.blob_shadows = not on
 
 
+## The park's swaying crowns, plus: within a few metres of the camera they dissolve in a
+## dither, so a tree between the camera and the hero never hides him.
+func _swaying_leaves() -> ShaderMaterial:
+	var sh := Shader.new()
+	sh.code = """
+shader_type spatial;
+render_mode diffuse_lambert, specular_disabled;
+void vertex() {
+	vec3 o = MODEL_MATRIX[3].xyz;
+	float ph = o.x * 0.37 + o.z * 0.23;
+	float s = sin(TIME * 0.9 + ph) * 0.07 + sin(TIME * 2.1 + ph * 2.0) * 0.025;
+	float bend = VERTEX.y * 0.5 + 0.5;
+	VERTEX.x += s * bend / length(MODEL_MATRIX[0].xyz);
+	VERTEX.z += s * 0.4 * bend / length(MODEL_MATRIX[2].xyz);
+}
+void fragment() {
+	float d = length(VERTEX);
+	float keep = smoothstep(7.0, 11.0, d);
+	vec2 c = floor(FRAGCOORD.xy * 0.5);
+	float dither = fract(sin(dot(c, vec2(12.9898, 78.233))) * 43758.5453);
+	if (keep < 0.999 && dither > keep) {
+		discard;
+	}
+	ALBEDO = COLOR.rgb;
+	ROUGHNESS = 0.9;
+}
+"""
+	var m := ShaderMaterial.new()
+	m.shader = sh
+	return m
+
+
 func _exit_tree() -> void:
 	Athlete.blob_shadows = false
 
@@ -153,6 +189,8 @@ func _clear_reserved() -> void:
 				mm.set_instance_color(i, keep_col[i])
 		# Tree trunks are what the hero would bump into.
 		if mm.mesh is CylinderMesh and absf((mm.mesh as CylinderMesh).height - 3.2) < 0.01:
+			(mm.mesh as CylinderMesh).rings = 0  # a plain six-sided post, no bands
+			(mm.mesh as CylinderMesh).cap_bottom = false
 			for t in keep_xf:
 				walk.add_circle(Vector2(t.origin.x, t.origin.z), 0.35)
 
@@ -166,31 +204,14 @@ func _reserved(p: Vector2) -> bool:
 
 ## A public court that has seen better days: cracks, worn patches, faded lines. A layer
 ## of its own over the Court (matches elsewhere keep the clean one).
+static var _worn_tex: ImageTexture
+
+
 func _build_worn_court() -> void:
-	var w := 128
-	var h := 256
-	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
-	img.fill(Color(0, 0, 0, 0))
-	var noise := FastNoiseLite.new()
-	noise.seed = 11
-	noise.frequency = 0.035
-	for y in h:
-		for x in w:
-			var n := noise.get_noise_2d(x, y)
-			if n > 0.18:
-				img.set_pixel(x, y, Color(0.75, 0.78, 0.8, clampf((n - 0.18) * 1.6, 0.0, 0.32)))
-	var crack := Color(0.1, 0.11, 0.13, 0.75)
-	for k in 14:
-		var p := Vector2(rng.randf_range(0, w), rng.randf_range(0, h))
-		var a := rng.randf_range(0.0, TAU)
-		for s in rng.randi_range(25, 70):
-			a += rng.randf_range(-0.6, 0.6)
-			p += Vector2.from_angle(a)
-			if p.x >= 0 and p.y >= 0 and p.x < w and p.y < h:
-				img.set_pixel(int(p.x), int(p.y), crack)
-	img.generate_mipmaps()
+	if _worn_tex == null:
+		_worn_tex = _make_worn_texture()
 	var mat := StandardMaterial3D.new()
-	mat.albedo_texture = ImageTexture.create_from_image(img)
+	mat.albedo_texture = _worn_tex
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.roughness = 1.0
 	var mi := MeshInstance3D.new()
@@ -203,10 +224,39 @@ func _build_worn_court() -> void:
 	add_child(mi)
 
 
+## Sun-bleached patches (the blue gone grey) and thin cracks, ~5 cm a pixel.
+func _make_worn_texture() -> ImageTexture:
+	var w := 256
+	var h := 512
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var noise := FastNoiseLite.new()
+	noise.seed = 11
+	noise.frequency = 0.035
+	for y in h:
+		for x in w:
+			var n := noise.get_noise_2d(x, y)
+			if n > 0.12:
+				img.set_pixel(x, y, Color(0.55, 0.6, 0.66, clampf((n - 0.12) * 0.9, 0.0, 0.16)))
+	var crack := Color(0.12, 0.13, 0.15, 0.55)
+	var crng := RandomNumberGenerator.new()
+	crng.seed = 77
+	for k in 16:
+		var p := Vector2(crng.randf_range(0, w), crng.randf_range(0, h))
+		var a := crng.randf_range(0.0, TAU)
+		for s in crng.randi_range(40, 140):
+			a += crng.randf_range(-0.45, 0.45)
+			p += Vector2.from_angle(a)
+			if p.x >= 0 and p.y >= 0 and p.x < w and p.y < h:
+				img.set_pixel(int(p.x), int(p.y), crack)
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+
 ## The near end of the fence, with the gate the hero walks through (the match view
 ## leaves it out: there it would stand between the camera and the player).
 func _build_south_fence() -> void:
-	var height := 3.6
+	var height := 1.1
 	var mesh_mat := StandardMaterial3D.new()
 	mesh_mat.albedo_texture = _fence_tex
 	mesh_mat.albedo_color = Color(0.3, 0.27, 0.22)  # a little rust on the old fence
@@ -223,7 +273,7 @@ func _build_south_fence() -> void:
 	var post := _plain(Color(0.2, 0.2, 0.18))
 	for s in [-1.0, 1.0]:
 		_box(Vector3(0.12, height + 0.3, 0.12), Vector3(s * gate, (height + 0.3) * 0.5, HZ), post)
-	_box(Vector3(gate * 2.0, 0.1, 0.1), Vector3(0, 2.4, HZ), post)
+		_box(Vector3(HX - gate, 0.06, 0.06), Vector3(s * (gate + (HX - gate) * 0.5), height, HZ), post)
 
 
 func _build_paths() -> void:
@@ -261,23 +311,23 @@ func _sign(pos: Vector3, text: String) -> Node3D:
 	root.position = pos
 	add_child(root)
 	var wood := _plain(Color(0.55, 0.4, 0.27))
-	root.add_child(_mesh_box(Vector3(0.1, 1.5, 0.1), Vector3(0, 0.75, 0), wood))
-	var board := _mesh_box(Vector3(2.6, 0.7, 0.06), Vector3(0, 1.55, 0), _plain(Color(0.93, 0.89, 0.8)))
+	root.add_child(_mesh_box(Vector3(0.1, 1.3, 0.1), Vector3(0, 0.65, 0), wood))
+	var board := _mesh_box(Vector3(3.0, 1.15, 0.06), Vector3(0, 1.75, 0), _plain(Color(0.93, 0.89, 0.8)))
 	board.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(board)
 	var l := Label3D.new()
 	l.text = text
 	l.font = UiTheme.text_bold()
 	l.font_size = 64
-	l.pixel_size = 0.0048
-	l.width = 520
+	l.pixel_size = 0.0055
+	l.width = 500
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	l.modulate = Color(0.16, 0.13, 0.1)
 	l.outline_size = 0
 	l.shaded = false
 	l.double_sided = false
 	l.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	l.position = Vector3(0, 1.55, 0.04)
+	l.position = Vector3(0, 1.75, 0.04)
 	root.add_child(l)
 	walk.add_circle(Vector2(pos.x, pos.z), 0.25)
 	return root
@@ -423,6 +473,19 @@ func _build_obstacles() -> void:
 	walk.add_box(Rect2(-(Court.NET_HALF_WIDTH + 1.3) - 1.0, -1.8, 1.4, 3.6))   # players' chairs
 	walk.add_circle(Vector2(-(Court.DOUBLES_HALF_WIDTH + 1.4), Court.HALF_LENGTH + 1.2), 0.35)  # ball basket
 	walk.add_circle(Vector2(-HX - 1.6, 5.0), 1.0)  # park bench by the fence
+
+
+## Where a walk may turn: both sides of the court's gate, the pavilions' doors, the
+## corners of the paths. ClubWalk.route links the ones that see each other.
+func _build_waypoints() -> void:
+	for p in [
+		Vector2(0, 16.4), Vector2(0, 19.6),                      # the court's gate
+		Vector2(-11.5, 19.6), Vector2(11.5, 19.6), Vector2(-11.5, -19.8), Vector2(11.5, -19.8),
+		Vector2(0, 31), Vector2(0, 36),
+		Vector2(-14, 31), Vector2(-14, 27.4), Vector2(16, 31), Vector2(16, 27.4),  # doors
+		Vector2(12, -14), Vector2(12, -30), Vector2(-13, 0), Vector2(-13, -26),
+	]:
+		walk.waypoints.append(p)
 
 
 ## The gold circles on the ground (one MultiMesh, per-instance colour for the pulse).
