@@ -16,6 +16,7 @@ func _init() -> void:
 	test_items_catalog()
 	test_gear_slots()
 	test_run_effects()
+	test_opp_stamina()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -298,3 +299,23 @@ func test_run_effects() -> void:
 	won = fx.fire("on_point_won", {"type": "FLAT", "reason": "OUT", "tricks": []})
 	check(won.is_empty(), "nothing on an opponent error without tricks")
 	check(RunEffects.new({}).fire("on_ace", {}).is_empty() and RunEffects.new({}).mods().is_empty(), "no gear, no effects")
+
+
+func test_opp_stamina() -> void:
+	print("opponent stamina")
+	var o := OppStamina.new()
+	check(o.value == 100.0 and o.tired() == 0.0, "starts fresh")
+	check(is_equal_approx(OppStamina.shot_damage(5.0, 150.0, true, 1.0), 9.0), "5 m run + a 150 km/h ball, PERFECT: (3 + 3) x 1.5 = 9")
+	check(is_equal_approx(OppStamina.shot_damage(5.0, 80.0, false, 1.3), 3.9), "a slow ball adds nothing; heavy steps x1.3 on the running")
+	check(is_equal_approx(o.damage(30.0), 30.0) and o.value == 70.0, "damage takes it down")
+	check(is_equal_approx(o.damage(500.0), 70.0) and o.value == 0.0, "never below zero (the damage dealt is what was left)")
+	check(o.tired() == 1.0 and is_equal_approx(o.speed_mult(), 0.7) and is_equal_approx(o.skill_penalty(), 0.12), "empty: 70% speed, -0.12 skill")
+	o.rest("point")
+	check(is_equal_approx(o.value, OppStamina.REST["point"]), "a breather between points")
+	o.rest("change")
+	o.rest("set")
+	check(o.value <= 100.0 and o.value > 60.0, "change of ends and set break rest more")
+	o.value = 50.0
+	check(o.tired() == 0.0 and o.speed_mult() == 1.0, "above 40 he is fine")
+	o.value = 20.0
+	check(is_equal_approx(o.tired(), 0.5), "halfway below 40: tired 0.5")
