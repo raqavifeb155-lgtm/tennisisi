@@ -8,6 +8,7 @@ var failures := 0
 func _initialize() -> void:
 	test_places()
 	test_walk()
+	test_material()
 	await test_world()
 	await test_flow()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
@@ -27,7 +28,7 @@ func test_places() -> void:
 		ids.append(p["id"])
 		check(float(p["r"]) > 0.5, "%s has a circle" % p["id"])
 		check(p["action"] != "" or p["sign"] != "", "%s has a button or a sign" % p["id"])
-	for id in ["court", "coach", "gate", "locker", "trophy", "bar", "arena", "board"]:
+	for id in ["court", "machine", "coach", "gate", "locker", "trophy", "bar", "arena", "board"]:
 		check(ids.has(id), "place %s exists" % id)
 	var overlap := false
 	for i in ClubPlaces.LIST.size():
@@ -43,7 +44,29 @@ func test_places() -> void:
 	check(not ClubPlaces.is_open(locker, 0, 0) and ClubPlaces.is_open(locker, 1, 0), "the locker room opens after the first run")
 	check(not ClubPlaces.is_open(ClubPlaces.find("bar"), 9, 3), "the bar is not built in H1")
 	check(ClubPlaces.at(court["pos"] + Vector3(0.5, 0, 0)).get("id", "") == "court", "a point in the court's circle is at the court")
-	check(ClubPlaces.at(Vector3(5, 0, 5)).is_empty(), "a point on the court itself is at no place")
+	check(ClubPlaces.at(Vector3(5, 0, 2)).is_empty(), "a point on the court itself is at no place")
+	var machine := ClubPlaces.find("machine")
+	check(ClubPlaces.is_open(machine, 0, 0) and machine["action"] == "practice", "practice is at the ball machine, open from the start")
+	check((machine["pos"] as Vector3).z > 0.5 and (machine["pos"] as Vector3).z < Court.HALF_LENGTH, "the machine's circle is on the near half of the main court")
+
+
+## ClubMaterial: one soft toon material per colour, outlines only where they pay.
+func test_material() -> void:
+	print("material")
+	check(ClubMaterial.PALETTE.size() == 32, "the palette has 32 colours")
+	var a := ClubMaterial.get_mat(ClubMaterial.PALETTE[ClubMaterial.BRICK])
+	var b := ClubMaterial.get_mat(ClubMaterial.PALETTE[ClubMaterial.BRICK])
+	check(a == b, "one material per colour (MeshMerge folds them together)")
+	check(a.diffuse_mode == BaseMaterial3D.DIFFUSE_LAMBERT_WRAP and a.specular_mode == BaseMaterial3D.SPECULAR_TOON, "the players' soft toon look")
+	var small := ClubMaterial.get_mat(ClubMaterial.PALETTE[ClubMaterial.BRICK], false)
+	check(small != a, "small things get their own material")
+	ClubMaterial.set_outlines(true)
+	check(a.next_pass != null and small.next_pass == null, "outline on big things only")
+	ClubMaterial.set_outlines(false)
+	check(a.next_pass == null, "no outline on Low")
+	ClubMaterial.set_outlines(true)
+	var tex := ClubMaterial.palette_texture()
+	check(tex != null and tex.get_width() == 32 and tex.get_height() == 1, "palette texture 32x1")
 
 
 func test_walk() -> void:
@@ -135,7 +158,10 @@ func test_flow() -> void:
 	check(club.active and main.location_id == "club", "the menu is the club")
 	check(main.player.position.distance_to(club.START) < 0.5, "the hero starts in the court's circle")
 	check(club.hud.current_place() == "court", "the court's button is up")
-	check(club.place_buttons("court")["label"] == "ТУРНИР", "first time: ТУРНИР")
+	var first: Dictionary = club.place_buttons("court")
+	check(first["label"] == "НОВАЯ ИГРА" and first["extra"].is_empty(), "first time: just НОВАЯ ИГРА")
+	check(club.hud.buttons.has(club.hud.gear), "the gear is a button the joystick leaves alone")
+	check(main.hud.has_method("_toggle_debug"), "the gear opens Hud's settings sheet")
 	# Tap 1: no tournament remembered -> the location screen (the old way).
 	club._on_choice("club_tournament", 0)
 	await _frames(2)
@@ -151,10 +177,13 @@ func test_flow() -> void:
 	main._show_menu()
 	await _frames(3)
 	check(club.active and main.player.position.distance_to(club.START) < 0.5, "back in the club, at the court")
-	check(club.place_buttons("court")["label"].begins_with("ТУРНИР  ·  ИСПАНИЯ"), "the button names the last place")
+	var again: Dictionary = club.place_buttons("court")
+	check(again["label"].begins_with("НОВАЯ ИГРА  ·  ИСПАНИЯ") and again["extra"].size() == 1, "the button names the last place, one quiet 'другое место'")
 	club._on_choice("club_tournament", 0)
 	await _frames(3)
 	check(main.tournament != null and main.location_id == "clay" and main.ui.is_open(), "one tap: the bracket in Spain")
+	var run_buttons: Dictionary = club.place_buttons("court")
+	check(run_buttons["action"] == "continue" and run_buttons["extra"].size() == 1, "a run: ПРОДОЛЖИТЬ and one 'Новая игра'")
 	SaveData.active = null
 	SaveData.run = {}
 	main._show_menu()

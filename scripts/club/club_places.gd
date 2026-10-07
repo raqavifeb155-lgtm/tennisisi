@@ -14,7 +14,13 @@ class_name ClubPlaces
 const LIST := [
 	{
 		"id": "court", "name": "Главный корт", "pos": Vector3(0, 0, 14.0), "r": 2.2,
-		"action": "club_tournament", "label": "Турнир", "unlock": "", "sign": "",
+		"action": "club_tournament", "label": "Новая игра", "unlock": "", "sign": "",
+	},
+	{
+		# Practice by the ball machine (ClubWorld.ball_machine() on the far half shoots
+		# at this baseline); the integrator's tutorial with the machine starts here too.
+		"id": "machine", "name": "Пушка", "pos": Vector3(3.0, 0, 8.5), "r": 1.6,
+		"action": "practice", "label": "Тренировка", "unlock": "", "sign": "",
 	},
 	{
 		"id": "coach", "name": "Тренерская", "pos": Vector3(16, 0, 26), "r": 1.8,

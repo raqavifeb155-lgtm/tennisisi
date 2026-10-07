@@ -41,6 +41,9 @@ func setup(m: Node) -> void:
 	add_child(hud)
 	hud.chosen.connect(_on_choice)
 	hud.travel.connect(_travel)
+	hud.settings.connect(func() -> void:
+		if main.hud.has_method("_toggle_debug"):
+			main.hud._toggle_debug())
 	for b in hud.buttons:
 		main.hud.touch.blocked_controls.append(b)
 	main.hud.touch.tapped.connect(_on_tap)
@@ -99,6 +102,7 @@ func close() -> void:
 	main.cam.current = true
 	main.hud.touch.show_zone = true
 	hud.visible = false
+	_show_hud_settings(true)
 	_move_target = Vector3.INF
 
 
@@ -131,6 +135,7 @@ func _process(delta: float) -> void:
 		return
 	var screen_open: bool = main.ui.is_open()
 	hud.visible = not screen_open
+	_show_hud_settings(screen_open)
 	if main._safe != _safe:
 		_safe = main._safe
 		hud.set_safe_area(maxf(_safe.x, 0.0), maxf(_safe.y, 0.0))
@@ -141,7 +146,17 @@ func _process(delta: float) -> void:
 	world.show_interiors_near(main.player.position)
 	_update_place()
 	_update_badges()
-	hud.bubble_at(cam.unproject_position(coach.head_position()), not cam.is_position_behind(coach.head_position()))
+	var head := coach.head_position()
+	var on_screen := not cam.is_position_behind(head) and get_viewport().get_visible_rect().grow(-20.0).has_point(cam.unproject_position(head))
+	hud.bubble_at(cam.unproject_position(head), on_screen)
+
+
+## Hud's НАСТР button: hidden while the club's own gear is on the screen, back on the
+## rooms' screens (TournamentUI keeps its corner free for it) and in a match.
+func _show_hud_settings(on: bool) -> void:
+	var b = main.hud.get("_debug_btn")
+	if b is Control:
+		(b as Control).visible = on
 
 
 func _physics_process(delta: float) -> void:
@@ -218,19 +233,20 @@ func _show_place(id: String) -> void:
 	hud.show_place(id, b["label"], b["action"], b["extra"])
 
 
-## What a place offers right now: its main button and the small ones above it.
+## What a place offers right now: its main button and at most one quiet one above it.
+## The court's circle is the main screen (HANDOFF 10): «Новая игра» / «Продолжить».
 func place_buttons(id: String) -> Dictionary:
 	var p := ClubPlaces.find(id)
 	if id == "court":
 		var run := SaveData.resumable()
 		if run != null:
 			return {"label": "ПРОДОЛЖИТЬ  ·  %s" % run.round_name().to_lower(), "action": "continue",
-				"extra": [["Тренировка", "practice"], ["Новый турнир", "start_tournament"]]}
+				"extra": [["Новая игра", "club_tournament_new"]]}
 		if SaveData.club.has("last_location"):
 			var loc := Locations.find(SaveData.club["last_location"])
-			return {"label": "ТУРНИР  ·  %s" % String(loc["name"]).to_upper(), "action": "club_tournament",
-				"extra": [["Тренировка", "practice"], ["Другое место", "start_tournament"]]}
-		return {"label": "ТУРНИР", "action": "club_tournament", "extra": [["Тренировка", "practice"]]}
+			return {"label": "НОВАЯ ИГРА  ·  %s" % String(loc["name"]).to_upper(), "action": "club_tournament",
+				"extra": [["Другое место", "start_tournament"]]}
+		return {"label": "НОВАЯ ИГРА", "action": "club_tournament", "extra": []}
 	return {"label": String(p["label"]).to_upper(), "action": p["action"], "extra": []}
 
 
@@ -245,8 +261,8 @@ func _update_badges() -> void:
 
 
 func _on_choice(action: String, arg: int) -> void:
-	if action == "club_tournament":
-		if SaveData.resumable() != null:
+	if action == "club_tournament" or action == "club_tournament_new":
+		if action == "club_tournament" and SaveData.resumable() != null:
 			main._on_ui("continue", 0)
 		elif SaveData.club.has("last_location"):
 			main._next_location = SaveData.club["last_location"]

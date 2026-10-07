@@ -7,9 +7,11 @@ extends CanvasLayer
 
 signal chosen(action: String, arg: int)
 signal travel(place_id: String)
+signal settings
 
 const HUD_BUTTON_W := 132.0      # room kept free at the top right for НАСТР (as TournamentUI)
 const TRAVEL := 92.0             # the quick-travel button (a circle)
+const GEAR := 84.0               # the settings button (a circle, top right)
 
 var root: Control
 var buttons: Array[Control] = []    # what the touch layer must leave alone (TouchInput.blocked_controls)
@@ -19,6 +21,7 @@ var _place_box: VBoxContainer
 var _primary: Button
 var _second_row: HBoxContainer
 var _travel_btn: Button
+var gear: Button                    # settings: Hud's sheet (НАСТР is hidden while the club shows)
 var _travel_list: VBoxContainer
 var _badges := {}                   # place id -> TournamentUI.Badge
 var _bubble: PanelContainer
@@ -38,6 +41,7 @@ func _ready() -> void:
 	root.theme = UiTheme.theme()
 	add_child(root)
 	_build_chip()
+	_build_gear()
 	_build_bottom()
 	_build_bubble()
 	_layout()
@@ -59,6 +63,8 @@ func _layout() -> void:
 	var chip := _chip_label.get_parent().get_parent() as Control
 	chip.offset_top = 14.0 + _safe_top + 8.0
 	chip.offset_right = -HUD_BUTTON_W - 14.0
+	gear.offset_top = 14.0 + _safe_top
+	gear.offset_bottom = gear.offset_top + GEAR
 
 
 # --- Gold ---------------------------------------------------------------------------
@@ -89,6 +95,20 @@ func _build_chip() -> void:
 	_chip_label.add_theme_font_size_override("font_size", 30)
 	_chip_label.add_theme_color_override("font_color", UiTheme.GOLD)
 	h.add_child(_chip_label)
+
+
+## Settings: a gear in a dark disc where НАСТР stands in the menus.
+func _build_gear() -> void:
+	gear = GearButton.new()
+	gear.focus_mode = Control.FOCUS_NONE
+	gear.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	gear.offset_left = -14.0 - GEAR - 10.0
+	gear.offset_right = -14.0 - 10.0
+	gear.pressed.connect(func() -> void:
+		_tap(gear)
+		settings.emit())
+	root.add_child(gear)
+	buttons.append(gear)
 
 
 func set_gold(v: int) -> void:
@@ -298,12 +318,14 @@ func is_saying() -> bool:
 func bubble_at(head: Vector2, on_screen: bool) -> void:
 	if not _bubble.visible:
 		return
+	if not on_screen:
+		_bubble.visible = false  # the coach walked out of the picture: his line goes with him
+		return
 	var vp := root.get_viewport_rect().size
 	var s := _bubble.size
 	var x := clampf(head.x - s.x * 0.5, UiTheme.GUTTER, vp.x - UiTheme.GUTTER - s.x)
 	var y := clampf(head.y - s.y - 24.0, 120.0 + _safe_top, vp.y * 0.6)
 	_bubble.position = Vector2(x, y)
-	_bubble.modulate.a = 1.0 if on_screen else 0.0
 
 
 func _process(delta: float) -> void:
@@ -311,6 +333,27 @@ func _process(delta: float) -> void:
 		_bubble_t -= delta
 		if _bubble_t <= 0.0:
 			_bubble.visible = false
+
+
+## The settings button: a dark disc with a gold gear.
+class GearButton extends Button:
+	func _ready() -> void:
+		var sb := UiTheme.box(Color(UiTheme.SURFACE, 0.94), Color(UiTheme.GOLD, 0.55), 2, 42, 0)
+		for k in ["normal", "hover", "pressed", "disabled"]:
+			add_theme_stylebox_override(k, sb)
+		add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+
+	func _draw() -> void:
+		var c := size * 0.5
+		var g := UiTheme.GOLD
+		var teeth := 8
+		var pts := PackedVector2Array()
+		for i in teeth * 4:
+			var a := TAU * i / (teeth * 4.0)
+			var r := 23.0 if (i % 4) in [0, 1] else 17.0
+			pts.append(c + Vector2.from_angle(a + TAU / (teeth * 8.0)) * r)
+		draw_colored_polygon(pts, g)
+		draw_circle(c, 7.5, UiTheme.SURFACE)
 
 
 ## The quick-travel button: a dark disc with a gold map pin (a cross when open).
