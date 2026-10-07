@@ -17,6 +17,7 @@ func _init() -> void:
 	test_gear_slots()
 	test_run_effects()
 	test_opp_stamina()
+	test_tournament_gear()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -319,3 +320,88 @@ func test_opp_stamina() -> void:
 	check(o.tired() == 0.0 and o.speed_mult() == 1.0, "above 40 he is fine")
 	o.value = 20.0
 	check(is_equal_approx(o.tired(), 0.5), "halfway below 40: tired 0.5")
+
+
+func test_tournament_gear() -> void:
+	print("tournament gear")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 21
+	var t := Tournament.new(1, 4)
+	check(t.equip.keys() == ["racket", "shoes", "band"] and t.bag.is_empty(), "three empty slots, an empty bag")
+	var all_three := true
+	for lu in t.lineup:
+		all_three = all_three and lu["gear"].size() == 3 and lu["racket"] == lu["gear"]["racket"]
+	check(all_three, "every opponent carries a racket, shoes and a wristband")
+	var first_common := true
+	for slot in Gear.SLOTS:
+		first_common = first_common and int(t.lineup[0]["gear"][slot]["rarity"]) == Gear.COMMON
+	check(first_common and is_equal_approx(t.modifier_value("skill"), 0.0), "the tutorial opponent: commons, no extra skill")
+	t.lineup[1]["gear"] = {"racket": Items.instance(Items.find("sun")), "shoes": Gear.roll(Gear.EPIC, rng, "shoes"), "band": {}}
+	t.lineup[1]["mods"] = []
+	t.stage = 1
+	check(is_equal_approx(t.modifier_value("skill"), 0.06), "his gear makes him stronger: 0.01 a rarity step (%.2f)" % t.modifier_value("skill"))
+	t.stage = 0
+	# Saving, and the old save with a single racket.
+	var item := Gear.roll(Gear.RARE, rng, "shoes")
+	t.equip["shoes"] = item
+	t.bag = [Gear.roll(Gear.COMMON, rng, "band")]
+	var back := Tournament.from_dict(t.to_dict())
+	check(back.equip["shoes"] == item and back.bag.size() == 1, "equip and bag survive a save")
+	var old := t.to_dict()
+	old.erase("equip")
+	old.erase("bag")
+	var leg := Gear.roll(Gear.LEGENDARY, rng)
+	old["racket"] = leg
+	var migrated := Tournament.from_dict(old)
+	check(migrated.equip["racket"] == leg and migrated.racket == leg and migrated.equip["shoes"].is_empty(), "an old save's racket moves into the racket slot")
+	# Drops: each item of the beaten opponent rolls on its own.
+	var counts := [0, 0, 0, 0, 0]
+	var n := 20000
+	for r in 5:
+		var gear := {"racket": {"slot": "racket", "rarity": r, "name": "x", "mods": {}}}
+		for k in n:
+			counts[r] += Tournament.drops(gear, rng, 0.0).size()
+	var rates := counts.map(func(c): return float(c) / n)
+	var ok := true
+	for r in 5:
+		ok = ok and absf(rates[r] - Tournament.DROP_CHANCE[r]) < 0.015
+	check(ok, "drop rates %s ~ 30/20/12/6/3%%" % [rates.map(func(x): return snappedf(x, 0.001))])
+	check(Tournament.drops({"band": {"slot": "band", "rarity": 0, "name": "x", "mods": {}}}, rng, 1.0).size() == 1, "a sure drop (bonus 1) always drops")
+	# The bag.
+	var b := Tournament.new(1, 8)
+	for k in Tournament.BAG_SIZE:
+		b.add_to_bag(Gear.roll(Gear.RARE, rng, "band"))
+	var gold0 := b.gold
+	b.add_to_bag(Gear.roll(Gear.COMMON, rng, "band"))
+	check(b.bag.size() == Tournament.BAG_SIZE and b.auto_sold > 0 and b.gold > gold0, "a full bag sells the cheapest for gold")
+	var worn := Gear.roll(Gear.COMMON, rng, "band")
+	b.equip["band"] = worn
+	var picked: Dictionary = b.bag[0]
+	b.equip_from_bag(0)
+	check(b.equip["band"] == picked and b.bag.has(worn), "putting on from the bag swaps with what was worn")
+	var price := Gear.price(b.bag[0])
+	var g1 := b.gold
+	check(b.sell_from_bag(0) == price and b.gold == g1 + price and b.bag.size() == Tournament.BAG_SIZE - 1, "selling pays its price in run gold")
+	# Trophy and rewards.
+	var w := Tournament.new(0, 12)
+	w.lineup[0]["gear"] = {"racket": leg, "shoes": Gear.roll(Gear.COMMON, rng, "shoes"), "band": Gear.roll(Gear.RARE, rng, "band")}
+	w.drop_bonus = 1.0
+	w.record_match(true, "7:3", rng)
+	check(w.pending_loot == leg and w.bag.size() == 2 and w.new_items.size() == 2, "a sure drop: the legendary to the trophy game, the rest into the bag")
+	w.take_loot(true)
+	check(w.equip["racket"] == leg and w.pending_loot.is_empty(), "the trophy is put on")
+	var reward := {"kind": "item", "item": Gear.roll(Gear.COMMON, rng, "racket"), "title": "x", "desc": ""}
+	w.offer = [reward]
+	w.state = Tournament.State.REWARD
+	w.take_reward(0)
+	check(w.equip["racket"] == leg and w.bag.has(reward["item"]), "a reward item goes to the bag when the slot is taken")
+	var mythics_ok := true
+	for k in 300:
+		var tt := Tournament.new(1, 1000 + k)
+		var m := 0
+		for lu in tt.lineup:
+			for slot in lu["gear"]:
+				if not lu["gear"][slot].is_empty() and int(lu["gear"][slot]["rarity"]) == Gear.MYTHIC:
+					m += 1
+		mythics_ok = mythics_ok and m <= 1
+	check(mythics_ok, "at most one mythic in a run")
