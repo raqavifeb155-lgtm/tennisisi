@@ -362,7 +362,7 @@ func show_result(t: Tournament, won: bool, score_text: String, stats: Dictionary
 	_box.add_child(_text(score_text, UiTheme.display(), 64, UiTheme.INK))
 	_sub("PERFECT: %d   ·   эйсы: %d   ·   лучший розыгрыш: %d" % [stats.get("perfect", 0), stats.get("aces", 0), stats.get("best_rally", 0)])
 	if won:
-		var gain := t.gold_for_win(t.stage - 1) + (roundi(Tournament.CHAMPION_BONUS * float(t.format_info()["reward"])) if t.champion else 0)
+		var gain := t.gold_for_win(t.stage - 1) + (roundi(Tournament.CHAMPION_BONUS * float(t.format_info()["reward"])) if t.champion else 0) + RunResult.style_gold(self)
 		var gl := _text("+%d золота" % gain, UiTheme.display(), UiTheme.T_HEAD, UiTheme.GOLD)
 		_box.add_child(gl)
 		var total := _balance(t)
@@ -372,6 +372,7 @@ func show_result(t: Tournament, won: bool, score_text: String, stats: Dictionary
 		_box.add_child(_text("Трофей: %s" % t.pending_loot["name"], UiTheme.text_bold(), UiTheme.T_BODY, Gear.color(t.pending_loot)))
 	elif won and t.missed_loot != "":
 		_box.add_child(_text("Трофей упущен: %s" % t.missed_loot, UiTheme.text(), UiTheme.T_SMALL + 2, UiTheme.LOSE))
+	RunResult.extra(self, t)  # v0.2 A: style of the match, the best point's replay
 	if won and not t.pending_loot.is_empty():
 		_primary("ЗАБРАТЬ ТРОФЕЙ", "to_loot")
 		return

@@ -54,6 +54,7 @@ var scoreboard := MatchScore.new(1, 99, 0)  # practice: one endless set
 
 # Tournament / menus (TournamentUI) and skills (Skills)
 var ui: TournamentUI
+var run_hub: RunHub
 var tournament: Tournament
 var tournament_mode := false
 var autoplay_tournament := false
@@ -238,6 +239,9 @@ func _ready() -> void:
 	ui = TournamentUI.new()
 	add_child(ui)
 	ui.chosen.connect(_on_ui)
+	run_hub = RunHub.new()  # v0.2 A: style, gear effects, opponent stamina, bets (scripts/run)
+	add_child(run_hub)
+	run_hub.setup(self)
 	# UI sounds: a dropped-in coin/reward/click sound if there is one, else a built-in.
 	ui.sfx_request.connect(func(sound: String, db: float, pitch: float) -> void:
 		var alt: String = {"bounce": "coin", "hit": "click"}.get(sound, "")
@@ -2058,6 +2062,8 @@ func _on_ui(action: String, arg: int) -> void:
 			Skills.spend_point(Skills.LIST[arg])
 			SaveData.save()
 			ui.show_character(false)
+		"replay", "share":
+			RunHub.ui_action(self, action)  # v0.2 A: the best point's replay and sharing it
 		"perk":
 			Skills.take_perk(_perk_choice["offer"][arg]["id"])
 			SaveData.save()
