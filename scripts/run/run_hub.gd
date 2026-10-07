@@ -105,6 +105,17 @@ func _on_match_started(_info: Dictionary) -> void:
 		match_fx = MatchEffects.new(main, main.tournament)
 		match_fx.damaged.connect(_on_damaged)
 		view.shown = not main.autoplay
+		if main.tournament.current_lineup().get("golden", false):
+			_golden_entrance()
+
+
+## A golden opponent: the kit in gold, the racket glowing, his name announced.
+func _golden_entrance() -> void:
+	var opp: Dictionary = main.tournament.opponent()
+	main.cpu.set_look(Golden.look(opp.get("look", Looks.from_shirt(opp.get("shirt", Color(0.22, 0.28, 0.42))))))
+	main.cpu.set_racket_look(UiTheme.GOLD, 1.6)
+	# After Main's own "round · name" message, which comes right after this event.
+	main.hud.show_message.call_deferred("ЗОЛОТОЙ\n%s" % String(opp["short"]), UiTheme.GOLD)
 
 
 func _on_stroke(info: Dictionary) -> void:
@@ -199,7 +210,7 @@ func _abandon() -> void:
 	_post_roll = -1
 
 
-func _on_match_finished(_info: Dictionary) -> void:
+func _on_match_finished(info: Dictionary) -> void:
 	if not _in_match:
 		return
 	_in_match = false
@@ -216,6 +227,9 @@ func _on_match_finished(_info: Dictionary) -> void:
 	var g := meter.gold(float(t.format_info()["reward"]), t.stage)
 	t.gold += g
 	last_match = {"points": meter.match_points, "gold": g, "best": meter.best}
+	if bool(info.get("won", false)) and t.current_lineup().get("golden", false):
+		Golden.note_beaten(String(t.opponent()["id"]))
+		last_match["golden"] = true
 	if not t.bet.is_empty():
 		var stake := int(t.bet["stake"])
 		last_match["bet"] = {"stake": stake, "paid": Bets.settle_match(t, main.scoreboard)}

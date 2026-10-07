@@ -28,6 +28,10 @@ static func extra(ui: TournamentUI, t: Tournament) -> void:
 	if t != null and t.auto_sold > 0:
 		ui._note("Сумка полна: лишнее продано за %d золота" % t.auto_sold)
 	var h := hub(ui)
+	if h != null and h.last_match.get("golden", false):
+		var gl := ui._text("Золотой пойман!  ·  коллекция %d из %d" % [SaveData.golden.size(), Opponents.ROSTER.size() - 1], UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.GOLD)
+		gl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		ui._box.add_child(gl)
 	if h != null and h.last_match.has("bet"):
 		var b: Dictionary = h.last_match["bet"]
 		var won := int(b["paid"]) > 0

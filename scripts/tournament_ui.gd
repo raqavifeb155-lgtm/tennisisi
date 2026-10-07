@@ -282,6 +282,8 @@ func show_character(animate := true) -> void:
 		for p in Skills.perks:
 			names.append(Skills.find_perk(p)["title"])
 		_note("Билд: " + ", ".join(names))
+	if not SaveData.golden.is_empty():
+		_note(Golden.collection_text())  # v0.2 A: golden opponents beaten
 	_gap(24)
 
 

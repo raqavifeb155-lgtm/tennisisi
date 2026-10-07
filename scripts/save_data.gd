@@ -37,6 +37,7 @@ static var crashes := 0                # page reloads while the game was on scre
 static var last_crash := ""            # where the last one happened ("матч · Максимум")
 static var style := {}                 # style records (v0.2 A): best_mult, best_points, total
 static var bets := {}                  # the betting desk (v0.2 A): placed, won, loss_streak, net_hits
+static var golden: Array = []          # golden opponents beaten (v0.2 A): roster ids
 static var source := "none"            # where the progress came from: local, old, cloud (telemetry)
 static var _cloud_checked := false
 static var _last_cloud := ""
@@ -89,6 +90,7 @@ static func _apply(cf: ConfigFile) -> void:
 	run = cf.get_value("run", "data", {})
 	style = cf.get_value("style", "data", {})
 	bets = cf.get_value("bets", "data", {})
+	golden = cf.get_value("golden", "beaten", [])
 	active = null
 	Skills.xp = cf.get_value("skills", "xp", {})
 	Skills.perks = cf.get_value("skills", "perks", [])
@@ -191,6 +193,8 @@ static func _to_config() -> ConfigFile:
 		cf.set_value("style", "data", style)
 	if not bets.is_empty():
 		cf.set_value("bets", "data", bets)
+	if not golden.is_empty():
+		cf.set_value("golden", "beaten", golden)
 	if active != null and not active.banked and active.state != Tournament.State.OVER:
 		run = active.to_dict()
 	else:

@@ -78,7 +78,32 @@ GAME YOU", UiTheme.WIN)  # the verdict shows in the same frame
 		print("share caption: ", RunShare.caption(hub.meter.best))
 	await _a2(hub)
 	await _a3()
+	await _a4(hub)
 	quit()
+
+
+## A-4: a golden opponent in the bracket, his entrance on court, the result.
+func _a4(hub: RunHub) -> void:
+	var t := Tournament.new(1, 5)
+	t.lineup[1]["golden"] = true
+	t.lineup[1]["mods"] = []
+	main.tournament = t
+	main.tournament_mode = true
+	main.ui.show_bracket(t)
+	await _shot("a4_bracket")
+	t.stage = 1
+	main._play_match()
+	await create_timer(0.4).timeout
+	main.hud._tutorial.visible = false
+	paused = false
+	await _shot("a4_entrance", 0.6)
+	main._stop_match()
+	hub._abandon()
+	hub.last_match = {"golden": true}
+	SaveData.golden = ["basilashvili"]
+	t.record_match(true, "6:4", RandomNumberGenerator.new())
+	main.ui.show_result(t, true, "6:4", {"perfect": 9, "aces": 2, "best_rally": 11})
+	await _shot("a4_result")
 
 
 ## A-3: the Club with the desk, the wheel before and after a spin, the bet on a match.

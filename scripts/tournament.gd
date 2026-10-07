@@ -155,7 +155,11 @@ func roll_lineup() -> void:
 					rar = Gear.LEGENDARY
 				mythic_rolled = true
 			gear[slot] = Gear.roll(rar, rng, slot)
-		lineup.append({"mods": mods, "gear": gear, "racket": gear["racket"]})
+		# A golden one (1 in 50, never the first): a legendary or better in his hand.
+		var golden := i > 0 and rng.randf() < Golden.CHANCE
+		if golden and int(gear["racket"]["rarity"]) < Gear.LEGENDARY:
+			gear["racket"] = Gear.roll(Gear.LEGENDARY, rng, "racket")
+		lineup.append({"mods": mods, "gear": gear, "racket": gear["racket"], "golden": golden})
 
 
 ## A rarity for an opponent's item: GEAR_CHANCE with `shift` moved from common upward.
@@ -272,7 +276,8 @@ func new_score(first_server: int) -> MatchScore:
 
 
 func gold_for_win(i: int) -> int:
-	return roundi(GOLD_PER_WIN[i] * float(format_info()["reward"]))
+	var golden: bool = i < lineup.size() and lineup[i].get("golden", false)
+	return roundi(GOLD_PER_WIN[i] * float(format_info()["reward"])) * (Golden.GOLD_X if golden else 1)
 
 
 ## Records a finished match and moves the run on.

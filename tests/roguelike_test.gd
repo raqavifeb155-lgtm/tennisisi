@@ -23,6 +23,7 @@ func _initialize() -> void:
 	test_opp_view()
 	test_bets()
 	test_match_bet()
+	test_golden()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -572,3 +573,45 @@ func test_match_bet() -> void:
 	SaveData._apply(cf)
 	check(int(SaveData.bets.get("placed", 0)) == 2, "the desk's record is saved")
 	SaveData.gold = 0
+
+
+# --- A-4: golden opponents ----------------------------------------------------------
+
+func test_golden() -> void:
+	print("golden opponents")
+	var golden := 0
+	var opponents := 0
+	var first_never := true
+	var all_best := true
+	for k in 5000:
+		var t := Tournament.new(1, 7000 + k)
+		first_never = first_never and not t.lineup[0].get("golden", false)
+		for i in range(1, t.rounds()):
+			opponents += 1
+			if t.lineup[i].get("golden", false):
+				golden += 1
+				var best := 0
+				for s in t.lineup[i]["gear"]:
+					best = maxi(best, int(t.lineup[i]["gear"][s]["rarity"]))
+				all_best = all_best and best >= Gear.LEGENDARY
+	var rate := float(golden) / opponents
+	check(absf(rate - Golden.CHANCE) < 0.004, "about 1 in 50 is golden (%.3f)" % rate)
+	check(first_never, "the first (tutorial) opponent is never golden")
+	check(all_best, "a golden opponent carries a legendary or better")
+	var g := Tournament.new(1, 3)
+	g.lineup[1]["golden"] = false
+	var plain := g.gold_for_win(1)
+	g.lineup[1]["golden"] = true
+	check(g.gold_for_win(1) == plain * 2, "beating him pays double (%d -> %d)" % [plain, g.gold_for_win(1)])
+	var look := Golden.look({"skin": 3, "shirt": 1, "shorts": 2, "accent": 4})
+	check(look["shirt"] == Golden.KIT and look["shorts"] == Golden.KIT and look["skin"] == 3, "the golden kit keeps his face")
+	SaveData.golden = []
+	Golden.note_beaten("zverev")
+	Golden.note_beaten("zverev")
+	Golden.note_beaten("rublev")
+	check(SaveData.golden == ["zverev", "rublev"], "the collection keeps each one once")
+	var cf := SaveData._to_config()
+	SaveData.golden = []
+	SaveData._apply(cf)
+	check(SaveData.golden.size() == 2, "the collection is saved")
+	SaveData.golden = []

@@ -83,6 +83,9 @@ static func bracket_extra(ui: TournamentUI, t: Tournament) -> void:
 ## Under an opponent in the bracket: not what he carries, only a hint — the glow of his
 ## best epic or legendary item. A mythic looks like nothing here (found out on court).
 static func opponent_hint(ui: TournamentUI, box: VBoxContainer, lu: Dictionary) -> void:
+	if lu.get("golden", false):
+		box.add_child(ui._left(ui._text("ЗОЛОТОЙ  ·  ×2 золота за победу", UiTheme.display(), UiTheme.T_SMALL + 2, UiTheme.GOLD)))
+		return
 	var best := -1
 	for s in lu.get("gear", {}):
 		var it: Dictionary = lu["gear"][s]
