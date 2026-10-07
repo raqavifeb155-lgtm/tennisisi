@@ -244,6 +244,6 @@ func _report() -> void:
 	print("hook before the toss = underarm: %s" % ("OK" if underarm_ok else ("FAILED" if underarm_done else "NOT RUN")))
 	print("flick from the joystick zone = shot: %s, drag there = run: %s" % ["OK" if flick_ok else "FAILED", "OK" if hold_ok else "FAILED"])
 	print("game events: %s" % str(ev))
-	var events_ok: bool = ev["stroke"] >= 8 and ev["point"] >= 1 and ev["shot"] >= ev["stroke"] and ev["bounce"] >= 1
+	var events_ok: bool = ev["stroke"] == player_hits and ev["point"] >= 1 and ev["shot"] >= ev["stroke"] and ev["bounce"] >= 1
 	var ok := events_ok and player_hits >= 8 and moved_ok and stick_ok and serve_walk_ok and underarm_ok and flick_ok and hold_ok
 	print("INPUT TEST %s" % ("PASSED" if ok else "FAILED"))
