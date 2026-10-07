@@ -8,6 +8,7 @@ const LINE_W := 0.05          # line width (m)
 const SHOW_SECONDS := 2.6
 
 var top_inset := 0.0          # Telegram's buttons and the notch in full screen (HUD sets it)
+var top_px := -1.0            # the slot the HUD's call column reserved for it (-1: none)
 
 var _margin := 0.0            # metres; > 0 = in
 var _axis := 0                # 0 = deciding line runs along the court length (vertical here)
@@ -41,9 +42,9 @@ func _draw() -> void:
 	var left := Time.get_ticks_msec()
 	var alpha := clampf((_until_ms - left) / 300.0, 0.0, 1.0)
 	var vp := get_viewport_rect().size
-	# Top right, under the settings button: on the sky and the city, clear of the score
-	# (top left), of the far court and of the thumbs at the bottom of the screen.
-	var origin := Vector2(vp.x - PANEL.x - 14.0, top_inset + 128.0)
+	# In the call column, right under the point's call (HudAnnouncer.reserve): on the sky
+	# and the city, clear of the score, of the far court and of the thumbs.
+	var origin := Vector2((vp.x - PANEL.x) * 0.5, top_px) if top_px >= 0.0 else Vector2(vp.x - PANEL.x - 14.0, top_inset + 128.0)
 	var rect := Rect2(origin, PANEL)
 	var font := get_theme_default_font()
 	var is_in := _margin >= 0.0
