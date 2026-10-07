@@ -36,6 +36,7 @@ var ball: Ball
 var player: Athlete
 var cpu: Athlete
 var ai: OpponentAI
+var metrics: AiMetrics          # --autoplay only: rally, serve and tactics statistics
 var cam: GameCamera
 var hud: Hud
 var sfx: Sfx
@@ -134,6 +135,7 @@ var autoplay := false
 var autoplay_points := 40
 var _bot_armed := false
 var _bot_offset := 0.0
+var bot_serve_x := 2.0          # where across the box the bot aims its serve (tools/ai_bench.gd --serve=wide)
 var _stats := {"rallies": [], "reasons": {}, "labels": {}, "player_hits": 0, "cpu_hits": 0, "serve": {}}
 
 
@@ -217,6 +219,10 @@ func _ready() -> void:
 	ai = OpponentAI.new()
 	add_child(ai)
 	ai.setup(self, cpu, ball)
+	if autoplay:
+		metrics = AiMetrics.new()  # stream D: bot balancing statistics (scripts/ai)
+		add_child(metrics)
+		metrics.setup(self)
 
 	cam = GameCamera.new()
 	add_child(cam)
@@ -2492,7 +2498,7 @@ func _autoplay_tick() -> void:
 		if not toss_active:
 			_start_toss()
 		elif game_time >= toss_ideal + _bot_offset:
-			var to_box := Vector3(box_side * 2.0 - player.position.x, 0.0, -5.2 - player.position.z).normalized()
+			var to_box := Vector3(box_side * bot_serve_x - player.position.x, 0.0, -5.2 - player.position.z).normalized()
 			_curl_k = rng.randf_range(0.9, 1.3)
 			_player_serve(to_box.rotated(Vector3.UP, deg_to_rad(rng.randf_range(-6.0, 6.0))), rng.randf_range(0.3, 1.0), rng.randi_range(0, 2))
 		return
@@ -2530,3 +2536,5 @@ func _print_autoplay_summary() -> void:
 	print("point outcomes: %s" % str(_stats["reasons"]))
 	print("serve outcomes: %s" % str(_stats["serve"]))
 	print("dives: %d   stumbles: %d   errors: %d" % [_stats.get("dives", 0), _stats.get("stumbles", 0), _stats.get("errors", 0)])
+	if metrics:
+		print(metrics.report())
