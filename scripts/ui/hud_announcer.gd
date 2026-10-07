@@ -13,7 +13,7 @@ extends Control
 ## Calls are fitted (56 px down to 40, then wrapped to two lines), fonts and colors come
 ## from UiTheme, and time is real time (slow motion and hit-stop don't stretch it).
 
-const COLUMN_TOP := 130.0       # under the score bug and the pause button (14..110)
+const COLUMN_TOP := 160.0       # under the score bug, its status chips and the pause button
 const WIDTH := 640.0
 const CALL_MAX := 56
 const CALL_MIN := 40
