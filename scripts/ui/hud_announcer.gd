@@ -1,61 +1,56 @@
 class_name HudAnnouncer
 extends Control
-## Everything the match says on screen, laid out by one scheme (UI_FLOW_TZ 5) so that no
-## two texts land on each other and none runs off the screen:
+## Everything the match says between points, as one TV caption strip under the score
+## (UI_FLOW_TZ 5, the owner's choice "ТВ-строка"): the point's call, then the level-ups,
+## the opponent's intro, KNOCKOUT!, the trophy, one after another in the same narrow
+## strip. The far court and the opponent are never covered; nothing lands on anything.
 ##
-##   column   under the score, centred, 640 wide: the point's call, then a reserved slot
-##            (VAR, the style plate), then up to two level-up toasts. A VBoxContainer: no
-##            y is written by hand, each item sits under the one before.
-##   centre   one big moment at a time (the opponent's intro, KNOCKOUT!, the trophy card),
-##            the rest wait their turn; the column holds still meanwhile; a tap skips.
-##   hint     one line on a plate above the joystick (the trophy's rule, serve hints).
+##   strip   one line (two at most), as wide as its text, ~60 px tall, under the score
+##           bug's status chips. One item at a time from a queue; a new call cuts in.
+##   hint    one line on a plate above the joystick (the trophy's rule, serve hints).
 ##
-## Calls are fitted (56 px down to 40, then wrapped to two lines), fonts and colors come
-## from UiTheme, and time is real time (slow motion and hit-stop don't stretch it).
+## Text is fitted (40 px down to 28, then the tail goes to a second line), fonts and
+## colors come from UiTheme, time is real time (slow motion and hit-stop don't stretch it).
 
-const COLUMN_TOP := 160.0       # under the score bug, its status chips and the pause button
-const WIDTH := 640.0
-const CALL_MAX := 56
-const CALL_MIN := 40
-const SUB := 28
-const TOAST := 28
-const MAX_TOASTS := 2
-const MOMENT_MAX := 76
-const MOMENT_MIN := 48
-const CARD_W := 560.0
+const STRIP_TOP := 150.0        # under the score bug, its status chips and the pause button
+const WIDTH := 680.0            # the most the strip may take
+const BIG := 40                 # the call, KNOCKOUT!, the name
+const SMALL := 28               # the floor for the strip
+const HINT := 24
 const HINT_Y := 0.775           # of the screen height, above the joystick zone
-const SEP := 10
+const CALL_HOLD := 1.1
+const TOAST_HOLD := 1.0
+const MOMENT_HOLD := 1.2
+const FADE := 0.2
 
-var _column: VBoxContainer
-var _center: CenterContainer
+var _strip: PanelContainer
+var _box: VBoxContainer
 var _hint: PanelContainer
 var _hint_label: Label
 var _safe_top := 0.0
 var _safe_bottom := 0.0
-var _pending_toasts: Array[Array] = []    # [text, key, gold] waiting for room
-var _moments: Array[Callable] = []        # builders of the moments waiting their turn
-var _moment: Control                      # the one on screen
-var _moment_tween: Tween
-var _tweens := {}                         # column item -> its tween (paused under a moment)
+var _queue: Array[Dictionary] = []   # items waiting: {kind, main, tail, color, frame, key, hold, rarity}
+var _current := {}                   # the item on screen ({} = none)
+var _tween: Tween
 
 
 func _init() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_column = VBoxContainer.new()
-	_column.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_column.add_theme_constant_override("separation", SEP)
-	add_child(_column)
-	_center = CenterContainer.new()
-	_center.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_center)
+	_strip = PanelContainer.new()
+	_strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_strip.visible = false
+	add_child(_strip)
+	_box = VBoxContainer.new()
+	_box.add_theme_constant_override("separation", 0)
+	_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_strip.add_child(_box)
 	_hint = PanelContainer.new()
 	_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_hint.add_theme_stylebox_override("panel", _plate(0.8))
+	_hint.add_theme_stylebox_override("panel", _plate(0.6, Color(0, 0, 0, 0)))
 	_hint.visible = false
 	add_child(_hint)
-	_hint_label = _label("", UiTheme.text_bold(), 24, UiTheme.INK)
+	_hint_label = _label("", UiTheme.text_bold(), HINT, UiTheme.INK)
 	_hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_hint_label.custom_minimum_size.x = WIDTH - 48.0
 	_hint.add_child(_hint_label)
 	resized.connect(_layout)
 
@@ -67,175 +62,88 @@ func set_safe_area(top: float, bottom: float) -> void:
 
 
 func _layout() -> void:
-	_column.position = Vector2((size.x - WIDTH) * 0.5, COLUMN_TOP + _safe_top)
-	_column.size = Vector2(WIDTH, 0)
-	_center.position = Vector2(0, _safe_top)
-	_center.size = Vector2(size.x, size.y - _safe_top - _safe_bottom)
+	_place_strip()
 	_place_hint()
 
 
-# --- The column ---------------------------------------------------------------
+# --- What the match says ------------------------------------------------------
 
-## The point's verdict: a fitted call and an optional second line. A new call replaces
-## the one still on screen (it is old news by then).
+## The point's call ("WINNER!") and its tail ("GAME · YOU"). It cuts in: an older call on
+## screen is old news and goes, a level-up on screen waits for its turn again.
 func call_point(main: String, sub: String, color: Color) -> void:
-	for c in column_items():
-		if c.has_meta("call"):
-			_drop(c)
-	var p := PanelContainer.new()
-	p.set_meta("call", true)
-	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	p.add_theme_stylebox_override("panel", _plate(0.85))
-	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 0)
-	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	p.add_child(v)
-	v.add_child(_fitted(main, UiTheme.display(), CALL_MAX, CALL_MIN, color))
-	if sub != "":
-		v.add_child(_fitted(sub, UiTheme.text_bold(), SUB, 24, Color(color, 0.92)))
-	_column.add_child(p)
-	_column.move_child(p, 0)
-	_pop_in(p, 1.15)
-	_hold(p, 1.1, 0.3)
+	var item := {"kind": "call", "main": main, "tail": sub, "color": color, "hold": CALL_HOLD}
+	_queue = _queue.filter(func(q: Dictionary) -> bool: return q["kind"] != "call")
+	if not _current.is_empty() and _current["kind"] != "call":
+		_queue.push_front(_current)
+	_queue.push_front(item)
+	_current = {}
+	_next()
 
 
-## A level-up (or any progress line). Two on screen at most, the rest wait; the same
-## key (a skill) updates its toast in place instead of stacking a new one.
+## A level-up (or any progress line), gold. The same key (a skill) updates the line
+## already waiting or on screen instead of queueing another.
 func toast(text: String, key := "", gold := false) -> void:
 	if key != "":
-		for c in column_items():
-			if c.get_meta("key", "") == key:
-				(c.get_child(0) as Label).text = text
-				_hold(c, 1.6, 0.4)
+		if _current.get("key", "") == key:
+			_current["main"] = text
+			_show(_current)
+			return
+		for q in _queue:
+			if q.get("key", "") == key:
+				q["main"] = text
 				return
-		for w in _pending_toasts:
-			if w[1] == key:
-				w[0] = text
-				return
-	if _toast_count() >= MAX_TOASTS:
-		_pending_toasts.append([text, key, gold])
-		return
-	var p := PanelContainer.new()
-	p.set_meta("toast", true)
-	p.set_meta("key", key)
-	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var sb := _plate(0.8)
-	if gold:
-		sb.set_border_width_all(2)
-		sb.border_color = UiTheme.GOLD
-	p.add_theme_stylebox_override("panel", sb)
-	var l := _label(text, UiTheme.text_bold(), TOAST, UiTheme.GOLD)
-	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	l.custom_minimum_size.x = WIDTH - 48.0
-	p.add_child(l)
-	_column.add_child(p)
-	p.modulate.a = 0.0
-	var tw := p.create_tween()
-	tw.set_ignore_time_scale(true)
-	tw.tween_property(p, "modulate:a", 1.0, 0.2).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
-	_hold(p, 1.6, 0.4)
+	_enqueue({"kind": "toast", "main": text, "tail": "", "color": UiTheme.GOLD, "key": key,
+		"frame": UiTheme.GOLD if gold else Color(0, 0, 0, 0), "hold": TOAST_HOLD})
 
 
-## Room in the column right under the call, for something drawn elsewhere (the VAR
-## panel, the style plate): returns the y of its top in screen space.
-func reserve(height: float, seconds: float) -> float:
-	var slot := Control.new()
-	slot.set_meta("slot", true)
-	slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	slot.custom_minimum_size = Vector2(WIDTH, height)
-	var at := 0
-	for c in column_items():
-		if c.has_meta("call") or c.has_meta("slot"):
-			at += 1
-	var y := _column.global_position.y
-	var items := column_items()
-	for i in at:
-		y += items[i].get_combined_minimum_size().y + SEP
-	_column.add_child(slot)
-	_column.move_child(slot, at)
-	_hold(slot, seconds, 0.0)
-	return y
-
-
-func column_items() -> Array[Control]:
-	var out: Array[Control] = []
-	for c in _column.get_children():
-		if not c.is_queued_for_deletion():
-			out.append(c)
-	return out
-
-
-func waiting_toasts() -> int:
-	return _pending_toasts.size()
-
-
-# --- The centre ---------------------------------------------------------------
-
-## The opponent before the match, as a TV plate: the round, then the full name.
+## The opponent before the match, TV style: "ВТОРОЙ КРУГ · Николоз Басилашвили".
 func intro(round_name: String, player: String) -> void:
-	_queue_moment(func() -> Array:
-		var p := PanelContainer.new()
-		var sb := _plate(0.92)
-		sb.set_border_width_all(2)
-		sb.border_color = Color(UiTheme.GOLD, 0.6)
-		p.add_theme_stylebox_override("panel", sb)
-		var v := VBoxContainer.new()
-		v.add_theme_constant_override("separation", 2)
-		p.add_child(v)
-		v.add_child(_fitted(round_name, UiTheme.text_bold(), SUB, 24, UiTheme.GOLD))
-		v.add_child(_fitted(player, UiTheme.display(), 48, 32, UiTheme.INK))
-		return [p, 1.6])
+	_enqueue({"kind": "moment", "main": round_name, "tail": player, "color": UiTheme.GOLD,
+		"tail_font": "display", "hold": 1.6})
 
 
-## A big word in the middle (KNOCKOUT!, TROPHY LOST) with an optional Russian line.
-func moment(text: String, color: Color, sub := "", hold := 1.2) -> void:
-	_queue_moment(func() -> Array:
-		var v := VBoxContainer.new()
-		v.add_theme_constant_override("separation", 4)
-		var big := _fitted(text, UiTheme.display(), MOMENT_MAX, MOMENT_MIN, color)
-		big.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.75))
-		big.add_theme_constant_override("outline_size", 10)
-		v.add_child(big)
-		if sub != "":
-			var p := PanelContainer.new()
-			p.add_theme_stylebox_override("panel", _plate(0.85))
-			p.add_child(_fitted(sub, UiTheme.text_bold(), SUB, 24, UiTheme.INK))
-			v.add_child(p)
-		return [v, hold])
+## A big word (KNOCKOUT!, TROPHY LOST) with an optional Russian tail.
+func moment(text: String, color: Color, sub := "", hold := MOMENT_HOLD) -> void:
+	_enqueue({"kind": "moment", "main": text, "tail": sub, "color": color, "hold": hold})
 
 
-## A gear item as a card (frame, shine and glow of its rarity), e.g. the trophy.
+## A gear item in its rarity's color and frame: "ТРОФЕЙ · Легендарная «Громовержец»".
+## The full card (effects, compare) is on the result screen; the court stays clear.
 func item_card(item: Dictionary, head: String, hold := 1.6) -> void:
-	_queue_moment(func() -> Array:
-		var card := GameCard.new()
-		var r := int(item.get("rarity", 0))
-		card.rarity = r
-		card.tag = "%s  ·  %s" % [head, UiTheme.RARITY_NAMES[clampi(r, 0, UiTheme.RARITY_NAMES.size() - 1)]]
-		card.title = String(item.get("name", ""))
-		card.desc = Gear.describe(item) if not item.is_empty() else ""
-		card.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		card.custom_minimum_size = Vector2(CARD_W, 0)
-		return [card, hold])
+	var r := clampi(int(item.get("rarity", 0)), 0, UiTheme.RARITY_NAMES.size() - 1)
+	var c := UiTheme.rarity_color(r)
+	_enqueue({"kind": "item", "main": head, "tail": String(item.get("name", "")), "color": c,
+		"frame": c, "rarity": r, "hold": hold, "tail_font": "display"})
 
 
-## A tap during a moment: the next one, or the column moves on again.
+## A tap: the item on screen goes, the next one comes.
 func skip() -> void:
-	if _moment == null:
+	if _current.is_empty():
 		return
-	if _moment_tween:
-		_moment_tween.kill()
-	_center.remove_child(_moment)
-	_moment.queue_free()
-	_moment = null
-	_next_moment()
+	_current = {}
+	_next()
 
 
-func center_item() -> Control:
-	return _moment
+## Everything off the screen at once (the match ended, the menus open).
+func finish_now() -> void:
+	_queue.clear()
+	_current = {}
+	if _tween:
+		_tween.kill()
+	_strip.visible = false
+	set_hint("")
 
 
-func waiting_moments() -> int:
-	return _moments.size()
+func current() -> Dictionary:
+	return _current
+
+
+func waiting() -> int:
+	return _queue.size()
+
+
+func strip() -> Control:
+	return _strip
 
 
 # --- The hint -----------------------------------------------------------------
@@ -250,133 +158,94 @@ func hint_text() -> String:
 	return _hint_label.text if _hint.visible else ""
 
 
-func _place_hint() -> void:
-	_hint.reset_size()
-	var w := WIDTH
-	_hint.size = Vector2(w, 0)
-	_hint.reset_size()
-	_hint.position = Vector2((size.x - w) * 0.5, size.y * HINT_Y - _safe_bottom - _hint.size.y * 0.5)
-
-
-## Everything off the screen at once (the match ended, the menus open).
-func finish_now() -> void:
-	for c in column_items():
-		_column.remove_child(c)
-		c.queue_free()
-	_tweens.clear()
-	_pending_toasts.clear()
-	_moments.clear()
-	if _moment:
-		if _moment_tween:
-			_moment_tween.kill()
-		_center.remove_child(_moment)
-		_moment.queue_free()
-		_moment = null
-	set_hint("")
-
-
 # --- Inside -------------------------------------------------------------------
 
-func _queue_moment(build: Callable) -> void:
-	_moments.append(build)
-	if _moment == null:
-		_next_moment()
+func _enqueue(item: Dictionary) -> void:
+	_queue.append(item)
+	if _current.is_empty():
+		_next()
 
 
-func _next_moment() -> void:
-	if _moments.is_empty():
-		_pause_column(false)
+func _next() -> void:
+	if _tween:
+		_tween.kill()
+	if _queue.is_empty():
+		_current = {}
+		if _strip.visible:
+			_tween = _strip.create_tween()
+			_tween.set_ignore_time_scale(true)
+			_tween.tween_property(_strip, "modulate:a", 0.0, FADE)
+			_tween.tween_callback(func() -> void: _strip.visible = false)
 		return
-	var build: Callable = _moments.pop_front()
-	var made: Array = build.call()
-	_moment = made[0]
-	var hold: float = made[1]
-	_moment.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_center.add_child(_moment)
-	_pause_column(true)
-	_moment.modulate.a = 0.0
-	_moment.scale = Vector2(0.85, 0.85)
-	_moment.resized.connect(func() -> void: _moment.pivot_offset = _moment.size * 0.5)
-	var m := _moment
-	_moment_tween = m.create_tween()
-	_moment_tween.set_ignore_time_scale(true)
-	_moment_tween.tween_property(m, "modulate:a", 1.0, 0.2).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
-	_moment_tween.parallel().tween_property(m, "scale", Vector2.ONE, 0.2).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
-	_moment_tween.tween_interval(hold)
-	_moment_tween.tween_property(m, "modulate:a", 0.0, 0.25)
-	_moment_tween.tween_callback(func() -> void:
-		if _moment == m:
-			skip())
+	_current = _queue.pop_front()
+	_show(_current)
 
 
-func _pause_column(on: bool) -> void:
-	for tw in _tweens.values():
-		if tw is Tween and (tw as Tween).is_valid():
-			if on:
-				(tw as Tween).pause()
-			else:
-				(tw as Tween).play()
+## Builds the strip for an item and runs its clock: in, hold, then the next one.
+func _show(item: Dictionary) -> void:
+	for c in _box.get_children():
+		_box.remove_child(c)
+		c.queue_free()
+	var main_font := UiTheme.display() if item["kind"] != "toast" else UiTheme.text_bold()
+	var tail_font := UiTheme.display() if item.get("tail_font", "") == "display" else UiTheme.text_bold()
+	var main: String = item["main"]
+	var tail: String = item["tail"]
+	var inner := WIDTH - 40.0
+	var sep := "  ·  "
+	var one_line := main + (sep + tail if tail != "" else "")
+	var s := UiText.fit_size(main_font, one_line, inner, BIG if item["kind"] != "toast" else 32, SMALL)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 0)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_box.add_child(row)
+	row.add_child(_label(main, main_font, s, item["color"]))
+	var tail_color: Color = UiTheme.INK if item["kind"] != "item" else item["color"]
+	if tail != "" and UiText.fits(main_font, one_line, inner, s):
+		row.add_child(_label(sep, UiTheme.text_bold(), s, Color(UiTheme.INK, 0.6)))
+		row.add_child(_label(tail, tail_font, s, tail_color))
+	elif tail != "":
+		# Too long for one line even at the floor: the tail goes under, a size smaller.
+		var ts := UiText.fit_size(tail_font, tail, inner, SMALL, 24)
+		var t := _label(tail, tail_font, ts, tail_color)
+		t.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		t.clip_text = true
+		t.custom_minimum_size.x = minf(inner, tail_font.get_string_size(tail, HORIZONTAL_ALIGNMENT_LEFT, -1, ts).x)
+		_box.add_child(t)
+	_strip.add_theme_stylebox_override("panel", _plate(0.72, item.get("frame", Color(0, 0, 0, 0))))
+	if item.has("rarity"):
+		_strip.set_meta("rarity", item["rarity"])
+	elif _strip.has_meta("rarity"):
+		_strip.remove_meta("rarity")
+	_strip.visible = true
+	_place_strip()
+	_strip.modulate.a = 0.0
+	_tween = _strip.create_tween()
+	_tween.set_ignore_time_scale(true)
+	_tween.tween_property(_strip, "modulate:a", 1.0, FADE).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
+	_tween.tween_interval(float(item["hold"]))
+	_tween.tween_callback(func() -> void:
+		if _current == item:
+			_current = {}
+			_next())
 
 
-func _toast_count() -> int:
-	var n := 0
-	for c in column_items():
-		if c.has_meta("toast"):
-			n += 1
-	return n
+func _place_strip() -> void:
+	_strip.reset_size()
+	var w := _strip.get_combined_minimum_size().x
+	_strip.size = Vector2(w, 0)
+	_strip.reset_size()
+	_strip.position = Vector2(((size.x - _strip.size.x) * 0.5), STRIP_TOP + _safe_top)
 
 
-## Stays `hold` seconds, fades in `fade`, leaves; a toast leaving lets a waiting one in.
-func _hold(c: Control, hold: float, fade: float) -> void:
-	if _tweens.has(c) and (_tweens[c] as Tween).is_valid():
-		(_tweens[c] as Tween).kill()
-	if c.modulate.a > 0.0:
-		c.modulate.a = 1.0  # an updated toast comes back to full
-	var tw := c.create_tween()
-	tw.set_ignore_time_scale(true)
-	tw.tween_interval(hold)
-	if fade > 0.0:
-		tw.tween_property(c, "modulate:a", 0.0, fade)
-	tw.tween_callback(func() -> void: _drop(c))
-	_tweens[c] = tw
-	if _moment != null:
-		tw.pause()
-
-
-func _drop(c: Control) -> void:
-	if not is_instance_valid(c) or c.is_queued_for_deletion():
-		return
-	var was_toast := c.has_meta("toast")
-	if _tweens.has(c):
-		var tw: Tween = _tweens[c]
-		if tw.is_valid():
-			tw.kill()
-		_tweens.erase(c)
-	_column.remove_child(c)
-	c.queue_free()
-	if was_toast and not _pending_toasts.is_empty():
-		var w: Array = _pending_toasts.pop_front()
-		toast(w[0], w[1], w[2])
-
-
-func _pop_in(c: Control, from: float) -> void:
-	c.resized.connect(func() -> void: c.pivot_offset = c.size * 0.5)
-	c.scale = Vector2(from, from)
-	var tw := c.create_tween()
-	tw.set_ignore_time_scale(true)
-	tw.tween_property(c, "scale", Vector2.ONE, 0.15).set_trans(Tween.TRANS_QUART).set_ease(Tween.EASE_OUT)
-
-
-## A centred label as big as fits the column (wrapped to two lines below the floor).
-func _fitted(text: String, font: Font, max_size: int, min_size: int, color: Color) -> Label:
-	var inner := WIDTH - 48.0
-	var s := UiText.fit_size(font, text, inner, max_size, min_size)
-	var l := _label(text, font, s, color)
-	if not UiText.fits(font, text, inner, s):
-		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		l.max_lines_visible = 2
-		l.custom_minimum_size = Vector2(inner, font.get_height(s) * 2.0)
-	return l
+func _place_hint() -> void:
+	var inner := WIDTH - 40.0
+	var w := minf(inner, UiTheme.text_bold().get_string_size(_hint_label.text.get_slice("\n", 0), HORIZONTAL_ALIGNMENT_LEFT, -1, HINT).x + 8.0)
+	for line in _hint_label.text.split("\n"):
+		w = maxf(w, minf(inner, UiTheme.text_bold().get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, HINT).x + 8.0))
+	_hint_label.custom_minimum_size.x = w
+	_hint.reset_size()
+	_hint.position = Vector2((size.x - _hint.size.x) * 0.5, size.y * HINT_Y - _safe_bottom - _hint.size.y * 0.5)
 
 
 func _label(text: String, font: Font, fs: int, color: Color) -> Label:
@@ -391,8 +260,12 @@ func _label(text: String, font: Font, fs: int, color: Color) -> Label:
 	return l
 
 
-func _plate(alpha: float) -> StyleBoxFlat:
-	var sb := UiTheme.box(Color(UiTheme.SURFACE, alpha), Color(0, 0, 0, 0), 0, 18, 12)
-	sb.content_margin_left = 24
-	sb.content_margin_right = 24
+## A thin dark band, like a TV caption; a colored frame for a rarity or a perk level-up.
+func _plate(alpha: float, frame: Color) -> StyleBoxFlat:
+	var sb := UiTheme.box(Color(UiTheme.SURFACE, alpha), Color(0, 0, 0, 0), 0, 12, 6)
+	sb.content_margin_left = 20
+	sb.content_margin_right = 20
+	if frame.a > 0.0:
+		sb.set_border_width_all(2)
+		sb.border_color = frame
 	return sb

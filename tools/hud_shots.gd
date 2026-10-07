@@ -98,28 +98,35 @@ func _run() -> void:
 	s.server = 1
 	main.hud.show_board(s, ["ВЫ", "БАСИЛАШВИЛИ"])
 	main.hud.set_rally("розыгрыш · 7")
-	main.hud.ring.feedback("PERFECT", Color(1.0, 0.85, 0.25), "FOREHAND · TOPSPIN · 124 km/h", 2)
+	main.hud.ring.feedback("PERFECT", Color(1.0, 0.85, 0.25), "FOREHAND · TOPSPIN ×1.3  ·  124 KM/H  ·  92%", 2)
 	main.hud.ring.skill_progress("ФОРХЕНД", 4, 0.62)
 	main.hud.level_up("ФОРХЕНД 5  ·  104 → 109 км/ч", true)
 	main.hud.level_up("НОГИ 3  ·  бег 75% → 78%")
+	main.hud.level_up("ВЫНОСЛИВОСТЬ 2  ·  запас 100% → 104%")  # the third waits its turn
 	await _shot("08_rally_levelup", 0.3)
 	await create_timer(2.5).timeout
+	# The longest call there is, with VAR in its reserved slot (Main: verdict, then VAR).
+	_verdict("BASILASHVILI DOUBLE FAULT\nGAME · BASILASHVILI", true)
 	main.hud.hawkeye(0.012, 0)
-	_verdict("БАСИЛАШВИЛИ DOUBLE FAULT\nGAME YOU", true)
 	await _shot("09_point_long_hawkeye", 0.2)
-	await create_timer(2.0).timeout
-	_verdict("БАСИЛАШВИЛИ ACE\nСЕТ БАСИЛАШВИЛИ", false)
+	await create_timer(2.8).timeout
+	_verdict("BASILASHVILI ACE\nSET · BASILASHVILI", false)
 	await _shot("10_point_set_cpu", 0.2)
 	await create_timer(2.0).timeout
 	# Main._end_point grows "Ноги" / "Выносливость" and shows the verdict in one frame.
 	main.hud.level_up("НОГИ 4  ·  бег 78% → 81%")
-	_verdict("WINNER!\nGAME YOU", true)
+	_verdict("WINNER!\nGAME · YOU", true)
 	await _shot("10b_point_and_levelup", 0.25)
 	await create_timer(2.0).timeout
-	main.hud.show_message("Второй круг\nНиколоз Басилашвили", Color.WHITE)  # Main._play_match
-	await _shot("11_match_intro", 0.2)
+	main.hud.announcer.intro("ВТОРОЙ КРУГ", "Николоз Басилашвили")  # Main._play_match
+	await _shot("11_match_intro", 0.3)
+	await create_timer(2.2).timeout
+	# Stream A's style plate after a won point, as RunHub plays it (its own TOP anchor).
+	_verdict("WINNER!", true)
+	main.run_hub.plate.show_result({"tricks": [{"name": "С лёта", "x": 1.3}, {"name": "Обводящий", "x": 1.5}], "mult": 1.95, "points": 20})
+	await _shot("11b_style_plate", 0.8)
 	await create_timer(2.0).timeout
-	main.hud.popup("РАНО", main.COLOR_WARN, "свайпни, когда кольцо дойдёт до круга")
+	main.hud.popup("EARLY", main.COLOR_WARN, "свайпни, когда кольцо дойдёт до круга")
 	main.stamina = 0.1
 	main.hud.set_stamina(0.1)
 	await _shot("12_early_tired", 0.2)
