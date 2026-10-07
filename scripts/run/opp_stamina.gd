@@ -8,13 +8,14 @@ extends RefCounted
 const MAX := 100.0
 const TIRED_BELOW := 40.0
 ## Tuned by the bot (--autoplay --tournament --format=1 --bot-sd=0.07 --xp=800): a long
-## set takes him to ~30-50%, a short one leaves him fresh. Design 5.1 had 0.6 and 0.05
-## with longer rests; that emptied every opponent in every match (bot: ~500 a match).
-const PER_METRE := 0.24           # stamina per metre run for the ball
+## set takes him to ~30-50%, a short one leaves him fresh. Measured: at 0.24 / 0.02 the
+## balls asked ~6.5 a point against ~3.8 of rest, and every opponent hit zero; the
+## design's 0.6 / 0.05 asked twice that.
+const PER_METRE := 0.18           # stamina per metre run for the ball
 const HEAVY_FROM := 90.0          # km/h: a ball faster than this is heavy to take
-const PER_KMH := 0.02
+const PER_KMH := 0.015
 const PERFECT_X := 1.5
-const REST := {"point": 2.0, "change": 10.0, "set": 30.0}
+const REST := {"point": 3.0, "change": 15.0, "set": 30.0}
 const SLOW := 0.3                 # run speed lost when empty
 const SKILL := 0.12               # AI skill lost when empty
 

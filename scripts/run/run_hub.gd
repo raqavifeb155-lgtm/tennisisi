@@ -218,7 +218,7 @@ func _on_match_finished(info: Dictionary) -> void:
 	view.shown = false
 	if match_fx:
 		if main.autoplay:
-			print("  OPP STA: lowest %d%%, damage %d" % [roundi(match_fx.lowest), roundi(match_fx.damage_dealt)])
+			print("  OPP STA: lowest %d%%, damage %d (asked %d over %d points)" % [roundi(match_fx.lowest), roundi(match_fx.damage_dealt), roundi(match_fx.raw_damage), match_fx.points])
 		match_fx.finish()
 		match_fx = null
 	if not in_tournament():

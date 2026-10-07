@@ -15,6 +15,8 @@ var t: Tournament
 var fx: RunEffects
 var opp := OppStamina.new()
 var damage_dealt := 0.0
+var raw_damage := 0.0             # before the bar's floor: what the balls asked for (bot balance)
+var points := 0
 var lowest := OppStamina.MAX
 var _tuning: Node
 var _base_speed := 1.0
@@ -108,6 +110,7 @@ func on_point(info: Dictionary, result: Dictionary, last_type: String) -> void:
 		_run(fx.fire("on_game_won", {}))
 		if sb.server == CPU and not sb.in_tiebreak:
 			_run(fx.fire("on_break", {}))
+	points += 1
 	opp.rest("point")
 	match brk:
 		MatchScore.Break.CHANGE_ENDS:
@@ -139,6 +142,7 @@ func _apply_mods() -> void:
 func _hurt(n: float, kind: String) -> void:
 	if n <= 0.05:
 		return
+	raw_damage += n
 	var d := opp.damage(n)
 	damage_dealt += d
 	lowest = minf(lowest, opp.value)
