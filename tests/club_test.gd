@@ -11,9 +11,12 @@ func _initialize() -> void:
 	test_material()
 	test_place_levels()
 	test_roulette_physics()
+	test_builds()
 	await test_world()
 	await test_flow()
 	await test_places_flow()
+	await test_build_world()
+	await test_foreman_flow()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -110,6 +113,66 @@ func test_roulette_physics() -> void:
 	var b := ClubRoulette.simulate(7, 123)
 	check(a["frames"] == b["frames"], "the same draw plays the same way")
 	check(ClubRoulette.field_color(0) == Bets.color_of(0) and ClubRoulette.field_color(5) == Bets.color_of(5), "the wheel's colours are the desk's")
+
+
+## H2: the constructions - buying, saving, the perks and their caps (H2_SPEC 9).
+func test_builds() -> void:
+	print("builds")
+	SaveData.club = {}
+	SaveData.gold = 1000
+	SaveData.played = 1
+	SaveData.titles = 1
+	var score0 := SaveData._score(SaveData._to_config())
+	check(ClubBuilds.next_price("court") == 40, "the court's first level costs 40")
+	check(ClubBuilds.buy("court") and SaveData.gold == 960 and ClubBuilds.level("court") == 1, "buy: exactly the price, one level up")
+	check(int(SaveData.club["spent"]) == 40, "the spending is counted")
+	check(SaveData._score(SaveData._to_config()) >= score0, "a purchase never lowers the save's score (the cloud copy can't undo it)")
+	SaveData.gold = 10
+	check(not ClubBuilds.buy("stands") and SaveData.gold == 10 and ClubBuilds.level("stands") == 0, "no gold, no building")
+	SaveData.gold = 100000
+	SaveData.club["levels"] = {"court": 4}
+	check(not ClubBuilds.buy("court") and ClubBuilds.next_price("court") == 0 and SaveData.gold == 100000, "nothing above the top level")
+	SaveData.club = {"levels": {"court": 2, "gate": 1}, "color": 2, "name": "Клуб Димы", "spent": 220}
+	var cf := SaveData._to_config()
+	SaveData.club = {}
+	SaveData._apply(cf)
+	check(ClubBuilds.level("court") == 2 and ClubBuilds.level("gate") == 1 and ClubBuilds.color_index() == 2 and ClubBuilds.club_name() == "Клуб Димы", "save and load: the same levels, colour and name")
+	SaveData.club = {}
+	check(is_zero_approx(ClubBuilds.gold_win_bonus()), "no stands, no bonus")
+	var ok := true
+	for lv in range(1, 6):
+		SaveData.club = {"levels": {"stands": lv}}
+		ok = ok and is_equal_approx(ClubBuilds.gold_win_bonus(), 0.02 * lv)
+	check(ok and ClubBuilds.gold_win_bonus() <= 0.10, "stands: +2% a level, at most +10%")
+	ClubBuilds.utility_enabled = false
+	check(is_zero_approx(ClubBuilds.gold_win_bonus()), "no perk online")
+	ClubBuilds.utility_enabled = true
+	var limits := []
+	for lv in 4:
+		SaveData.club = {"levels": {"bar": lv}}
+		limits.append(ClubBuilds.bet_limit())
+	check(limits == [25, 50, 150, 500], "the bar takes bigger bets as it grows %s" % str(limits))
+	SaveData.titles = 0
+	SaveData.played = 0
+	SaveData.club = {}
+	SaveData.gold = 100000
+	check(not ClubBuilds.is_open("bar") and not ClubBuilds.can_afford("bar") and not ClubBuilds.can_afford("trophy"), "the bar waits for a title, the trophy room for a run")
+	check(ClubBuilds.affordable_count() == 3, "with plenty of gold: court, stands, gate (%d)" % ClubBuilds.affordable_count())
+	SaveData.played = 1
+	SaveData.titles = 1
+	check(ClubBuilds.affordable_count() == 5, "all five after a title")
+	SaveData.gold = 45
+	check(ClubBuilds.affordable_count() == 1, "45 gold: only the court (%d)" % ClubBuilds.affordable_count())
+	SaveData.gold = 0
+	check(ClubBuilds.affordable_count() == 0, "no gold: nothing")
+	check(ClubBuilds.clean_name("  ") == "", "an empty name stays empty (the default is used)")
+	check(ClubBuilds.clean_name("Клуб очень длинного имени игрока").length() <= 16, "a long name is cut to 16")
+	check(ClubBuilds.clean_name("Клуб сука") == "", "a rude name is refused")
+	check(ClubBuilds.club_name() != "", "there is always a name for the sign")
+	check(ClubBuilds.line("gate", 1).contains(ClubBuilds.club_name()), "the coach says the club's name at its sign")
+	SaveData.club = {}
+	SaveData.played = 0
+	SaveData.titles = 0
 
 
 ## ClubMaterial: one soft toon material per colour, outlines only where they pay.
@@ -340,6 +403,81 @@ func test_places_flow() -> void:
 	check(not club.roulette_on() and club.hud.current_place() == "bar", "back from the roulette: at the bar")
 	main.queue_free()
 	await _frames(2)
+	SaveData.played = 0
+	SaveData.titles = 0
+	SaveData.gold = 0
+
+
+## Every level of every construction builds (and its ghost), headless.
+func test_build_world() -> void:
+	print("build world")
+	var w = load("res://scripts/club/club_world.gd").new()
+	root.add_child(w)
+	await process_frame
+	var fine := true
+	for id in ClubBuilds.ORDER:
+		for lv in ClubBuilds.max_level(id) + 1:
+			w.set_level(id, lv)
+			if w.level_built(id) != lv:
+				fine = false
+		w.show_ghost(id, ClubBuilds.max_level(id))
+		w.show_ghost("", 0)
+	check(fine, "every level of the five constructions builds")
+	w.set_club_color(1)
+	check(true, "the club's colour paints without errors")
+	w.queue_free()
+	await process_frame
+
+
+## The foreman's cards and the build moment: the gold goes first, a tap skips the show.
+func test_foreman_flow() -> void:
+	print("foreman")
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	root.add_child(main)
+	await _frames(5)
+	SaveData.enabled = false
+	SaveData.club = {}
+	SaveData.active = null
+	SaveData.run = {}
+	SaveData.played = 1
+	SaveData.titles = 1
+	SaveData.gold = 1000
+	Skills.pending = []
+	main._show_menu()
+	await _frames(3)
+	var club = main.club
+	club._travel("gate")
+	await _frames(2)
+	check(club.place_buttons("gate")["action"] == "club_foreman", "the gate's button is the foreman")
+	club._on_choice("club_foreman", 0)
+	await _frames(2)
+	check(club.foreman_on() and club.hud.foreman_visible(), "the foreman's cards are up")
+	club.foreman_show("stands")
+	await _frames(2)
+	check(club.world.ghost_id() == "stands", "the next level of the card in the middle stands as a ghost")
+	check(club.foreman_build(), "build the stands")
+	check(SaveData.gold == 950 and ClubBuilds.level("stands") == 1, "the gold goes at once")
+	check(club.building(), "the build moment plays")
+	club.skip_build()
+	await _frames(2)
+	check(not club.building() and club.world.level_built("stands") == 1, "a tap: straight to the new level")
+	check(club.foreman_build() and ClubBuilds.level("stands") == 2, "build again")
+	await create_timer(2.6).timeout  # Club.BUILD_TIME + a little
+	check(not club.building() and club.world.level_built("stands") == 2, "without a tap: the same end")
+	SaveData.gold = 0
+	club.foreman_show("bar")
+	check(not club.foreman_build() and ClubBuilds.level("bar") == 0, "no gold: no build")
+	club.foreman_close()
+	await _frames(2)
+	check(not club.foreman_on() and club.world.ghost_id() == "", "back: no ghost, the club as it is")
+	SaveData.gold = 500
+	club._refresh()
+	club._travel("bar")
+	await _frames(2)
+	check(club.upgrade_price("bar") == 100, "an affordable upgrade shows by its place (↑ 100)")
+	main.queue_free()
+	await _frames(2)
+	SaveData.club = {}
 	SaveData.played = 0
 	SaveData.titles = 0
 	SaveData.gold = 0

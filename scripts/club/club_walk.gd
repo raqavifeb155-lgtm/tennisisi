@@ -9,21 +9,37 @@ var bounds := Rect2(-60, -44, 120, 100)
 var circles: Array = []   # [Vector2 centre, float radius]
 var boxes: Array = []     # Rect2 in x/z
 var waypoints: Array = [] # Vector2: gates, doors, path corners - where a route may turn
+var _circle_tags: Array = []   # per circle: "" or what built it (a construction's level)
+var _box_tags: Array = []
 
 
-func add_circle(c: Vector2, r: float) -> void:
+func add_circle(c: Vector2, r: float, tag := "") -> void:
 	circles.append([c, r])
+	_circle_tags.append(tag)
 
 
-func add_box(r: Rect2) -> void:
+func add_box(r: Rect2, tag := "") -> void:
 	boxes.append(r)
+	_box_tags.append(tag)
+
+
+## Takes away every obstacle added with this tag (a construction rebuilt for a new level).
+func clear_tag(tag: String) -> void:
+	for i in range(circles.size() - 1, -1, -1):
+		if _circle_tags[i] == tag:
+			circles.remove_at(i)
+			_circle_tags.remove_at(i)
+	for i in range(boxes.size() - 1, -1, -1):
+		if _box_tags[i] == tag:
+			boxes.remove_at(i)
+			_box_tags.remove_at(i)
 
 
 ## A box from two corners (any order), for walls given as segments with a thickness.
-func add_wall(a: Vector2, b: Vector2, thick := 0.3) -> void:
+func add_wall(a: Vector2, b: Vector2, thick := 0.3, tag := "") -> void:
 	var lo := Vector2(minf(a.x, b.x), minf(a.y, b.y)) - Vector2.ONE * thick * 0.5
 	var hi := Vector2(maxf(a.x, b.x), maxf(a.y, b.y)) + Vector2.ONE * thick * 0.5
-	add_box(Rect2(lo, hi - lo))
+	add_box(Rect2(lo, hi - lo), tag)
 
 
 func blocked(p: Vector2, radius := 0.35) -> bool:

@@ -45,7 +45,24 @@ func setup(m: Node) -> void:
 		_chip = c
 		_roulette_panel())
 	hud.roulette_bet.connect(func(bet: String) -> void: spin(bet, _chip))
-	hud.roulette_back.connect(roulette_close)
+	hud.roulette_back.connect(func() -> void:
+		if _foreman_on:
+			foreman_close()
+		else:
+			roulette_close())
+	hud.foreman_step.connect(func(d: int) -> void: _foreman_step(d))
+	hud.foreman_build.connect(func() -> void: foreman_build())
+	hud.foreman_color.connect(func(i: int) -> void:
+		_color_pick = i
+		foreman_show(_foreman_id))
+	hud.upgrade.connect(func(place_id: String) -> void:
+		var b: String = ClubPlaces.find(place_id).get("build", "")
+		if b != "":
+			foreman_open(b))
+	hud.skip.connect(skip_build)
+	var thud := "res://assets/club/build_thud.wav"
+	if ResourceLoader.exists(thud):
+		main.sfx._streams["club_build"] = load(thud)
 	hud.settings.connect(func() -> void:
 		if main.hud.has_method("_toggle_debug"):
 			main.hud._toggle_debug())
@@ -99,6 +116,12 @@ func close() -> void:
 	if not active:
 		return
 	active = false
+	if _foreman_on:
+		skip_build()
+		_foreman_on = false
+		hud.hide_foreman()
+		if is_instance_valid(world):
+			world.show_ghost("", 0)
 	if _roulette_on:
 		_roulette_on = false
 		hud.hide_roulette()
@@ -141,6 +164,8 @@ func _refresh() -> void:
 		_open_ids.append(id)
 		if p.get("travel", true):
 			travel.append({"id": id, "name": p["name"]})
+	if world.level_built("stands") != ClubBuilds.level("stands"):
+		world.set_level("stands", ClubBuilds.level("stands"))
 	world.set_open(_open_ids)
 	hud.set_places(travel)
 	hud.set_gold(SaveData.gold)
@@ -192,7 +217,7 @@ func _physics_process(delta: float) -> void:
 	var c := coach.body
 	var cat := world.walk.resolve(Vector2(c.position.x, c.position.z), Vector2(c.position.x, c.position.z))
 	c.position = Vector3(cat.x, 0.0, cat.y)
-	if main.ui.is_open() or _roulette_on:
+	if main.ui.is_open() or _roulette_on or _foreman_on:
 		p.move_input = Vector2.ZERO
 		return
 	var mv: Vector2 = main.hud.touch.move_vector
@@ -252,7 +277,16 @@ func _update_place() -> void:
 
 func _show_place(id: String) -> void:
 	var b := place_buttons(id)
-	hud.show_place(id, b["label"], b["action"], b["extra"])
+	hud.show_place(id, b["label"], b["action"], b["extra"], upgrade_price(id))
+
+
+## "↑ 340" by a place whose construction's next level is affordable (not at the gate:
+## its own button is the foreman).
+func upgrade_price(place_id: String) -> int:
+	var b: String = ClubPlaces.find(place_id).get("build", "")
+	if b == "" or place_id == "gate" or not ClubBuilds.can_afford(b):
+		return 0
+	return ClubBuilds.next_price(b)
 
 
 ## What a place offers right now: its main button and at most one quiet one above it.
@@ -273,7 +307,7 @@ func place_buttons(id: String) -> Dictionary:
 
 
 func _update_badges() -> void:
-	var counts := {"coach": Skills.points + Skills.pending.size()}
+	var counts := {"coach": Skills.points + Skills.pending.size(), "gate": ClubBuilds.affordable_count()}
 	var screen := {}
 	for id in counts:
 		var pos: Vector3 = ClubPlaces.find(id)["pos"] + Vector3(0, 3.6, 0)
@@ -310,7 +344,7 @@ func ui_action(action: String, _arg: int) -> void:
 		"club_roulette":
 			roulette_open()
 		"club_foreman":
-			coach.say("Стройка скоро: прораб ещё в пути", true)
+			foreman_open()
 
 
 # --- The Totalizator at the bar: a 3D roulette ---------------------------------------
@@ -434,6 +468,8 @@ func _on_tap(screen_pos: Vector2) -> void:
 	if _roulette_on:
 		roulette_skip()
 		return
+	if _foreman_on:
+		return
 	var o := cam.project_ray_origin(screen_pos)
 	var d := cam.project_ray_normal(screen_pos)
 	if d.y > -0.01:
@@ -447,3 +483,246 @@ func _on_tap(screen_pos: Vector2) -> void:
 			return
 	_move_target = g
 	_route = []
+
+
+# --- The foreman: buying the constructions' levels (H2) --------------------------------
+
+## Where the camera looks at each construction from (above the foreman's cards).
+const BUILD_VIEW := {
+	"court": [Vector3(0, 26.0, 38.0), Vector3(0, 0, 8.0)],
+	"stands": [Vector3(26.0, 13.0, 4.0), Vector3(11.5, 0.5, -4.0)],
+	"gate": [Vector3(4.0, 12.0, 54.0), Vector3(3.0, 1.0, 42.0)],
+	"trophy": [Vector3(-18.0, 8.0, -16.5), Vector3(-18.0, 0.8, -25.0)],
+	"bar": [Vector3(21.0, 11.0, -20.0), Vector3(20.5, 0.5, -30.0)],
+}
+const BUILD_TIME := 2.0
+
+var _foreman_on := false
+var _foreman_id := ""
+var _color_pick := -1
+var _building := false
+var _build_tw: Tween
+var _build_fx: Array = []
+
+
+func foreman_on() -> bool:
+	return _foreman_on
+
+
+func building() -> bool:
+	return _building
+
+
+## The foreman's strip, on a construction (or the first affordable one).
+func foreman_open(start := "") -> void:
+	_foreman_on = true
+	main.player.move_input = Vector2.ZERO
+	_move_target = Vector3.INF
+	hud.hide_place()
+	if start == "":
+		start = ClubBuilds.ORDER[0]
+		for id in ClubBuilds.ORDER:
+			if ClubBuilds.can_afford(id):
+				start = id
+				break
+	foreman_show(start)
+	if ClubBuilds.affordable_count() == 0:
+		var cheapest := _cheapest_gap()
+		if cheapest != "":
+			coach.say(cheapest, true)
+
+
+## "До трибун 12 золота — ещё один забег" (H2 7).
+func _cheapest_gap() -> String:
+	var best := ""
+	var gap := 1 << 30
+	for id in ClubBuilds.ORDER:
+		if ClubBuilds.is_open(id) and not ClubBuilds.next(id).is_empty():
+			var g := ClubBuilds.next_price(id) - SaveData.gold
+			if g > 0 and g < gap:
+				gap = g
+				best = id
+	if best == "":
+		return ""
+	return "До «%s» %d золота — ещё один забег" % [String(ClubBuilds.next(best)["title"]).to_lower(), gap]
+
+
+func foreman_show(id: String) -> void:
+	if not ClubBuilds.TABLE.has(id):
+		return
+	if id != _foreman_id:
+		_color_pick = -1
+	_foreman_id = id
+	var lv := ClubBuilds.level(id)
+	var mx := ClubBuilds.max_level(id)
+	var t: Dictionary = ClubBuilds.TABLE[id]
+	var dots := ""
+	for i in mx:
+		dots += "●" if i < lv else "○"
+	var card := {"tag": "%s   %s" % [t["name"], dots], "max": lv >= mx}
+	var build := {}
+	var colors := 0
+	if not ClubBuilds.is_open(id):
+		card["title"] = t["name"]
+		card["desc"] = "Откроется %s" % ("после первого забега" if t["unlock"] == "played" else "после первого титула")
+		card["locked"] = true
+	elif lv >= mx:
+		card["title"] = "Максимум"
+		card["desc"] = "Сейчас: %s" % t["levels"][mx - 1]["now"]
+	else:
+		var nx: Dictionary = t["levels"][lv]
+		card["title"] = nx["title"]
+		var now := "ничего" if lv == 0 else String(t["levels"][lv - 1]["now"])
+		card["desc"] = "Сейчас: %s\nБудет: %s" % [now, nx["now"]]
+		var perk_now := "" if lv == 0 else String(t["levels"][lv - 1].get("perk", ""))
+		if String(nx.get("perk", "")) != "":
+			card["desc"] += "\nПольза: %s" % (("%s → %s" % [perk_now, nx["perk"]]) if perk_now != "" else nx["perk"])
+		var price := ClubBuilds.next_price(id)
+		if ClubBuilds.can_afford(id):
+			build = {"text": "ПОСТРОИТЬ  ·  %d ●" % price, "can": true}
+		else:
+			build = {"text": "Нужно ещё %d" % (price - SaveData.gold), "can": false}
+		if id == "court" and lv == 2:
+			colors = ClubMaterial.CLUB_COLORS.size()
+	var i := ClubBuilds.ORDER.find(id)
+	if _color_pick < 0:
+		_color_pick = ClubBuilds.color_index()
+	hud.show_foreman(card, build, i > 0, i < ClubBuilds.ORDER.size() - 1, colors, _color_pick)
+	hud.set_gold(SaveData.gold)
+	var view: Array = BUILD_VIEW[id]
+	cam.frame(view[0], view[1])
+	if lv < mx and ClubBuilds.is_open(id):
+		world.show_ghost(id, lv + 1)
+	else:
+		world.show_ghost("", 0)
+
+
+func _foreman_step(d: int) -> void:
+	if _building:
+		return
+	var i := clampi(ClubBuilds.ORDER.find(_foreman_id) + d, 0, ClubBuilds.ORDER.size() - 1)
+	foreman_show(ClubBuilds.ORDER[i])
+
+
+## Buys the next level of the card in the middle and plays the build moment. The gold is
+## gone and saved before the show (a tap or leaving midway changes nothing).
+func foreman_build() -> bool:
+	if not _foreman_on or _building:
+		return false
+	var id := _foreman_id
+	if not ClubBuilds.can_afford(id):
+		hud.shake_gold()
+		return false
+	var color_level := id == "court" and ClubBuilds.level(id) == 2
+	if not ClubBuilds.buy(id):
+		return false
+	if color_level:
+		SaveData.club["color"] = maxi(_color_pick, 0)
+		SaveData.save()
+	var lv := ClubBuilds.level(id)
+	world.show_ghost("", 0)
+	world.set_level(id, lv)
+	_refresh()
+	_play_build(id, lv)
+	return true
+
+
+func _play_build(id: String, lv: int) -> void:
+	_building = true
+	hud.set_building(true)
+	hud.set_gold(SaveData.gold)
+	var view: Array = BUILD_VIEW[id]
+	var focus: Vector3 = view[1]
+	hud.fly_coins(cam.unproject_position(focus))
+	# The camera comes closer.
+	cam.frame((view[0] as Vector3).lerp(focus, 0.3), focus, 0.4)
+	var root := world.level_root(id)
+	if root:
+		root.scale = Vector3(1, 0.0, 1)
+	# Dust and a gold ring at the foot of it.
+	var dust := CPUParticles3D.new()
+	dust.amount = 40 if world.high_quality() else 12
+	dust.one_shot = true
+	dust.explosiveness = 0.9
+	dust.lifetime = 0.9
+	dust.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	dust.emission_sphere_radius = 1.5
+	dust.direction = Vector3.UP
+	dust.spread = 70.0
+	dust.initial_velocity_min = 1.5
+	dust.initial_velocity_max = 3.5
+	dust.gravity = Vector3(0, -2.0, 0)
+	dust.scale_amount_min = 0.25
+	dust.scale_amount_max = 0.6
+	var dm := SphereMesh.new()
+	dm.radius = 0.25
+	dm.height = 0.5
+	dm.radial_segments = 6
+	dm.rings = 3
+	dust.mesh = dm
+	dust.material_override = ClubMaterial.get_mat(ClubMaterial.PALETTE[ClubMaterial.PAVING], false)
+	dust.position = focus + Vector3(0, 0.3, 0)
+	world.add_child(dust)
+	var ring := MeshInstance3D.new()
+	var tm := TorusMesh.new()
+	tm.inner_radius = 0.9
+	tm.outer_radius = 1.0
+	tm.rings = 24
+	tm.ring_segments = 3
+	ring.mesh = tm
+	ring.material_override = ClubMaterial.glow(UiTheme.GOLD, 1.4)
+	ring.position = focus + Vector3(0, 0.1, 0)
+	ring.scale = Vector3(0.5, 0.05, 0.5)
+	world.add_child(ring)
+	_build_fx = [dust, ring]
+	_build_tw = create_tween()
+	_build_tw.tween_interval(0.5)                     # the coins land
+	_build_tw.tween_callback(func() -> void:
+		dust.emitting = true
+		main.sfx.play("club_build" if main.sfx.has("club_build") else "bounce", -2.0, 0.8)
+		TelegramApp.haptic("heavy"))
+	_build_tw.tween_property(ring, "scale", Vector3(4.0, 0.05, 4.0), 0.3)
+	if root:
+		_build_tw.tween_property(root, "scale", Vector3(1, 1.08, 1), 0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		_build_tw.tween_property(root, "scale", Vector3.ONE, 0.15)
+	_build_tw.tween_interval(maxf(0.0, BUILD_TIME - 1.3))
+	_build_tw.tween_callback(_end_build.bind(id, lv))
+
+
+## A tap during the build moment: straight to how it ends.
+func skip_build() -> void:
+	if not _building:
+		return
+	if _build_tw:
+		_build_tw.kill()
+	_end_build(_foreman_id, ClubBuilds.level(_foreman_id))
+
+
+func _end_build(id: String, lv: int) -> void:
+	_building = false
+	var root := world.level_root(id) if is_instance_valid(world) else null
+	if root:
+		root.scale = Vector3.ONE
+	for n in _build_fx:
+		if is_instance_valid(n):
+			n.queue_free()
+	_build_fx = []
+	hud.set_building(false)
+	if ClubBuilds.level("stands") >= 1 and main.sfx.has("applause"):
+		main.sfx.play("applause", -10.0)
+	coach.say(ClubBuilds.line(id, lv), true)
+	if _foreman_on:
+		foreman_show(id)
+
+
+func foreman_close() -> void:
+	if not _foreman_on:
+		return
+	skip_build()
+	_foreman_on = false
+	hud.hide_foreman()
+	world.show_ghost("", 0)
+	cam.release()
+	_place = ""
+	_refresh()
+	_update_place()

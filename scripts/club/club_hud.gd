@@ -11,6 +11,11 @@ signal settings
 signal roulette_chip(chip: int)
 signal roulette_bet(bet: String)
 signal roulette_back
+signal foreman_step(dir: int)       # -1 / +1: the card to the left / right
+signal foreman_build
+signal foreman_color(i: int)
+signal upgrade(place_id: String)    # the small "↑ 340" by a place's button
+signal skip                         # a tap during the build moment
 
 const HUD_BUTTON_W := 132.0      # room kept free at the top right for НАСТР (as TournamentUI)
 const TRAVEL := 92.0             # the quick-travel button (a circle)
@@ -31,6 +36,12 @@ var _roulette_note: Label
 var _roulette_chips: HBoxContainer
 var _roulette_bets: Array[Button] = []
 var _roulette_back: Button
+var _foreman: VBoxContainer          # the foreman's card strip (one card, ‹ ›, build)
+var _foreman_card_slot: HBoxContainer
+var _foreman_colors: HBoxContainer
+var _foreman_build: Button
+var _upgrade: Button                 # "↑ 340" right of the place's button
+var _skip_catcher: Control           # the whole screen during the build moment
 var _travel_list: VBoxContainer
 var _badges := {}                   # place id -> TournamentUI.Badge
 var _bubble: PanelContainer
@@ -54,6 +65,7 @@ func _ready() -> void:
 	_build_bottom()
 	_build_bubble()
 	_build_roulette()
+	_build_foreman()
 	_layout()
 	visible = false
 
@@ -74,6 +86,9 @@ func _layout() -> void:
 	_roulette.offset_right = -UiTheme.GUTTER
 	_roulette.offset_bottom = -26.0 - _safe_bottom
 	_roulette_back.position = Vector2(UiTheme.GUTTER, 18.0 + _safe_top)
+	_foreman.offset_left = UiTheme.GUTTER
+	_foreman.offset_right = -UiTheme.GUTTER
+	_foreman.offset_bottom = -26.0 - _safe_bottom
 	var chip := _chip_label.get_parent().get_parent() as Control
 	chip.offset_top = 14.0 + _safe_top + 8.0
 	chip.offset_right = -HUD_BUTTON_W - 14.0
@@ -168,24 +183,46 @@ func _build_bottom() -> void:
 	_second_row.add_theme_constant_override("separation", 12)
 	_place_box.add_child(_second_row)
 	buttons.append(_second_row)
+	var main_row := HBoxContainer.new()
+	main_row.add_theme_constant_override("separation", 12)
+	main_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_primary = Button.new()
 	_primary.theme_type_variation = "Primary"
 	_primary.custom_minimum_size = Vector2(0, TRAVEL)
+	_primary.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_primary.focus_mode = Control.FOCUS_NONE
 	_primary.pressed.connect(func() -> void:
 		var a: String = _primary.get_meta("action", "")
 		if a != "":
 			_tap(_primary)
 			chosen.emit(a, int(_primary.get_meta("arg", 0))))
-	_place_box.add_child(_primary)
+	main_row.add_child(_primary)
+	_place_box.add_child(main_row)
 	buttons.append(_primary)
+	_upgrade = Button.new()
+	_upgrade.custom_minimum_size = Vector2(TRAVEL + 40.0, TRAVEL)
+	_upgrade.focus_mode = Control.FOCUS_NONE
+	_upgrade.add_theme_font_override("font", UiTheme.display())
+	_upgrade.add_theme_font_size_override("font_size", 26)
+	_upgrade.add_theme_color_override("font_color", UiTheme.GOLD)
+	var usb := UiTheme.box(Color(UiTheme.SURFACE, 0.96), UiTheme.GOLD, 3, 46, 0)
+	for k in ["normal", "hover", "pressed"]:
+		_upgrade.add_theme_stylebox_override(k, usb)
+	_upgrade.visible = false
+	_upgrade.pressed.connect(func() -> void:
+		_tap(_upgrade)
+		upgrade.emit(_place_id))
+	main_row.add_child(_upgrade)
+	buttons.append(_upgrade)
 	_place_box.modulate.a = 0.0
 
 
 ## The place under the hero: its main action and up to two small ones above it.
-## `extra`: [[label, action], ...].
-func show_place(id: String, label: String, action: String, extra: Array = []) -> void:
+## `extra`: [[label, action], ...]. `upgrade_price` > 0: the "↑ price" button beside it.
+func show_place(id: String, label: String, action: String, extra: Array = [], upgrade_price := 0) -> void:
 	_primary.text = label
+	_upgrade.visible = upgrade_price > 0
+	_upgrade.text = "↑ %d" % upgrade_price
 	_primary.set_meta("action", action)
 	for c in _second_row.get_children():
 		c.queue_free()
@@ -399,6 +436,159 @@ func hide_roulette() -> void:
 
 func roulette_visible() -> bool:
 	return _roulette.visible
+
+
+# --- The foreman: the constructions' cards -------------------------------------------
+
+func _build_foreman() -> void:
+	_foreman = VBoxContainer.new()
+	_foreman.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	_foreman.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_foreman.add_theme_constant_override("separation", 14)
+	_foreman.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_foreman.visible = false
+	root.add_child(_foreman)
+	_foreman_card_slot = HBoxContainer.new()
+	_foreman_card_slot.add_theme_constant_override("separation", 10)
+	_foreman_card_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_foreman.add_child(_foreman_card_slot)
+	_foreman_colors = HBoxContainer.new()
+	_foreman_colors.alignment = BoxContainer.ALIGNMENT_CENTER
+	_foreman_colors.add_theme_constant_override("separation", 22)
+	_foreman.add_child(_foreman_colors)
+	_foreman_build = Button.new()
+	_foreman_build.custom_minimum_size = Vector2(0, TRAVEL)
+	_foreman_build.focus_mode = Control.FOCUS_NONE
+	_foreman_build.pressed.connect(func() -> void:
+		_tap(_foreman_build)
+		foreman_build.emit())
+	_foreman.add_child(_foreman_build)
+	buttons.append(_foreman)
+	_skip_catcher = Control.new()
+	_skip_catcher.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_skip_catcher.mouse_filter = Control.MOUSE_FILTER_STOP
+	_skip_catcher.visible = false
+	_skip_catcher.gui_input.connect(func(e: InputEvent) -> void:
+		if (e is InputEventMouseButton or e is InputEventScreenTouch) and e.pressed:
+			skip.emit())
+	root.add_child(_skip_catcher)
+	buttons.append(_skip_catcher)
+
+
+## One construction's card. card: {tag, title, desc, locked}; build: {"text", "can"}
+## ("" text = at the top: no button); colors: 0 = none, else how many colour dots
+## (the court's level 3), `color` the one picked.
+func show_foreman(card: Dictionary, build: Dictionary, has_prev: bool, has_next: bool, colors := 0, color := 0) -> void:
+	_toggle_travel(false)
+	_bottom.visible = false
+	_foreman.visible = true
+	_roulette_back.visible = true
+	for c in _foreman_card_slot.get_children():
+		_foreman_card_slot.remove_child(c)
+		c.queue_free()
+	_foreman_card_slot.add_child(_arrow("‹", -1, has_prev))
+	var gc := GameCard.new()
+	gc.tag = card.get("tag", "")
+	gc.title = card.get("title", "")
+	gc.desc = card.get("desc", "")
+	gc.accent = UiTheme.GOLD if card.get("max", false) else Color(UiTheme.GOLD, 0.35)
+	gc.selected = card.get("max", false)
+	gc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	gc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if card.get("locked", false):
+		gc.modulate = Color(0.7, 0.7, 0.75)
+	_foreman_card_slot.add_child(gc)
+	_foreman_card_slot.add_child(_arrow("›", 1, has_next))
+	for c in _foreman_colors.get_children():
+		_foreman_colors.remove_child(c)
+		c.queue_free()
+	_foreman_colors.visible = colors > 0
+	for i in colors:
+		var dot := ColorDot.new()
+		dot.color = ClubMaterial.CLUB_COLORS[i]
+		dot.picked = i == color
+		dot.custom_minimum_size = Vector2(76, 76)
+		dot.focus_mode = Control.FOCUS_NONE
+		var v := i
+		dot.pressed.connect(func() -> void: foreman_color.emit(v))
+		_foreman_colors.add_child(dot)
+	var text: String = build.get("text", "")
+	_foreman_build.visible = text != ""
+	_foreman_build.text = text
+	_foreman_build.theme_type_variation = "Primary" if build.get("can", false) else ""
+	_foreman_build.disabled = false
+
+
+func _arrow(t: String, dir: int, on: bool) -> Button:
+	var b := Button.new()
+	b.text = t
+	b.custom_minimum_size = Vector2(64, 170)
+	b.focus_mode = Control.FOCUS_NONE
+	b.add_theme_font_size_override("font_size", 44)
+	b.disabled = not on
+	b.modulate.a = 1.0 if on else 0.3
+	b.pressed.connect(func() -> void: foreman_step.emit(dir))
+	return b
+
+
+func hide_foreman() -> void:
+	_foreman.visible = false
+	_roulette_back.visible = false
+	_bottom.visible = true
+	_skip_catcher.visible = false
+
+
+func foreman_visible() -> bool:
+	return _foreman.visible
+
+
+## During the build moment: the panel steps aside and a tap anywhere skips.
+func set_building(on: bool) -> void:
+	_skip_catcher.visible = on
+	_foreman.modulate.a = 0.0 if on else 1.0
+	_foreman_build.disabled = on
+
+
+## "Нужно ещё 120": the gold chip shakes.
+func shake_gold() -> void:
+	var chip := _chip_label.get_parent().get_parent() as Control
+	var x := chip.position.x
+	var tw := create_tween()
+	for k in 4:
+		tw.tween_property(chip, "position:x", x + (10.0 if k % 2 == 0 else -10.0), 0.05)
+	tw.tween_property(chip, "position:x", x, 0.05)
+
+
+## Coins fly from the gold chip to a point on the screen (the construction).
+func fly_coins(to: Vector2) -> void:
+	var chip := _chip_label.get_parent().get_parent() as Control
+	var from := chip.global_position + chip.size * 0.5
+	for i in 8:
+		var c := TournamentUI.Coin.new()
+		c.position = from
+		root.add_child(c)
+		var tw := c.create_tween()
+		tw.tween_interval(i * 0.04)
+		var mid := from.lerp(to, 0.5) + Vector2(randf_range(-80, 80), -120)
+		tw.tween_method(func(k: float) -> void:
+			c.position = from.lerp(mid, k).lerp(mid.lerp(to, k), k), 0.0, 1.0, 0.45).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		tw.tween_callback(c.queue_free)
+
+
+## A colour to pick for the club (the court's level 3).
+class ColorDot extends Button:
+	var color := Color.WHITE
+	var picked := false
+
+	func _ready() -> void:
+		for k in ["normal", "hover", "pressed", "disabled", "focus"]:
+			add_theme_stylebox_override(k, StyleBoxEmpty.new())
+
+	func _draw() -> void:
+		var c := size * 0.5
+		if picked:
+			draw_circle(c, 36.0, UiTheme.GOLD)
+		draw_circle(c, 30.0, color)
 
 
 # --- Badges and the coach's words ---------------------------------------------------------

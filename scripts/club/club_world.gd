@@ -37,6 +37,11 @@ var _level_roots := {}                 # place id -> Node3D holding what its lev
 var _levels := {}                      # place id -> the level built
 var _roulette: ClubRoulette
 var _umbrella: Node3D
+var _worn: MeshInstance3D
+var _stands_sign: Node3D
+var _ghost: Node3D
+var _ghost_id := ""
+var _high := true
 
 
 func _ready() -> void:
@@ -135,20 +140,80 @@ func set_level(id: String, lv: int) -> void:
 			inside.remove_child(c)
 			c.queue_free()
 		_fill_room(id, inside, lv)
-	var fn := "_level_" + id
-	if has_method(fn):
+	if ClubLevels.has(id):
 		var root: Node3D = _level_roots.get(id)
 		if root == null:
 			root = Node3D.new()
 			root.name = "level_" + id
-			(_place_nodes[id] as Node3D).add_child(root)
+			add_child(root)
 			_level_roots[id] = root
 			_keep.append(root)
 		for c in root.get_children():
 			root.remove_child(c)
 			c.queue_free()
-		call(fn, root, lv)
+		walk.clear_tag("lvl_" + id)
+		ClubLevels.build(self, id, root, lv)
 		MeshMerge.merge_static(root)
+
+
+## The next level of a construction, see-through gold, while its card is in the middle
+## of the foreman's strip (H2 5). id "" takes the ghost away.
+func show_ghost(id: String, lv: int) -> void:
+	if _ghost:
+		_ghost.queue_free()
+		_ghost = null
+	_ghost_id = ""
+	if id == "" or not ClubLevels.has(id):
+		return
+	_ghost = Node3D.new()
+	_ghost.name = "ghost"
+	add_child(_ghost)
+	ClubLevels.build(self, id, _ghost, lv, true)
+	var mat := ClubMaterial.ghost()
+	for n in _ghost.find_children("*", "GeometryInstance3D", true, false):
+		var g := n as GeometryInstance3D
+		g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if g is Label3D:
+			(g as Label3D).modulate = Color(UiTheme.GOLD, 0.6)
+			(g as Label3D).outline_size = 0
+		else:
+			g.material_override = mat
+	_ghost_id = id
+
+
+func ghost_id() -> String:
+	return _ghost_id
+
+
+## The node a construction's level is built in (for the build moment's grow-in).
+func level_root(id: String) -> Node3D:
+	return _level_roots.get(id)
+
+
+## The club's colour (main court level 3): repaint what wears it.
+func set_club_color(i: int) -> void:
+	SaveData.club["color"] = clampi(i, 0, ClubMaterial.CLUB_COLORS.size() - 1)
+	for id in ["court", "stands"]:
+		if _levels.has(id):
+			set_level(id, int(_levels[id]))
+
+
+## Level 0 of the main court: the worn layer of cracks and faded paint.
+func set_worn(on: bool) -> void:
+	if _worn:
+		_worn.visible = on
+
+
+## The stands' sign while only stakes stand there (it tells the price).
+func stands_sign(on: bool, text: String) -> void:
+	if _stands_sign:
+		_stands_sign.visible = on
+		if text != "":
+			(_stands_sign.get_meta("label") as Label3D).text = text
+
+
+func high_quality() -> bool:
+	return _high
 
 
 func level_built(id: String) -> int:
@@ -174,6 +239,7 @@ func sun() -> DirectionalLight3D:
 func set_high_quality(on: bool) -> void:
 	super.set_high_quality(on)
 	ClubMaterial.set_outlines(on)  # outlines are a second pass per mesh: High and up only
+	_high = on
 	_shadows_on = on
 	_sun.shadow_enabled = on
 	Athlete.blob_shadows = not on
@@ -275,6 +341,7 @@ func _build_worn_court() -> void:
 	mi.position = Vector3(0, 0.035, 0)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
+	_worn = mi
 
 
 ## Sun-bleached patches (the blue gone grey) and thin cracks, ~5 cm a pixel.
@@ -333,12 +400,12 @@ func _build_paths() -> void:
 	var y := 0.02
 	_box(Vector3(2.4, 0.06, 22.0), Vector3(0, y, HZ + 11.0), _paving, false)       # gate -> court
 	_box(Vector3(34.0, 0.06, 2.4), Vector3(1.0, y, 31.0), _paving, false)         # past the pavilion doors
-	_box(Vector3(2.4, 0.06, 40.0), Vector3(HX + 3.0, y, -8.0), _paving, false)    # east: to the bar
-	_box(Vector3(10.0, 0.06, 2.4), Vector3(HX + 7.0, y, -30.0), _paving, false)
+	_box(Vector3(2.4, 0.06, 40.0), Vector3(14.6, y, -8.0), _paving, false)       # east: to the bar
+	_box(Vector3(8.0, 0.06, 2.4), Vector3(18.6, y, -30.0), _paving, false)
 	_box(Vector3(13.0, 0.06, 2.4), Vector3(-HX - 6.0, y, 0.0), _paving, false)    # west: to the arena
 	_box(Vector3(2.4, 0.06, 26.0), Vector3(-HX - 4.0, y, -13.0), _paving, false)  # to the trophy room
 	_box(Vector3(9.0, 0.06, 2.4), Vector3(-HX - 8.0, y, -26.0), _paving, false)
-	_box(Vector3(11.0, 0.06, 2.4), Vector3(HX + 8.5, y, 6.2), _paving, false)    # east: to the shop
+	_box(Vector3(8.6, 0.06, 2.4), Vector3(19.5, y, 6.2), _paving, false)         # east: to the shop
 
 
 func _build_places() -> void:
@@ -356,9 +423,11 @@ func _build_places() -> void:
 	_pavilion("coach", ClubPlaces.find("coach")["pos"])
 	_pavilion("shop", ClubPlaces.find("shop")["pos"])
 	_build_bar_table()
+	_stands_sign = _sign(Vector3((ClubLevels.STANDS_X0 + ClubLevels.STANDS_X1) * 0.5, 0, -2.6), "Здесь будут трибуны")
+	_keep.append(_stands_sign)
 	for p in ClubPlaces.LIST:
 		set_level(p["id"], ClubPlaces.level(p["id"]))
-	_build_stakes()
+	set_level("stands", ClubBuilds.level("stands"))
 	_build_gate()
 	_build_arena_site()
 
@@ -579,29 +648,6 @@ func _build_bleachers() -> void:
 	pass
 
 
-func _build_stakes() -> void:
-	var x0 := HX + 1.6
-	var x1 := HX + 4.6
-	var corners := [Vector3(x0, 0, -14.0), Vector3(x1, 0, -14.0), Vector3(x1, 0, -4.0), Vector3(x0, 0, -4.0)]
-	var wood := ClubMaterial.pal(ClubMaterial.WOOD, false)
-	for c in corners:
-		_box(Vector3(0.08, 0.9, 0.08), (c as Vector3) + Vector3(0, 0.45, 0), wood)
-	var tape: Array[Transform3D] = []
-	var tape_colors: Array[Color] = []
-	for i in 4:
-		var a: Vector3 = corners[i] + Vector3(0, 0.8, 0)
-		var b: Vector3 = corners[(i + 1) % 4] + Vector3(0, 0.8, 0)
-		var n := int(a.distance_to(b) / 0.5)
-		for k in n:
-			var p := a.lerp(b, (k + 0.5) / n)
-			tape.append(_segment(p - (b - a).normalized() * 0.25, p + (b - a).normalized() * 0.25, 0.05))
-			tape_colors.append(Color(0.9, 0.2, 0.18) if k % 2 == 0 else Color(0.96, 0.96, 0.94))
-	_mm(_unit_box, _tinted(), tape, tape_colors).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	var s := _sign(Vector3((x0 + x1) * 0.5, 0, -2.6), "Здесь будут трибуны")
-	s.rotation.y = 0.0
-	walk.add_box(Rect2(x0, -14.0, x1 - x0, 10.0))
-
-
 ## The way in: an old gate in a low wall with a "Public Courts" plate.
 func _build_gate() -> void:
 	var z := 41.0
@@ -611,18 +657,6 @@ func _build_gate() -> void:
 		_box(Vector3(12.0, 0.9, 0.35), Vector3(s * 8.1, 0.45, z), brick)
 		walk.add_box(Rect2(s * 8.1 - 6.0, z - 0.3, 12.0, 0.6))
 		walk.add_circle(Vector2(s * 1.8, z), 0.4)
-	var plate := Label3D.new()
-	plate.text = "PUBLIC COURTS"
-	plate.font = UiTheme.display()
-	plate.font_size = 64
-	plate.pixel_size = 0.006
-	plate.modulate = Color(0.95, 0.93, 0.86)
-	plate.outline_size = 10
-	plate.outline_modulate = Color(0.12, 0.2, 0.16)
-	plate.shaded = false
-	plate.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	plate.position = Vector3(0, 2.25, z + 0.05)
-	add_child(plate)
 
 
 ## Where the arena will rise: a builder's fence around a patch of gravel.
@@ -711,8 +745,9 @@ func _build_waypoints() -> void:
 		Vector2(-11.5, 19.6), Vector2(11.5, 19.6), Vector2(-11.5, -19.8), Vector2(11.5, -19.8),
 		Vector2(0, 31), Vector2(0, 36),
 		Vector2(-14, 31), Vector2(-14, 27.4), Vector2(16, 31), Vector2(16, 27.4),  # doors
-		Vector2(12, -14), Vector2(12, -30), Vector2(-13, 0), Vector2(-13, -26),
-		Vector2(12, 6.2), Vector2(22, 6.2), Vector2(22, 3.4),    # the shop's door
+		Vector2(14.6, -14), Vector2(14.6, -30), Vector2(-13, 0), Vector2(-13, -26),
+		Vector2(14.6, 6.2), Vector2(22, 6.2), Vector2(22, 3.4),    # the shop's door
+		Vector2(14.6, 19.6), Vector2(14.6, -19.8),
 	]:
 		walk.waypoints.append(p)
 
