@@ -15,6 +15,7 @@ func _init() -> void:
 	test_share_caption()
 	test_items_catalog()
 	test_gear_slots()
+	test_run_effects()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -237,3 +238,63 @@ func test_gear_slots() -> void:
 	while gen.has("id"):
 		gen = Gear.roll(Gear.COMMON, rng, "shoes")
 	check(gen["name"].begins_with("Обычные кроссовки"), "names agree with the slot: %s" % gen["name"])
+
+
+func _wear(ids: Array) -> Dictionary:
+	var eq := {}
+	for id in ids:
+		var it := Items.instance(Items.find(id))
+		eq[it["slot"]] = it
+	return eq
+
+
+func _hit(fx: RunEffects, n: int, label := "GOOD", type := "FLAT") -> Array:
+	var out := fx.fire("on_hit", {"type": type, "label": label, "rally_n": n})
+	if label == "PERFECT":
+		out += fx.fire("on_perfect", {"type": type, "label": label, "rally_n": n})
+	return out
+
+
+func test_run_effects() -> void:
+	print("run effects")
+	var fx := RunEffects.new(_wear(["sledgehammer"]))
+	var dmg := []
+	for n in range(1, 9):
+		dmg.append(_hit(fx, n))
+	check(dmg[3] == [["opp_stamina", 8.0]] and dmg[7] == [["opp_stamina", 8.0]] and dmg[2].is_empty() and dmg[4].is_empty(), "sledgehammer: every 4th stroke (%s)" % [dmg])
+	fx = RunEffects.new(_wear(["sun"]))
+	var a := _hit(fx, 1, "PERFECT")
+	var b := _hit(fx, 2, "PERFECT")
+	var c := _hit(fx, 3, "PERFECT")
+	check(a == [["opp_stamina", 6.0]] and b == [["opp_stamina", 6.0]], "sun: every PERFECT burns 6")
+	check(c.has(["opp_stamina", 30.0]) and is_equal_approx(fx.point_style(), 2.0), "the third PERFECT in a row: meteor, style x2")
+	_hit(fx, 4, "GOOD")
+	var d := _hit(fx, 5, "PERFECT") + _hit(fx, 6, "PERFECT")
+	check(not d.has(["opp_stamina", 30.0]), "a GOOD breaks the streak")
+	fx.end_point()
+	check(is_equal_approx(fx.point_style(), 1.0), "the point's style bonus ends with the point")
+	fx = RunEffects.new(_wear(["cold_pack"]))
+	check(not fx.mods({"tiebreak": false}).has("serve_window") and is_equal_approx(float(fx.mods({"tiebreak": true})["serve_window"]), 0.25), "cold pack only in a tiebreak")
+	fx = RunEffects.new(_wear(["berserk", "heavy_frame"]))
+	var base := float(fx.mods()["forehand_pace"])
+	_hit(fx, 1)
+	_hit(fx, 2)
+	check(is_equal_approx(float(fx.mods()["forehand_pace"]), base + 0.06), "berserk: +3%% a stroke (%.2f)" % float(fx.mods()["forehand_pace"]))
+	fx.end_point()
+	check(is_equal_approx(float(fx.mods()["forehand_pace"]), base), "berserk resets on the point")
+	var run_mods := {}
+	fx = RunEffects.new(_wear(["crown"]), run_mods)
+	fx.fire("on_break", {})
+	fx.fire("on_break", {})
+	check(is_equal_approx(float(run_mods.get("forehand_pace", 0.0)), 0.04) and is_equal_approx(float(fx.mods()["run_speed"]), 0.04), "crown: +2% a break for the rest of the run")
+	fx = RunEffects.new(_wear(["golden_hand", "knife_string"]))
+	var bo := fx.style_boosts()
+	check(is_equal_approx(float(bo["all"]), 1.5) and is_equal_approx(float(bo["knife"]), 1.5), "style boosts from the gear %s" % [bo])
+	fx = RunEffects.new(_wear(["cannon_frame"]))
+	check(is_equal_approx(fx.rule("cannon_kmh"), 190.0) and fx.rule("dive_free") == 0.0, "rules")
+	fx = RunEffects.new(_wear(["cutter", "lucky_coin"]))
+	var won := fx.fire("on_point_won", {"type": "SLICE", "reason": "WINNER", "tricks": [{"id": "knife"}]})
+	check(won.has(["opp_stamina", 25.0]) and won.has(["money", 1]), "cutter and lucky coin on a slice winner (%s)" % [won])
+	won = fx.fire("on_point_won", {"type": "FLAT", "reason": "OUT", "tricks": []})
+	check(won.is_empty(), "nothing on an opponent error without tricks")
+	check(RunEffects.new({}).fire("on_ace", {}).is_empty() and RunEffects.new({}).mods().is_empty(), "no gear, no effects")
