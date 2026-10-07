@@ -314,9 +314,30 @@ func _build_environment() -> void:
 	TelegramApp.init()
 	scenery = Scenery.new()
 	add_child(scenery)
+	_trim_shadows.call_deferred(scenery)
 	graphics = GraphicsQuality.new()
 	graphics.scenery = scenery
 	add_child(graphics)
+
+
+## Far scenery (city, trees, stands beyond the court's surroundings) casts no shadow:
+## its shadow pass doubled the draw calls (+180) and triangles (+80k) in a match, a big
+## share of a phone's frame in WebGL, while those shadows mostly fall outside the
+## camera's view. Players, net, fences and near props keep theirs.
+const SHADOW_KEEP_RADIUS := 22.0
+
+
+func _trim_shadows(root_node: Node) -> void:
+	if not is_instance_valid(root_node):
+		return
+	for n in root_node.find_children("*", "GeometryInstance3D", true, false):
+		var g := n as GeometryInstance3D
+		if g.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+			continue
+		var box := g.global_transform * g.get_aabb()
+		var c := box.get_center()
+		if Vector2(c.x, c.z).length() > SHADOW_KEEP_RADIUS or box.size.y > 25.0:
+			g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 ## Slides and falls leave marks on clay.
@@ -359,6 +380,7 @@ func set_location(id: String) -> void:
 		scenery.queue_free()
 	scenery = next
 	add_child(scenery)
+	_trim_shadows.call_deferred(scenery)
 	graphics.scenery = scenery
 	graphics.refresh()
 	court.set_surface(loc["surface"])
