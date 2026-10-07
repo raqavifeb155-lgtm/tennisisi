@@ -182,6 +182,10 @@ func _ready() -> void:
 			_autoplay_format = int(a.get_slice("=", 1))
 		elif a.begins_with("--points="):
 			autoplay_points = int(a.get_slice("=", 1))
+		elif a.begins_with("--gfx="):
+			_force_gfx = int(a.get_slice("=", 1))  # profiling: 1 low .. 4 max
+		elif a.begins_with("--profile"):
+			_profile_t = 5.0  # print frame statistics every 5 s (a profiling run, not headless)
 		elif a.begins_with("--bot-sd="):
 			_bot_sd = float(a.get_slice("=", 1))  # bot timing error (s): ~0.035 sharp, ~0.07 a thumb on a phone
 		elif a.begins_with("--xp="):
@@ -259,6 +263,8 @@ func _ready() -> void:
 	Tuning.graphics = SaveData.graphics
 	for k in SaveData.gfx:
 		Tuning.set(k, SaveData.gfx[k])
+	if _force_gfx >= 0:
+		Tuning.graphics = _force_gfx
 	graphics.set_preset(Tuning.graphics)
 	_practice_skill = Tuning.ai_skill
 	if not autoplay and not _headless():
@@ -283,6 +289,8 @@ func _ready() -> void:
 				SaveData.graphics = Tuning.graphics
 				SaveData.save())
 	_last_real_us = Time.get_ticks_usec()
+	perf = PerfMeter.new()
+	add_child(perf)
 	if _bonus_rounds > 0:
 		# Test: the trophy mini-game over and over, the bot aiming at the runner.
 		tournament = Tournament.new(0, 1)
@@ -310,9 +318,47 @@ func _build_environment() -> void:
 	TelegramApp.init()
 	scenery = Scenery.new()
 	add_child(scenery)
+	_trim_shadows.call_deferred(scenery)
 	graphics = GraphicsQuality.new()
 	graphics.scenery = scenery
 	add_child(graphics)
+
+
+## Far scenery (city, trees, stands beyond the court's surroundings) casts no shadow:
+## its shadow pass doubled the draw calls (+180) and triangles (+80k) in a match, a big
+## share of a phone's frame in WebGL, while those shadows mostly fall outside the
+## camera's view. Players, net, fences and near props keep theirs.
+const SHADOW_KEEP_RADIUS := 22.0
+
+
+func _trim_shadows(root_node: Node) -> void:
+	if not is_instance_valid(root_node):
+		return
+	for n in root_node.find_children("*", "GeometryInstance3D", true, false):
+		var g := n as GeometryInstance3D
+		if g.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+			continue
+		var box := g.global_transform * g.get_aabb()
+		var c := box.get_center()
+		if Vector2(c.x, c.z).length() > SHADOW_KEEP_RADIUS or box.size.y > 25.0:
+			g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Then fold the static little boxes into one mesh per material (draw calls).
+	# Everything the scenery keeps a reference to (birds, boats, clouds, nodes it hides on
+	# Low) may move or change later: those stay as they are.
+	var keep: Array = []
+	for prop in root_node.get_property_list():
+		if not (int(prop["usage"]) & PROPERTY_USAGE_SCRIPT_VARIABLE):
+			continue
+		var v = root_node.get(prop["name"])
+		if v is Node3D:
+			keep.append(v)
+		elif v is Array:
+			for e in v:
+				if e is Node3D:
+					keep.append(e)
+	var folded := MeshMerge.merge_static(root_node as Node3D, keep)
+	if autoplay or _profile_t > 0.0:
+		print("scenery: folded %d static meshes" % folded)
 
 
 ## Slides and falls leave marks on clay.
@@ -355,6 +401,7 @@ func set_location(id: String) -> void:
 		scenery.queue_free()
 	scenery = next
 	add_child(scenery)
+	_trim_shadows.call_deferred(scenery)
 	graphics.scenery = scenery
 	graphics.refresh()
 	court.set_surface(loc["surface"])
@@ -510,6 +557,11 @@ func _process(_delta: float) -> void:
 	var rd := clampf((now - _last_real_us) / 1000000.0, 0.0, 0.1)
 	_last_real_us = now
 	hud.set_in_match(phase != Phase.IDLE)
+	if _profile_t > 0.0:
+		_profile_t -= rd
+		if _profile_t <= 0.0:
+			_profile_t = 5.0
+			print("PERF %s %s" % ["match" if phase != Phase.IDLE else "menu", str(perf.take())])
 	_update_slowmo(rd)
 	_update_helpers()
 	_update_safe_area(rd)
@@ -1777,6 +1829,9 @@ const STAMINA_PACE := 0.003
 const STAMINA_DIVE := 0.03
 const STAMINA_STAND := 0.002    # per second back standing still in a rally
 
+var perf: PerfMeter               # frame statistics for the telemetry beat and --profile runs
+var _profile_t := -1.0
+var _force_gfx := -1
 var _cloud_t := 0.0
 var _beat_t := 5.0
 var _cloud_poll_t := 0.0
@@ -1805,9 +1860,11 @@ func _update_persistence(dt: float) -> void:
 	_beat_t -= dt
 	if _beat_t <= 0.0:
 		_beat_t = 20.0
-		TelegramApp.log_event("beat", {"fps": Engine.get_frames_per_second(), "gfx": graphics.level_name(),
-			"sc": snappedf(graphics.scale_3d, 0.01), "loc": location_id, "ph": phase, "pts": _points_played,
-			"tour": tournament_mode, "snd": sfx.plays})
+		var beat := {"gfx": graphics.level_name(), "sc": snappedf(graphics.scale_3d, 0.01), "loc": location_id,
+			"ph": phase, "pts": _points_played, "tour": tournament_mode, "snd": sfx.plays,
+			"ui": ui.is_open(), "pause": get_tree().paused}
+		beat.merge(perf.take())  # fps, low, worst, cpu, draws, tris, px: see PerfMeter
+		TelegramApp.log_event("beat", beat)
 	_alive_t -= dt
 	if _alive_t <= 0.0:
 		_alive_t = 15.0

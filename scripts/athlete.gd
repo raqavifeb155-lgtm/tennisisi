@@ -153,6 +153,7 @@ func setup(face: float, appearance, region: Rect2) -> void:
 	look = Looks.from_shirt(appearance) if appearance is Color else Looks.sanitize(appearance)
 	_body = body_style
 	_build()
+	_lighten.call_deferred()
 	rotation.y = 0.0 if facing < 0.0 else PI
 
 
@@ -166,6 +167,7 @@ func set_look(l: Dictionary) -> void:
 	_shadow.queue_free()
 	_bones = {}
 	_build()
+	_lighten.call_deferred()
 	set_racket_look(_racket_color, _racket_glow)
 
 
@@ -1129,10 +1131,21 @@ func _process(delta: float) -> void:
 		var lt := to_local(look_target) - Vector3(0, SHOULDER_H + 0.3, 0)
 		yaw_t = clampf(atan2(-lt.x, -lt.z), -1.4, 1.4)
 		pitch_t = clampf(atan2(lt.y, Vector2(lt.x, lt.z).length()), -0.6, 0.7)
+	if _serve_gaze():
+		# Serving: the face turns up to the tossed ball (and stays there through the swing).
+		pitch_t = clampf(maxf(pitch_t, SERVE_GAZE), SERVE_GAZE, 0.95)
 	_head_yaw = lerpf(_head_yaw, yaw_t, 1.0 - exp(-8.0 * delta))
 	_head_pitch = lerpf(_head_pitch, pitch_t, 1.0 - exp(-8.0 * delta))
 
 	_pose(local_v, amt, near_contact)
+
+
+const SERVE_GAZE := 0.62   # head tilt (rad) toward the toss at least, ~35 deg
+
+
+## The toss and the swing up to just after contact: the eyes are on the ball overhead.
+func _serve_gaze() -> bool:
+	return _mode == 3 or (_mode == 2 and _serve_style() and _clock < _contact_at + 0.1)
 
 
 ## Where the feet stand for the current stroke (model space), before running and lunges.
@@ -1327,11 +1340,20 @@ func _pose(local_v: Vector3, amt: float, near_contact: float) -> void:
 
 	# Torso: hips follow the hip turn, chest the shoulder turn; both are wider than deep,
 	# so the turn reads from any angle.
-	_set_bone("hips", pelvis + th * Vector3(-0.1, 0.02, 0), pelvis + th * Vector3(0.1, 0.02, 0))
-	_set_torso("waist", pelvis + Vector3(0, 0.08, 0), chest.lerp(pelvis, 0.45), lerpf(_hip_twist, _twist, 0.5), 1.1, 0.8)
-	_set_torso("chest", chest.lerp(pelvis, 0.5), chest + Vector3(0, -0.04, 0), _twist, 1.15, 0.72)
+	_set_bone("hips", pelvis + th * Vector3(-0.1, 0.0 if _body == Body.TOON else 0.02, 0), pelvis + th * Vector3(0.1, 0.0 if _body == Body.TOON else 0.02, 0))
+	if _body == Body.TOON:
+		# One piece from the pelvis to the shoulders: no seam across the back.
+		_set_torso("waist", pelvis + Vector3(0, 0.08, 0), chest.lerp(pelvis, 0.45), lerpf(_hip_twist, _twist, 0.5), 1.1, 0.8)
+		_set_torso("chest", pelvis + Vector3(0, 0.06, 0), chest + Vector3(0, -0.04, 0), lerpf(_hip_twist, _twist, 0.75), 1.12, 0.76)
+	else:
+		_set_torso("waist", pelvis + Vector3(0, 0.08, 0), chest.lerp(pelvis, 0.45), lerpf(_hip_twist, _twist, 0.5), 1.1, 0.8)
+		_set_torso("chest", chest.lerp(pelvis, 0.5), chest + Vector3(0, -0.04, 0), _twist, 1.15, 0.72)
 	_set_bone("shoulders", l_sh, r_sh)
 	_set_bone("neck", chest, chest + Vector3(0, 0.16, 0))
+	if _head_pitch > 0.0:
+		# A head tipped back sinks onto the shoulders a little instead of riding on a long neck.
+		var back := clampf(_head_pitch / 0.95, 0.0, 1.0)
+		head += Vector3(0.0, -0.035 * back, 0.035 * back)
 	_head.position = head
 	_head.rotation = Vector3(_head_pitch, _head_yaw, 0.0)
 
@@ -2032,22 +2054,29 @@ func _build_body() -> void:
 		_lathe_bone("shoe%d" % i, 0.19, [
 			[0.0, 0.0, sole], [0.05, 0.054 * fk, white], [0.38, 0.062 * fk, white], [0.38, 0.064 * fk, accent],
 			[0.5, 0.064 * fk, accent], [0.5, 0.062 * fk, white], [0.85, 0.052 * fk, white], [1.0, 0.0, white]], 0.6)
+	var hr := 0.118 if toon else 0.13      # the toon shirt covers the top of the shorts
 	_lathe_bone("hips", 0.2, [
-		[0.0, 0.0, shorts], [0.0, 0.11 * k, shorts], [0.25, 0.13 * k, shorts], [0.75, 0.13 * k, shorts], [1.0, 0.11 * k, shorts], [1.0, 0.0, shorts]])
+		[0.0, 0.0, shorts], [0.0, 0.1 * k, shorts], [0.25, hr * k, shorts], [0.75, hr * k, shorts], [1.0, 0.1 * k, shorts], [1.0, 0.0, shorts]])
 	# Waist (pelvis -> mid trunk) and chest (mid trunk -> shoulders): narrow waist,
 	# broad chest, a little shoulder slope; flattened front to back by _set_torso.
 	_lathe_bone("waist", 0.3, [
 		[0.0, 0.0, shirt], [0.0, 0.125 * k, shirt], [0.5, 0.13 * k, shirt], [1.0, 0.142 * k, shirt], [1.0, 0.0, shirt]])
-	_lathe_bone("chest", 0.25, [
-		[0.0, 0.0, shirt], [0.0, 0.145 * k, shirt], [0.45, 0.17 * k, shirt], [0.8, 0.175 * k, shirt],
-		[0.95, 0.15 * k, shirt], [1.0, 0.11 * k, shirt], [1.0, 0.0, shirt]])
+	if toon:
+		_lathe_bone("chest", 0.25, [
+			[0.0, 0.0, shirt], [0.0, 0.125 * k, shirt], [0.35, 0.133 * k, shirt], [0.62, 0.16 * k, shirt],
+			[0.8, 0.172 * k, shirt], [0.92, 0.16 * k, shirt], [0.98, 0.13 * k, shirt], [1.0, 0.09 * k, shirt], [1.0, 0.0, shirt]])
+	else:
+		_lathe_bone("chest", 0.25, [
+			[0.0, 0.0, shirt], [0.0, 0.145 * k, shirt], [0.45, 0.17 * k, shirt], [0.8, 0.175 * k, shirt],
+			[0.95, 0.15 * k, shirt], [1.0, 0.11 * k, shirt], [1.0, 0.0, shirt]])
 	# Shoulders, left -> right: the deltoids bulge at the ends, in the shirt.
 	_lathe_bone("shoulders", 0.4, [
-		[0.0, 0.0, shirt], [0.02, 0.06 * k, shirt], [0.12, 0.078 * k, shirt], [0.3, 0.065 * k, shirt],
-		[0.7, 0.065 * k, shirt], [0.88, 0.078 * k, shirt], [0.98, 0.06 * k, shirt], [1.0, 0.0, shirt]])
+		[0.0, 0.0, shirt], [0.02, 0.06 * k, shirt], [0.12, 0.07 * k, shirt], [0.3, 0.062 * k, shirt],
+		[0.7, 0.062 * k, shirt], [0.88, 0.07 * k, shirt], [0.98, 0.06 * k, shirt], [1.0, 0.0, shirt]])
 	# Neck with the shirt's collar round its base.
-	_lathe_bone("neck", 0.16, [[0.0, 0.0, shirt], [0.0, 0.085 * k, shirt], [0.28, 0.072 * k, shirt],
-		[0.28, 0.058 * k, skin], [1.0, 0.05 * k, skin], [1.0, 0.0, skin]])
+	var collar := 0.12 if toon else 0.28   # the toon collar stays under the shirt's top
+	_lathe_bone("neck", 0.16, [[0.0, 0.0, shirt], [0.0, 0.085 * k, shirt], [collar, 0.07 * k, shirt],
+		[collar, 0.058 * k, skin], [1.0, 0.05 * k, skin], [1.0, 0.0, skin]])
 	for side in ["r", "l"]:
 		# Upper arm: a short sleeve over the top half, then the bare arm to the elbow.
 		_lathe_bone("upper_" + side, UPPER_ARM, [
@@ -2070,6 +2099,8 @@ func _build_body() -> void:
 	# across the shirt.
 	for part in ["shoulders", "neck", "waist"]:
 		_no_outline(_bones[part])
+	if toon:
+		_bones["waist"].visible = false   # the chest is one piece down to the pelvis
 
 
 func _joint_ball(name: String, r: float, c: Color) -> void:
@@ -2087,7 +2118,7 @@ func _joint_ball(name: String, r: float, c: Color) -> void:
 
 func _lathe_bone(bone: String, ref: float, prof: Array, flat := 1.0) -> void:
 	var mi := MeshInstance3D.new()
-	mi.mesh = _lathe(ref, prof, 14)
+	mi.mesh = _lathe(ref, prof, 22 if _body == Body.TOON else 14)
 	mi.material_override = _body_mat()
 	mi.set_meta("ref", ref)
 	if flat != 1.0:
@@ -2150,21 +2181,52 @@ func _body_mat() -> StandardMaterial3D:
 func _toonify(m: StandardMaterial3D) -> void:
 	if _body != Body.TOON:
 		return
-	m.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
+	# Soft light that wraps round the form (no hard bands), a small toon highlight, a
+	# light rim, and a thin even outline.
+	m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
 	m.specular_mode = BaseMaterial3D.SPECULAR_TOON
-	m.roughness = 1.0
+	m.roughness = 0.55
+	m.rim_enabled = true
+	m.rim = 0.55
+	m.rim_tint = 0.4
 	if _toon_outline == null:
 		_toon_outline = StandardMaterial3D.new()
 		_toon_outline.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		_toon_outline.albedo_color = Color(0.08, 0.07, 0.1)
+		_toon_outline.albedo_color = Color(0.13, 0.1, 0.18)
 		_toon_outline.cull_mode = BaseMaterial3D.CULL_FRONT
 		_toon_outline.grow = true
-		_toon_outline.grow_amount = 0.012
+		_toon_outline.grow_amount = 0.007
 	m.next_pass = _toon_outline
 
 
 ## Small face details (eyes, nose, ears) without the TOON outline: on something that
 ## small it would draw a ring like a pair of glasses.
+## Fewer draw calls for the same look (docs/PERFORMANCE.md): parts too small to matter
+## at the camera's distance (eyes, ears, nose, hands, wrist bands) cast no shadow, the
+## smallest also lose the outline pass (on a copy of their material: it may be shared);
+## the dust under the feet never casts a shadow. Two players drew ~110 calls a frame.
+const SMALL_NO_SHADOW := 0.25
+const SMALL_NO_OUTLINE := 0.22
+
+
+func _lighten() -> void:
+	if _model == null:
+		return
+	for n in _model.find_children("*", "GeometryInstance3D", true, false):
+		var g := n as GeometryInstance3D
+		if g is CPUParticles3D or g is GPUParticles3D:
+			g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			continue
+		var sz := (g.get_aabb().size * g.global_transform.basis.get_scale()).length()
+		if sz >= SMALL_NO_SHADOW:
+			continue
+		g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var mi := g as MeshInstance3D
+		if mi and sz < SMALL_NO_OUTLINE and mi.material_override is StandardMaterial3D and (mi.material_override as StandardMaterial3D).next_pass:
+			mi.material_override = mi.material_override.duplicate()
+			(mi.material_override as StandardMaterial3D).next_pass = null
+
+
 func _no_outline(mi: MeshInstance3D) -> MeshInstance3D:
 	var m := mi.material_override as StandardMaterial3D
 	if m:
