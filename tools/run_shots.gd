@@ -62,6 +62,7 @@ GAME YOU", UiTheme.WIN)  # the verdict shows in the same frame
 	hub._best_end = 30
 	hub.meter.best = _best()
 	hub.last_match = {"points": 64, "gold": 6, "best": _best()}
+	t.gold += 6  # a real match adds its style gold to the run before the result screen
 	main.cpu.position = Vector3(0, 0, -12.6)
 	main.ball.visible = false
 	t.record_match(true, "6:3", RandomNumberGenerator.new())
@@ -76,7 +77,29 @@ GAME YOU", UiTheme.WIN)  # the verdict shows in the same frame
 		hub.share_image.save_png(out + "a1_share_picture.png")
 		print("share caption: ", RunShare.caption(hub.meter.best))
 	await _a2(hub)
+	await _a3()
 	quit()
+
+
+## A-3: the Club with the desk, the wheel before and after a spin, the bet on a match.
+func _a3() -> void:
+	main._stop_match()
+	SaveData.titles = 1
+	SaveData.gold = 400
+	main.ui.show_menu()
+	await _shot("a3_club")
+	main._on_ui("bets", 0)
+	await _shot("a3_wheel")
+	main._on_ui("spin", 0)
+	await _shot("a3_wheel_spin", 0.8)
+	await _shot("a3_wheel_result", 2.2)
+	var t := Tournament.new(1, 5)
+	t.stage = 3
+	main.tournament = t
+	main._on_ui("bet_match", 0)
+	await _shot("a3_match_bet")
+	main._on_ui("bet_win", 50)
+	await _shot("a3_bracket_bet")
 
 
 ## A-2: the bracket with the bag row, the bag, an item against the worn one, the trophy,

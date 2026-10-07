@@ -224,6 +224,7 @@ func show_menu() -> void:
 	rooms.add_child(_tile("Раздевалка", "внешность, стиль", "locker"))
 	var todo := Skills.points + Skills.pending.size()
 	rooms.add_child(_tile("Тренерская", "навыки и перки", "character", todo))
+	RunBets.menu_extra(self)  # v0.2 A: the betting desk (after the first title)
 	var how := _secondary("?  Как играть: удары и подача", "howto")
 	how.add_theme_color_override("font_color", UiTheme.GOLD)
 	how.custom_minimum_size = Vector2(0, 72)
@@ -347,6 +348,7 @@ func show_bracket(t: Tournament) -> void:
 		info += "   ·   Перки: " + ", ".join(names)
 	_sub(info)
 	RunBag.bracket_extra(self, t)  # v0.2 A: the bag
+	RunBets.bracket_extra(self, t)  # v0.2 A: a bet on the coming match
 	for i in t.rounds():
 		_bracket_row(t, i)
 	var opp := t.opponent()

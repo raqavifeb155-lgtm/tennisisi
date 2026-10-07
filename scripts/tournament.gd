@@ -64,6 +64,7 @@ var auto_sold := 0                # gold from items sold because the bag was ful
 var run_mods := {}                # mods that last the run (RunEffects run_mod, e.g. Корона)
 var mythic_rolled := false        # a mythic already showed up this run (one per run)
 var drop_bonus := 0.0             # added to the drop chances (1 = everything drops)
+var bet := {}                     # a bet on the coming match (Bets): stake, odds, sweep
 var pending_loot := {}            # the best epic+ item dropped by the opponent just beaten
 var missed_loot := ""             # name of the racket lost in the trophy mini-game
 var banked := false               # the run's gold has been added to the saved total
@@ -101,7 +102,7 @@ func _init(format_index := 0, seed_value := 0) -> void:
 
 const SAVED := ["format", "location", "lineup", "racket", "pending_loot", "missed_loot", "banked",
 	"state", "stage", "wildcards", "perks", "results", "gold", "champion", "offer",
-	"equip", "bag", "new_items", "auto_sold", "run_mods", "mythic_rolled", "drop_bonus"]
+	"equip", "bag", "new_items", "auto_sold", "run_mods", "mythic_rolled", "drop_bonus", "bet"]
 
 
 ## The run as plain data, for the save file: a phone that reloads the page (Telegram

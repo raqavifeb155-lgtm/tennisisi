@@ -134,6 +134,8 @@ func _process_view() -> void:
 
 ## Every rally is recorded from the serve to 1.5 s after the point; the best one is kept.
 func _physics_process(_delta: float) -> void:
+	if _in_match and main.phase == main.Phase.IDLE and not _playing:
+		_abandon()  # left for the menu mid-match: no match_finished comes
 	if match_fx:
 		match_fx.physics(main.phase == main.Phase.RALLY)
 	if _playing:
@@ -185,6 +187,18 @@ func _on_point(info: Dictionary) -> void:
 	style_scored.emit(r)
 
 
+## The match was left unfinished (menu, give up): put everything back, count nothing.
+func _abandon() -> void:
+	_in_match = false
+	plate.hide_now()
+	view.shown = false
+	if match_fx:
+		match_fx.finish()
+		match_fx = null
+	_recording = false
+	_post_roll = -1
+
+
 func _on_match_finished(_info: Dictionary) -> void:
 	if not _in_match:
 		return
@@ -202,6 +216,9 @@ func _on_match_finished(_info: Dictionary) -> void:
 	var g := meter.gold(float(t.format_info()["reward"]), t.stage)
 	t.gold += g
 	last_match = {"points": meter.match_points, "gold": g, "best": meter.best}
+	if not t.bet.is_empty():
+		var stake := int(t.bet["stake"])
+		last_match["bet"] = {"stake": stake, "paid": Bets.settle_match(t, main.scoreboard)}
 	if main.autoplay:
 		print("  STYLE: %d points, +%d gold, best x%.2f" % [meter.match_points, g, float(meter.best.get("mult", 1.0))])
 
@@ -229,6 +246,8 @@ func play_best(on_done: Callable) -> void:
 
 
 func _process(delta: float) -> void:
+	if plate.visible and not _playing and main.ui.is_open():
+		plate.hide_now()  # a menu screen is up: the plate must not show through its veil
 	_process_view()
 	if not _playing:
 		return

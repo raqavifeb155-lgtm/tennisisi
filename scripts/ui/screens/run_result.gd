@@ -28,6 +28,11 @@ static func extra(ui: TournamentUI, t: Tournament) -> void:
 	if t != null and t.auto_sold > 0:
 		ui._note("Сумка полна: лишнее продано за %d золота" % t.auto_sold)
 	var h := hub(ui)
+	if h != null and h.last_match.has("bet"):
+		var b: Dictionary = h.last_match["bet"]
+		var won := int(b["paid"]) > 0
+		ui._box.add_child(ui._text("Ставка: +%d золота" % int(b["paid"]) if won else "Ставка %d — мимо" % int(b["stake"]),
+			UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.WIN if won else UiTheme.LOSE))
 	if h == null or int(h.last_match.get("points", 0)) <= 0:
 		return
 	var best: Dictionary = h.last_match.get("best", {})

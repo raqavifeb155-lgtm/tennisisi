@@ -21,6 +21,8 @@ func _initialize() -> void:
 	test_tournament_gear()
 	test_match_effects()
 	test_opp_view()
+	test_bets()
+	test_match_bet()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -309,8 +311,8 @@ func test_opp_stamina() -> void:
 	print("opponent stamina")
 	var o := OppStamina.new()
 	check(o.value == 100.0 and o.tired() == 0.0, "starts fresh")
-	check(is_equal_approx(OppStamina.shot_damage(5.0, 150.0, true, 1.0), 9.0), "5 m run + a 150 km/h ball, PERFECT: (3 + 3) x 1.5 = 9")
-	check(is_equal_approx(OppStamina.shot_damage(5.0, 80.0, false, 1.3), 3.9), "a slow ball adds nothing; heavy steps x1.3 on the running")
+	check(is_equal_approx(OppStamina.shot_damage(5.0, 150.0, true, 1.0), 3.6), "5 m run + a 150 km/h ball, PERFECT: (1.2 + 1.2) x 1.5 = 3.6")
+	check(is_equal_approx(OppStamina.shot_damage(5.0, 80.0, false, 1.3), 1.56), "a slow ball adds nothing; heavy steps x1.3 on the running")
 	check(is_equal_approx(o.damage(30.0), 30.0) and o.value == 70.0, "damage takes it down")
 	check(is_equal_approx(o.damage(500.0), 70.0) and o.value == 0.0, "never below zero (the damage dealt is what was left)")
 	check(o.tired() == 1.0 and is_equal_approx(o.speed_mult(), 0.7) and is_equal_approx(o.skill_penalty(), 0.12), "empty: 70% speed, -0.12 skill")
@@ -318,7 +320,8 @@ func test_opp_stamina() -> void:
 	check(is_equal_approx(o.value, OppStamina.REST["point"]), "a breather between points")
 	o.rest("change")
 	o.rest("set")
-	check(o.value <= 100.0 and o.value > 60.0, "change of ends and set break rest more")
+	var rested: float = OppStamina.REST["point"] + OppStamina.REST["change"] + OppStamina.REST["set"]
+	check(is_equal_approx(o.value, rested) and OppStamina.REST["set"] > OppStamina.REST["change"] and OppStamina.REST["change"] > OppStamina.REST["point"], "change of ends and set break rest more")
 	o.value = 50.0
 	check(o.tired() == 0.0 and o.speed_mult() == 1.0, "above 40 he is fine")
 	o.value = 20.0
@@ -452,7 +455,7 @@ func test_match_effects() -> void:
 	me.on_shot(0, {"speed": 150.0 / 3.6})
 	me.on_stroke({"type": "FLAT", "label": "PERFECT"})
 	me.on_shot(1, {"speed": 30.0})
-	check(is_equal_approx(me.opp.value, 91.0), "5 m run + a 150 km/h PERFECT ball: -9 (%.1f)" % me.opp.value)
+	check(is_equal_approx(me.opp.value, 96.4), "5 m run + a 150 km/h PERFECT ball: -3.6 (%.1f)" % me.opp.value)
 	me.opp.value = 20.0
 	me.physics(false)
 	check(is_equal_approx(m.ai.speed_mult, 0.85) and is_equal_approx(tuning.ai_skill, skill0 - 0.06) and m.cpu.tired, "tired at 20%: slower, less steady, hands on knees")
@@ -501,3 +504,71 @@ func test_opp_view() -> void:
 	check(OppStaminaView.text_for(12.4) == "−12" and OppStaminaView.text_for(0.6) == "−1", "numbers: −12, never −0")
 	check(v.chip_count() > 0, "the bar sheds a chip on a hit")
 	v.queue_free()
+
+
+# --- A-3: the betting desk ----------------------------------------------------------
+
+func test_bets() -> void:
+	print("bets")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 13
+	check(Bets.FIELDS == 37 and Bets.color_of(0) == "net", "37 fields, one is the net")
+	var counts := {"blue": 0, "red": 0, "net": 0}
+	for i in Bets.FIELDS:
+		counts[Bets.color_of(i)] += 1
+	check(counts == {"blue": 18, "red": 18, "net": 1}, "18 blue, 18 red, 1 net: %s" % [counts])
+	var hits := {"blue": 0, "red": 0, "net": 0}
+	var n := 37000
+	for k in n:
+		hits[Bets.color_of(Bets.spin(rng))] += 1
+	check(absf(hits["net"] / float(n) - 1.0 / 37.0) < 0.004 and absf(hits["blue"] / float(n) - 18.0 / 37.0) < 0.01, "an honest wheel: %s" % [hits])
+	check(Bets.payout("blue", 25, 1 if Bets.color_of(1) == "blue" else 2) == 50, "a color pays x2")
+	check(Bets.payout("net", 10, 0) == 350 and Bets.payout("net", 10, 5) == 0, "the net pays x35, a miss pays nothing")
+	check(Bets.payout("red", 10, 0) == 0, "the net is neither color")
+	check(Bets.max_stake(400) == 100 and Bets.chips_for(400) == [10, 25, 50, 100] and Bets.chips_for(150) == [10, 25], "stake up to 25% of the gold")
+	check(Bets.chips_for(30).is_empty(), "too little gold: no chip fits")
+	check(Bets.match_odds(0, false) == 1.3 and Bets.match_odds(4, false) == 6.0 and is_equal_approx(Bets.match_odds(3, true), 8.75), "match odds by round, a clean sweep x2.5")
+	var sb := MatchScore.new(1, 6, 6, 0)
+	sb.set_scores = [[6, 1]]
+	sb.winner = 0
+	check(Bets.swept(sb), "6:1 is a clean sweep")
+	sb.set_scores = [[6, 2]]
+	check(not Bets.swept(sb), "6:2 is not")
+	var tb := MatchScore.new(1, 0, 0, 0)
+	tb.set_scores = [[7, 2]]
+	tb.winner = 0
+	check(Bets.swept(tb), "a tiebreak 7:2 is a sweep in the quick format")
+	var state := {}
+	Bets.note(state, false)
+	Bets.note(state, false)
+	check(not Bets.needs_break(state), "two losses: carry on")
+	Bets.note(state, false)
+	check(Bets.needs_break(state), "three in a row: a gentle 'take a break?'")
+	Bets.note(state, true)
+	check(not Bets.needs_break(state) and int(state["placed"]) == 4 and int(state["won"]) == 1, "a win resets the streak")
+
+
+func test_match_bet() -> void:
+	print("match bet")
+	SaveData.gold = 200
+	SaveData.bets = {}
+	var t := Tournament.new(1, 5)
+	t.stage = 3
+	check(not Bets.place_match(t, 100, false), "100 is more than a quarter of 200")
+	check(Bets.place_match(t, 50, false) and SaveData.gold == 150 and int(t.bet["stake"]) == 50, "the stake leaves the gold at once")
+	check(not Bets.place_match(t, 10, false), "one bet a match")
+	var back := Tournament.from_dict(t.to_dict())
+	check(int(back.bet.get("stake", 0)) == 50, "the bet survives a reload")
+	var sb := MatchScore.new(1, 6, 6, 0)
+	sb.set_scores = [[6, 3]]
+	sb.winner = 0
+	var paid := Bets.settle_match(t, sb)
+	check(paid == 175 and SaveData.gold == 325 and t.bet.is_empty(), "won at x3.5: 50 -> 175 (%d)" % paid)
+	Bets.place_match(t, 25, true)
+	paid = Bets.settle_match(t, sb)
+	check(paid == 0 and SaveData.gold == 300 and int(SaveData.bets["loss_streak"]) == 1, "a sweep bet lost on 6:3")
+	var cf := SaveData._to_config()
+	SaveData.bets = {}
+	SaveData._apply(cf)
+	check(int(SaveData.bets.get("placed", 0)) == 2, "the desk's record is saved")
+	SaveData.gold = 0
