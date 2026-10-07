@@ -72,7 +72,8 @@ static func _score(cf: ConfigFile) -> float:
 	for k in d:
 		xp += float(d[k])
 	return float(cf.get_value("meta", "played", 0)) * 1000.0 + float(cf.get_value("meta", "titles", 0)) * 500.0 \
-		+ xp + float(cf.get_value("meta", "gold", 0)) * 0.1 + (1.0 if cf.get_value("settings", "control_chosen", false) else 0.0)
+		+ xp + float(cf.get_value("meta", "gold", 0)) * 0.1 + (1.0 if cf.get_value("settings", "control_chosen", false) else 0.0) \
+		+ float((cf.get_value("club", "data", {}) as Dictionary).get("spent", 0)) * 0.1  # v0.2 B: gold built into the club still counts
 
 
 static func _apply(cf: ConfigFile) -> void:
