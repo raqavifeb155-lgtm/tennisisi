@@ -29,6 +29,7 @@ var serve_walk_done := false
 var serve_walk_ok := false
 var _serve_walk_x := 0.0
 var _serve_walk_until := -1
+var ev := {"stroke": 0, "point": 0, "shot": 0, "bounce": 0}
 
 
 func _initialize() -> void:
@@ -40,6 +41,12 @@ func _initialize() -> void:
 	var scene: PackedScene = load("res://scenes/main.tscn")
 	main = scene.instantiate()
 	root.add_child(main)
+	# GameEvents: the bus other systems (style points, gear) listen to must fire.
+	var ge := root.get_node("GameEvents")
+	ge.player_stroke.connect(func(_i: Dictionary) -> void: ev["stroke"] += 1)
+	ge.point.connect(func(_i: Dictionary) -> void: ev["point"] += 1)
+	ge.shot.connect(func(_w: int, _i: Dictionary) -> void: ev["shot"] += 1)
+	ge.bounce.connect(func(_i: Dictionary) -> void: ev["bounce"] += 1)
 
 
 func _process(_delta: float) -> bool:
@@ -236,5 +243,7 @@ func _report() -> void:
 	print("tap-to-walk before the serve: %s" % ("OK" if serve_walk_ok else ("FAILED" if serve_walk_done else "NOT RUN")))
 	print("hook before the toss = underarm: %s" % ("OK" if underarm_ok else ("FAILED" if underarm_done else "NOT RUN")))
 	print("flick from the joystick zone = shot: %s, drag there = run: %s" % ["OK" if flick_ok else "FAILED", "OK" if hold_ok else "FAILED"])
-	var ok := player_hits >= 8 and moved_ok and stick_ok and serve_walk_ok and underarm_ok and flick_ok and hold_ok
+	print("game events: %s" % str(ev))
+	var events_ok: bool = ev["stroke"] >= 8 and ev["point"] >= 1 and ev["shot"] >= ev["stroke"] and ev["bounce"] >= 1
+	var ok := events_ok and player_hits >= 8 and moved_ok and stick_ok and serve_walk_ok and underarm_ok and flick_ok and hold_ok
 	print("INPUT TEST %s" % ("PASSED" if ok else "FAILED"))

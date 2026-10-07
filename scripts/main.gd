@@ -943,6 +943,7 @@ func _player_hit(err: float, dir: Vector3, pace_k: float, type: int) -> void:
 	# A heavy ball taken badly knocks the player off balance for a moment.
 	if not diving and not smash and incoming_speed > 28.0 and q < 0.4:
 		player.stumble(-float(side))
+		GameEvents.knocked.emit(Who.PLAYER)
 		notes.append("выбило")
 		_stats["stumbles"] = _stats.get("stumbles", 0) + 1
 	var stroke: String = "SMASH" if smash else (("VOLLEY " if volley else "") + ShotGesture.NAMES[type])
@@ -968,6 +969,11 @@ func _player_hit(err: float, dir: Vector3, pace_k: float, type: int) -> void:
 		"side": "FH" if side > 0 else "BH", "speed": r.speed * 3.6, "elev": r.elevation_deg,
 		"target": Vector2(target.x, target.z), "type": stroke,
 	}
+	GameEvents.player_stroke.emit({
+		"type": "SMASH" if smash else ShotGesture.NAMES[type], "label": label, "kmh": r.speed * 3.6, "q": q,
+		"curl_k": _curl_k if type == ShotType.TOPSPIN else 1.0, "volley": volley, "smash": smash,
+		"diving": diving, "serve": false, "skill": skill, "side": side,
+	})
 
 
 ## Phone vibration on contact: Telegram haptics inside the Mini App (iPhone too),
@@ -1208,6 +1214,7 @@ func execute_shot(who: int, hitter: Athlete, contact: Vector3, target: Vector3, 
 		_assist_suppressed = false
 		_stats["cpu_hits"] += 1
 	rally += 1
+	GameEvents.shot.emit(who, {"contact": contact, "speed": r.speed, "top": top, "q": q, "lob": lob, "drop": drop})
 	var vol := lerpf(-9.0, 0.0, clampf(r.speed / 35.0, 0.0, 1.0))
 	sfx.play("hit_perfect" if q > 0.9 else "hit", vol, rng.randf_range(0.96, 1.04) * lerpf(0.92, 1.06, q))
 	return r
@@ -1216,6 +1223,7 @@ func execute_shot(who: int, hitter: Athlete, contact: Vector3, target: Vector3, 
 # --- Rules --------------------------------------------------------------------
 
 func _on_bounce(pos: Vector3, speed: float) -> void:
+	GameEvents.bounce.emit({"pos": pos, "speed": speed, "bounces": bounces, "last_hitter": last_hitter})
 	sfx.play("bounce", lerpf(-22.0, -6.0, clampf(speed / 30.0, 0.0, 1.0)), rng.randf_range(0.9, 1.1))
 	if phase == Phase.BONUS:
 		_bonus_bounces += 1
@@ -1306,6 +1314,7 @@ func _end_point(winner: int, reason: String) -> void:
 	serve_flight = false
 	if reason == "WINNER" and rally == 1 and winner == server:
 		reason = "ACE"
+	GameEvents.point.emit({"winner": winner, "reason": reason, "rally": rally, "server": server, "close_call": _close_call.duplicate(), "best": rally >= best_rally})
 	var text: String
 	var o := cpu_label
 	if winner == Who.PLAYER:
@@ -1581,6 +1590,10 @@ func _player_serve(dir: Vector3, pace_k: float, type: int) -> void:
 		"side": "SRV", "speed": r.speed * 3.6, "elev": r.elevation_deg,
 		"target": Vector2(target.x, target.z), "type": ["KICK", "FLAT", "SLICE"][type],
 	}
+	GameEvents.player_stroke.emit({
+		"type": "SERVE", "label": label, "kmh": r.speed * 3.6, "q": q, "curl_k": _curl_k if type == ShotType.TOPSPIN else 1.0,
+		"volley": false, "smash": false, "diving": false, "serve": true, "skill": "serve", "side": 1,
+	})
 
 
 ## Underarm drop serve (Bublik / Kyrgios): no toss, the ball is struck from the hand
@@ -1864,6 +1877,7 @@ func _set_opponent_mods(speed: float, serve: float, cpu_racket: Dictionary) -> v
 
 
 func _begin_match() -> void:
+	GameEvents.match_started.emit({"tournament": tournament_mode, "opponent": tournament.opponent()["id"] if tournament_mode and tournament != null else ""})
 	sfx.set_music(false)
 	stamina = 1.0
 	score = [0, 0]
@@ -1888,6 +1902,7 @@ func _begin_match() -> void:
 func _finish_match() -> void:
 	var won: bool = scoreboard.winner == Who.PLAYER
 	var st: String = scoreboard.final_text()
+	GameEvents.match_finished.emit({"won": won, "score": st, "tournament": tournament_mode})
 	_stop_match()
 	tournament.record_match(won, st, rng)
 	if tournament.state == Tournament.State.OVER:
