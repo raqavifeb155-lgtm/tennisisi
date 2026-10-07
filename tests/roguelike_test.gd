@@ -9,6 +9,10 @@ func _init() -> void:
 	SaveData.enabled = false
 	test_style_rules()
 	test_style_meter()
+	test_style_save()
+	test_style_plate()
+	test_point_recorder()
+	test_share_caption()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -90,7 +94,8 @@ func test_style_meter() -> void:
 	check(m.match_points == 33 and m.best_index == 0, "match 20 + 13 = 33, best is the ace (%d, %d)" % [m.match_points, m.best_index])
 	r = m.on_point({"winner": 1, "reason": "WINNER", "rally": 30, "close_call": {}}, false)
 	check(r["points"] == 0 and m.match_points == 33, "a lost point adds nothing")
-	check(m.gold(1.0) == 2 and m.gold(1.25) == 2 and m.gold(0.4) == 1, "33 points -> 2 gold (x1.0)")
+	check(m.gold(1.0, 0) == 3 and m.gold(1.25, 0) == 4 and m.gold(0.4, 0) == 1, "33 points -> 3 gold (x1.0), 4 (x1.25), 1 (x0.4)")
+	check(m.gold(1.0, 2) == 5, "later rounds pay more, like experience (+25% a round)")
 	m.on_stroke(_pstroke("FLAT"), Vector3(0, 0, -11), 40)
 	r = m.on_point({"winner": 0, "reason": "WINNER", "rally": 3, "close_call": {"margin": 0.03, "axis": 0, "rally": 3}}, false)
 	check(not r["tricks"].is_empty() and r["tricks"][0]["id"] == "on_line", "VAR 3 cm inside -> on the line")
@@ -105,3 +110,71 @@ func test_style_meter() -> void:
 	check(is_equal_approx(r["mult"], 2.4), "gear boosts reach the rules (knife x2 -> 2.4)")
 	m.start_match()
 	check(m.match_points == 0 and m.best.is_empty() and m.best_index == -1, "a new match starts clean")
+
+
+func test_style_save() -> void:
+	print("style records")
+	SaveData.style = {}
+	SaveData.note_style({"mult": 2.5, "points": 25})
+	SaveData.note_style({"mult": 1.3, "points": 13})
+	check(is_equal_approx(float(SaveData.style["best_mult"]), 2.5) and int(SaveData.style["best_points"]) == 25, "the best point is kept")
+	check(int(SaveData.style["total"]) == 38, "every style point adds to the total")
+	var cf := SaveData._to_config()
+	SaveData.style = {}
+	SaveData._apply(cf)
+	check(int(SaveData.style.get("total", 0)) == 38, "style records survive save and load")
+
+
+func test_style_plate() -> void:
+	print("style plate")
+	var plate := StylePlate.new()
+	root.add_child(plate)
+	check(not plate.visible, "hidden until a point is scored")
+	plate.show_result({"tricks": [{"name": "Эйс", "x": 1.3}, {"name": "Пушка", "x": 1.5}], "mult": 2.34, "points": 23})
+	check(plate.visible and plate.trick_count() == 2, "shows every trick")
+	plate.finish_now()
+	check(plate.mult_text() == "×2.3" and plate.points_text() == "+23", "ends on the full multiplier and the points (%s %s)" % [plate.mult_text(), plate.points_text()])
+	plate.show_result({"tricks": [{"name": "Слайс-нож", "x": 1.2}], "mult": 1.2, "points": 12})
+	check(plate.trick_count() == 1, "a new point replaces the old plate")
+	plate.queue_free()
+
+
+func test_point_recorder() -> void:
+	print("point recorder")
+	var a := Node3D.new()
+	var b := Node3D.new()
+	a.add_child(b)
+	root.add_child(a)
+	var rec := PointRecorder.new([a] as Array[Node3D])
+	rec.begin()
+	for i in 3:
+		a.position = Vector3(i, 0, 0)
+		b.position = Vector3(0, i * 2, 0)
+		rec.capture(Vector3(0, 1, -i), i != 1)
+	check(rec.frame == 3, "three frames recorded (%d)" % rec.frame)
+	var frames := rec.end_point()
+	rec.keep_best(frames)
+	rec.begin()
+	a.position = Vector3(9, 9, 9)
+	rec.capture(Vector3.ZERO, true)
+	check(PointRecorder.length(rec.best_frames) == 3, "the best point is a copy, the next rally doesn't touch it")
+	var ball := Node3D.new()
+	root.add_child(ball)
+	rec.apply(rec.best_frames, 1, ball)
+	check(a.position == Vector3(1, 0, 0) and b.position == Vector3(0, 2, 0), "frame 1 puts both nodes back")
+	check(ball.position == Vector3(0, 1, -1) and not ball.visible, "the ball goes where it was, hidden when it was")
+	var snap := rec.snapshot()
+	a.position = Vector3(5, 5, 5)
+	rec.restore(snap)
+	check(a.position == Vector3(1, 0, 0), "a snapshot restores the live pose after a replay")
+	a.queue_free()
+	ball.queue_free()
+
+
+func test_share_caption() -> void:
+	print("share")
+	var best := {"mult": 5.2, "tricks": [{"name": "Эйс"}, {"name": "Пушка"}]}
+	check(RunShare.caption(best) == "СТИЛЬ ×5.2 · Эйс · Пушка — TENNISISI", "caption: %s" % RunShare.caption(best))
+	var url := RunShare.tg_share_path(best)
+	check(url.begins_with("/share/url?url=https%3A%2F%2Ft.me%2FTennisisiBot%3Fstartapp%3Dstyle&text="), "a t.me share link with the game link: %s" % url)
+	check(not url.contains(" "), "the text is URL-encoded")

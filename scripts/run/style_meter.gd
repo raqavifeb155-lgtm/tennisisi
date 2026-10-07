@@ -4,7 +4,8 @@ extends RefCounted
 ## player wins with StyleRules: what the last stroke was, where the ball died, how long
 ## the rally ran. Keeps the match's style points and its best point (for the replay).
 
-const GOLD_PER_POINT := 0.05      # style points -> run gold (x the format's reward)
+const GOLD_PER_POINT := 0.1       # style points -> run gold (x the format's reward, x the round)
+const GOLD_PER_ROUND := 0.25      # +25% a round, like the experience (Main._xp_mult)
 
 var match_points := 0
 var best := {}                    # the best point: StyleRules result + rally, skill, stroke_frame
@@ -85,6 +86,6 @@ func on_point(info: Dictionary, comeback: bool, boosts := {}) -> Dictionary:
 	return r
 
 
-## The match's style as run gold.
-func gold(reward: float) -> int:
-	return roundi(match_points * GOLD_PER_POINT * reward)
+## The match's style as run gold: a stylish match adds about half the round's prize.
+func gold(reward: float, stage: int) -> int:
+	return roundi(match_points * GOLD_PER_POINT * reward * (1.0 + GOLD_PER_ROUND * stage))
