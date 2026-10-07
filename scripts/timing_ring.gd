@@ -16,11 +16,24 @@ const GOLD := Color(1.0, 0.85, 0.25)
 const GOOD := Color(0.55, 1.0, 0.6)
 const LATE := Color(1.0, 0.55, 0.25)
 const FEEDBACK_TIME := 0.95  # seconds (real time, unaffected by slow-motion)
-const FB_TOP_Y := 152.0      # verdict strip, just under the score and rally lines
+const FB_RISE := 46.0        # the verdict sits this far above the ring, where the eyes are at the hit
 const FB_FX := 0.55          # size of the verdict's rings and sparks relative to the ring
+const STAMINA_TIRED := 0.4   # the arc turns orange (Skills.tired_below(): the legs start to feel it)
+const STAMINA_LOW := 0.25    # ...and blinks red
+const STAMINA_FRESH := Color(0.92, 0.95, 1.0)
+const STAMINA_HALF := Color(1.0, 0.6, 0.2)
+const STAMINA_EMPTY := Color(0.95, 0.25, 0.2)
 
 ## Where the ring hangs (screen px). Updated every frame.
 var anchor := Vector2.ZERO
+var top_inset := 0.0         # Telegram's buttons and the notch (HUD sets it): the verdict moves down
+var stamina := 1.0           # 0..1, drawn as an arc inside the target circle (HUD sets it)
+var show_stamina := false    # during a match
+var _blink := 0.0
+var _xp_name := ""           # the skill the last stroke trained, with its progress bar
+var _xp_level := 0
+var _xp_frac := 0.0
+var _fb_pos := Vector2.ZERO   # where the verdict appears: at the ring of the stroke it judges
 
 var _active := false
 var _hide_left := 0.0        # a brief grace before hiding, so a one-frame gap doesn't move the ring
@@ -71,6 +84,11 @@ func feedback(text: String, color: Color, sub := "", kind := 0) -> void:
 	_fb_color = color
 	_fb_kind = kind
 	_fb_age_s = 0.0
+	# At the ring, not in a strip at the top (that one covered the score in Telegram's
+	# full screen); the ball has just been hit away, so nothing needed is underneath.
+	var vp := get_viewport_rect().size
+	var at := (_pos if _active else anchor) - Vector2(0.0, FB_RISE)
+	_fb_pos = Vector2(clampf(at.x, 150.0, vp.x - 150.0), clampf(at.y, top_inset + 300.0, vp.y - 200.0))
 	_sparks.clear()
 	if kind == 2:
 		for i in 14:
@@ -78,7 +96,24 @@ func feedback(text: String, color: Color, sub := "", kind := 0) -> void:
 	queue_redraw()
 
 
+## Under the verdict: the skill this stroke trained and how far it is to the next level.
+func skill_progress(skill_name: String, level: int, frac: float) -> void:
+	_xp_name = skill_name
+	_xp_level = level
+	_xp_frac = clampf(frac, 0.0, 1.0)
+
+
+func set_stamina(v: float) -> void:
+	v = clampf(v, 0.0, 1.0)
+	if absf(v - stamina) > 0.004:
+		stamina = v
+		queue_redraw()
+
+
 func _process(delta: float) -> void:
+	if show_stamina and stamina < 0.995:
+		_blink += delta * 6.0
+		queue_redraw()  # the faint arc follows the player between balls
 	if _hide_left > 0.0:
 		_hide_left -= minf(delta / maxf(Engine.time_scale, 0.01), 0.1)
 		if _hide_left <= 0.0:
@@ -88,6 +123,8 @@ func _process(delta: float) -> void:
 		# Unscaled time: slow-motion and hit-stop must not stretch the animation.
 		_fb_age_s += minf(delta / maxf(Engine.time_scale, 0.01), 0.1)
 		queue_redraw()
+	elif _xp_name != "":
+		_xp_name = ""  # the skill bar goes with the verdict
 
 
 func _fb_age() -> float:
@@ -97,6 +134,8 @@ func _fb_age() -> float:
 func _draw() -> void:
 	if _active:
 		_draw_ring()
+	if show_stamina and (_active or stamina < 0.995):
+		_draw_stamina(_pos if _active else anchor)
 	var age := _fb_age()
 	if age < FEEDBACK_TIME and _fb_text != "":
 		_draw_feedback(age)
@@ -123,9 +162,31 @@ func _draw_ring() -> void:
 		draw_arc(_pos, INNER + 9.0, 0.0, TAU, 48, Color(GOLD, 0.5), 3.0, true)
 
 
+## Stamina: an arc inside the target circle, emptying clockwise from the top. Inside,
+## because the closing ring sweeps the outside right before the hit, and two rings
+## there would fight at the one moment that matters. Never green or gold (those mean
+## GOOD and PERFECT): calm white while fresh, orange once it bites, blinking red near
+## empty. Between balls it stays faint over the player.
+func _draw_stamina(c: Vector2) -> void:
+	var r := INNER - 9.0
+	var v := clampf(stamina, 0.0, 1.0)
+	var col := STAMINA_FRESH
+	if v < STAMINA_LOW:
+		col = STAMINA_EMPTY
+	elif v < STAMINA_TIRED:
+		col = STAMINA_EMPTY.lerp(STAMINA_HALF, (v - STAMINA_LOW) / (STAMINA_TIRED - STAMINA_LOW))
+	var alpha := 0.95 if _active else 0.45
+	if v < STAMINA_LOW:
+		alpha *= 0.55 + 0.45 * absf(sin(_blink))
+	draw_arc(c, r, 0.0, TAU, 40, Color(0, 0, 0, 0.3 * alpha), 6.0, true)
+	if v > 0.0:
+		var start := -PI * 0.5
+		draw_arc(c, r, start, start + TAU * v, maxi(4, int(40 * v)), Color(col, alpha), 4.0, true)
+
+
 func _draw_feedback(age: float) -> void:
 	var vp := get_viewport_rect().size
-	var c := Vector2(vp.x * 0.5, FB_TOP_Y)
+	var c := _fb_pos
 	var fade := 1.0 - clampf((age - 0.6) / 0.35, 0.0, 1.0)
 	draw_set_transform(c, 0.0, Vector2(FB_FX, FB_FX))
 	c = Vector2.ZERO
@@ -153,7 +214,7 @@ func _draw_feedback(age: float) -> void:
 		if t < 1.0:
 			draw_arc(c, INNER + (1.0 - pow(1.0 - t, 2.0)) * 45.0, 0.0, TAU, 64, Color(GOOD, (1.0 - t) * 0.8), 4.0, true)
 	draw_set_transform(Vector2.ZERO)
-	c = Vector2(vp.x * 0.5, FB_TOP_Y)
+	c = _fb_pos
 
 	# The word: pops in (overshoot), sits in the strip, fades out.
 	var font := get_theme_default_font()
@@ -178,3 +239,14 @@ func _draw_feedback(age: float) -> void:
 		var sp := Vector2(sx, c.y + size * 0.35 + 26.0)
 		draw_string_outline(font, sp, _fb_sub, HORIZONTAL_ALIGNMENT_LEFT, -1, ss, 6, Color(0, 0, 0, 0.75 * fade))
 		draw_string(font, sp, _fb_sub, HORIZONTAL_ALIGNMENT_LEFT, -1, ss, Color(1, 1, 1, 0.95 * fade))
+	if _xp_name != "":
+		# The trained skill and its bar, under the verdict (screen space, unscaled).
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		var y := _fb_pos.y + 66.0
+		var w := 200.0
+		var x0 := _fb_pos.x - w * 0.5
+		var al := fade
+		draw_string(font, Vector2(x0, y - 8.0), "%s %d" % [_xp_name, _xp_level], HORIZONTAL_ALIGNMENT_CENTER, w, 20, Color(1, 1, 1, 0.85 * al))
+		draw_rect(Rect2(x0, y, w, 8.0), Color(0, 0, 0, 0.4 * al))
+		draw_rect(Rect2(x0, y, w * _xp_frac, 8.0), Color(GOLD, 0.95 * al))
+

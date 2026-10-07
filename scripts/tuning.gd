@@ -16,9 +16,10 @@ var early_limit := 0.30        # swing released earlier than this = whiff
 var late_limit := 0.12         # how long after the ideal moment a swing still connects
 
 # Swipe shape -> stroke (see ShotGesture)
-var curve_min := 0.14          # sideways bulge / length above which a swipe is a topspin "C"
-var drop_len := 0.11           # a slice hook shorter than this (of screen height) is a drop shot
-var hook_min := 0.15           # how far the finger must come back (of the forward length) for a slice
+var curl_min := 0.12          # the turn of the wrist after an upward stroke (of its length) for a TOPSPIN
+var curl_turn := 45.0         # how sharply (degrees) the finger must turn away to count as that turn
+var lob_speed := 1.4          # an upward arc slower than this (screen heights per second) is a LOB
+var drop_len := 0.11           # a downward stroke shorter than this (of screen height) is a drop shot
 
 # Player
 var player_speed := 6.2
@@ -32,7 +33,15 @@ var ai_skill := 0.5
 # Feedback / debug
 var hitstop := true
 var vibration := true
-var ambience := true            # calm birds in the background
+var ambience := true            # the sound of the location (sea, city, birds)
+var music := true               # menu music
+var graphics := 0               # GraphicsQuality preset: 0 auto, 1 low .. 4 max, 5 custom
+var gfx_res := 0.75             # graphics parts (GraphicsQuality): share of the screen resolution
+var gfx_aa := 1                 # smooth edges: 0 off, 1 2x, 2 4x
+var gfx_shadows := 2            # 0 off, 1 hard, 2 soft, 3 the softest
+var gfx_reach := 1.0            # how far shadows are drawn, x the scenery's own
+var gfx_details := true         # scenery extras
+var show_fps := false           # the frame rate in a corner
 var show_path := false
 var show_landing := true
 var hawkeye_range := 0.15      # show the line-call replay when the mark is this close to a line (m)

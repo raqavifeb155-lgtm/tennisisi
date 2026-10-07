@@ -79,6 +79,29 @@ func _init(format_index := 0, seed_value := 0) -> void:
 	roll_lineup()
 
 
+const SAVED := ["format", "location", "lineup", "racket", "pending_loot", "missed_loot", "banked",
+	"state", "stage", "wildcards", "perks", "results", "gold", "champion", "offer"]
+
+
+## The run as plain data, for the save file: a phone that reloads the page (Telegram
+## in the background, low memory) must not lose a tournament in progress.
+func to_dict() -> Dictionary:
+	var d := {"rng_seed": rng.seed, "rng_state": rng.state}
+	for k in SAVED:
+		d[k] = get(k)
+	return d
+
+
+static func from_dict(d: Dictionary) -> Tournament:
+	var t := Tournament.new(int(d.get("format", 0)), 1)
+	for k in SAVED:
+		if d.has(k):
+			t.set(k, d[k])
+	t.rng.seed = int(d.get("rng_seed", 1))
+	t.rng.state = int(d.get("rng_state", 0))
+	return t
+
+
 ## Rolls every opponent's modifiers and the loot they carry, so it can be shown in the
 ## bracket before the match. The first opponent is the tutorial: no modifiers.
 func roll_lineup() -> void:

@@ -19,12 +19,12 @@ const PAGES := [
 	},
 	{
 		"title": "Вращение",
-		"text": "Форма свайпа задаёт удар:\nпрямо — FLAT, быстрый и низкий;\nдуга «C» — TOPSPIN, ныряет и прыгает;\nвперёд и крючком на себя — SLICE, медленный и низкий;\nкороткий маленький крючок — УКОРОЧЕННЫЙ: падает сразу за сеткой.",
+		"text": "Форма свайпа задаёт удар. Вверх — атака, вниз — подрезка:\nвверх прямо — FLAT, быстрый и низкий;\nвверх и выкрут в конце — TOPSPIN: ныряет и прыгает, чем сильнее выкрут, тем злее;\nвниз — SLICE, режет и стелется (почти вертикально — прямо, наискосок — в сторону);\nкороткий вниз — УКОРОЧЕННЫЙ: падает сразу за сеткой;\nмедленно вверх по дуге — СВЕЧА, высоко над соперником у сетки.",
 		"pic": "spin",
 	},
 	{
 		"title": "Подача",
-		"text": "Джойстиком встань в другое место за линией. Тап — подброс. Свайп в диагональный квадрат, когда кольцо сожмётся.\nПрямо — плоская (до 200+ км/ч), дуга — кик, крючок — резаная, уходит в сторону.\nКороткий крючок ДО подброса — подача снизу, как у Бублика.",
+		"text": "Встань в другое место за линией: джойстиком или тапом ниже игрока (держи палец — идёт за ним). Тап по корту — подброс. Свайп в диагональный квадрат, когда кольцо сожмётся.\nПрямо вверх — плоская (до 200+ км/ч), вверх с выкрутом — кик, вниз — резаная, уходит в сторону.\nКороткий свайп вниз ДО подброса (как укороченный) — подача снизу, как у Бублика.",
 		"pic": "serve",
 	},
 	{
@@ -204,15 +204,16 @@ func _draw_pic() -> void:
 				_arrow(a, a + Vector2(30, -170), C_FINGER)
 				_pic.draw_string(get_theme_default_font(), Vector2(spot.x + 50, spot.y - 40), "PERFECT", HORIZONTAL_ALIGNMENT_LEFT, -1, 30, C_ACCENT)
 		"spin":
-			var w := sz.x / 4.0
-			var names := ["FLAT", "TOPSPIN", "SLICE", "DROP"]
-			for i in 4:
+			var w := sz.x / 5.0
+			var names := ["FLAT", "TOPSPIN", "SLICE", "DROP", "LOB"]
+			for i in 5:
 				var base := Vector2(w * i + w * 0.5, sz.y - 50)
-				var pts := _gesture(i, base, minf(fmod(_t, 1.8) / 1.2, 1.0))
+				# The lob is drawn slowly: speed is what makes it a lob.
+				var pts := _gesture(i, base, minf(fmod(_t, 1.8) / (1.6 if i == 4 else 0.9), 1.0))
 				if pts.size() > 1:
 					_pic.draw_polyline(pts, C_FINGER, 7, true)
 					_pic.draw_circle(pts[pts.size() - 1], 9, C_FINGER)
-				_pic.draw_string(get_theme_default_font(), Vector2(base.x - 50, sz.y - 8), names[i], HORIZONTAL_ALIGNMENT_CENTER, 100, 24, C_ACCENT)
+				_pic.draw_string(get_theme_default_font(), Vector2(base.x - w * 0.5, sz.y - 8), names[i], HORIZONTAL_ALIGNMENT_CENTER, w, 22, C_ACCENT)
 		"serve":
 			_court(sz)
 			var server := Vector2(c.x + 60, sz.y - 40)
@@ -251,23 +252,24 @@ func _gesture(kind: int, base: Vector2, progress: float) -> PackedVector2Array:
 		var u := float(i) / 30.0
 		match kind:
 			0:
-				pts.append(base + Vector2(10 * u, -200 * u))
+				# FLAT: straight up.
+				pts.append(base + Vector2(6 * u, -200 * u))
 			1:
-				pts.append(base + Vector2(55 * sin(u * PI), -200 * u))
+				# TOPSPIN: up, then the turn of the wrist over to the side and down.
+				if u < 0.7:
+					pts.append(base + Vector2(0, -200 * u / 0.7))
+				else:
+					var a := (u - 0.7) / 0.3 * PI * 0.5
+					pts.append(base + Vector2(40 * sin(a), -200 + 40 * (1.0 - cos(a))))
+			2:
+				# SLICE: cut down from high on the left to low on the right.
+				pts.append(base + Vector2(-35 + 60 * u, -200 + 180 * u))
 			3:
-				if u < 0.65:
-					var k := u / 0.65
-					pts.append(base + Vector2(-5 * k, -80 * k))
-				else:
-					var k := (u - 0.65) / 0.35
-					pts.append(base + Vector2(-5 - 25 * k, -80 + 45 * k * k))
+				# DROP: a short stroke down.
+				pts.append(base + Vector2(8 * sin(u * PI), -110 + 60 * u))
 			_:
-				if u < 0.65:
-					var k := u / 0.65
-					pts.append(base + Vector2(-10 * k, -200 * k))
-				else:
-					var k := (u - 0.65) / 0.35
-					pts.append(base + Vector2(-10 - 45 * k, -200 + 90 * k * k))
+				# LOB: a slow scoop up along an arc.
+				pts.append(base + Vector2(-38 * sin(u * PI), -200 * u))
 	return pts
 
 

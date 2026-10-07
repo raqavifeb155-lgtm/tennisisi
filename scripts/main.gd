@@ -6,8 +6,8 @@ extends Node3D
 ##   tap    -> run to that spot (hold the finger to keep running toward it)
 ##   swipe  -> hit: the ball travels along the swiped line *from the player*;
 ##             swipe speed = power; depth is chosen automatically (deep, safely in);
-##             the swipe's shape picks the stroke: straight = flat, "C" arc = topspin,
-##             hook back toward you = slice (see ShotGesture)
+##             the swipe's shape picks the stroke: up straight = flat, up and a turn
+##             of the wrist = topspin, down = slice, short down = drop (see ShotGesture)
 ##   net    -> balls taken before the bounce are volleys; high balls are smashed
 ##   timing -> a ring shrinks onto the contact point: swipe when it meets the circle
 ##   serve  -> tap = toss, swipe = serve (the ring sits on the tossed ball)
@@ -16,7 +16,7 @@ extends Node3D
 
 enum Who { NONE = -1, PLAYER = 0, CPU = 1 }
 enum Phase { WAIT, SERVE, RALLY, OVER, IDLE, BONUS }  # IDLE: menus open; BONUS: trophy mini-game
-enum ShotType { TOPSPIN, FLAT, SLICE, DROP }
+enum ShotType { TOPSPIN, FLAT, SLICE, DROP, LOB }
 
 const PLAYER_HOME := Vector3(0.0, 0.0, 12.6)
 const CPU_HOME := Vector3(0.0, 0.0, -12.6)
@@ -65,9 +65,13 @@ var _perk_choice := {}
 var _practice_skill := 0.5
 var _autoplay_format := 0
 var _bot_dive_test := false
+var _bot_sd := 0.035
+var _bot_xp := -1.0
 var _cpu_serve_mult := 1.0        # difficulty modifier "Бомбардир"
 var _run_dist := 0.0              # metres run this rally (experience for "Ноги")
 var shot_type := ShotType.TOPSPIN
+var _curl_k := 1.0              # topspin strength from the last swipe's turn of the wrist (ShotGesture)
+var trail: BallTrail
 
 # Serve state
 var server := Who.PLAYER
@@ -107,6 +111,9 @@ var _hits_total := 0
 
 # Visual helpers
 const AIM_IN := Color(1.0, 0.92, 0.25, 0.9)
+const TRAIL_TOPSPIN := Color(1.0, 0.55, 0.15)
+const TRAIL_SLICE := Color(0.45, 0.8, 1.0)
+const TRAIL_FLAT := Color(1.0, 1.0, 1.0)
 const AIM_OUT := Color(1.0, 0.3, 0.25, 0.9)
 var _aim: MeshInstance3D
 var _aim_mat: StandardMaterial3D
@@ -134,6 +141,9 @@ var scenery: Scenery
 var location_id := "park"
 var _next_location := "park"      # chosen on the location screen (and used for practice)
 var _mark_tick := 0
+var _step_dist := [0.0, 0.0]       # metres run since the last footprint, per player
+var _step_side := [1.0, 1.0]       # which foot comes down next
+var _mark_reach := Vector2(BallPhysics.RADIUS, BallPhysics.RADIUS)  # the last bounce's mark (Court.mark_reach)
 
 # Trophy mini-game (after beating an opponent who carries a rare racket): the net sinks,
 # the opponent runs around their half, and the player has a few serves to hit them.
@@ -171,6 +181,10 @@ func _ready() -> void:
 			_autoplay_format = int(a.get_slice("=", 1))
 		elif a.begins_with("--points="):
 			autoplay_points = int(a.get_slice("=", 1))
+		elif a.begins_with("--bot-sd="):
+			_bot_sd = float(a.get_slice("=", 1))  # bot timing error (s): ~0.035 sharp, ~0.07 a thumb on a phone
+		elif a.begins_with("--xp="):
+			_bot_xp = float(a.get_slice("=", 1))  # every skill starts with this much experience
 
 	_build_environment()
 	court = Court.new()
@@ -180,6 +194,9 @@ func _ready() -> void:
 	add_child(ball)
 	ball.bounced.connect(_on_bounce)
 	ball.hit_net.connect(_on_net)
+	trail = BallTrail.new()
+	trail.ball = ball
+	add_child(trail)
 
 	player = Athlete.new()
 	add_child(player)
@@ -211,7 +228,7 @@ func _ready() -> void:
 	hud.touch.swipe_progress.connect(_on_swipe_progress)
 	hud.touch.tapped.connect(_on_tap)
 	hud.touch.held.connect(_on_hold)
-	hud.set_score(scoreboard.point_text())
+	hud.show_board(scoreboard, ["ВЫ", cpu_label])
 	hud.menu_requested.connect(_show_menu)
 
 	ui = TournamentUI.new()
@@ -232,14 +249,34 @@ func _ready() -> void:
 	if SaveData.control_chosen:
 		Tuning.tap_controls = SaveData.tap_controls
 	Tuning.one_handed_bh = SaveData.one_handed_bh
+	player.set_look(SaveData.look)
+	Tuning.ambience = SaveData.ambience
+	Tuning.music = SaveData.music
+	Tuning.graphics = SaveData.graphics
+	for k in SaveData.gfx:
+		Tuning.set(k, SaveData.gfx[k])
+	graphics.set_preset(Tuning.graphics)
 	_practice_skill = Tuning.ai_skill
 	if not autoplay and not _headless():
 		sfx.set_ambience(Tuning.ambience)
-		Tuning.changed.connect(func() -> void: sfx.set_ambience(Tuning.ambience))
+		sfx.set_music_enabled(Tuning.music)
 		Tuning.changed.connect(func() -> void:
-			if SaveData.tap_controls != Tuning.tap_controls or SaveData.one_handed_bh != Tuning.one_handed_bh:
+			sfx.set_ambience(Tuning.ambience)
+			sfx.set_music_enabled(Tuning.music)
+			graphics.set_preset(Tuning.graphics))
+		Tuning.changed.connect(func() -> void:
+			var gfx := {"show_fps": Tuning.show_fps}
+			if Tuning.graphics == GraphicsQuality.CUSTOM:
+				for k in ["gfx_res", "gfx_aa", "gfx_shadows", "gfx_reach", "gfx_details"]:
+					gfx[k] = Tuning.get(k)
+			var now := [Tuning.tap_controls, Tuning.one_handed_bh, Tuning.ambience, Tuning.music, Tuning.graphics, gfx]
+			if now != [SaveData.tap_controls, SaveData.one_handed_bh, SaveData.ambience, SaveData.music, SaveData.graphics, SaveData.gfx]:
+				SaveData.gfx = gfx
 				SaveData.tap_controls = Tuning.tap_controls
 				SaveData.one_handed_bh = Tuning.one_handed_bh
+				SaveData.ambience = Tuning.ambience
+				SaveData.music = Tuning.music
+				SaveData.graphics = Tuning.graphics
 				SaveData.save())
 	_last_real_us = Time.get_ticks_usec()
 	if _bonus_rounds > 0:
@@ -251,11 +288,18 @@ func _ready() -> void:
 		Skills.reset()  # the bot always starts as a beginner, spending its starting points
 		for id in ["forehand", "backhand", "serve"]:
 			Skills.spend_point(id)
+		if _bot_xp >= 0.0:
+			for id in Skills.LIST:
+				Skills.add_xp(id, _bot_xp)  # --xp: a player some tournaments in
+			Skills.pending = []
 		_start_tournament(_autoplay_format)
 	elif autoplay or _headless():
 		_start_practice()
 	else:
 		_show_menu()
+		# The menu and the scene render under the loading screen while shaders
+		# compile: the first rally plays without hitches.
+		add_child(BootLoader.new())
 
 
 func _build_environment() -> void:
@@ -272,8 +316,18 @@ func _leave_marks() -> void:
 	if court.surface != "clay":
 		return
 	_mark_tick += 1
-	for a in [player, cpu]:
-		var ath: Athlete = a
+	var dt := get_physics_process_delta_time()
+	for i in 2:
+		var ath: Athlete = player if i == 0 else cpu
+		# Footprints every stride while running, left and right of the line of travel.
+		var speed := ath.velocity.length()
+		if speed > 1.2 and not ath.is_down():
+			_step_dist[i] += speed * dt
+			if _step_dist[i] > 0.8:
+				_step_dist[i] = 0.0
+				_step_side[i] = -_step_side[i]
+				var aside: Vector3 = ath.velocity.normalized().cross(Vector3.UP) * (0.12 * float(_step_side[i]))
+				court.add_step(ath.global_position + aside, ath.velocity)
 		if ath.take_landing():
 			court.add_mark(ath.global_position + ath.velocity.normalized() * 0.8, ath.velocity, 1.3, 0.45)
 		if ath.is_sliding() and _mark_tick % 3 == 0:
@@ -431,6 +485,7 @@ func _physics_process(delta: float) -> void:
 	ball.step(delta)
 	if phase == Phase.RALLY:
 		_run_dist += player.velocity.length() * delta
+	_update_stamina(delta)
 	_leave_marks()
 	if phase == Phase.RALLY and ball.state.rolling:
 		_end_point(last_hitter, "WINNER")
@@ -450,8 +505,17 @@ func _process(_delta: float) -> void:
 	var now := Time.get_ticks_usec()
 	var rd := clampf((now - _last_real_us) / 1000000.0, 0.0, 0.1)
 	_last_real_us = now
+	hud.set_in_match(phase != Phase.IDLE)
 	_update_slowmo(rd)
 	_update_helpers()
+	_update_safe_area(rd)
+	_update_persistence(rd)
+	sfx.rally = phase == Phase.RALLY or phase == Phase.SERVE
+	player.stance_style = 1 if phase == Phase.SERVE and server == Who.CPU else 0
+	cpu.stance_style = 1 if phase == Phase.SERVE and server == Who.PLAYER else 0
+	var before_toss := phase == Phase.SERVE and server == Who.PLAYER and not toss_active and not autoplay
+	hud.show_serve_hint(before_toss and _own_serves < SERVE_HINTS, Tuning.tap_controls)
+	hud.touch.shot_window = phase == Phase.RALLY and _player_can_hit() and t_contact < 0.7
 	_update_timing_ring()
 	var look := ball.state.pos if ball.visible else Vector3.INF
 	player.look_target = look
@@ -459,10 +523,8 @@ func _process(_delta: float) -> void:
 	if phase == Phase.IDLE:
 		hud.set_rally("")
 	else:
-		var mp := ""
-		if tournament_mode and phase != Phase.OVER:
-			mp = "   ·   МАТЧБОЛ" if scoreboard.match_point_for(0) else ("   ·   матчбол у соперника" if scoreboard.match_point_for(1) else "")
-		hud.set_rally("%s   ·   rally %d%s" % [scoreboard.games_text(), rally, mp])
+		# Match point, break point and the tiebreak are on the score bug now.
+		hud.set_rally("розыгрыш · %d" % rally if rally >= 2 else "")
 	if Tuning.show_debug_text:
 		hud.set_debug_text(_debug_string())
 	else:
@@ -507,6 +569,7 @@ func _update_player_hitting() -> void:
 		var reach_d := Vector2(contact_pred.x - player.position.x, contact_pred.z - player.position.z).length()
 		if reach_d > Athlete.REACH and reach_d < Athlete.REACH + Athlete.DIVE_REACH:
 			player.dive(contact_pred)
+			_spend_stamina(STAMINA_DIVE)
 			_stats["dives"] = _stats.get("dives", 0) + 1
 
 	if _prev_rel < 0.0 and rel >= 0.0 and ball.state.vel.z > 0.0:
@@ -543,10 +606,13 @@ func _on_tap(pos: Vector2) -> void:
 			_start_toss()
 		return
 	if phase == Phase.SERVE and server == Who.PLAYER:
-		if not toss_active and serve_attempt == 1 and rng.randf() < 0.08:
-			var to_box_u := Vector3(box_side * 2.0 - player.position.x, 0.0, -2.0 - player.position.z).normalized()
-			_player_underarm_serve(to_box_u, rng.randf_range(0.0, 0.6))
-		elif not toss_active:
+		# Tap controls: anything below the server's head (the player, the strip behind
+		# the baseline, the bottom of the screen) is a step sideways; the court above
+		# is the toss.
+		if Tuning.tap_controls and not toss_active and _is_serve_step_zone(pos):
+			_set_serve_step(pos)
+			return
+		if not toss_active:
 			_start_toss()
 		return
 	if Tuning.tap_controls:
@@ -554,10 +620,36 @@ func _on_tap(pos: Vector2) -> void:
 
 
 func _on_hold(pos: Vector2) -> void:
-	if phase == Phase.SERVE and server == Who.PLAYER and toss_active:
+	if phase == Phase.SERVE and server == Who.PLAYER:
+		if Tuning.tap_controls and not toss_active and _is_serve_step_zone(pos):
+			_set_serve_step(pos)  # the finger held low: the server follows it along the line
 		return
 	if Tuning.tap_controls:
 		_set_move_target(pos)
+
+
+## Before the serve, the screen is split at the server's head: below it is for
+## stepping sideways, above it (the court) is the toss. A tap on the player himself
+## is a step, never an accidental toss.
+func _is_serve_step_zone(screen_pos: Vector2) -> bool:
+	var head := cam.unproject_position(player.position + Vector3.UP * 1.9)
+	return screen_pos.y > head.y
+
+
+## Walks the server along the baseline to the finger's side position.
+func _set_serve_step(screen_pos: Vector2) -> void:
+	var g := _screen_to_ground(screen_pos)
+	var x := player.position.x
+	if g != Vector3.INF:
+		x = g.x
+	else:  # (cannot happen below the head, but keep the old place if it does)
+		return
+	var a := player.area
+	_move_target = Vector3(clampf(x, a.position.x, a.end.x), 0.0, player.position.z)
+	_assist_suppressed = true
+	_tap_marker.global_position = Vector3(_move_target.x, 0.05, _move_target.z)
+	_tap_marker.visible = true
+	_tap_marker_hold = 0.6
 
 
 func _set_move_target(screen_pos: Vector2) -> void:
@@ -605,7 +697,7 @@ func _pace_from_speed(speed: float) -> float:
 
 
 func _read_gesture(points: PackedVector2Array, times: PackedInt32Array) -> ShotGesture.Result:
-	return ShotGesture.classify(points, times, get_viewport().get_visible_rect().size.y, Tuning.curve_min, Tuning.hook_min, Tuning.drop_len)
+	return ShotGesture.classify(points, times, get_viewport().get_visible_rect().size.y, Tuning.curl_min, Tuning.curl_turn, Tuning.drop_len, 12.0, 0.6, Tuning.lob_speed)
 
 
 func _on_swipe(points: PackedVector2Array, times: PackedInt32Array) -> void:
@@ -613,6 +705,9 @@ func _on_swipe(points: PackedVector2Array, times: PackedInt32Array) -> void:
 	var dir := _swipe_world_dir(g.start, g.apex)
 	var pace_k := _pace_from_speed(g.speed)
 	shot_type = g.type as ShotType
+	_curl_k = g.curl_k
+	if shot_type == ShotType.LOB and (phase == Phase.SERVE or phase == Phase.BONUS):
+		shot_type = ShotType.TOPSPIN  # no lob on the serve: a slow scoop up is a kick
 	_aim_hold = 0.7
 	if phase == Phase.BONUS:
 		if toss_active and _bonus_state == 0:
@@ -657,6 +752,18 @@ func rally_target(origin: Vector3, d: Vector3, pace_k: float) -> Vector3:
 		var ps := origin + d * ((signf(p.x) * w - origin.x) / d.x) if absf(d.x) > 0.001 else p
 		# Crosses the sideline deep in the other half: angled shot. Otherwise: into the deep corner.
 		p = ps if ps.z <= -5.0 and ps.z >= zt else Vector3(signf(p.x) * w, 0.0, zt)
+	p.y = BallPhysics.RADIUS
+	return p
+
+
+## Lob target: along the aim line, deep behind a player at the net. A clean scoop lands
+## a couple of metres inside the baseline; a poor one drops short, where it gets smashed.
+func lob_target(origin: Vector3, d: Vector3, q: float) -> Vector3:
+	var w := Court.SINGLES_HALF_WIDTH - 0.8
+	var depth := Court.HALF_LENGTH - lerpf(5.0, 2.0, q)
+	var p := origin + d * ((-depth - origin.z) / d.z)
+	p.x = clampf(p.x, -w, w)
+	p.z = -depth
 	p.y = BallPhysics.RADIUS
 	return p
 
@@ -728,7 +835,7 @@ func _set_aim(origin: Vector3, p: Vector3, inside: bool) -> void:
 func _swing_style(type: int, height: float) -> int:
 	if height > SMASH_MIN_H:
 		return Athlete.Style.SMASH
-	return [Athlete.Style.TOPSPIN, Athlete.Style.FLAT, Athlete.Style.SLICE, Athlete.Style.DROP][type]
+	return [Athlete.Style.TOPSPIN, Athlete.Style.FLAT, Athlete.Style.SLICE, Athlete.Style.DROP, Athlete.Style.TOPSPIN][type]
 
 
 func _player_hit(err: float, dir: Vector3, pace_k: float, type: int) -> void:
@@ -752,6 +859,7 @@ func _player_hit(err: float, dir: Vector3, pace_k: float, type: int) -> void:
 		# One-handed backhand: more punch down the line, a slightly narrower window.
 		sk["window"] *= 0.9
 		sk["pace"] *= 1.06
+	sk["window"] *= lerpf(1.0, 0.7, _tired())
 	var tq := timing_quality(err, sk["window"], sk["good"])
 	var q_t: float = tq[0]
 	var label: String = tq[1]
@@ -763,7 +871,8 @@ func _player_hit(err: float, dir: Vector3, pace_k: float, type: int) -> void:
 
 	var origin := Vector3(bp.x, 0.0, bp.z)
 	var drop := type == ShotType.DROP and not smash
-	var target := drop_target(origin, dir, pace_k, q) if drop else rally_target(origin, dir, pace_k)
+	var lob := type == ShotType.LOB and not smash
+	var target := drop_target(origin, dir, pace_k, q) if drop else (lob_target(origin, dir, q) if lob else rally_target(origin, dir, pace_k))
 	var pace: float
 	var top: float
 	if smash:
@@ -775,28 +884,37 @@ func _player_hit(err: float, dir: Vector3, pace_k: float, type: int) -> void:
 				pace = lerpf(24.0, 40.0, pace_k)
 				top = 40.0
 			ShotType.SLICE:
-				# Slice floats: slower, lots of backspin, stays low after the bounce.
-				pace = lerpf(15.0, 23.0, pace_k)
-				top = -lerpf(180.0, 270.0, pace_k)
+				# A knifed slice: not slow, backspin that keeps it low over the net and
+				# skidding after the bounce (it used to float, too slow for the spin).
+				pace = lerpf(20.0, 29.0, pace_k)
+				top = -lerpf(150.0, 230.0, pace_k)
 			ShotType.DROP:
 				# Soft hands, heavy backspin: just over the net and it dies.
 				pace = 9.0
 				top = -lerpf(260.0, 320.0, q)
+			ShotType.LOB:
+				# Scooped up high and deep with a little topspin, over a player at the net.
+				# pace caps the launch speed; the lob's arc is fixed by the solver.
+				pace = 30.0
+				top = lerpf(120.0, 260.0, q)
 			_:
-				pace = lerpf(21.0, 35.0, pace_k)
-				top = lerpf(190.0, 340.0, pace_k)
-		if volley and not drop:
+				# Heavy topspin (Nadal): fast and with a lot of spin, so the ball clears the
+				# net high, dives and kicks up. Slower with this spin it was a half-lob.
+				pace = lerpf(26.0, 38.0, pace_k)
+				top = lerpf(300.0, 470.0, pace_k) * _curl_k
+		if volley and not drop and not lob:
 			# Punch volleys: shorter swing, less pace and spin, more control.
 			pace *= 0.8
 			top *= 0.5
-	if not drop:
-		pace *= sk["pace"]
+	if not drop and not lob:
+		pace *= sk["pace"] * lerpf(1.0, 0.85, _tired())
 	top *= sk["spin"]
+	_spend_stroke(pace_k)
 
 	if not player.is_swinging():
 		player.swing(side, 0.02, bp, _swing_style(type, bp.y))
 	player.update_contact(bp)
-	var r := execute_shot(Who.PLAYER, player, bp, target, pace, top, q, err, side, false, 0.0, drop, 0.3, sk["scatter"])
+	var r := execute_shot(Who.PLAYER, player, bp, target, pace, top, q, err, side, lob, 0.0, drop, 0.3, sk["scatter"] * lerpf(1.0, 1.8, _tired()))
 	_gain_xp(skill, label)
 	if label == "PERFECT":
 		_match_stats["perfect"] = _match_stats.get("perfect", 0) + 1
@@ -828,6 +946,11 @@ func _player_hit(err: float, dir: Vector3, pace_k: float, type: int) -> void:
 		notes.append("выбило")
 		_stats["stumbles"] = _stats.get("stumbles", 0) + 1
 	var stroke: String = "SMASH" if smash else (("VOLLEY " if volley else "") + ShotGesture.NAMES[type])
+	var big_curl := type == ShotType.TOPSPIN and not smash and _curl_k >= 1.2
+	if type == ShotType.TOPSPIN and not smash:
+		stroke += " ×%.1f" % _curl_k
+	if big_curl:
+		sfx.play("swing", -3.0, 0.8)  # the whip of a full turn of the wrist
 	var sub := "%s  ·  %d km/h  ·  %d%%" % [stroke, roundi(r.speed * 3.6), roundi(q * 100.0)]
 	if not notes.is_empty():
 		sub += "  ·  " + ", ".join(notes)
@@ -838,7 +961,7 @@ func _player_hit(err: float, dir: Vector3, pace_k: float, type: int) -> void:
 			_hitstop_until_ms = Time.get_ticks_msec() + 70
 	else:
 		cam.impulse(0.4 * q)
-	_haptic("heavy" if smash else ("perfect" if label == "PERFECT" else ("medium" if label == "GOOD" else "light")))
+	_haptic("heavy" if smash or big_curl else ("perfect" if label == "PERFECT" else ("medium" if label == "GOOD" else "light")))
 
 	last_shot = {
 		"label": label, "err_ms": err * 1000.0, "q_t": q_t, "q_p": q_p, "q_m": q_m, "q": q,
@@ -899,11 +1022,45 @@ func _ideal_contact() -> Vector3:
 	return contact_pred
 
 
+## 0 fresh .. 1 exhausted: how much the low stamina bites (nothing above Skills.tired_below()).
+func _tired() -> float:
+	var below := Skills.tired_below()
+	return clampf((below - stamina) / below, 0.0, 1.0)
+
+
+func _update_stamina(delta: float) -> void:
+	if phase != Phase.RALLY:
+		return  # the breather between points is given in one go (_setup_serve)
+	var top_speed := maxf(Tuning.player_speed * Skills.run_speed_mult(), 0.1)
+	var f := clampf(player.velocity.length() / top_speed, 0.0, 1.0)
+	# A sprint costs much more than a jog; standing still in a rally gives a little back.
+	_spend_stamina(STAMINA_SPRINT * f * f * delta)
+	if f < 0.25:
+		stamina = minf(stamina + STAMINA_STAND * delta, 1.0)
+
+
+## Spends stamina at the "Выносливость" rate; what was spent pays that skill's experience
+## at the end of the point.
+func _spend_stamina(base: float) -> void:
+	var before := stamina
+	stamina = clampf(stamina - base * Skills.stamina_drain(), 0.0, 1.0)
+	_stamina_spent += before - stamina
+
+
+## A hard stroke takes a little out of the legs.
+func _spend_stroke(pace_k: float) -> void:
+	_spend_stamina(STAMINA_STROKE + STAMINA_PACE * pace_k)
+
+
 func _update_player_movement() -> void:
 	if phase == Phase.BONUS and _bonus_state == 3:
 		return  # running to pick up the trophy (steered by _bonus_pickup)
-	player.max_speed = Tuning.player_speed * Skills.run_speed_mult()
+	var legs := lerpf(1.0, 0.7, _tired())
+	if stamina <= 0.001:
+		legs = minf(legs, 0.6)  # empty: a jog at best
+	player.max_speed = Tuning.player_speed * Skills.run_speed_mult() * legs
 	player.one_handed_backhand = Tuning.one_handed_bh
+	player.tired = phase != Phase.RALLY and phase != Phase.IDLE and phase != Phase.BONUS and stamina < Skills.tired_below()
 	var serving := (phase == Phase.SERVE and server == Who.PLAYER) or phase == Phase.BONUS
 	if serving:
 		player.max_speed *= 0.4  # placing for the serve is a calm sideways walk
@@ -997,6 +1154,7 @@ func error_chance(who: int, q: float, incoming_speed: float) -> float:
 
 
 func execute_shot(who: int, hitter: Athlete, contact: Vector3, target: Vector3, pace: float, top: float, q: float, t_err: float, side: int, lob := false, side_spin := 0.0, drop := false, net_margin := 0.3, scatter := 1.0) -> ShotSolver.Result:
+	trail.set_color(TRAIL_TOPSPIN if top >= 200.0 else (TRAIL_SLICE if top < 0.0 else TRAIL_FLAT), who == Who.PLAYER and q >= 0.9)
 	# An unforced or forced error: decided before the shot, shown as a real miss.
 	var incoming := ball.state.vel.length()
 	var err_kind := 0  # 0 none, 1 net, 2 long, 3 wide
@@ -1061,7 +1219,11 @@ func _on_bounce(pos: Vector3, speed: float) -> void:
 	sfx.play("bounce", lerpf(-22.0, -6.0, clampf(speed / 30.0, 0.0, 1.0)), rng.randf_range(0.9, 1.1))
 	if phase == Phase.BONUS:
 		_bonus_bounces += 1
-	court.add_mark(pos, ball.state.vel, 0.11, 0.075)  # clay keeps the ball's mark
+	# Clay keeps the ball's mark: round from a ball coming down steeply, a long oval from
+	# a fast flat one. The line call reads the same mark (it touches the line = in).
+	var mark := Court.mark_size(ball.impact_vel)
+	court.add_mark(pos, ball.impact_vel, mark.x, mark.y)
+	_mark_reach = Court.mark_reach(ball.impact_vel)
 	if phase != Phase.RALLY:
 		return
 	bounces += 1
@@ -1074,15 +1236,15 @@ func _on_bounce(pos: Vector3, speed: float) -> void:
 		_line_call(pos, receiver_half)
 	if serve_flight:
 		serve_flight = false
-		if Court.in_service_box(pos, receiver_half, box_side, BallPhysics.RADIUS):
+		if Court.in_service_box_mark(pos, receiver_half, box_side, _mark_reach):
 			_close_call = {}  # a good serve: the call only matters if it decides something
-		if not Court.in_service_box(pos, receiver_half, box_side, BallPhysics.RADIUS):
+		if not Court.in_service_box_mark(pos, receiver_half, box_side, _mark_reach):
 			_fault("NET" if net_touched else "FAULT")
 		elif net_touched:
 			_let()
 		return
 	if bounces == 1:
-		if not Court.is_in_singles(pos, receiver_half, BallPhysics.RADIUS):
+		if not Court.is_in_singles_mark(pos, receiver_half, _mark_reach):
 			_end_point(_other(last_hitter), "NET" if net_touched else "OUT")
 	else:
 		_end_point(last_hitter, "WINNER")
@@ -1091,26 +1253,35 @@ func _on_bounce(pos: Vector3, speed: float) -> void:
 ## Hawk-Eye: distance from the ball mark to the nearest line that decides the call
 ## (positive = in). Close calls get the top-down replay panel.
 func _line_call(pos: Vector3, half: int) -> void:
-	var r := BallPhysics.RADIUS
+	# The mark's reach from its centre: sideways for the side and centre lines, along the
+	# court for the baseline and the service line (see Court.mark_reach).
+	var rx := _mark_reach.x
+	var rz := _mark_reach.y
 	var margin: float
 	var line_axis := 0  # 0 = the deciding line runs along z (a sideline), 1 = along x
 	var z := pos.z * half
 	if serve_flight:
 		var x := pos.x * box_side
-		var m_service := Court.SERVICE_LINE + r - z
-		var m_center := x + r
-		var m_side := Court.SINGLES_HALF_WIDTH + r - x
+		var m_service := Court.SERVICE_LINE + rz - z
+		var m_center := x + rx
+		var m_side := Court.SINGLES_HALF_WIDTH + rx - x
 		margin = minf(m_service, minf(m_center, m_side))
 		line_axis = 1 if margin == m_service else 0
 	else:
-		var m_side := Court.SINGLES_HALF_WIDTH + r - absf(pos.x)
-		var m_base := Court.HALF_LENGTH + r - z
+		var m_side := Court.SINGLES_HALF_WIDTH + rx - absf(pos.x)
+		var m_base := Court.HALF_LENGTH + rz - z
 		margin = minf(m_side, m_base)
 		line_axis = 1 if m_base < m_side else 0
 	if z < 0.0:
 		return  # landed on the wrong half: not a line call
+	# The mark for the replay: half-length, half-width and how square the flight met the
+	# deciding line (|cos| of the angle to its normal), so VAR draws the very same oval.
+	var size := Court.mark_size(ball.impact_vel) * 0.5
+	var flight := Vector2(ball.impact_vel.x, ball.impact_vel.z)
+	flight = flight.normalized() if flight.length() > 0.001 else Vector2(0, 1)
+	var square := absf(flight.y) if line_axis == 1 else absf(flight.x)
 	# Remembered with the shot it belongs to: shown only if that bounce decided the point.
-	_close_call = {"margin": margin, "axis": line_axis, "rally": rally} if absf(margin) <= Tuning.hawkeye_range else {}
+	_close_call = {"margin": margin, "axis": line_axis, "rally": rally, "mark": Vector3(size.x, size.y, square)} if absf(margin) <= Tuning.hawkeye_range else {}
 
 
 func _on_net(_pos: Vector3) -> void:
@@ -1147,8 +1318,19 @@ func _end_point(winner: int, reason: String) -> void:
 	if _run_dist > 0.0:
 		_gain_xp("feet", "", _run_dist * Skills.RUN_XP_PER_M)
 		_run_dist = 0.0
+	if _stamina_spent > 0.0:
+		_gain_xp("stamina", "", _stamina_spent * Skills.STAMINA_XP)
+		_stamina_spent = 0.0
 	var who := "YOU" if winner == Who.PLAYER else o
 	var ev: int = scoreboard.add_point(winner)
+	match scoreboard.break_after(ev):
+		MatchScore.Break.CHANGE_ENDS:
+			var rest := Skills.stamina_rest("change")
+			stamina = minf(stamina + (rest if not scoreboard.in_tiebreak else rest * 0.5), 1.0)
+		MatchScore.Break.SET_BREAK:
+			stamina = minf(stamina + Skills.stamina_rest("set"), 1.0)
+	if ev != MatchScore.Event.POINT and not autoplay:
+		SaveData.save()  # the skills grown this game survive a crash or a reload
 	match ev:
 		MatchScore.Event.GAME:
 			text += "\nGAME " + who
@@ -1161,17 +1343,18 @@ func _end_point(winner: int, reason: String) -> void:
 		_match_over = true
 		phase_timer = 0.4 if autoplay else 2.4
 	hud.show_message(text, COLOR_WIN if winner == Who.PLAYER else COLOR_BAD)
-	if not _close_call.is_empty() and reason != "NET" and int(_close_call.get("rally", -1)) == rally:
-		hud.hawkeye(_close_call["margin"], _close_call["axis"])
+	var close_call := not _close_call.is_empty() and int(_close_call.get("rally", -1)) == rally
+	if close_call and reason != "NET":
+		hud.hawkeye(_close_call["margin"], _close_call["axis"], _close_call.get("mark", Vector3.ZERO))
 	_close_call = {}
 	sfx.play("point" if winner == Who.PLAYER else "miss", -8.0 if winner == Who.PLAYER else -10.0)
 	# The stands: applause for a good point, an "ooh" for a close call.
 	if not autoplay:
-		if not _close_call.is_empty() and int(_close_call.get("rally", -1)) == rally:
-			sfx.play("crowd_ooh", -6.0)
+		if close_call:
+			sfx.crowd("crowd_ooh", -6.0)
 		elif winner == Who.PLAYER and (rally >= 6 or reason == "ACE" or reason == "WINNER"):
-			sfx.play("applause", -8.0 + minf(rally, 12.0) * 0.4)
-	hud.set_score(scoreboard.point_text())
+			sfx.crowd("applause", -8.0 + minf(rally, 12.0) * 0.4)
+	hud.show_board(scoreboard, ["ВЫ", cpu_label])
 
 	_stats["rallies"].append(rally)
 	var srv_key := ("YOU" if server == Who.PLAYER else "CPU") + " serve: "
@@ -1180,7 +1363,7 @@ func _end_point(winner: int, reason: String) -> void:
 	var key := ("YOU " if winner == Who.PLAYER else "CPU ") + "wins: " + text.split("\n")[0]
 	_stats["reasons"][key] = _stats["reasons"].get(key, 0) + 1
 	if autoplay and not autoplay_tournament:
-		print("point %d: %s (rally %d) -> %s %s" % [_points_played, key, rally, scoreboard.point_text(), scoreboard.games_text()])
+		print("point %d: %s (rally %d) -> %s %s  stamina %d%%" % [_points_played, key, rally, scoreboard.point_text(), scoreboard.games_text(), roundi(stamina * 100.0)])
 		if _points_played >= autoplay_points:
 			_print_autoplay_summary()
 			get_tree().quit()
@@ -1195,7 +1378,7 @@ func _fault(kind: String) -> void:
 		phase_timer = 0.5 if autoplay else 1.2
 		hud.show_message("FAULT" if kind != "NET" else "NET · FAULT", COLOR_WARN)
 		if not _close_call.is_empty() and kind != "NET" and int(_close_call.get("rally", -1)) == rally:
-			hud.hawkeye(_close_call["margin"], _close_call["axis"])
+			hud.hawkeye(_close_call["margin"], _close_call["axis"], _close_call.get("mark", Vector3.ZERO))
 		_close_call = {}
 		sfx.play("miss", -14.0)
 		if autoplay:
@@ -1261,6 +1444,8 @@ func _hand_position(a: Athlete) -> Vector3:
 ## receiver diagonally opposite.
 func _setup_serve() -> void:
 	phase = Phase.SERVE
+	stamina = minf(stamina + Skills.stamina_rest("point"), 1.0)  # the breather between points
+	sfx.settle_crowd()  # the stands quieten as the server gets ready
 	_dribble_t = 0.0
 	_dribble_u = 0.0
 	_close_call = {}
@@ -1325,7 +1510,13 @@ func _update_serve(delta: float) -> void:
 		hud.popup("TOSS AGAIN", COLOR_WARN)
 
 
+const SERVE_HINTS := 5          # the serve hint shows for this many of the player's serves
+var _own_serves := 0
+
+
 func _start_toss() -> void:
+	if server == Who.PLAYER:
+		_own_serves += 1
 	var srv := _server_athlete()
 	srv.dribble = -1.0
 	var hand := _ball_in_hand(srv)
@@ -1365,7 +1556,7 @@ func _player_serve(dir: Vector3, pace_k: float, type: int) -> void:
 			side_spin = 330.0  # curves to the server's left and keeps sliding away after the bounce
 		_:
 			pace = lerpf(30.0, 42.0, pace_k)
-			top = lerpf(300.0, 420.0, pace_k)  # kick: dives in, jumps up high
+			top = lerpf(300.0, 420.0, pace_k) * _curl_k  # kick: dives in, jumps up high
 	pace *= sk["pace"]
 	top *= sk["spin"]
 	player.swing(1, 0.02, bp, Athlete.Style.SERVE)
@@ -1381,7 +1572,8 @@ func _player_serve(dir: Vector3, pace_k: float, type: int) -> void:
 		_set_aim(origin, target, Court.in_service_box(target, -1, box_side, 0.0))
 		_aim_hold = 0.8
 	var color := Hud.GOLD if label == "PERFECT" else (COLOR_WARN if label == "EARLY" or label == "LATE" else COLOR_GOOD)
-	hud.popup(label, color, "подача %s  ·  %d km/h" % [["KICK", "FLAT", "SLICE"][type], roundi(r.speed * 3.6)])
+	var kind: String = ["KICK ×%.1f" % _curl_k, "FLAT", "SLICE"][type]
+	hud.popup(label, color, "подача %s  ·  %d km/h" % [kind, roundi(r.speed * 3.6)])
 	cam.impulse(1.0 if label == "PERFECT" else 0.4)
 	_haptic("perfect" if label == "PERFECT" else "medium")
 	last_shot = {
@@ -1393,7 +1585,9 @@ func _player_serve(dir: Vector3, pace_k: float, type: int) -> void:
 
 ## Underarm drop serve (Bublik / Kyrgios): no toss, the ball is struck from the hand
 ## low and soft, landing just over the net. Deadly when the receiver stands deep.
+## The hook drawn before the toss (the drop-shot gesture): a soft underarm serve.
 func _player_underarm_serve(dir: Vector3, pace_k: float) -> void:
+	_own_serves += 1
 	var contact := player.position + player.right() * 0.55 + player.forward() * 0.45 + Vector3.UP * 0.75
 	var origin := Vector3(contact.x, 0.0, contact.z)
 	var depth := lerpf(1.4, 2.6, pace_k)
@@ -1464,7 +1658,7 @@ func _headless() -> bool:
 func stroke_skill(side: int, type: int, smash: bool, volley: bool) -> String:
 	if smash or volley:
 		return "net"
-	if type == ShotType.SLICE or type == ShotType.DROP:
+	if type == ShotType.SLICE or type == ShotType.DROP or type == ShotType.LOB:
 		return "touch"
 	return "forehand" if side > 0 else "backhand"
 
@@ -1482,8 +1676,18 @@ func _gain_xp(skill: String, label: String, raw := -1.0) -> void:
 		return
 	var amount := raw if raw >= 0.0 else Skills.BASE_XP * float(Skills.TIMING_XP.get(label, 1.0))
 	var lv := Skills.add_xp(skill, amount * _xp_mult())
+	if skill != "feet" and skill != "stamina":
+		var pr := Skills.progress(skill)
+		hud.ring.skill_progress(String(Skills.NAMES[skill]).to_upper(), Skills.level(skill), pr.x / maxf(pr.y, 1.0))
 	if lv > 0:
-		hud.level_up("+1 %s  ·  ур. %d" % [String(Skills.NAMES[skill]).to_upper(), lv], lv % Skills.PERK_EVERY == 0)
+		# The step shown as a number: "ФОРХЕНД 7 · 104 → 109 км/ч".
+		var was := Skills.headline(skill, lv - 1)
+		var now := Skills.headline(skill, lv)
+		var unit := now.get_slice(" ", 1) if now.ends_with("км/ч") else ""
+		var step := ("%s → %s" % [was.get_slice(" ", 0), now]) if unit != "" else ("%s → %s" % [was, now.get_slice(" ", now.get_slice_count(" ") - 1)])
+		hud.level_up("%s %d  ·  %s" % [String(Skills.NAMES[skill]).to_upper(), lv, step], lv % Skills.PERK_EVERY == 0)
+		if autoplay:
+			print("  LEVEL UP %s %d: %s" % [skill, lv, step])
 		_haptic("perfect")
 		cam.impulse(0.6)
 		SaveData.save()
@@ -1520,6 +1724,7 @@ func _start_practice() -> void:
 	tournament_mode = false
 	set_location(_next_location)
 	Rewards.restore()
+	cpu.set_look(Looks.from_shirt(Color(0.22, 0.28, 0.42)))
 	_set_opponent_mods(1.0, 1.0, {})
 	Tuning.ai_skill = _practice_skill
 	cpu_label = "CPU"
@@ -1531,6 +1736,8 @@ func _start_practice() -> void:
 func _start_tournament(format_index: int) -> void:
 	tournament = Tournament.new(format_index)
 	tournament.location = _next_location
+	SaveData.active = tournament
+	SaveData.save()
 	set_location(_next_location)
 	tournament_mode = true
 	Rewards.restore()
@@ -1540,10 +1747,104 @@ func _start_tournament(format_index: int) -> void:
 		ui.show_bracket(tournament)
 
 
+## Stamina is a short tank: a beginner sprinting flat out is empty in ~15 s, and a long
+## rally takes a third of it. A breather between points gives a little back in one go,
+## the real rest comes at the change of ends and between sets (Skills.stamina_rest).
+## Every cost below is multiplied by Skills.stamina_drain(): x2 for a beginner, x0.5 at
+## the cap of "Выносливость". Below Skills.tired_below() the player is tired.
+var stamina := 1.0              # 0..1
+var _stamina_spent := 0.0       # this point, for the "Выносливость" experience
+const STAMINA_SPRINT := 0.0333  # per second at full sprint during a point (jogging costs far less)
+const STAMINA_STROKE := 0.003   # a stroke, plus up to STAMINA_PACE more for a hard one
+const STAMINA_PACE := 0.003
+const STAMINA_DIVE := 0.03
+const STAMINA_STAND := 0.002    # per second back standing still in a rally
+
+var _cloud_t := 0.0
+var _beat_t := 5.0
+var _cloud_poll_t := 0.0
+var _boot_logged := false
+var _alive_t := 0.0
+
+
+## The Telegram cloud copy of the progress (taken if it has more), and the heartbeat
+## that tells a crash from Telegram unloading a minimised game.
+func _update_persistence(dt: float) -> void:
+	if autoplay or _headless():
+		return
+	_cloud_t += dt
+	_cloud_poll_t -= dt
+	if _cloud_t < 20.0 and _cloud_poll_t <= 0.0 and SaveData.poll_cloud():
+		Tuning.tap_controls = SaveData.tap_controls
+		Tuning.one_handed_bh = SaveData.one_handed_bh
+		if phase == Phase.IDLE:
+			_show_menu()
+	if _cloud_poll_t <= 0.0:
+		_cloud_poll_t = 0.5
+	if not _boot_logged:
+		_boot_logged = true
+		TelegramApp.log_event("boot", {"crashes": SaveData.crashes, "last": SaveData.last_crash.left(60),
+			"played": SaveData.played, "src": SaveData.source, "gfx": graphics.level_name()})
+	_beat_t -= dt
+	if _beat_t <= 0.0:
+		_beat_t = 20.0
+		TelegramApp.log_event("beat", {"fps": Engine.get_frames_per_second(), "gfx": graphics.level_name(),
+			"sc": snappedf(graphics.scale_3d, 0.01), "loc": location_id, "ph": phase, "pts": _points_played,
+			"tour": tournament_mode, "snd": sfx.plays})
+	_alive_t -= dt
+	if _alive_t <= 0.0:
+		_alive_t = 15.0
+		var where := "меню" if phase == Phase.IDLE else ("турнир" if tournament_mode else "тренировка")
+		SaveData.mark_alive("%s · %s · %s" % [where, Locations.find(location_id)["name"], graphics.level_name()])
+
+
+var _safe_t := 0.0
+var _safe := Vector2(-1.0, -1.0)
+
+
+## Telegram's full screen covers the top of the page with its buttons: twice a second
+## the safe area is read and the HUD and menus are moved inside it.
+func _update_safe_area(dt: float) -> void:
+	_safe_t -= dt
+	if _safe_t > 0.0:
+		return
+	_safe_t = 0.5
+	var ins := TelegramApp.safe_insets(get_viewport().get_visible_rect().size.y)
+	if ins.is_equal_approx(_safe):
+		return
+	_safe = ins
+	hud.set_safe_area(ins.x, ins.y)
+	ui.set_safe_area(ins.x, ins.y)
+
+
+## Back to a tournament left through the menu or lost to a page reload: same place,
+## same screen (a match in progress starts over).
+func _continue_tournament() -> void:
+	var t := SaveData.resumable()
+	if t == null:
+		ui.show_menu()
+		return
+	tournament = t
+	tournament_mode = true
+	_next_location = t.location
+	set_location(t.location)
+	Rewards.restore()
+	if not t.pending_loot.is_empty():
+		ui.show_loot(t)
+	elif t.state == Tournament.State.REWARD:
+		ui.show_reward(t)
+	elif t.state == Tournament.State.LOST:
+		var last: Dictionary = t.results.back()
+		ui.show_result(t, false, String(last.get("score", "")), {"perfect": 0, "aces": 0, "best_rally": 0})
+	else:
+		ui.show_bracket(t)
+
+
 func _play_match() -> void:
 	var opp := tournament.opponent()
 	Rewards.apply(tournament.perks)
 	Tuning.ai_skill = clampf(float(opp["skill"]) + tournament.modifier_value("skill"), 0.0, 1.0)
+	cpu.set_look(opp.get("look", Looks.from_shirt(opp.get("shirt", Color(0.22, 0.28, 0.42)))))
 	_set_opponent_mods(tournament.modifier_value("speed"), tournament.modifier_value("serve"), tournament.current_lineup()["racket"])
 	cpu_label = opp["short"]
 	scoreboard = tournament.new_score(rng.randi_range(0, 1))
@@ -1564,6 +1865,7 @@ func _set_opponent_mods(speed: float, serve: float, cpu_racket: Dictionary) -> v
 
 func _begin_match() -> void:
 	sfx.set_music(false)
+	stamina = 1.0
 	score = [0, 0]
 	rally = 0
 	best_rally = 0
@@ -1577,7 +1879,7 @@ func _begin_match() -> void:
 	player.area = PLAYER_AREA
 	player.position = PLAYER_HOME
 	cpu.position = CPU_HOME
-	hud.set_score(scoreboard.point_text())
+	hud.show_board(scoreboard, ["ВЫ", cpu_label])
 	if not autoplay and not _headless():
 		hud.show_tutorial_once()
 	_reset_point()
@@ -1608,6 +1910,8 @@ func _on_ui(action: String, arg: int) -> void:
 	match action:
 		"start_tournament":
 			ui.show_locations()
+		"continue":
+			_continue_tournament()
 		"location":
 			_next_location = Locations.LIST[arg]["id"]
 			set_location(_next_location)
@@ -1618,21 +1922,36 @@ func _on_ui(action: String, arg: int) -> void:
 			_start_practice()
 		"character":
 			ui.show_character()
+		"locker":
+			ui.show_locker()
+		"howto":
+			hud.open_tutorial()
+		"look":
+			ui.show_look_editor(Looks.sanitize(SaveData.look))
+		"look_done", "look_back":
+			SaveData.look = ui.look_result if action == "look_done" else ui.editing_look()
+			SaveData.save()
+			player.set_look(SaveData.look)
+			ui.show_locker()
 		"controls_menu":
-			ui.show_controls()
+			ui.show_controls(false)
 		"bh_style":
 			Tuning.one_handed_bh = not Tuning.one_handed_bh
 			SaveData.one_handed_bh = Tuning.one_handed_bh
 			SaveData.save()
 			Tuning.notify_changed()
-			ui.show_character()
+			ui.show_locker(false)
 		"controls":
+			var first := not SaveData.control_chosen
 			Tuning.tap_controls = arg == 1
 			SaveData.tap_controls = Tuning.tap_controls
 			SaveData.control_chosen = true
 			SaveData.save()
 			Tuning.notify_changed()
-			ui.show_menu()
+			if first:
+				ui.show_menu()
+			else:
+				ui.show_locker()
 		"menu":
 			_show_menu()
 		"play":
@@ -1650,20 +1969,23 @@ func _on_ui(action: String, arg: int) -> void:
 			_next_screen("summary")
 		"reward":
 			tournament.take_reward(arg)
+			SaveData.save()
 			ui.show_bracket(tournament)
 		"wildcard":
 			if tournament.use_wildcard():
+				SaveData.save()
 				ui.show_bracket(tournament)
 		"to_loot":
 			sfx.play("reward", -4.0)
 			ui.show_loot(tournament)
 		"loot":
 			tournament.take_loot(arg == 1)
+			SaveData.save()
 			_next_screen("summary" if tournament.state == Tournament.State.OVER else "reward")
 		"point":
 			Skills.spend_point(Skills.LIST[arg])
 			SaveData.save()
-			ui.show_character()
+			ui.show_character(false)
 		"perk":
 			Skills.take_perk(_perk_choice["offer"][arg]["id"])
 			SaveData.save()
@@ -1686,7 +2008,7 @@ func _next_screen(target: String) -> void:
 			if SaveData.control_chosen or not SaveData.enabled:
 				ui.show_menu()
 			else:
-				ui.show_controls()  # first launch: pick the controls before anything else
+				ui.show_controls(true)  # first launch: pick the controls before anything else
 
 
 func _levels_text() -> String:
@@ -2026,12 +2348,13 @@ func _update_timing_ring() -> void:
 	# leans toward the side of the stroke: right for forehands, left for backhands.
 	var anchor := cam.unproject_position(player.global_position + Vector3(0.0, 2.35, 0.0)) + Vector2(0.0, -70.0)
 	ring.anchor = anchor
+	hud.set_stamina(stamina if phase != Phase.IDLE else 1.0)
 	# Everything below the player's feet is the joystick zone for the left thumb.
 	var vh := get_viewport().get_visible_rect().size.y
 	if Tuning.tap_controls:
 		hud.touch.stick_zone_top = INF  # tap mode: no joystick, the whole screen is court
 	else:
-		hud.touch.stick_zone_top = clampf(cam.unproject_position(player.global_position).y + 28.0, vh * 0.55, vh * 0.9)
+		hud.touch.stick_zone_top = clampf(cam.unproject_position(player.global_position).y + 28.0, vh * 0.66, vh * 0.9)
 	if autoplay:
 		ring.hide_ring()
 		return
@@ -2057,7 +2380,7 @@ func _update_timing_ring() -> void:
 
 func _debug_string() -> String:
 	var s := "FPS %d   time x%.2f   %s\n" % [Engine.get_frames_per_second(), Engine.time_scale, graphics.describe()]
-	s += "ball %.0f km/h  spin %.0f rpm  h %.2f m\n" % [ball.speed_kmh(), ball.spin_rpm(), ball.state.pos.y]
+	s += "ball %.0f km/h  spin %.0f rpm  h %.2f m  stamina %d%%\n" % [ball.speed_kmh(), ball.spin_rpm(), ball.state.pos.y, roundi(stamina * 100.0)]
 	s += "player %.1f m/s   t_contact %s\n" % [player.velocity.length(), ("%.2f s" % t_contact) if t_contact < 10.0 else "-"]
 	if not last_shot.is_empty():
 		s += "last: %s %s %s  err %+.0f ms\n" % [last_shot["type"], last_shot["side"], last_shot["label"], last_shot["err_ms"]]
@@ -2091,6 +2414,7 @@ func _autoplay_tick() -> void:
 			_start_toss()
 		elif game_time >= toss_ideal + _bot_offset:
 			var to_box := Vector3(box_side * 2.0 - player.position.x, 0.0, -5.2 - player.position.z).normalized()
+			_curl_k = rng.randf_range(0.9, 1.3)
 			_player_serve(to_box.rotated(Vector3.UP, deg_to_rad(rng.randf_range(-6.0, 6.0))), rng.randf_range(0.3, 1.0), rng.randi_range(0, 2))
 		return
 	if not _player_can_hit():
@@ -2098,10 +2422,13 @@ func _autoplay_tick() -> void:
 		return
 	if not _bot_armed:
 		_bot_armed = true
-		_bot_offset = rng.randfn(0.0, 0.035)  # bot timing error, + = late
+		_bot_offset = rng.randfn(0.0, _bot_sd)  # bot timing error, + = late
 	var dir := _bot_dir(22.0)
 	var pk := rng.randf_range(0.2, 0.7)
 	var ty := rng.randi_range(0, 2)
+	if rng.randf() < 0.06:
+		ty = ShotType.LOB
+	_curl_k = rng.randf_range(0.9, 1.3) if ty == ShotType.TOPSPIN else 1.0
 	if late_until > 0.0:
 		if game_time - late_cross_time >= _bot_offset:
 			_swing_input(dir, pk, ty)

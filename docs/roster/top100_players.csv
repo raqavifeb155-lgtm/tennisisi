@@ -1,0 +1,101 @@
+﻿rank,tier,real_name,game_name,short,country,birth,height_cm,height_class,hand,backhand,body,skin,hair_style,hair_color,facial_hair,headwear,look_note,photo_confidence
+1,S,Jannik Sinner,Яник Сенер,СЕНЕР,ITA,2001-08-16,191,tall,R,2H,slim,1,short_neat,ginger,none,cap_fwd:white,orange-red polo; the red-haired Italian,photo
+2,S,Alexander Zverev,Саша Зверов,ЗВЕРОВ,GER,1997-04-20,198,very_tall,R,2H,regular,2,long_tied,dirty_blond,short_beard,headband:black,hair in a bun under a black headband,photo
+3,S,Carlos Alcaraz,Карлито Алькораз,АЛЬКОРАЗ,ESP,2003-05-05,183,medium,R,2H,strong,3,short_crop,dark_brown,none,none,"textured quiff, muscular arms",photo
+4,A,Ben Shelton,Бен Шелдон,ШЕЛДОН,USA,2002-10-09,193,tall,L,2H,strong,4,curls_big,black,none,none,"big curly hair, lefty, huge smile",photo
+5,A,Felix Auger-Aliassime,Феликс Оже-Алиас,ОЖЕ-АЛИАС,CAN,2000-08-08,193,tall,R,2H,slim,6,curls_short,black,none,none,"tight short curls, tall and lean",photo
+6,A,Daniil Medvedev,Данил Медведов,МЕДВЕДОВ,RUS,1996-02-11,198,very_tall,R,2H,slim,1,medium_swept,light_brown,stubble,none,"swept-back hair, receding hairline, lanky",photo
+7,A,Flavio Cobolli,Фабио Каболли,КАБОЛЛИ,ITA,2002-05-06,183,medium,R,2H,regular,3,short_messy,brown,none,none,"textured short hair, red-orange shirt",photo
+8,A,Frances Tiafoe,Фрэнки Тиафу,ТИАФУ,USA,1998-01-20,188,tall,R,2H,strong,6,buzz,black,short_beard,headband:white,"white headband, wristbands, necklace",photo
+9,A,Arthur Fils,Артюр Филь,ФИЛЬ,FRA,2004-06-12,185,medium,R,2H,regular,5,short_crop,black,stubble,none,"black wristband/sleeve, colourful kit",photo
+10,A,Alex de Minaur,Алекс де Минаро,МИНАРО,AUS,1999-02-17,183,medium,R,2H,regular,2,short_neat,brown,none,none,"side-swept brown hair, wiry",photo
+11,S,Novak Djokovic,Новик Джокорич,ДЖОКОРИЧ,SRB,1987-05-22,188,tall,R,2H,regular,3,short_neat,dark_brown,short_beard,none,"swept short hair, trimmed greying beard",photo
+12,A,Taylor Fritz,Тайлер Фрайц,ФРАЙЦ,USA,1997-10-28,196,very_tall,R,2H,regular,2,medium_swept,dirty_blond,stubble,headband:white,"white headband, hair parted in the middle",photo
+13,A,Rafael Jodar,Рафа Хордан,ХОРДАН,ESP,2006-09-17,191,tall,R,2H,slim,3,short_neat,brown,none,cap_fwd:navy,"navy cap, slim",photo
+14,A,Jakub Mensik,Якоб Мениш,МЕНИШ,CZE,2005-09-01,196,very_tall,R,2H,slim,1,short_neat,light_brown,none,cap_back:black,"backwards black cap, very tall",photo
+15,A,Learner Tien,Лерой Тайн,ТАЙН,USA,2005-12-02,180,medium,L,2H,slim,3,short_neat,black,none,cap_fwd:black,"black cap, lefty",photo
+16,B,Tommy Paul,Томми Полл,ПОЛЛ,USA,1997-05-17,185,medium,R,2H,regular,2,short_neat,light_brown,none,none,neutral look (photo is far away),photo-far
+17,B,Brandon Nakashima,Брэн Накасами,НАКАСАМИ,USA,2001-08-03,188,tall,R,2H,slim,3,short_messy,black,none,none,spiky black hair,photo
+18,B,Valentin Vacherot,Валентен Вашерон,ВАШЕРОН,MON,1998-11-16,193,tall,R,2H,regular,3,medium_wavy,dark_brown,stubble,cap_fwd:white,"white cap, dark wavy hair at the back",photo
+19,B,Luciano Darderi,Лучиано Дардеро,ДАРДЕРО,ITA,2002-02-14,183,medium,R,2H,regular,3,short_neat,dark_brown,none,cap_fwd:white,"white cap, orange-red shirt",photo
+20,B,Alexander Bublik,Алекс Бубликс,БУБЛИКС,KAZ,1997-06-17,196,very_tall,R,2H,slim,1,short_messy,light_brown,stubble,none,"messy hair, lanky, chequered shirt",photo
+21,B,Casper Ruud,Кас Руде,РУДЕ,NOR,1998-12-22,183,medium,R,2H,regular,2,short_neat,light_brown,stubble,headband:white,"white headband, green kit",photo
+22,B,Francisco Cerundolo,Франко Серундо,СЕРУНДО,ARG,1998-08-13,185,medium,R,2H,regular,3,short_neat,dark_brown,stubble,cap_back:black,"backwards black cap, yellow wristband",photo
+23,B,Jiri Lehecka,Иржи Лешека,ЛЕШЕКА,CZE,2001-11-08,185,medium,R,2H,regular,1,short_neat,light_brown,none,none,"pink shirt, clean look",photo
+24,B,Andrey Rublev,Андрей Ребилёв,РЕБИЛЁВ,RUS,1997-10-20,188,tall,R,2H,regular,1,medium_wavy,ginger,stubble,headband:orange,"orange headband, wavy strawberry-blond hair",photo
+25,B,Lorenzo Musetti,Лоренцо Мазетти,МАЗЕТТИ,ITA,2002-03-03,185,medium,R,1H,regular,2,long_loose,dark_brown,none,cap_fwd:turquoise,"ONE-HANDED backhand, long curls out of the cap",photo
+26,B,Alejandro Davidovich Fokina,Алехандро Давидов Фокин,ФОКИН,ESP,1999-06-05,180,medium,R,2H,regular,2,short_neat,blond,none,headband:white,"white headband, yellow-green shirt",photo
+27,B,Karen Khachanov,Карен Хачаров,ХАЧАРОВ,RUS,1996-05-21,198,very_tall,R,2H,strong,2,short_messy,dark_brown,full_beard,none,"dark full beard, broad and tall",photo
+28,B,Alexander Blockx,Алекс Бокс,БОКС,BEL,2005-04-08,193,tall,R,2H,regular,2,short_neat,brown,none,none,"FROM USER: very tall, big serve; hair/skin not specified (defaults)",user
+29,B,Joao Fonseca,Жуан Фонтека,ФОНТЕКА,BRA,2006-08-21,188,tall,R,2H,regular,3,medium_wavy,dark_brown,none,cap_fwd:white,"white cap, dark wavy hair",photo
+30,B,Tomas Martin Etcheverry,Томас Этчеверро,ЭТЧЕВЕРРО,ARG,1999-07-18,196,very_tall,R,2H,regular,3,short_neat,brown,stubble,headband:white,"white headband, light-blue shirt, tall",photo
+31,B,Alejandro Tabilo,Алехо Табело,ТАБЕЛО,CHI,1997-06-02,188,tall,L,2H,regular,3,short_neat,dark_brown,none,cap_fwd:white,"white cap, lefty, tattoo on forearm",photo
+32,B,Ugo Humbert,Юго Хумбер,ХУМБЕР,FRA,1998-06-26,188,tall,L,2H,regular,2,curls_short,dark_brown,none,none,"short dark curls, lefty",photo
+33,B,Arthur Rinderknech,Артюр Ринделькнеш,РИНДЕЛЬКНЕШ,FRA,1995-07-23,196,very_tall,R,2H,regular,2,short_neat,dark_brown,moustache,headband:black,"black headband, green shirt, very tall",photo
+34,B,Alex Michelsen,Алекс Микельсен,МИКЕЛЬСЕН,USA,2004-08-25,193,tall,R,2H,regular,1,curls_big,ginger,none,none,big messy ginger-blond curls,photo
+35,B,Ignacio Buse,Игнасио Буссе,БУССЕ,PER,2004-03-25,183,medium,R,2H,regular,2,long_loose,ginger,none,none,"FROM USER: red-haired, long hair",user
+36,C,Arthur Fery,Артюр Ферри,ФЕРРИ,GBR,2002-07-12,175,small,R,2H,regular,1,short_neat,dark_brown,none,cap_back:white,"backwards white cap, small",photo
+37,C,Matteo Arnaldi,Маттео Арнальдо,АРНАЛЬДО,ITA,2001-02-22,185,medium,R,2H,regular,2,short_neat,dark_brown,stubble,cap_fwd:white,"white cap, blue shirt",photo
+38,C,Zizou Bergs,Зизу Берг,БЕРГ,BEL,1999-06-03,185,medium,R,2H,regular,1,short_neat,dirty_blond,none,cap_back:white,"pale, light cap on backwards, floral shirt",photo
+39,C,Hubert Hurkacz,Хуберт Гуркош,ГУРКОШ,POL,1997-02-11,196,very_tall,R,2H,slim,1,short_neat,brown,none,none,"black arm sleeve, wristbands, tall and slim",photo
+40,C,Cameron Norrie,Кэмерон Норрис,НОРРИС,GBR,1995-08-23,188,tall,L,2H,regular,1,short_messy,brown,short_beard,none,"lefty, short brown beard, grey shirt",photo
+41,C,Botic van de Zandschulp,Ботик ван дер Зандшульп,ЗАНДШУЛЬП,NED,1995-10-04,191,tall,R,2H,regular,1,short_neat,light_brown,none,cap_fwd:white,"white cap, light-blue shirt",photo
+42,C,Daniel Merida,Даниэль Мариде,МАРИДЕ,ESP,2004-09-26,188,tall,R,2H,regular,3,short_neat,black,none,none,"FROM USER: Spaniard, dark (black hair, tan skin)",user
+43,C,Luca Van Assche,Люк Ван Аш,ВАН АШ,FRA,2004-05-11,178,medium,R,2H,regular,1,curls_big,ginger,none,none,"curly ginger-brown mop, small",photo
+44,C,Stefanos Tsitsipas,Стефанос Цицинас,ЦИЦИНАС,GRE,1998-08-12,193,tall,R,1H,regular,2,long_loose,brown,short_beard,headband:black,"ONE-HANDED backhand, long wavy hair, black headband",photo
+45,C,Mariano Navone,Мариано Новоне,НОВОНЕ,ARG,2001-02-27,178,medium,R,2H,regular,3,short_neat,dark_brown,short_beard,none,"short beard, compact",photo-far
+46,C,Denis Shapovalov,Денис Шаповалин,ШАПОВАЛИН,CAN,1999-04-15,185,medium,L,1H,regular,2,short_messy,dirty_blond,stubble,headband:white,"ONE-HANDED backhand, lefty, white headband",photo
+47,C,Matteo Berrettini,Маттео Бернеттини,БЕРНЕТТИНИ,ITA,1996-04-12,196,very_tall,R,2H,strong,3,short_neat,dark_brown,full_beard,cap_back:black,"big thick dark beard, backwards black cap, broad",photo
+48,C,Raphael Collignon,Рафаэль Колиньи,КОЛИНЬИ,BEL,2002-01-13,191,tall,R,2H,regular,2,short_neat,brown,none,cap_back:white,"backwards white cap, all-white kit",photo
+49,C,Nuno Borges,Нуно Борхес,БОРХЕС,POR,1997-02-19,185,medium,R,2H,regular,3,short_neat,dark_brown,stubble,cap_fwd:white,"white cap, dark shirt",photo
+50,C,Quentin Halys,Кентен Элис,ЭЛИС,FRA,1996-10-26,191,tall,R,2H,regular,2,short_neat,dark_brown,short_beard,cap_fwd:white,"white cap, orange shirt",photo
+51,C,Sebastian Baez,Себастьян Бааз,БААЗ,ARG,2000-12-28,170,small,R,2H,regular,3,short_neat,black,none,cap_back:black,"backwards black cap, blue shirt, very small",photo
+52,C,Thiago Agustin Tirante,Тьяго Тиранто,ТИРАНТО,ARG,2001-04-10,185,medium,R,2H,regular,3,short_neat,dark_brown,moustache,cap_back:black,"backwards black cap, dark shirt",photo
+53,C,Juan Manuel Cerundolo,Хуан Мануэль Сурундо,СУРУНДО,ARG,2001-11-15,183,medium,L,2H,regular,3,curls_short,dark_brown,none,none,"lefty, short dark curls, pink shirt",photo
+54,C,Yannick Hanfmann,Яннис Ханфельд,ХАНФЕЛЬД,GER,1991-11-13,193,tall,R,2H,regular,1,short_neat,light_brown,none,none,"yellow-white shirt, tall",photo
+55,C,Tallon Griekspoor,Таллон Грейкспур,ГРЕЙКСПУР,NED,1996-07-02,188,tall,R,2H,regular,1,short_neat,light_brown,stubble,cap_back:white,"backwards white cap, white arm sleeve, light-blue shirt",photo
+56,C,Adolfo Daniel Vallejo,Адольфо Вальехос,ВАЛЬЕХОС,PAR,2004-04-28,185,medium,R,2H,regular,3,curls_big,black,none,none,thick black curls,photo
+57,C,Miomir Kecmanovic,Миомир Кецманов,КЕЦМАНОВ,SRB,1999-08-31,183,medium,R,2H,regular,2,short_neat,brown,moustache,none,"navy shirt, light moustache",photo
+58,C,Arthur Gea,Артур Жеан,ЖЕАН,FRA,2005-01-02,180,medium,R,2H,regular,2,buzz,dark_brown,short_beard,none,"short beard, white polo",photo
+59,C,Jan-Lennard Struff,Ян-Ленни Штруфф,ШТРУФФ,GER,1990-04-25,193,tall,R,2H,regular,1,short_neat,dirty_blond,stubble,cap_fwd:white,"white cap, green-teal shirt, tall",photo
+60,C,Roman Andres Burruchaga,Роман Бурручета,БУРРУЧЕТА,ARG,2002-01-23,183,medium,R,2H,regular,3,curls_short,dark_brown,stubble,none,"short curls, red Yonex bag",photo
+61,D,Jaime Faria,Жайме Фарьо,ФАРЬО,POR,2003-08-06,188,tall,R,2H,regular,3,short_neat,black,short_beard,none,"FROM USER: Portuguese, dark, with a beard",user
+62,D,Fabian Marozsan,Фабиан Марошан,МАРОШАН,HUN,1999-10-08,193,tall,R,2H,slim,2,short_neat,dark_brown,none,none,"slicked-back wet-look hair, maroon shirt, tall",photo
+63,D,James Duckworth,Джеймс Дакворс,ДАКВОРС,AUS,1992-01-21,183,medium,R,2H,regular,1,short_neat,brown,none,cap_fwd:white,"white cap, grey shirt",photo
+64,D,Jaume Munar,Жауме Мунер,МУНЕР,ESP,1997-05-05,183,medium,R,2H,regular,3,short_neat,dark_brown,none,cap_fwd:white,"white cap, blue shirt",photo
+65,D,Ethan Quinn,Итан Квин,КВИН,USA,2004-03-12,190,tall,R,2H,regular,1,short_neat,blond,none,cap_fwd:white,"white cap, lilac shirt, red wristband",photo
+66,D,Pablo Carreno Busta,Пабло Карреньо Бустос,БУСТОС,ESP,1991-07-12,188,tall,R,2H,regular,3,curls_short,dark_brown,stubble,none,"short curls, blue-navy shirt",photo
+67,D,Daniel Altmaier,Даниэль Альтмейр,АЛЬТМЕЙР,GER,1998-09-12,188,tall,R,1H,regular,2,short_neat,dark_brown,none,cap_fwd:white,"ONE-HANDED backhand, white cap, green shirt",photo
+68,D,Vit Kopriva,Вит Копршива,КОПРШИВА,CZE,1997-06-15,178,medium,R,2H,regular,2,short_neat,light_brown,stubble,none,all-white kit,photo
+69,D,Facundo Diaz Acosta,Факундо Диас Акосто,АКОСТО,ARG,2000-12-15,183,medium,L,2H,regular,3,short_neat,dark_brown,short_beard,cap_fwd:dark,"lefty, dark cap, short beard",photo-far
+70,D,Corentin Moutet,Корентен Мутен,МУТЕН,FRA,1999-04-19,180,medium,L,2H,regular,2,short_neat,light_brown,full_beard,cap_fwd:white,"lefty, full ginger-brown beard, white cap",photo
+71,D,Kamil Majchrzak,Камиль Майхржак,МАЙХРЖАК,POL,1996-01-13,183,medium,R,2H,regular,2,short_neat,dark_brown,none,cap_fwd:black,"black cap, white-black shirt",photo
+72,D,Titouan Droguet,Титуан Дроге,ДРОГЕ,FRA,2001-06-15,191,tall,R,2H,regular,3,medium_wavy,dark_brown,full_beard,cap_back:white,"white cap backwards, full dark beard",photo
+73,D,Martin Landaluce,Мартин Ландалуз,ЛАНДАЛУЗ,ESP,2006-01-08,193,tall,R,2H,slim,1,short_neat,blond,none,none,"FROM USER: fair-skinned Spaniard, white-blond hair",user
+74,D,Sebastian Korda,Себастьян Кордо,КОРДО,USA,2000-07-05,196,very_tall,R,2H,slim,1,medium_wavy,dirty_blond,none,none,"wavy blond hair, gold chain, very tall",photo
+75,D,Tomas Machac,Томаш Мохач,МОХАЧ,CZE,2000-10-13,183,medium,R,2H,regular,2,short_neat,dark_brown,full_beard,cap_back:white,"white cap backwards, thick beard, white towel",photo
+76,D,Camilo Ugo Carabelli,Камило Уго Карабеллис,КАРАБЕЛЛИС,ARG,1999-06-17,185,medium,R,2H,regular,3,buzz,dark_brown,none,none,"arm tattoos, dark navy shirt",photo
+77,D,Hamad Medjedovic,Хамад Медждович,МЕДЖДОВИЧ,SRB,2003-07-18,188,tall,R,2H,regular,2,short_neat,dark_brown,none,none,"white polo, black shorts",photo
+78,D,Marin Cilic,Марин Чилан,ЧИЛАН,CRO,1988-09-28,198,very_tall,R,2H,regular,3,short_neat,dark_brown,stubble,none,"dark stubble, blue head kit, tall",photo
+79,D,Aleksandar Kovacevic,Александар Коваль,КОВАЛЬ,USA,1998-08-29,183,medium,R,1H,regular,1,medium_swept,light_brown,none,cap_back:white,"ONE-HANDED backhand, white cap backwards, red shirt",photo
+80,D,Zachary Svajda,Закари Свейда,СВЕЙДА,USA,2002-11-29,175,small,R,2H,regular,1,short_neat,light_brown,moustache,none,"thin moustache, small, black-white shirt",photo
+81,E,Adrian Mannarino,Адриан Манарино,МАНАРИНО,FRA,1988-06-29,180,medium,L,2H,regular,1,bald,none,short_beard,none,"lefty, bald, short grey-blond beard",photo
+82,E,Rinky Hijikata,Ринки Хиджиката,ХИДЖИКАТА,AUS,2001-02-23,178,medium,R,2H,regular,3,short_neat,black,none,none,"red-navy shirt, towel",photo
+83,E,Lorenzo Sonego,Лоренцо Соньего,СОНЬЕГО,ITA,1995-05-11,191,tall,R,2H,regular,2,short_neat,dark_brown,stubble,headband:lime,"lime-yellow headband, turquoise shirt",photo
+84,E,Roman Safiullin,Роман Сафиулов,САФИУЛОВ,RUS,1997-08-07,185,medium,R,2H,regular,2,short_neat,dark_brown,short_beard,none,"short beard, white shirt",photo
+85,E,Marcos Giron,Маркос Гирон,ГИРОН,USA,1993-07-24,180,medium,R,2H,regular,3,short_neat,dark_brown,stubble,cap_fwd:white,"white cap, navy shirt",photo
+86,E,Kyrian Jacquet,Кирьян Жаке,ЖАКЕ,FRA,2001-05-11,175,small,R,2H,regular,2,short_neat,light_brown,stubble,cap_fwd:white,"white cap, light-blue shirt, arm tattoos",photo
+87,E,Hugo Gaston,Юг Гастен,ГАСТЕН,FRA,2000-09-26,173,small,L,2H,slim,2,short_neat,brown,short_beard,none,"lefty, small, black patterned shirt",photo
+88,E,Marco Trungelliti,Марко Трунгелли,ТРУНГЕЛЛИ,ARG,1990-01-31,178,medium,R,2H,regular,2,long_loose,dark_brown,full_beard,cap_fwd:white,"long wavy hair out of a white cap, full beard",photo
+89,E,Jan Choinski,Ян Хойнцки,ХОЙНЦКИ,GBR,1996-06-10,196,very_tall,R,2H,regular,1,short_neat,blond,none,cap_fwd:blue,"blue cap, very tall",photo
+90,E,Benjamin Bonzi,Бенжамен Бонци,БОНЦИ,FRA,1996-06-09,183,medium,R,2H,regular,2,short_neat,dark_brown,stubble,cap_fwd:white,"white cap, lime-yellow shirt",photo
+91,E,Mattia Bellucci,Маттиа Белуччо,БЕЛУЧЧО,ITA,2001-06-01,175,small,L,2H,slim,3,long_tied,dark_brown,none,headband:blue,"lefty, long hair tied back, blue headband",photo
+92,E,Michael Zheng,Майкл Джен,ДЖЕН,USA,2004-01-27,188,tall,R,2H,regular,3,short_neat,black,none,none,"black hair, floral shirt",photo
+93,E,Jesper de Jong,Йеспер де Йонк,ДЕ ЙОНК,NED,2000-05-31,180,medium,R,2H,regular,1,short_neat,blond,none,cap_fwd:white,"white cap, all-white kit",photo
+94,E,Jacob Fearnley,Джейкоб Фирнли,ФИРНЛИ,GBR,2001-07-15,183,medium,R,2H,regular,2,short_neat,dark_brown,short_beard,cap_fwd:white,"white cap, dark short beard, all-white kit",photo
+95,E,Dino Prizmic,Дино Прижмич,ПРИЖМИЧ,CRO,2005-08-05,188,tall,R,2H,regular,2,short_neat,brown,none,none,"blue-grey shirt, navy shorts",photo-far
+96,E,Alex Molcan,Алекс Мольчан,МОЛЬЧАН,SVK,1997-12-01,178,medium,L,2H,regular,2,short_neat,dark_brown,stubble,headband:black,"lefty, black headband, arm tattoos, speckled shirt",photo
+97,E,Adam Walton,Адам Уолтен,УОЛТЕН,AUS,1999-04-17,183,medium,R,2H,regular,1,medium_swept,dirty_blond,none,cap_back:white,"white cap backwards, blond hair out of it",photo
+98,E,Toby Samuel,Тоби Самуэль,САМУЭЛЬ,GBR,2002-09-06,191,tall,R,2H,regular,1,medium_wavy,ginger,none,cap_back:white,"white cap backwards, wavy ginger-brown hair, tall",photo
+99,E,Terence Atmane,Теранс Атман,АТМАН,FRA,2002-01-09,193,tall,L,2H,regular,1,short_neat,brown,moustache,cap_back:blue,"lefty, blue cap backwards, light moustache, tall",photo
+100,E,Coleman Wong,Колман Ванг,ВАНГ,HKG,2004-06-06,191,tall,R,2H,regular,3,curls_big,black,none,none,"curly dark messy hair, black Nike kit, tall",photo

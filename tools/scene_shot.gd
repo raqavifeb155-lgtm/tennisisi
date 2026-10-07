@@ -5,7 +5,7 @@ extends SceneTree
 ##   xvfb-run -a godot --path . --rendering-driver opengl3 --fixed-fps 60 \
 ##       -s tools/scene_shot.gd -- --scenery=clay --out=/tmp/shots
 ## --scenery=park (hard court, scripts/scenery.gd), clay (scripts/scenery_clay.gd),
-## grass (scripts/scenery_grass.gd). --seconds=N lets animations run before the shot.
+## grass (scripts/scenery_grass.gd), chatrier (scripts/scenery_chatrier.gd). --seconds=N lets animations run before the shot.
 
 const PORTRAIT := Vector2i(405, 720)
 const WIDE := Vector2i(720, 405)
@@ -32,7 +32,7 @@ func _initialize() -> void:
 	root.add_child(scenery)
 	var court := Court.new()
 	root.add_child(court)
-	court.surface = {"park": "hard", "clay": "clay", "grass": "grass"}.get(scenery_id, "hard")
+	court.surface = {"park": "hard", "clay": "clay", "grass": "grass", "chatrier": "clay"}.get(scenery_id, "hard")
 	for cfg in [[-1.0, Vector3(0.5, 0, 12.4), Color(0.92, 0.36, 0.26)], [1.0, Vector3(-0.8, 0, -12.2), Color(0.22, 0.28, 0.42)]]:
 		var a := Athlete.new()
 		root.add_child(a)

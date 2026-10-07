@@ -8,3 +8,6 @@ export_credentials.cfg
 Thumbs.db
 .vscode/
 dist/
+
+# Web build: built on the server from source (docs/TZ.md)
+build/

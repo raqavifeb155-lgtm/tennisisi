@@ -28,9 +28,23 @@ cd "$ROOT"
 "$GODOT" --headless --path . --import >/dev/null 2>&1 || true
 "$GODOT" --headless --path . -s tests/run_tests.gd
 "$GODOT" --headless --path . --fixed-fps 60 -s tests/input_test.gd | grep -E "INPUT TEST|labels|outcomes"
+"$GODOT" --headless --path . -s tests/audio_test.gd | grep -E "FAIL|AUDIO TEST"
 if [ "${1:-}" = "--autoplay" ]; then
 	"$GODOT" --headless --path . --fixed-fps 60 -- --autoplay --points=40 | tail -8
 fi
 mkdir -p build/web
+rm -f build/web/index.*.pck
 "$GODOT" --headless --path . --export-release "Web" build/web/index.html
-echo "Built: build/web"
+
+# Music and location sounds are left out of the game pack (export_presets.cfg,
+# exclude_filter) and downloaded by the game after the start (Sfx.is_lazy).
+rm -rf build/web/sfx && mkdir -p build/web/sfx
+cp assets/sfx/amb_*.ogg assets/sfx/music_*.ogg assets/sfx/birds.ogg build/web/sfx/
+
+# The game pack carries its content in its name: a browser may keep it for good, and a
+# new build is a new name, so a cached old pack can never come back after an update.
+H=$(sha256sum build/web/index.pck | cut -c1-10)
+mv build/web/index.pck "build/web/index.$H.pck"
+sed -i "s/\"index.pck\":/\"index.$H.pck\":/; s/\"executable\":\"index\",/\"executable\":\"index\",\"mainPack\":\"index.$H.pck\",/" build/web/index.html
+grep -q "\"mainPack\":\"index.$H.pck\"" build/web/index.html || { echo "index.html: mainPack not set" >&2; exit 1; }
+echo "Built: build/web (pack index.$H.pck, $(ls build/web/sfx | wc -l) sounds in sfx/)"

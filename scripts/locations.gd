@@ -14,6 +14,11 @@ const LIST := [
 		"scenery": "res://scripts/scenery_clay.gd", "tour": "Турнир на грунте · Коста-дель-Соль",
 	},
 	{
+		"id": "paris", "name": "Париж", "surface": "clay", "surface_name": "грунт",
+		"desc": "Центральный корт Большого шлема: полные трибуны, медленный высокий отскок",
+		"scenery": "res://scripts/scenery_chatrier.gd", "tour": "Большой шлем · Париж",
+	},
+	{
 		"id": "grass", "name": "Англия", "surface": "grass", "surface_name": "трава",
 		"desc": "Туманный Альбион. Мяч быстрый и низкий, подача рулит, можно поскользнуться",
 		"scenery": "res://scripts/scenery_grass.gd", "tour": "Турнир на траве · Ройал Альбион",

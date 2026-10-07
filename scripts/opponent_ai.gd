@@ -17,6 +17,7 @@ var _plan_timer := 0.0
 var _goal := Vector3(0, 0, -12.6)
 var _recovery := Vector3(0, 0, -12.6)
 var _prev_rel := INF
+var _swung := false  # the visible swing at the incoming ball has started
 
 # What the CPU has learned about the player's serve
 var _serve_speeds: Array[float] = []
@@ -42,6 +43,7 @@ func on_player_hit() -> void:
 	_reaction = lerpf(0.30, 0.10, skill())
 	_plan_timer = 0.0
 	_prev_rel = INF
+	_swung = false
 	me.split_step()
 
 
@@ -88,6 +90,7 @@ func tick(delta: float, incoming: bool) -> void:
 				_plan_timer = 0.1
 				_replan()
 			_move_to(_goal)
+		_anticipate_swing()
 		_check_hit()
 	else:
 		_prev_rel = INF
@@ -154,6 +157,26 @@ func _replan() -> void:
 		_goal = fallback
 
 
+## Starts the visible swing a beat before the ball reaches the hitting plane, so the
+## racket comes through the ball instead of appearing at the contact point. Only the
+## look: the shot itself is still played in _check_hit().
+func _anticipate_swing() -> void:
+	if _swung or game.serve_flight or me.is_swinging() or me.is_down():
+		return
+	var v := ball.state.vel
+	if v.z >= -0.5:
+		return
+	var t := (ball.state.pos.z - (me.position.z + Athlete.CONTACT_FORWARD)) / -v.z
+	if t <= 0.0 or t > Athlete.SWING_TO_CONTACT + 0.02:
+		return
+	var p := ball.state.pos + v * t + Vector3(0.0, -4.9 * t * t, 0.0)
+	var flat_d := Vector2(p.x - me.position.x, p.z - me.position.z).length()
+	if flat_d > Athlete.REACH or p.y < 0.1 or p.y > 2.5:
+		return
+	_swung = true
+	me.swing(1 if me.lateral_of(p) >= 0.0 else -1, t, p, Athlete.Style.TOPSPIN)
+
+
 func _check_hit() -> void:
 	var plane_z := me.position.z + Athlete.CONTACT_FORWARD
 	var rel := ball.state.pos.z - plane_z
@@ -195,7 +218,12 @@ func _hit(bp: Vector3) -> void:
 		top = 240.0
 	else:
 		var open_side := -signf(player_x) if absf(player_x) > 0.8 else (1.0 if rng.randf() < 0.5 else -1.0)
-		if rng.randf() > 0.35 + s * 0.6:
+		if absf(player_x) <= 0.8 and absf(me.position.x) > 1.0 and rng.randf() < 0.65:
+			# Neutral rally from a corner: cross-court, like the pros do most of the time
+			# (more net to clear in the middle, more court on the diagonal); the change
+			# down the line comes when the player is pulled out of position.
+			open_side = -signf(me.position.x)
+		elif rng.randf() > 0.35 + s * 0.6:
 			open_side = -open_side
 		tx = open_side * lerpf(1.2, 3.6, rng.randf() * (0.4 + s * 0.6))
 		tz = lerpf(6.8, 10.8, clampf(rng.randf_range(0.3, 1.0) * (0.55 + 0.45 * s), 0.0, 1.0))

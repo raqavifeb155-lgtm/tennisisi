@@ -12,6 +12,7 @@ extends RefCounted
 ## deuce side). Whoever received first in a tiebreak serves the next game.
 
 enum Event { POINT, GAME, SET, MATCH }
+enum Break { NONE, CHANGE_ENDS, SET_BREAK }
 
 const TIEBREAK_POINTS := 7
 
@@ -98,6 +99,18 @@ func _win_set(w: int, score: Array) -> int:
 		winner = w
 		return Event.MATCH
 	return Event.SET
+
+
+## The break that follows the point just played (`ev` from add_point): the players
+## change ends after odd games and every six points of a tiebreak, and rest between sets.
+func break_after(ev: int) -> Break:
+	if ev == Event.SET:
+		return Break.SET_BREAK
+	if ev == Event.GAME and (games[0] + games[1]) % 2 == 1:
+		return Break.CHANGE_ENDS
+	if ev == Event.POINT and in_tiebreak and (points[0] + points[1]) % 6 == 0:
+		return Break.CHANGE_ENDS
+	return Break.NONE
 
 
 ## True when one more point for `w` wins the match ("МАТЧБОЛ").

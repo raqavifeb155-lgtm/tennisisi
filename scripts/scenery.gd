@@ -200,6 +200,11 @@ func _build_cloud_shadows() -> void:
 	_cloud_shadows = plane
 
 
+## The sun light, for the graphics presets (its shadow reach).
+func sun() -> DirectionalLight3D:
+	return _sun
+
+
 ## Lighter rendering for slow phones: hard shadows over a shorter distance, no cloud
 ## shadow layer (a full-screen transparent pass).
 func set_high_quality(on: bool) -> void:

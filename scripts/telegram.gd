@@ -2,8 +2,11 @@ class_name TelegramApp
 ## Telegram Mini App integration for the web build, without Telegram's SDK script:
 ## the page talks to the Telegram client through its documented postEvent bridge.
 ##
-##  - tells Telegram the game is ready, opens it full height, and turns off
-##    "swipe down to close" so swipes are always shots
+##  - tells Telegram the game is ready, opens it full height (true full screen on
+##    phones, Bot API 8.0+), locks portrait, and turns off "swipe down to close" so
+##    swipes are always shots
+##  - reports the safe area: in full screen Telegram draws its close / menu buttons
+##    over the top of the page (and the phone has a notch), so the HUD moves below
 ##  - haptics through the Telegram app (works on iPhone too, unlike the browser
 ##    Vibration API); outside Telegram it falls back to navigator.vibrate (Android)
 
@@ -39,9 +42,21 @@ const _SHIM := """
       }
     }
   };
+  var plat = (/tgWebAppPlatform=([a-z_]+)/.exec(hash + location.search) || [])[1] || '';
+  window.tennisTG.insets = function () {
+    var t = window.Telegram && window.Telegram.WebApp;
+    var a = (t && t.safeAreaInset) || {}, c = (t && t.contentSafeAreaInset) || {};
+    return [(a.top || 0) + (c.top || 0), (a.bottom || 0) + (c.bottom || 0), window.innerHeight].join(',');
+  };
   if (inTG) {
     post('web_app_ready');
     post('web_app_expand');
+    if (plat === 'ios' || plat === 'android') {
+      post('web_app_request_fullscreen');
+      post('web_app_toggle_orientation_lock', {locked: true});
+    }
+    post('web_app_request_safe_area');
+    post('web_app_request_content_safe_area');
     post('web_app_setup_swipe_behavior', {allow_vertical_swipe: false});
     post('web_app_setup_closing_behavior', {need_confirmation: true});
   }
@@ -52,6 +67,26 @@ const _SHIM := """
 static func init() -> void:
 	if OS.has_feature("web"):
 		JavaScriptBridge.eval(_SHIM, true)
+
+
+## Top and bottom of the screen covered by Telegram's buttons and the phone itself,
+## in canvas units of a viewport `canvas_h` tall. Zero outside Telegram.
+static func safe_insets(canvas_h: float) -> Vector2:
+	if not OS.has_feature("web"):
+		return Vector2.ZERO
+	var r = JavaScriptBridge.eval("window.tennisTG && window.tennisTG.insets ? window.tennisTG.insets() : ''", true)
+	var parts := String(r).split(",")
+	if parts.size() < 3 or float(parts[2]) <= 0.0:
+		return Vector2.ZERO
+	var k := canvas_h / float(parts[2])
+	return Vector2(float(parts[0]) * k, float(parts[1]) * k)
+
+
+## An event to the server's log (see the page's tennisLog): for diagnosing crashes on
+## players' phones. Values are plain numbers and short words.
+static func log_event(event: String, data: Dictionary) -> void:
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("window.tennisLog && window.tennisLog(%s, %s)" % [JSON.stringify(event), JSON.stringify(data)], true)
 
 
 ## kind: "light", "medium", "heavy" or "perfect" (a light tick, then a firm thump).

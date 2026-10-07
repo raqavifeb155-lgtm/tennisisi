@@ -26,20 +26,50 @@ static func net_height(x: float) -> float:
 ## True if a ball touching the ground at p is in the singles court of the given half.
 ## half: +1 = player half (z > 0), -1 = opponent half (z < 0). Touching a line counts as in.
 static func is_in_singles(p: Vector3, half: int, radius: float) -> bool:
-	if absf(p.x) > SINGLES_HALF_WIDTH + radius:
+	return is_in_singles_mark(p, half, Vector2(radius, radius))
+
+
+## Like is_in_singles for a ball mark that reaches `reach.x` sideways and `reach.y`
+## along the court from its centre (see mark_reach): the mark touching the line is in.
+static func is_in_singles_mark(p: Vector3, half: int, reach: Vector2) -> bool:
+	if absf(p.x) > SINGLES_HALF_WIDTH + reach.x:
 		return false
 	var z := p.z * half
-	return z >= 0.0 and z <= HALF_LENGTH + radius
+	return z >= 0.0 and z <= HALF_LENGTH + reach.y
 
 
 ## True if a ball touching the ground at p is inside the service box of the given half.
 ## box_side: sign of x for the box (-1 = x < 0 box, +1 = x > 0 box).
 static func in_service_box(p: Vector3, half: int, box_side: float, radius: float) -> bool:
+	return in_service_box_mark(p, half, box_side, Vector2(radius, radius))
+
+
+static func in_service_box_mark(p: Vector3, half: int, box_side: float, reach: Vector2) -> bool:
 	var z := p.z * half
-	if z < 0.0 or z > SERVICE_LINE + radius:
+	if z < 0.0 or z > SERVICE_LINE + reach.y:
 		return false
 	var x := p.x * box_side
-	return x >= -radius and x <= SINGLES_HALF_WIDTH + radius
+	return x >= -reach.x and x <= SINGLES_HALF_WIDTH + reach.x
+
+
+## The mark a ball leaves on the court: [length along the flight, width] in metres.
+## The width is the ball's; a ball coming down steeply (a lob, a high kick) leaves a
+## round mark, a fast flat one skids and leaves a long oval.
+static func mark_size(vel: Vector3) -> Vector2:
+	var width := BallPhysics.RADIUS * 2.0
+	var vh := Vector2(vel.x, vel.z).length()
+	var vy := maxf(absf(vel.y), 0.5)
+	var skid := clampf(vh / vy * 0.022 * clampf(vel.length() / 25.0, 0.4, 1.2), 0.0, 0.14)
+	return Vector2(width + skid, width)
+
+
+## How far the mark of a ball with this impact velocity reaches from its centre along
+## x (sideways) and z (along the court): an oval turned along the flight.
+static func mark_reach(vel: Vector3) -> Vector2:
+	var m := mark_size(vel) * 0.5
+	var d := Vector2(vel.x, vel.z)
+	d = d.normalized() if d.length() > 0.001 else Vector2(0, 1)
+	return Vector2(Vector2(m.x * d.x, m.y * d.y).length(), Vector2(m.x * d.y, m.y * d.x).length())
 
 
 ## Visual layers are separated by whole centimetres so phones (low depth precision)
@@ -61,6 +91,11 @@ var surface := "hard"
 const MAX_MARKS := 160
 var _marks: MultiMeshInstance3D
 var _mark_next := 0
+# Footprints: their own, fainter layer, so a long rally of steps never wipes the ball
+# marks and slides. Also one MultiMesh, recycled.
+const MAX_STEPS := 260
+var _steps: MultiMeshInstance3D
+var _step_next := 0
 
 ## Colours per surface: [surround, run-off, court].
 const SURFACE_COLORS := {
@@ -181,22 +216,54 @@ func _grass_texture() -> ImageTexture:
 
 
 func _build_marks() -> void:
+	var soft := _soft_oval()
+	_marks = _mark_layer(MAX_MARKS, Color(0.45, 0.2, 0.1, 0.55), soft)
+	_steps = _mark_layer(MAX_STEPS, Color(0.42, 0.19, 0.1, 0.16), soft)
+
+
+func _mark_layer(count: int, c: Color, tex: Texture2D) -> MultiMeshInstance3D:
 	var quad := PlaneMesh.new()
 	quad.size = Vector2(1, 1)
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.45, 0.2, 0.1, 0.55)
+	mat.albedo_color = c
+	mat.albedo_texture = tex
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = quad
-	mm.instance_count = MAX_MARKS
+	mm.instance_count = count
 	mm.visible_instance_count = 0
-	_marks = MultiMeshInstance3D.new()
-	_marks.multimesh = mm
-	_marks.material_override = mat
-	_marks.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(_marks)
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	mmi.material_override = mat
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mmi)
+	return mmi
+
+
+## A white oval fading out to its edge: marks have soft borders, not hard rectangles.
+static func _soft_oval() -> ImageTexture:
+	var img := Image.create(32, 32, false, Image.FORMAT_RGBA8)
+	for y in 32:
+		for x in 32:
+			var d := Vector2(x - 15.5, y - 15.5).length() / 15.5
+			img.set_pixel(x, y, Color(1, 1, 1, clampf((1.0 - d) * 2.2, 0.0, 1.0)))
+	return ImageTexture.create_from_image(img)
+
+
+## A footprint on clay, barely there: `pos` is where the foot came down, `dir` the way
+## the player was running. Ignored on other surfaces.
+func add_step(pos: Vector3, dir: Vector3) -> void:
+	if surface != "clay":
+		return
+	var mm := _steps.multimesh
+	var d := Vector3(dir.x, 0.0, dir.z)
+	d = d.normalized() if d.length() > 0.001 else Vector3.FORWARD
+	var x := Vector3.UP.cross(d).normalized()
+	mm.set_instance_transform(_step_next, Transform3D(Basis(x * 0.11, Vector3.UP, d * 0.27), Vector3(pos.x, Y_LINES + 0.002, pos.z)))
+	_step_next = (_step_next + 1) % MAX_STEPS
+	mm.visible_instance_count = mini(mm.visible_instance_count + 1, MAX_STEPS)
 
 
 ## A mark on clay: a ball mark (small oval) or a slide streak. Ignored on other surfaces.
@@ -208,7 +275,9 @@ func add_mark(pos: Vector3, dir: Vector3, length: float, width: float) -> void:
 	if d.length() < 0.001:
 		d = Vector3.FORWARD
 	d = d.normalized()
-	var x := d.cross(Vector3.UP).normalized()
+	# UP x d, not d x UP: the basis must stay right-handed, a mirrored one turns the
+	# quad face-down and it is culled (the marks used to be invisible).
+	var x := Vector3.UP.cross(d).normalized()
 	var b := Basis(x * width, Vector3.UP, d * length)
 	mm.set_instance_transform(_mark_next, Transform3D(b, Vector3(pos.x, Y_LINES + 0.004, pos.z)))
 	_mark_next = (_mark_next + 1) % MAX_MARKS
@@ -220,6 +289,8 @@ func clear_marks() -> void:
 	if _marks:
 		_marks.multimesh.visible_instance_count = 0
 		_mark_next = 0
+		_steps.multimesh.visible_instance_count = 0
+		_step_next = 0
 
 
 func _line(size: Vector2, center: Vector2) -> void:

@@ -66,6 +66,11 @@ func hold(pos: Vector3) -> void:
 	visible = true
 
 
+## The velocity the ball came down with at its last bounce (before the bounce changed
+## it): the mark it leaves and the line call depend on it (see Court.mark_size).
+var impact_vel := Vector3.ZERO
+
+
 func park() -> void:
 	active = false
 	visible = false
@@ -79,10 +84,11 @@ func step(delta: float) -> void:
 	while remaining > 0.000001:
 		var h := minf(remaining, BallPhysics.MAX_STEP)
 		remaining -= h
-		var impact_speed := state.vel.length()
+		var v_in := state.vel
 		var ev := BallPhysics.substep(state, h)
 		if ev == BallPhysics.Event.BOUNCE:
-			bounced.emit(state.pos, impact_speed)
+			impact_vel = v_in
+			bounced.emit(state.pos, v_in.length())
 		elif ev == BallPhysics.Event.NET:
 			hit_net.emit(state.pos)
 		if not active:

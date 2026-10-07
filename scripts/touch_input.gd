@@ -2,7 +2,9 @@ class_name TouchInput
 extends Control
 ## Two-thumb controls:
 ##  - below the player: a floating joystick for the left thumb (move_vector).
-##    It appears where the thumb lands; a quick tap there still counts as a tap.
+##    It appears where the thumb lands; a quick tap there still counts as a tap,
+##    and a quick flick up the screen there still counts as a shot (a swing started
+##    a little too low must not turn into a run and a missed ball).
 ##  - above the player (anywhere else):
 ##    - tap            -> tapped(pos): run there / toss on serve
 ##    - hold still     -> held(pos): keep running toward the finger
@@ -22,12 +24,17 @@ const TAP_MAX_MS := 350
 
 const STICK_RADIUS := 75.0      # px of thumb travel for full speed
 const STICK_DEAD := 0.15
+const FLICK_MS := 300           # a joystick touch released this fast...
+const FLICK_MIN := 0.065        # ...after travelling this far (x screen height), mostly up = a shot
 
 var move_vector := Vector2.ZERO  # joystick or keyboard, x = right, y = toward the camera
 var blocked_controls: Array[Control] = []
 ## Screen y below which a touch becomes the joystick (just under the player's feet).
 var stick_zone_top := INF
 var stick_active := false
+## Set by the game while a hit is due (the ball is close): then a finger moving up out
+## of the joystick zone is a shot at any speed, not only a quick flick.
+var shot_window := false
 
 var _stick_index := -1
 var _stick_origin := Vector2.ZERO
@@ -35,6 +42,8 @@ var _stick_pos := Vector2.ZERO
 var _stick_ms := 0
 var _stick_moved := false
 var _stick_vector := Vector2.ZERO
+var _stick_points: Array = []
+var _stick_times: Array = []
 var _drawn_zone := INF
 
 var _touches := {}               # finger index -> Dictionary
@@ -63,8 +72,12 @@ func _input(event: InputEvent) -> void:
 			_stick_index = -1
 			stick_active = false
 			_stick_vector = Vector2.ZERO
+			var travel: Vector2 = t.position - (_stick_points[0] as Vector2)
 			if not _stick_moved and now - _stick_ms <= TAP_MAX_MS:
 				tapped.emit(t.position)
+			elif (now - _stick_ms <= FLICK_MS or (shot_window and now - _stick_ms <= 900)) and travel.length() >= FLICK_MIN * h and -travel.y > 0.5 * travel.length():
+				# Not a run: a swing that started in the joystick zone.
+				_finish_swipe({"points": _stick_points, "times": _stick_times}, t.position, now, h)
 			queue_redraw()
 			return
 		if t.pressed:
@@ -76,6 +89,8 @@ func _input(event: InputEvent) -> void:
 				_stick_pos = t.position
 				_stick_ms = now
 				_stick_moved = false
+				_stick_points = [t.position]
+				_stick_times = [now]
 				stick_active = true
 				queue_redraw()
 				return
@@ -94,6 +109,8 @@ func _input(event: InputEvent) -> void:
 	elif event is InputEventScreenDrag:
 		var dr := event as InputEventScreenDrag
 		if dr.index == _stick_index:
+			_stick_points.append(dr.position)
+			_stick_times.append(now)
 			_update_stick(dr.position, h)
 			return
 		if not _touches.has(dr.index):
@@ -170,8 +187,10 @@ func _draw() -> void:
 		var knob := _stick_origin + (_stick_pos - _stick_origin).limit_length(STICK_RADIUS)
 		draw_circle(knob, 34.0, Color(1, 1, 1, 0.5))
 	elif stick_zone_top < get_viewport_rect().size.y - 90.0:
-		# Where the thumb goes: a faint ring under the player.
+		# Where the thumb goes: a faint ring under the player, and a faint line where the
+		# joystick zone begins (above it every touch is a shot or a tap).
 		var vp := get_viewport_rect().size
+		draw_line(Vector2(vp.x * 0.08, stick_zone_top), Vector2(vp.x * 0.92, stick_zone_top), Color(1, 1, 1, 0.1), 2.0, true)
 		var home := Vector2(vp.x * 0.5, minf((stick_zone_top + vp.y) * 0.5 + 20.0, vp.y - 110.0))
 		draw_arc(home, STICK_RADIUS + 18.0, 0.0, TAU, 48, Color(1, 1, 1, 0.13), 3.0, true)
 		draw_circle(home, 34.0, Color(1, 1, 1, 0.08))
