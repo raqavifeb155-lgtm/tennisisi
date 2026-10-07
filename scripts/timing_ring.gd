@@ -217,7 +217,8 @@ func _draw_feedback(age: float) -> void:
 	c = _fb_pos
 
 	# The word: pops in (overshoot), sits in the strip, fades out.
-	var font := get_theme_default_font()
+	var font := UiTheme.display()       # the menus' faces, not the engine's (UI_FLOW_TZ P2-3)
+	var small := UiTheme.text_bold()
 	var size := 38 if _fb_kind == 2 else 32
 	var pop := 1.0
 	if age < 0.22:
@@ -233,20 +234,21 @@ func _draw_feedback(age: float) -> void:
 
 	# Details (stroke, speed) in small print just below.
 	if _fb_sub != "":
-		var ss := 18
-		var sw := font.get_string_size(_fb_sub, HORIZONTAL_ALIGNMENT_LEFT, -1, ss).x
+		var ss := 24  # the HUD's floor: 18 px was ~11 pt on a phone
+		var sw := small.get_string_size(_fb_sub, HORIZONTAL_ALIGNMENT_LEFT, -1, ss).x
 		var sx := clampf(c.x - sw * 0.5, 10.0, vp.x - sw - 10.0)
-		var sp := Vector2(sx, c.y + size * 0.35 + 26.0)
-		draw_string_outline(font, sp, _fb_sub, HORIZONTAL_ALIGNMENT_LEFT, -1, ss, 6, Color(0, 0, 0, 0.75 * fade))
-		draw_string(font, sp, _fb_sub, HORIZONTAL_ALIGNMENT_LEFT, -1, ss, Color(1, 1, 1, 0.95 * fade))
+		var sp := Vector2(sx, c.y + size * 0.35 + 30.0)
+		draw_string_outline(small, sp, _fb_sub, HORIZONTAL_ALIGNMENT_LEFT, -1, ss, 6, Color(0, 0, 0, 0.75 * fade))
+		draw_string(small, sp, _fb_sub, HORIZONTAL_ALIGNMENT_LEFT, -1, ss, Color(1, 1, 1, 0.95 * fade))
 	if _xp_name != "":
 		# The trained skill and its bar, under the verdict (screen space, unscaled).
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-		var y := _fb_pos.y + 66.0
-		var w := 200.0
+		var y := _fb_pos.y + 78.0
+		var w := 220.0
 		var x0 := _fb_pos.x - w * 0.5
 		var al := fade
-		draw_string(font, Vector2(x0, y - 8.0), "%s %d" % [_xp_name, _xp_level], HORIZONTAL_ALIGNMENT_CENTER, w, 20, Color(1, 1, 1, 0.85 * al))
+		draw_string_outline(small, Vector2(x0, y - 8.0), "%s %d" % [_xp_name, _xp_level], HORIZONTAL_ALIGNMENT_CENTER, w, 24, 6, Color(0, 0, 0, 0.7 * al))
+		draw_string(small, Vector2(x0, y - 8.0), "%s %d" % [_xp_name, _xp_level], HORIZONTAL_ALIGNMENT_CENTER, w, 24, Color(1, 1, 1, 0.9 * al))
 		draw_rect(Rect2(x0, y, w, 8.0), Color(0, 0, 0, 0.4 * al))
 		draw_rect(Rect2(x0, y, w * _xp_frac, 8.0), Color(GOLD, 0.95 * al))
 

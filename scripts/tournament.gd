@@ -36,15 +36,36 @@ const MODIFIERS := {
 	"steady": {"name": "Железный", "desc": "реже ошибается", "skill": 0.12, "loot": 0.08},
 	"bomber": {"name": "Бомбардир", "desc": "подаёт на 12% быстрее", "serve": 1.12, "loot": 0.06},
 }
-const EPIC_CHANCE := 0.06         # an opponent walks on court with an epic racket
-const LEGENDARY_CHANCE := 0.015   # ... or a legendary one
 const BOSS_LOOT_BONUS := 0.12
+## v0.2 gear (ROGUELIKE_DESIGN 6.7): every opponent wears a racket, shoes and a wristband,
+## each with its own rarity (common .. mythic), rolled up front and not shown in the
+## bracket. Later rounds, modifiers and the boss move the odds up (ROUND_SHIFT + loot).
+const GEAR_CHANCE := [0.62, 0.27, 0.08, 0.025, 0.005]
+const SHIFT_SPLIT := [0.5, 0.3, 0.15, 0.05]   # where the shifted share goes: rare .. mythic
+const ROUND_SHIFT := 0.04
+## Beaten, each of his items drops on its own with this chance by rarity.
+const DROP_CHANCE := [0.30, 0.20, 0.12, 0.06, 0.03]
+const BAG_SIZE := 6
+const SKILL_PER_RARITY := 0.01    # his gear makes him a little stronger
 
 var format := 0                   # index into FORMATS
 var location := "park"            # Locations id: scenery, surface and ball physics
-var lineup: Array = []            # per opponent: {"mods": [ids], "racket": item or {}}
-var racket := {}                  # the player's racket this run (Gear item), {} = the stock one
-var pending_loot := {}            # racket dropped by the opponent just beaten
+var lineup: Array = []            # per opponent: {"mods": [ids], "gear": {slot: item}, "racket": gear.racket}
+var equip := {"racket": {}, "shoes": {}, "band": {}}   # what the player wears ({} = the stock one)
+## The player's racket: equip["racket"] (older code and old saves use this name).
+var racket: Dictionary:
+	get:
+		return equip.get("racket", {})
+	set(v):
+		equip["racket"] = v
+var bag: Array = []               # spare items (BAG_SIZE)
+var new_items: Array = []         # what the last win put into the bag
+var auto_sold := 0                # gold from items sold because the bag was full (last win)
+var run_mods := {}                # mods that last the run (RunEffects run_mod, e.g. Корона)
+var mythic_rolled := false        # a mythic already showed up this run (one per run)
+var drop_bonus := 0.0             # added to the drop chances (1 = everything drops)
+var bet := {}                     # a bet on the coming match (Bets): stake, odds, sweep
+var pending_loot := {}            # the best epic+ item dropped by the opponent just beaten
 var missed_loot := ""             # name of the racket lost in the trophy mini-game
 var banked := false               # the run's gold has been added to the saved total
 var rng := RandomNumberGenerator.new()
@@ -80,7 +101,8 @@ func _init(format_index := 0, seed_value := 0) -> void:
 
 
 const SAVED := ["format", "location", "lineup", "racket", "pending_loot", "missed_loot", "banked",
-	"state", "stage", "wildcards", "perks", "results", "gold", "champion", "offer"]
+	"state", "stage", "wildcards", "perks", "results", "gold", "champion", "offer",
+	"equip", "bag", "new_items", "auto_sold", "run_mods", "mythic_rolled", "drop_bonus", "bet"]
 
 
 ## The run as plain data, for the save file: a phone that reloads the page (Telegram
@@ -125,13 +147,34 @@ func roll_lineup() -> void:
 			bonus += float(MODIFIERS[id]["loot"])
 		if Opponents.ROSTER[i].get("boss", false):
 			bonus += BOSS_LOOT_BONUS
-		var item := {}
-		var r := rng.randf()
-		if r < LEGENDARY_CHANCE + bonus * 0.25:
-			item = Gear.roll(Gear.LEGENDARY, rng)
-		elif r < LEGENDARY_CHANCE + EPIC_CHANCE + bonus:
-			item = Gear.roll(Gear.EPIC, rng)
-		lineup.append({"mods": mods, "racket": item})
+		var gear := {}
+		for slot in Gear.SLOTS:
+			var rar := Gear.COMMON if i == 0 else _roll_rarity(ROUND_SHIFT * i + bonus)
+			if rar == Gear.MYTHIC:
+				if mythic_rolled:
+					rar = Gear.LEGENDARY
+				mythic_rolled = true
+			gear[slot] = Gear.roll(rar, rng, slot)
+		# A golden one (1 in 50, never the first): a legendary or better in his hand.
+		var golden := i > 0 and rng.randf() < Golden.CHANCE
+		if golden and int(gear["racket"]["rarity"]) < Gear.LEGENDARY:
+			gear["racket"] = Gear.roll(Gear.LEGENDARY, rng, "racket")
+		lineup.append({"mods": mods, "gear": gear, "racket": gear["racket"], "golden": golden})
+
+
+## A rarity for an opponent's item: GEAR_CHANCE with `shift` moved from common upward.
+func _roll_rarity(shift: float) -> int:
+	var c: Array = GEAR_CHANCE.duplicate()
+	var moved := minf(shift, c[0] - 0.1)
+	c[0] -= moved
+	for k in SHIFT_SPLIT.size():
+		c[k + 1] += moved * SHIFT_SPLIT[k]
+	var x := rng.randf()
+	for r in range(Gear.MYTHIC, Gear.COMMON, -1):
+		if x < c[r]:
+			return r
+		x -= c[r]
+	return Gear.COMMON
 
 
 func current_lineup() -> Dictionary:
@@ -145,13 +188,76 @@ func modifier_value(key: String) -> float:
 		var m: Dictionary = MODIFIERS[id]
 		if m.has(key):
 			v = v + float(m[key]) if key == "skill" else v * float(m[key])
+	if key == "skill":
+		var gear: Dictionary = current_lineup().get("gear", {})
+		for slot in gear:
+			if not gear[slot].is_empty():
+				v += SKILL_PER_RARITY * int(gear[slot]["rarity"])
 	return v
 
 
-func take_loot(equip: bool) -> void:
-	if equip and not pending_loot.is_empty():
-		racket = pending_loot
+## The trophy: put on (what was worn goes into the bag) or into the bag.
+func take_loot(put_on: bool) -> void:
+	if not pending_loot.is_empty():
+		if put_on:
+			_wear(pending_loot)
+		else:
+			add_to_bag(pending_loot)
 	pending_loot = {}
+
+
+## Puts an item on; what was in that slot goes into the bag.
+func _wear(item: Dictionary) -> void:
+	var slot := String(item.get("slot", "racket"))
+	var old: Dictionary = equip.get(slot, {})
+	equip[slot] = item
+	if not old.is_empty():
+		add_to_bag(old)
+
+
+## Into the bag; a full bag sells its cheapest item (maybe this one) for run gold.
+func add_to_bag(item: Dictionary) -> void:
+	if item.is_empty():
+		return
+	bag.append(item)
+	if bag.size() > BAG_SIZE:
+		var worst := 0
+		for k in bag.size():
+			if Gear.price(bag[k]) < Gear.price(bag[worst]):
+				worst = k
+		var p := Gear.price(bag[worst])
+		bag.remove_at(worst)
+		gold += p
+		auto_sold += p
+
+
+func equip_from_bag(i: int) -> void:
+	if i < 0 or i >= bag.size():
+		return
+	var item: Dictionary = bag[i]
+	bag.remove_at(i)
+	_wear(item)
+
+
+func sell_from_bag(i: int) -> int:
+	if i < 0 or i >= bag.size():
+		return 0
+	var p := Gear.price(bag[i])
+	bag.remove_at(i)
+	gold += p
+	return p
+
+
+## What a beaten opponent's gear drops: each item on its own (DROP_CHANCE + bonus).
+static func drops(gear: Dictionary, r: RandomNumberGenerator, bonus: float) -> Array:
+	var out: Array = []
+	for slot in Gear.SLOTS:
+		var it: Dictionary = gear.get(slot, {})
+		if it.is_empty():
+			continue
+		if r.randf() < DROP_CHANCE[clampi(int(it["rarity"]), 0, 4)] + bonus:
+			out.append(it)
+	return out
 
 
 func tier_name() -> String:
@@ -170,15 +276,18 @@ func new_score(first_server: int) -> MatchScore:
 
 
 func gold_for_win(i: int) -> int:
-	return roundi(GOLD_PER_WIN[i] * float(format_info()["reward"]))
+	var golden: bool = i < lineup.size() and lineup[i].get("golden", false)
+	return roundi(GOLD_PER_WIN[i] * float(format_info()["reward"])) * (Golden.GOLD_X if golden else 1)
 
 
 ## Records a finished match and moves the run on.
 func record_match(won: bool, score_text: String, r: RandomNumberGenerator) -> void:
 	results.append({"stage": stage, "won": won, "score": score_text})
 	missed_loot = ""
+	new_items = []
+	auto_sold = 0
 	if won:
-		pending_loot = current_lineup()["racket"]
+		_take_drops(r)
 		gold += gold_for_win(stage)
 		stage += 1
 		if stage >= rounds():
@@ -200,7 +309,11 @@ func take_reward(i: int) -> void:
 	if card["kind"] == "wildcard":
 		wildcards += 1
 	elif card["kind"] == "item":
-		racket = card["item"]
+		var it: Dictionary = card["item"]
+		if equip.get(String(it.get("slot", "racket")), {}).is_empty():
+			_wear(it)
+		else:
+			add_to_bag(it)
 	elif card["kind"] == "perk":
 		perks.append(card["id"])
 	offer = []
@@ -216,9 +329,24 @@ func use_wildcard() -> bool:
 	return true
 
 
-## The gear card of the reward offer: usually common, sometimes rare.
+## The beaten opponent's drops: the best epic+ goes to the trophy game, the rest into the bag.
+func _take_drops(r: RandomNumberGenerator) -> void:
+	var dropped := drops(current_lineup().get("gear", {}), r, drop_bonus)
+	var best := -1
+	for k in dropped.size():
+		if int(dropped[k]["rarity"]) >= Gear.EPIC and (best < 0 or int(dropped[k]["rarity"]) > int(dropped[best]["rarity"])):
+			best = k
+	if best >= 0:
+		pending_loot = dropped[best]
+		dropped.remove_at(best)
+	for it in dropped:
+		new_items.append(it)
+		add_to_bag(it)
+
+
+## The gear card of the reward offer: usually common, sometimes rare, any slot.
 func _item_card(r: RandomNumberGenerator) -> Dictionary:
-	var item := Gear.roll(Gear.RARE if r.randf() < 0.3 else Gear.COMMON, r)
+	var item := Gear.roll(Gear.RARE if r.randf() < 0.3 else Gear.COMMON, r, Gear.SLOTS[r.randi_range(0, Gear.SLOTS.size() - 1)])
 	return {"kind": "item", "item": item, "title": item["name"], "desc": Gear.describe(item)}
 
 

@@ -8,6 +8,9 @@ const LINE_W := 0.05          # line width (m)
 const SHOW_SECONDS := 2.6
 
 var top_inset := 0.0          # Telegram's buttons and the notch in full screen (HUD sets it)
+var compact := false          # small, in the top band between the score and the pause button
+const COMPACT := 0.72         # its scale there
+const PAUSE_W := 136.0        # room kept for the pause button at the top right
 
 var _margin := 0.0            # metres; > 0 = in
 var _axis := 0                # 0 = deciding line runs along the court length (vertical here)
@@ -28,6 +31,10 @@ func show_call(margin: float, axis: int, mark := Vector3.ZERO) -> void:
 	queue_redraw()
 
 
+func is_showing() -> bool:
+	return _until_ms > 0
+
+
 func _process(_delta: float) -> void:
 	if _until_ms > 0:
 		queue_redraw()
@@ -41,9 +48,12 @@ func _draw() -> void:
 	var left := Time.get_ticks_msec()
 	var alpha := clampf((_until_ms - left) / 300.0, 0.0, 1.0)
 	var vp := get_viewport_rect().size
-	# Top right, under the settings button: on the sky and the city, clear of the score
-	# (top left), of the far court and of the thumbs at the bottom of the screen.
+	# Compact: in the top band, left of the pause button, beside the score (the TV strip
+	# with the call runs under both). Otherwise top right, under the settings button.
 	var origin := Vector2(vp.x - PANEL.x - 14.0, top_inset + 128.0)
+	if compact:
+		origin = Vector2(vp.x - PAUSE_W - PANEL.x * COMPACT, top_inset + 14.0)
+		draw_set_transform(origin * (1.0 - COMPACT), 0.0, Vector2(COMPACT, COMPACT))  # scaled about origin
 	var rect := Rect2(origin, PANEL)
 	var font := get_theme_default_font()
 	var is_in := _margin >= 0.0

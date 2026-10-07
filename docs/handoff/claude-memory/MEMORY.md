@@ -1,0 +1,9 @@
+- [Ресерч топ-100 для ростера](top100-roster-research.md) — файлы в docs/roster, допущения по тирам и именам, ограничения кода
+- [Внешность и корт «Париж»](looks-and-paris-court.md) — что добавлено 2026-10-06, сборка не пересобрана, 4.7 отложен
+- [Эталонный клип Алькарас–Синнер](anim-reference-clip.md) — разбор в research/clip-IMG_5044, выводы по анимациям, нет кадров отхода назад
+- [Godot 4.4.1 для проекта](godot-441-path.md) — путь к exe, 4.7 не использовать, anim_test
+- [Web audio: streams, not samples](web-audio-stream-not-samples.md) — why SFX were silent and iPhone kicked the player; telemetry on fi
+- [Pixabay: only popular, fetch via fi](pixabay-sounds-popular-via-server.md) — user's rule for picking sounds; CDN blocked locally
+- [Сборка v0.2: git и три потока](v02-orchestration.md) — локальный git, ветки A/B/C, сборщик сводит и выкладывает
+- [Рогалик-РПГ: видение и ТЗ меню](roguelike-vision-docs.md) — docs/ROGUELIKE_DESIGN.md + UI_MENU_TZ.md, утверждённые решения 2026-10-06, меню: один цвет, 3D-клуб, Balatro, проверка на 440×956
+- [Стиль модели: мягкий мульт](model-style-soft-toon.md) — выбран 2026-10-07, PS1 и гранёный гибрид отвергнуты, правила веток
