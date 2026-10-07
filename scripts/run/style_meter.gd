@@ -56,6 +56,11 @@ func on_bounce(info: Dictionary) -> void:
 		_second_bounce = absf(p.z)
 
 
+## The player's last stroke this rally ({} = none yet).
+func last_stroke() -> Dictionary:
+	return _last
+
+
 func on_knocked(who: int) -> void:
 	if who == 1:
 		_knocked = true

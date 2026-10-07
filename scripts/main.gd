@@ -2062,6 +2062,10 @@ func _on_ui(action: String, arg: int) -> void:
 			Skills.spend_point(Skills.LIST[arg])
 			SaveData.save()
 			ui.show_character(false)
+		"bets", "wheel_chip", "spin", "bet_match", "bet_chip", "bet_win", "bet_sweep", "bet_back":
+			RunBets.ui_action(self, action, arg)  # v0.2 A: the betting desk
+		"bag", "bag_item", "bag_back", "equip", "sell":
+			RunBag.ui_action(self, action, arg)  # v0.2 A: the bag between matches
 		"replay", "share":
 			RunHub.ui_action(self, action)  # v0.2 A: the best point's replay and sharing it
 		"perk":

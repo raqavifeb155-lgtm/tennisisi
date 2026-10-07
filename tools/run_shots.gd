@@ -62,6 +62,7 @@ GAME YOU", UiTheme.WIN)  # the verdict shows in the same frame
 	hub._best_end = 30
 	hub.meter.best = _best()
 	hub.last_match = {"points": 64, "gold": 6, "best": _best()}
+	t.gold += 6  # a real match adds its style gold to the run before the result screen
 	main.cpu.position = Vector3(0, 0, -12.6)
 	main.ball.visible = false
 	t.record_match(true, "6:3", RandomNumberGenerator.new())
@@ -75,4 +76,87 @@ GAME YOU", UiTheme.WIN)  # the verdict shows in the same frame
 	if hub.share_image:
 		hub.share_image.save_png(out + "a1_share_picture.png")
 		print("share caption: ", RunShare.caption(hub.meter.best))
+	await _a2(hub)
+	await _a3()
+	await _a4(hub)
 	quit()
+
+
+## A-4: a golden opponent in the bracket, his entrance on court, the result.
+func _a4(hub: RunHub) -> void:
+	var t := Tournament.new(1, 5)
+	t.lineup[1]["golden"] = true
+	t.lineup[1]["mods"] = []
+	main.tournament = t
+	main.tournament_mode = true
+	main.ui.show_bracket(t)
+	await _shot("a4_bracket")
+	t.stage = 1
+	main._play_match()
+	await create_timer(0.4).timeout
+	main.hud._tutorial.visible = false
+	paused = false
+	await _shot("a4_entrance", 0.6)
+	main._stop_match()
+	hub._abandon()
+	hub.last_match = {"golden": true}
+	SaveData.golden = ["basilashvili"]
+	t.record_match(true, "6:4", RandomNumberGenerator.new())
+	main.ui.show_result(t, true, "6:4", {"perfect": 9, "aces": 2, "best_rally": 11})
+	await _shot("a4_result")
+
+
+## A-3: the Club with the desk, the wheel before and after a spin, the bet on a match.
+func _a3() -> void:
+	main._stop_match()
+	SaveData.titles = 1
+	SaveData.gold = 400
+	main.ui.show_menu()
+	await _shot("a3_club")
+	main._on_ui("bets", 0)
+	await _shot("a3_wheel")
+	main._on_ui("spin", 0)
+	await _shot("a3_wheel_spin", 0.8)
+	await _shot("a3_wheel_result", 2.2)
+	var t := Tournament.new(1, 5)
+	t.stage = 3
+	main.tournament = t
+	main._on_ui("bet_match", 0)
+	await _shot("a3_match_bet")
+	main._on_ui("bet_win", 50)
+	await _shot("a3_bracket_bet")
+
+
+## A-2: the bracket with the bag row, the bag, an item against the worn one, the trophy,
+## the opponent's stamina bar with damage numbers in a match.
+func _a2(hub: RunHub) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 77
+	var t := Tournament.new(1, 77)
+	t.equip["racket"] = Items.instance(Items.find("sledgehammer"))
+	t.equip["band"] = Gear._affix_item(Gear.COMMON, rng, "band")
+	t.bag = [Gear._affix_item(Gear.RARE, rng, "racket"), Items.instance(Items.find("springs")), Gear._affix_item(Gear.COMMON, rng, "shoes")]
+	t.lineup[1]["gear"]["racket"] = Items.instance(Items.find("cutter"))
+	t.lineup[2]["gear"]["band"] = Items.instance(Items.find("cold_pack"))
+	main.tournament = t
+	main.tournament_mode = true
+	main.ui.show_bracket(t)
+	await _shot("a2_bracket")
+	main._on_ui("bag", 0)
+	await _shot("a2_bag")
+	main._on_ui("bag_item", 10)
+	await _shot("a2_item")
+	t.pending_loot = Items.instance(Items.find("thunderer"))
+	main.ui.show_loot(t)
+	await _shot("a2_loot")
+	t.pending_loot = {}
+	main._play_match()
+	await create_timer(1.0).timeout
+	main.hud._tutorial.visible = false
+	paused = false
+	hub.match_fx._hurt(12.0, "run")
+	await create_timer(0.15).timeout
+	hub.match_fx._hurt(31.0, "item")
+	await _shot("a2_stamina", 0.12)
+	hub.match_fx._hurt(30.0, "heavy")
+	await _shot("a2_stamina_tired", 0.7)

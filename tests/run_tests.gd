@@ -348,36 +348,45 @@ func test_gear_and_loot() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 3
 	var leg := Gear.roll(Gear.LEGENDARY, rng)
-	check(leg["mods"].size() == 4 and leg["lines"].size() == 4 and leg["name"].begins_with("Легендарная"), "legendary racket: 4 affixes '%s'" % leg["name"])
+	check(leg["slot"] == "racket" and leg.has("id") and int(Items.find(leg["id"])["rarity"]) == Gear.LEGENDARY, "a legendary racket is a catalog item with an effect '%s'" % leg["name"])
 	check(Gear.glow(leg) > 1.0 and Gear.glow(Gear.roll(Gear.COMMON, rng)) == 0.0, "legendary glows, common does not")
 	check(Gear.AFFIXES.size() >= 20, "%d affixes in the pool" % Gear.AFFIXES.size())
 	var t := Tournament.new(0, 11)
 	check(t.lineup.size() == 5 and t.lineup[0]["mods"].is_empty(), "lineup rolled up front, the tutorial opponent has no modifiers")
-	t.lineup[0]["racket"] = leg
+	# v0.2: each of his items drops by chance (30/20/12/6/3%); drop_bonus 1 = a sure drop.
+	t.lineup[0]["gear"]["racket"] = leg
+	t.drop_bonus = 1.0
 	t.record_match(true, "7:2", rng)
-	check(t.pending_loot == leg, "beating the opponent drops their racket for sure")
+	check(t.pending_loot == leg, "a dropped epic or better goes to the trophy game")
 	t.take_loot(true)
 	check(t.racket == leg and t.pending_loot.is_empty(), "trophy equipped")
-	check(t.offer[1]["kind"] == "item", "reward offer: perk, racket, wildcard")
+	check(t.offer[1]["kind"] == "item", "reward offer: perk, item, wildcard")
+	var rw: Dictionary = t.offer[1]["item"]
 	t.take_reward(1)
-	check(t.racket.get("rarity", -1) <= Gear.RARE, "a reward racket replaces the one in hand")
-	t.lineup[1]["racket"] = leg
+	check(t.equip[rw["slot"]] == rw or t.bag.has(rw), "a reward item is put on (empty slot) or goes into the bag")
+	t.lineup[1]["gear"]["racket"] = leg
 	t.record_match(false, "3:7", rng)
 	check(t.state == Tournament.State.OVER and t.pending_loot.is_empty(), "lose and the racket is gone")
-	# Modifiers make loot likelier: count carried rackets over many lineups.
-	var with_loot := 0
-	var boss_loot := 0
+	# Every opponent wears three items; epic and up are rare, likelier later and on the boss.
+	var items := 0
+	var epics := 0
+	var boss_items := 0
+	var boss_epics := 0
 	var mods_seen := 0
 	for k in 400:
 		var tt := Tournament.new(1, k + 1)
 		for i in tt.rounds():
-			if not tt.lineup[i]["racket"].is_empty():
-				with_loot += 1
+			for slot in tt.lineup[i]["gear"]:
+				var it: Dictionary = tt.lineup[i]["gear"][slot]
+				items += 1
+				var epic := int(it["rarity"]) >= Gear.EPIC
+				epics += 1 if epic else 0
 				if i == tt.rounds() - 1:
-					boss_loot += 1
+					boss_items += 1
+					boss_epics += 1 if epic else 0
 			mods_seen += tt.lineup[i]["mods"].size()
-	check(with_loot > 100 and with_loot < 900, "rare rackets show up now and then: %d of 2000 opponents" % with_loot)
-	check(boss_loot > 400 * 0.12, "the boss carries loot more often: %d of 400" % boss_loot)
+	check(items == 6000 and epics > 300 and epics < 1500, "epic gear shows up now and then: %d of %d items" % [epics, items])
+	check(float(boss_epics) / boss_items > 1.5 * float(epics) / items, "the boss carries epic gear more often: %d of %d" % [boss_epics, boss_items])
 	check(mods_seen > 300, "opponents come with modifiers: %d" % mods_seen)
 	var tm := Tournament.new(1, 5)
 	tm.lineup[0]["mods"] = ["fast", "steady"]

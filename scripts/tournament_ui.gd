@@ -224,6 +224,7 @@ func show_menu() -> void:
 	rooms.add_child(_tile("Раздевалка", "внешность, стиль", "locker"))
 	var todo := Skills.points + Skills.pending.size()
 	rooms.add_child(_tile("Тренерская", "навыки и перки", "character", todo))
+	RunBets.menu_extra(self)  # v0.2 A: the betting desk (after the first title)
 	var how := _secondary("?  Как играть: удары и подача", "howto")
 	how.add_theme_color_override("font_color", UiTheme.GOLD)
 	how.custom_minimum_size = Vector2(0, 72)
@@ -281,6 +282,8 @@ func show_character(animate := true) -> void:
 		for p in Skills.perks:
 			names.append(Skills.find_perk(p)["title"])
 		_note("Билд: " + ", ".join(names))
+	if not SaveData.golden.is_empty():
+		_note(Golden.collection_text())  # v0.2 A: golden opponents beaten
 	_gap(24)
 
 
@@ -346,6 +349,8 @@ func show_bracket(t: Tournament) -> void:
 			names.append(Rewards.find_perk(id)["title"])
 		info += "   ·   Перки: " + ", ".join(names)
 	_sub(info)
+	RunBag.bracket_extra(self, t)  # v0.2 A: the bag
+	RunBets.bracket_extra(self, t)  # v0.2 A: a bet on the coming match
 	for i in t.rounds():
 		_bracket_row(t, i)
 	var opp := t.opponent()
@@ -400,9 +405,10 @@ func show_loot(t: Tournament) -> void:
 	_open(t)
 	var item: Dictionary = t.pending_loot
 	_title("Трофей", Gear.color(item))
-	_sub("Ракетка соперника теперь твоя")
-	var shown := _item_card(item, "Выпало")
-	_item_card(t.racket, "Сейчас в руках", "")
+	_sub("Вещь соперника теперь твоя")
+	var slot := String(item.get("slot", "racket"))  # v0.2 A: three slots
+	var shown := RunBag.item_card(self, item, "Выпало", slot)
+	RunBag.item_card(self, t.equip.get(slot, {}), "Сейчас надето", slot)
 	if not item.is_empty() and int(item["rarity"]) >= Gear.EPIC:
 		_rays = Rays.new()
 		_rays.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -411,8 +417,8 @@ func show_loot(t: Tournament) -> void:
 		root.add_child(_rays)
 		root.move_child(_rays, 1)  # behind the cards, over the dark veil
 		_place_rays.call_deferred(shown)
-	_primary("ВЗЯТЬ", "loot", 1)
-	_secondary("Оставить свою", "loot", 0)
+	_primary("НАДЕТЬ", "loot", 1)
+	_secondary("В сумку", "loot", 0)
 
 
 func _place_rays(target: Control) -> void:
@@ -445,9 +451,7 @@ func show_reward(t: Tournament) -> void:
 				card = _card({"tag": "Вайлд-кард", "title": c["title"], "desc": c["desc"]}, "reward", i, Color(0.55, 0.8, 1.0))
 			"item":
 				var item: Dictionary = c["item"]
-				var tag := "Ракетка  ·  %s" % UiTheme.RARITY_NAMES[int(item["rarity"])]
-				if not t.racket.is_empty():
-					tag += "  ·  заменит «%s»" % t.racket["name"].get_slice("«", 1).trim_suffix("»")
+				var tag := RunBag.reward_tag(t, item)  # v0.2 A: any slot, worn or into the bag
 				card = _card({"tag": tag, "title": c["title"], "desc": c["desc"]}, "reward", i, Color(0, 0, 0, 0), int(item["rarity"]))
 			_:
 				card = _card({"tag": "Перк турнира", "title": c["title"], "desc": c["desc"]}, "reward", i, UiTheme.GOLD)
@@ -768,10 +772,7 @@ func _bracket_row(t: Tournament, i: int) -> void:
 			for m in lu["mods"]:
 				names.append(Tournament.MODIFIERS[m]["name"])
 			v.add_child(_left(_text("Модификаторы: " + ", ".join(names), UiTheme.text(), UiTheme.T_SMALL, Color(1.0, 0.6, 0.35))))
-		if not lu["racket"].is_empty():
-			var rl := _left(_text("В руках: " + lu["racket"]["name"], UiTheme.text_bold(), UiTheme.T_SMALL, Gear.color(lu["racket"])))
-			rl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			v.add_child(rl)
+		RunBag.opponent_hint(self, v, lu)  # v0.2 A: his gear is a hint, revealed on court
 	if current:
 		var lesson := _left(_text(o["lesson"], UiTheme.text(), UiTheme.T_SMALL, UiTheme.MUTED))
 		lesson.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

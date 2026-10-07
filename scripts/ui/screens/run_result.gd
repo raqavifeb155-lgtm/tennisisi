@@ -15,9 +15,28 @@ static func style_gold(ui: TournamentUI) -> int:
 	return int(h.last_match.get("gold", 0)) if h != null else 0
 
 
-## "Стиль: +3 золота · лучший ×2.4", the replay card, and after a replay "Поделиться".
-static func extra(ui: TournamentUI, _t: Tournament) -> void:
+## What the win put into the bag (and sold when it was full), the style of the match,
+## the replay card, and after a replay "Поделиться".
+static func extra(ui: TournamentUI, t: Tournament) -> void:
+	if t != null and not t.new_items.is_empty():
+		var names: Array[String] = []
+		for it in t.new_items:
+			names.append(String(it["name"]))
+		var l := ui._text("В сумку: " + ", ".join(names), UiTheme.text_bold(), UiTheme.T_SMALL + 2, Gear.color(t.new_items[0]))
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		ui._box.add_child(l)
+	if t != null and t.auto_sold > 0:
+		ui._note("Сумка полна: лишнее продано за %d золота" % t.auto_sold)
 	var h := hub(ui)
+	if h != null and h.last_match.get("golden", false):
+		var gl := ui._text("Золотой пойман!  ·  коллекция %d из %d" % [SaveData.golden.size(), Opponents.ROSTER.size() - 1], UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.GOLD)
+		gl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		ui._box.add_child(gl)
+	if h != null and h.last_match.has("bet"):
+		var b: Dictionary = h.last_match["bet"]
+		var won := int(b["paid"]) > 0
+		ui._box.add_child(ui._text("Ставка: +%d золота" % int(b["paid"]) if won else "Ставка %d — мимо" % int(b["stake"]),
+			UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.WIN if won else UiTheme.LOSE))
 	if h == null or int(h.last_match.get("points", 0)) <= 0:
 		return
 	var best: Dictionary = h.last_match.get("best", {})
