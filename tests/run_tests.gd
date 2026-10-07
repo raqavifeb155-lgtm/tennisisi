@@ -348,7 +348,7 @@ func test_gear_and_loot() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 3
 	var leg := Gear.roll(Gear.LEGENDARY, rng)
-	check(leg["mods"].size() == 4 and leg["lines"].size() == 4 and leg["name"].begins_with("Легендарная"), "legendary racket: 4 affixes '%s'" % leg["name"])
+	check(leg["slot"] == "racket" and leg.has("id") and int(Items.find(leg["id"])["rarity"]) == Gear.LEGENDARY, "a legendary racket is a catalog item with an effect '%s'" % leg["name"])
 	check(Gear.glow(leg) > 1.0 and Gear.glow(Gear.roll(Gear.COMMON, rng)) == 0.0, "legendary glows, common does not")
 	check(Gear.AFFIXES.size() >= 20, "%d affixes in the pool" % Gear.AFFIXES.size())
 	var t := Tournament.new(0, 11)

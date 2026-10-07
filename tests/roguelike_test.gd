@@ -13,6 +13,8 @@ func _init() -> void:
 	test_style_plate()
 	test_point_recorder()
 	test_share_caption()
+	test_items_catalog()
+	test_gear_slots()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -178,3 +180,60 @@ func test_share_caption() -> void:
 	var url := RunShare.tg_share_path(best)
 	check(url.begins_with("/share/url?url=https%3A%2F%2Ft.me%2FTennisisiBot%3Fstartapp%3Dstyle&text="), "a t.me share link with the game link: %s" % url)
 	check(not url.contains(" "), "the text is URL-encoded")
+
+
+# --- A-2: gear --------------------------------------------------------------------
+
+func test_items_catalog() -> void:
+	print("items catalog")
+	check(Items.LIST.size() == 25, "25 items (%d)" % Items.LIST.size())
+	var ids := {}
+	for e in Items.LIST:
+		ids[e["id"]] = true
+	check(ids.size() == Items.LIST.size(), "ids are unique")
+	for slot in Gear.SLOTS:
+		for r in range(Gear.RARE, Gear.MYTHIC + 1):
+			check(not Items.pool(slot, r).is_empty(), "%s has a %s item" % [slot, UiTheme.RARITY_NAMES[r]])
+	var plain_epics := 0
+	for e in Items.LIST:
+		if int(e["rarity"]) >= Gear.EPIC and not (e.has("triggers") or e.has("style") or e.has("rules") or e.has("cond_mods")):
+			plain_epics += 1
+	check(plain_epics == 0, "every epic and up does something, not only stats")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	var sun := Items.instance(Items.find("sun"))
+	check(sun["slot"] == "racket" and sun["rarity"] == Gear.MYTHIC and sun["id"] == "sun", "an instance keeps id, slot, rarity")
+	check(Items.describe(sun).contains("PERFECT"), "describe: %s" % Items.describe(sun))
+	var heavy := Items.instance(Items.find("heavy_frame"))
+	check(is_equal_approx(float(heavy["mods"]["forehand_pace"]), 0.1), "mods come with the instance")
+	var terry := Items.instance(Items.find("terry_band"))
+	check(terry["mods"].has("serve_window") and terry["mods"].has("touch_window"), "'all windows' expands to every stroke")
+	var e := Items.roll("shoes", Gear.LEGENDARY, rng)
+	check(e["slot"] == "shoes" and e["rarity"] == Gear.LEGENDARY, "roll by slot and rarity")
+
+
+func test_gear_slots() -> void:
+	print("gear slots")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 9
+	check(Gear.RARITIES.size() == 5 and Gear.MYTHIC == 4, "five rarities, mythic is the fifth")
+	check(Gear.color({"rarity": 3}) == UiTheme.RARITY[3], "rarity colors come from UiTheme (legendary orange)")
+	for slot in Gear.SLOTS:
+		for r in 5:
+			var it := Gear.roll(r, rng, slot)
+			var ok: bool = it["slot"] == slot and int(it["rarity"]) == r
+			if r >= Gear.EPIC:
+				ok = ok and it.has("id")
+			elif not it.has("id"):
+				for k in it["mods"]:
+					ok = ok and Gear.AFFIX_KEYS[slot].has(k)
+			check(ok, "%s %d: %s" % [slot, r, it["name"]])
+	check(Gear.roll(Gear.EPIC, rng)["slot"] == "racket", "the old call still rolls a racket")
+	var prices := []
+	for r in 5:
+		prices.append(Gear.price({"rarity": r}))
+	check(prices == [3, 6, 12, 25, 50], "sell prices %s" % [prices])
+	var gen := Gear.roll(Gear.COMMON, rng, "shoes")
+	while gen.has("id"):
+		gen = Gear.roll(Gear.COMMON, rng, "shoes")
+	check(gen["name"].begins_with("Обычные кроссовки"), "names agree with the slot: %s" % gen["name"])
