@@ -181,6 +181,10 @@ func _ready() -> void:
 			_autoplay_format = int(a.get_slice("=", 1))
 		elif a.begins_with("--points="):
 			autoplay_points = int(a.get_slice("=", 1))
+		elif a.begins_with("--gfx="):
+			_force_gfx = int(a.get_slice("=", 1))  # profiling: 1 low .. 4 max
+		elif a.begins_with("--profile"):
+			_profile_t = 5.0  # print frame statistics every 5 s (a profiling run, not headless)
 		elif a.begins_with("--bot-sd="):
 			_bot_sd = float(a.get_slice("=", 1))  # bot timing error (s): ~0.035 sharp, ~0.07 a thumb on a phone
 		elif a.begins_with("--xp="):
@@ -255,6 +259,8 @@ func _ready() -> void:
 	Tuning.graphics = SaveData.graphics
 	for k in SaveData.gfx:
 		Tuning.set(k, SaveData.gfx[k])
+	if _force_gfx >= 0:
+		Tuning.graphics = _force_gfx
 	graphics.set_preset(Tuning.graphics)
 	_practice_skill = Tuning.ai_skill
 	if not autoplay and not _headless():
@@ -279,6 +285,8 @@ func _ready() -> void:
 				SaveData.graphics = Tuning.graphics
 				SaveData.save())
 	_last_real_us = Time.get_ticks_usec()
+	perf = PerfMeter.new()
+	add_child(perf)
 	if _bonus_rounds > 0:
 		# Test: the trophy mini-game over and over, the bot aiming at the runner.
 		tournament = Tournament.new(0, 1)
@@ -506,6 +514,11 @@ func _process(_delta: float) -> void:
 	var rd := clampf((now - _last_real_us) / 1000000.0, 0.0, 0.1)
 	_last_real_us = now
 	hud.set_in_match(phase != Phase.IDLE)
+	if _profile_t > 0.0:
+		_profile_t -= rd
+		if _profile_t <= 0.0:
+			_profile_t = 5.0
+			print("PERF %s %s" % ["match" if phase != Phase.IDLE else "menu", str(perf.take())])
 	_update_slowmo(rd)
 	_update_helpers()
 	_update_safe_area(rd)
@@ -1773,6 +1786,9 @@ const STAMINA_PACE := 0.003
 const STAMINA_DIVE := 0.03
 const STAMINA_STAND := 0.002    # per second back standing still in a rally
 
+var perf: PerfMeter               # frame statistics for the telemetry beat and --profile runs
+var _profile_t := -1.0
+var _force_gfx := -1
 var _cloud_t := 0.0
 var _beat_t := 5.0
 var _cloud_poll_t := 0.0
@@ -1801,9 +1817,11 @@ func _update_persistence(dt: float) -> void:
 	_beat_t -= dt
 	if _beat_t <= 0.0:
 		_beat_t = 20.0
-		TelegramApp.log_event("beat", {"fps": Engine.get_frames_per_second(), "gfx": graphics.level_name(),
-			"sc": snappedf(graphics.scale_3d, 0.01), "loc": location_id, "ph": phase, "pts": _points_played,
-			"tour": tournament_mode, "snd": sfx.plays})
+		var beat := {"gfx": graphics.level_name(), "sc": snappedf(graphics.scale_3d, 0.01), "loc": location_id,
+			"ph": phase, "pts": _points_played, "tour": tournament_mode, "snd": sfx.plays,
+			"ui": ui.is_open(), "pause": get_tree().paused}
+		beat.merge(perf.take())  # fps, low, worst, cpu, draws, tris, px: see PerfMeter
+		TelegramApp.log_event("beat", beat)
 	_alive_t -= dt
 	if _alive_t <= 0.0:
 		_alive_t = 15.0

@@ -56,6 +56,7 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 
 	_card = PanelContainer.new()
+	_card.theme = UiTheme.theme()
 	_card.set_anchors_preset(Control.PRESET_CENTER)
 	_card.offset_left = -300.0
 	_card.offset_right = 300.0
@@ -88,12 +89,23 @@ func _ready() -> void:
 	_dots.add_theme_font_size_override("font_size", 26)
 	_dots.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(_dots)
+	# Close at any page (the way out is never only "read all five"), next is the main action.
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	v.add_child(row)
+	var close := Button.new()
+	close.text = "Закрыть"
+	close.custom_minimum_size = Vector2(190, UiTheme.TAP)
+	close.focus_mode = Control.FOCUS_NONE
+	close.pressed.connect(_finish)
+	row.add_child(close)
 	_next = Button.new()
-	_next.custom_minimum_size = Vector2(540, 70)
-	_next.add_theme_font_size_override("font_size", 28)
+	_next.theme_type_variation = "Primary"
+	_next.custom_minimum_size = Vector2(0, UiTheme.TAP)
+	_next.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_next.focus_mode = Control.FOCUS_NONE
 	_next.pressed.connect(_advance)
-	v.add_child(_next)
+	row.add_child(_next)
 	_show_page()
 	get_viewport().size_changed.connect(_layout)
 
@@ -125,14 +137,18 @@ func open() -> void:
 func _advance() -> void:
 	_page += 1
 	if _page >= PAGES.size():
-		visible = false
-		get_tree().paused = false
-		var f := FileAccess.open(DONE_FILE, FileAccess.WRITE)
-		if f:
-			f.store_string("1")
-		finished.emit()
+		_finish()
 		return
 	_show_page()
+
+
+func _finish() -> void:
+	visible = false
+	get_tree().paused = false
+	var f := FileAccess.open(DONE_FILE, FileAccess.WRITE)
+	if f:
+		f.store_string("1")
+	finished.emit()
 
 
 func _show_page() -> void:

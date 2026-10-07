@@ -133,9 +133,14 @@ func _ready() -> void:
 	_serve_hint.modulate = Color(1, 1, 1, 0.8)
 	_serve_hint.visible = false
 
+	# Its own layer over everything (TournamentUI 10, settings 20): opened from the Club,
+	# under the menu it was covered and the menu took its taps.
+	var tut_layer := CanvasLayer.new()
+	tut_layer.layer = 30
+	add_child(tut_layer)
 	_tutorial = Tutorial.new()
 	_tutorial.visible = false
-	add_child(_tutorial)
+	tut_layer.add_child(_tutorial)
 
 
 ## The frame rate next to the graphics preset, so a phone can be checked by eye:
