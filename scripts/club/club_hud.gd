@@ -8,6 +8,9 @@ extends CanvasLayer
 signal chosen(action: String, arg: int)
 signal travel(place_id: String)
 signal settings
+signal roulette_chip(chip: int)
+signal roulette_bet(bet: String)
+signal roulette_back
 
 const HUD_BUTTON_W := 132.0      # room kept free at the top right for НАСТР (as TournamentUI)
 const TRAVEL := 92.0             # the quick-travel button (a circle)
@@ -22,6 +25,12 @@ var _primary: Button
 var _second_row: HBoxContainer
 var _travel_btn: Button
 var gear: Button                    # settings: Hud's sheet (НАСТР is hidden while the club shows)
+var _roulette: VBoxContainer         # the Totalizator's bets at the bar
+var _roulette_result: Label
+var _roulette_note: Label
+var _roulette_chips: HBoxContainer
+var _roulette_bets: Array[Button] = []
+var _roulette_back: Button
 var _travel_list: VBoxContainer
 var _badges := {}                   # place id -> TournamentUI.Badge
 var _bubble: PanelContainer
@@ -44,6 +53,7 @@ func _ready() -> void:
 	_build_gear()
 	_build_bottom()
 	_build_bubble()
+	_build_roulette()
 	_layout()
 	visible = false
 
@@ -60,6 +70,10 @@ func _layout() -> void:
 	_bottom.offset_left = UiTheme.GUTTER
 	_bottom.offset_right = -UiTheme.GUTTER
 	_bottom.offset_bottom = -26.0 - _safe_bottom
+	_roulette.offset_left = UiTheme.GUTTER
+	_roulette.offset_right = -UiTheme.GUTTER
+	_roulette.offset_bottom = -26.0 - _safe_bottom
+	_roulette_back.position = Vector2(UiTheme.GUTTER, 18.0 + _safe_top)
 	var chip := _chip_label.get_parent().get_parent() as Control
 	chip.offset_top = 14.0 + _safe_top + 8.0
 	chip.offset_right = -HUD_BUTTON_W - 14.0
@@ -260,6 +274,131 @@ func _toggle_travel(on: bool) -> void:
 
 func travel_open() -> bool:
 	return _travel_list.visible
+
+
+# --- The Totalizator at the bar ------------------------------------------------------
+
+const BET_IDS := ["blue", "red", "net"]
+const BET_NAMES := ["Синее ×2", "Красное ×2", "Сетка ×35"]
+const BET_COLORS := [Color(0.27, 0.47, 0.86), Color(0.86, 0.32, 0.3), Color(0.2, 0.55, 0.35)]
+
+
+func _build_roulette() -> void:
+	_roulette = VBoxContainer.new()
+	_roulette.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	_roulette.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_roulette.add_theme_constant_override("separation", 12)
+	_roulette.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_roulette.visible = false
+	root.add_child(_roulette)
+	_roulette_result = Label.new()
+	_roulette_result.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_roulette_result.add_theme_font_override("font", UiTheme.display())
+	_roulette_result.add_theme_font_size_override("font_size", UiTheme.T_HEAD)
+	_roulette_result.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
+	_roulette_result.add_theme_constant_override("outline_size", 10)
+	_roulette.add_child(_roulette_result)
+	var card := PanelContainer.new()
+	var sb := UiTheme.box(Color(UiTheme.SURFACE, 0.94), Color(UiTheme.GOLD, 0.35), 2, UiTheme.RADIUS, 18)
+	card.add_theme_stylebox_override("panel", sb)
+	_roulette.add_child(card)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 12)
+	card.add_child(v)
+	var title := Label.new()
+	title.text = "Мяч в поле: синее и красное ×2, сетка ×35"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	title.add_theme_font_override("font", UiTheme.text_bold())
+	title.add_theme_font_size_override("font_size", UiTheme.T_SMALL)
+	title.add_theme_color_override("font_color", UiTheme.MUTED)
+	v.add_child(title)
+	_roulette_note = Label.new()
+	_roulette_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_roulette_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_roulette_note.add_theme_font_size_override("font_size", UiTheme.T_SMALL)
+	_roulette_note.add_theme_color_override("font_color", UiTheme.MUTED)
+	v.add_child(_roulette_note)
+	_roulette_chips = HBoxContainer.new()
+	_roulette_chips.add_theme_constant_override("separation", 10)
+	v.add_child(_roulette_chips)
+	var bets := HBoxContainer.new()
+	bets.add_theme_constant_override("separation", 10)
+	v.add_child(bets)
+	for i in BET_IDS.size():
+		var b := Button.new()
+		b.text = BET_NAMES[i]
+		b.custom_minimum_size = Vector2(0, 84)
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.focus_mode = Control.FOCUS_NONE
+		b.add_theme_font_size_override("font_size", UiTheme.T_BODY - 4)
+		b.add_theme_color_override("font_color", (BET_COLORS[i] as Color).lightened(0.4))
+		var bet: String = BET_IDS[i]
+		b.pressed.connect(func() -> void:
+			_tap(b)
+			roulette_bet.emit(bet))
+		bets.add_child(b)
+		_roulette_bets.append(b)
+	buttons.append(_roulette)
+	# "← Назад" where every screen has it: top left.
+	_roulette_back = Button.new()
+	_roulette_back.text = "←  Назад"
+	_roulette_back.custom_minimum_size = Vector2(196, 76)
+	_roulette_back.add_theme_font_size_override("font_size", UiTheme.T_BODY)
+	_roulette_back.focus_mode = Control.FOCUS_NONE
+	_roulette_back.position = Vector2(UiTheme.GUTTER, 18.0)
+	_roulette_back.visible = false
+	_roulette_back.pressed.connect(func() -> void: roulette_back.emit())
+	root.add_child(_roulette_back)
+	buttons.append(_roulette_back)
+
+
+## The desk under the wheel. `allowed`: chips the player may put down now.
+func show_roulette(all_chips: Array, allowed: Array, chip: int, result := "", won := false, note := "") -> void:
+	_toggle_travel(false)
+	_bottom.visible = false
+	_roulette.visible = true
+	_roulette_back.visible = true
+	_roulette_result.text = result
+	_roulette_result.add_theme_color_override("font_color", UiTheme.WIN if won else (UiTheme.LOSE if result != "" else UiTheme.INK))
+	_roulette_note.text = note
+	_roulette_note.visible = note != ""
+	for c in _roulette_chips.get_children():
+		_roulette_chips.remove_child(c)
+		c.queue_free()
+	for c in all_chips:
+		var b := Button.new()
+		b.text = str(c)
+		b.custom_minimum_size = Vector2(0, 76)
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.focus_mode = Control.FOCUS_NONE
+		b.theme_type_variation = "Primary" if c == chip and allowed.has(c) else ""
+		b.disabled = not allowed.has(c)
+		var v: int = c
+		b.pressed.connect(func() -> void: roulette_chip.emit(v))
+		_roulette_chips.add_child(b)
+	for b in _roulette_bets:
+		b.disabled = allowed.is_empty()
+
+
+## While the ball rolls the desk waits (a tap on the wheel shows the end).
+func roulette_spinning(on: bool) -> void:
+	for b in _roulette_bets:
+		b.disabled = on
+	for b in _roulette_chips.get_children():
+		(b as Button).disabled = on or (b as Button).disabled
+	if on:
+		_roulette_result.text = ""
+
+
+func hide_roulette() -> void:
+	_roulette.visible = false
+	_roulette_back.visible = false
+	_bottom.visible = true
+
+
+func roulette_visible() -> bool:
+	return _roulette.visible
 
 
 # --- Badges and the coach's words ---------------------------------------------------------

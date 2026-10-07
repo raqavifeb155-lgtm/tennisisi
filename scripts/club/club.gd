@@ -41,6 +41,11 @@ func setup(m: Node) -> void:
 	add_child(hud)
 	hud.chosen.connect(_on_choice)
 	hud.travel.connect(_travel)
+	hud.roulette_chip.connect(func(c: int) -> void:
+		_chip = c
+		_roulette_panel())
+	hud.roulette_bet.connect(func(bet: String) -> void: spin(bet, _chip))
+	hud.roulette_back.connect(roulette_close)
 	hud.settings.connect(func() -> void:
 		if main.hud.has_method("_toggle_debug"):
 			main.hud._toggle_debug())
@@ -58,6 +63,9 @@ func open() -> bool:
 		world = main.scenery as ClubWorld
 		if world == null:
 			return false  # the club's scenery failed to load: Main keeps its old menu
+		if not world.roulette().finished.is_connected(_on_spun):
+			world.roulette().finished.connect(_on_spun)
+		_roulette_on = false
 		main.ui.close()
 		active = true
 		main.hud.touch.show_zone = false
@@ -91,6 +99,12 @@ func close() -> void:
 	if not active:
 		return
 	active = false
+	if _roulette_on:
+		_roulette_on = false
+		hud.hide_roulette()
+		main.player.visible = true
+		if is_instance_valid(world):
+			world.set_roulette_view(false)
 	_hero = main.player.position if _place != "" else START
 	var p: Athlete = main.player
 	p.area = main.PLAYER_AREA
@@ -116,9 +130,17 @@ func _refresh() -> void:
 	_open_ids = []
 	var travel: Array = []
 	for p in ClubPlaces.LIST:
-		if ClubPlaces.is_open(p, SaveData.played, SaveData.titles):
-			_open_ids.append(p["id"])
-			travel.append({"id": p["id"], "name": p["name"]})
+		var id: String = p["id"]
+		var lv := ClubPlaces.level(id)
+		if world.level_built(id) != lv:
+			world.set_level(id, lv)
+		if not ClubPlaces.is_open(p, SaveData.played, SaveData.titles):
+			continue
+		if ClubPlaces.state(id, lv)["action"] == "":
+			continue  # nothing to press yet (a sign says why)
+		_open_ids.append(id)
+		if p.get("travel", true):
+			travel.append({"id": id, "name": p["name"]})
 	world.set_open(_open_ids)
 	hud.set_places(travel)
 	hud.set_gold(SaveData.gold)
@@ -170,7 +192,7 @@ func _physics_process(delta: float) -> void:
 	var c := coach.body
 	var cat := world.walk.resolve(Vector2(c.position.x, c.position.z), Vector2(c.position.x, c.position.z))
 	c.position = Vector3(cat.x, 0.0, cat.y)
-	if main.ui.is_open():
+	if main.ui.is_open() or _roulette_on:
 		p.move_input = Vector2.ZERO
 		return
 	var mv: Vector2 = main.hud.touch.move_vector
@@ -236,7 +258,6 @@ func _show_place(id: String) -> void:
 ## What a place offers right now: its main button and at most one quiet one above it.
 ## The court's circle is the main screen (HANDOFF 10): «Новая игра» / «Продолжить».
 func place_buttons(id: String) -> Dictionary:
-	var p := ClubPlaces.find(id)
 	if id == "court":
 		var run := SaveData.resumable()
 		if run != null:
@@ -247,7 +268,8 @@ func place_buttons(id: String) -> Dictionary:
 			return {"label": "НОВАЯ ИГРА  ·  %s" % String(loc["name"]).to_upper(), "action": "club_tournament",
 				"extra": [["Другое место", "start_tournament"]]}
 		return {"label": "НОВАЯ ИГРА", "action": "club_tournament", "extra": []}
-	return {"label": String(p["label"]).to_upper(), "action": p["action"], "extra": []}
+	var st := ClubPlaces.state(id)
+	return {"label": String(st["label"]).to_upper(), "action": st["action"], "extra": []}
 
 
 func _update_badges() -> void:
@@ -270,7 +292,124 @@ func _on_choice(action: String, arg: int) -> void:
 		else:
 			main._on_ui("start_tournament", 0)
 		return
+	if action.begins_with("club_"):
+		ui_action(action, arg)
+		return
 	main._on_ui(action, arg)
+
+
+## The club's own actions (the places' buttons and the club's screens). Main hands the
+## ones that come from TournamentUI screens here too ("club_*").
+func ui_action(action: String, _arg: int) -> void:
+	var id := _place if _place != "" else hud.current_place()
+	match action:
+		"club_shop":
+			ClubScreens.shop(main.ui, ClubPlaces.state("shop"))
+		"club_place":
+			ClubScreens.place(main.ui, ClubPlaces.state(id))
+		"club_roulette":
+			roulette_open()
+		"club_foreman":
+			coach.say("Стройка скоро: прораб ещё в пути", true)
+
+
+# --- The Totalizator at the bar: a 3D roulette ---------------------------------------
+
+var _roulette_on := false
+var _chip := 10
+var _spin := {}                        # the spin being shown: field, bet, stake, paid
+
+
+func roulette_on() -> bool:
+	return _roulette_on
+
+
+func roulette_busy() -> bool:
+	return _roulette_on and world.roulette().busy()
+
+
+## The chips the bar takes now: within its level's limit and a quarter of the gold.
+func chips() -> Array:
+	var limit := int(ClubPlaces.state("bar").get("bet_limit", 0))
+	return Bets.chips_for(SaveData.gold).filter(func(c): return c <= limit)
+
+
+func roulette_open() -> void:
+	if _roulette_on:
+		return
+	_roulette_on = true
+	main.player.move_input = Vector2.ZERO
+	_move_target = Vector3.INF
+	var w := world.roulette().global_position
+	cam.frame(w + Vector3(0, 4.7, 2.9), w + Vector3(0, 0.0, 0.75))  # the wheel whole, above the desk
+	hud.hide_place()
+	world.set_roulette_view(true)
+	main.player.visible = false  # he stands right under the camera
+	_roulette_panel()
+	if Bets.needs_break(SaveData.bets):
+		coach.say("Три ставки мимо подряд. Перерыв? Корт ждёт", true)
+
+
+func _roulette_panel(result := "", won := false) -> void:
+	var allowed := chips()
+	if not allowed.is_empty() and not allowed.has(_chip):
+		_chip = allowed.back()
+	var note := ""
+	if allowed.is_empty():
+		note = "Ставка — до четверти золота: нужно хотя бы %d" % ceili(Bets.CHIPS[0] / Bets.MAX_SHARE)
+	hud.show_roulette(Bets.CHIPS, allowed, _chip, result, won, note)
+
+
+func roulette_close() -> void:
+	if not _roulette_on:
+		return
+	roulette_skip()
+	_roulette_on = false
+	hud.hide_roulette()
+	world.set_roulette_view(false)
+	main.player.visible = true
+	cam.release()
+	_place = ""
+	_update_place()
+
+
+## A bet: the field is drawn now (Bets.spin), gold paid out now and saved; the wheel only
+## shows it. {} when it can't go (the ball still rolls, a stake over the limit).
+func spin(bet: String, stake: int) -> Dictionary:
+	if not _roulette_on or world.roulette().busy() or not chips().has(stake) or not Bets.PAYS.has(bet):
+		return {}
+	var field := Bets.spin(main.rng)
+	var paid := Bets.payout(bet, stake, field)
+	SaveData.gold += paid - stake
+	Bets.note(SaveData.bets, paid > 0)
+	if bet == "net" and paid > 0:
+		SaveData.bets["net_hits"] = int(SaveData.bets.get("net_hits", 0)) + 1
+	SaveData.save()
+	_spin = {"field": field, "bet": bet, "stake": stake, "paid": paid}
+	hud.set_gold(SaveData.gold - paid)  # the win shows when the ball stops
+	hud.roulette_spinning(true)
+	world.roulette().play(ClubRoulette.simulate(field, main.rng.randi()))
+	return _spin
+
+
+## A tap while the ball rolls: straight to the end.
+func roulette_skip() -> void:
+	if _roulette_on and world.roulette().busy():
+		world.roulette().skip()
+
+
+func _on_spun() -> void:
+	if _spin.is_empty():
+		return
+	var paid := int(_spin["paid"])
+	var names := {"blue": "синее", "red": "красное", "net": "сетка"}
+	var text := ("+%d золота" % paid) if paid > 0 else "Мимо: %s" % names[Bets.color_of(int(_spin["field"]))]
+	hud.set_gold(SaveData.gold)
+	main.sfx.play("point" if paid > 0 else "miss", -8.0)
+	_spin = {}
+	_roulette_panel(text, paid > 0)
+	if Bets.needs_break(SaveData.bets):
+		coach.say("Три ставки мимо подряд. Перерыв? Корт ждёт", true)
 
 
 ## Quick travel: the camera flies, the hero comes out by the place's circle.
@@ -291,6 +430,9 @@ func _travel(id: String) -> void:
 ## pavilion) is that place's button, for whoever doesn't want to walk.
 func _on_tap(screen_pos: Vector2) -> void:
 	if not active or main.ui.is_open() or hud.travel_open():
+		return
+	if _roulette_on:
+		roulette_skip()
 		return
 	var o := cam.project_ray_origin(screen_pos)
 	var d := cam.project_ray_normal(screen_pos)

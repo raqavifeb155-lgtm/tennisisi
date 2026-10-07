@@ -19,6 +19,8 @@ const RESERVED := [                      # no trees here: places, the arena site
 	Rect2(-2, 17, 4, 14),                 # the path from the gate to the court
 	Rect2(-17, -32, 8, 52), Rect2(9, -36, 7, 56),     # the paths west and east of the court
 	Rect2(-20, 28, 40, 6),                # past the pavilion doors
+	Rect2(16, -4, 14, 14), Rect2(12, 4, 12, 4),        # the shop and the way to it
+	Rect2(14, -38, 13, 14),               # the bar's terrace
 ]
 
 var walk := ClubWalk.new()
@@ -31,6 +33,10 @@ var _place_nodes := {}                 # place id -> Node3D at the place
 var _ball_machine: Marker3D
 var _paving: StandardMaterial3D
 var _keep: Array = []                  # nodes shown and hidden later: MeshMerge leaves them be
+var _level_roots := {}                 # place id -> Node3D holding what its level shows
+var _levels := {}                      # place id -> the level built
+var _roulette: ClubRoulette
+var _umbrella: Node3D
 
 
 func _ready() -> void:
@@ -93,7 +99,8 @@ func highlight(id: String) -> void:
 	_highlight = id
 
 
-## Which places have their circle (the open ones); the rest show their sign.
+## Which places have their circle and button (`ids`); the others show their sign, with
+## the text their level gives (ClubPlaces.state), if any.
 func set_open(ids: Array) -> void:
 	_ring_ids = []
 	var xf: Array[Transform3D] = []
@@ -101,7 +108,11 @@ func set_open(ids: Array) -> void:
 		var open: bool = ids.has(p["id"])
 		var sign := _place_nodes.get(p["id"] + "_sign") as Node3D
 		if sign:
-			sign.visible = not open
+			var text: String = ClubPlaces.state(p["id"], int(_levels.get(p["id"], 0))).get("sign", "")
+			if not ClubPlaces.is_open(p, SaveData.played, SaveData.titles):
+				text = p["sign"]
+			sign.visible = not open and text != ""
+			(sign.get_meta("label") as Label3D).text = text
 		if not open:
 			continue
 		var r := float(p["r"])
@@ -112,6 +123,46 @@ func set_open(ids: Array) -> void:
 	for i in xf.size():
 		mm.set_instance_transform(i, xf[i])
 	_update_rings()
+
+
+## What a place shows at its level: pavilions refill their room, others rebuild their
+## level node (a function _level_<id>(root, level) per place). Safe to call again.
+func set_level(id: String, lv: int) -> void:
+	_levels[id] = lv
+	if _pavilions.has(id):
+		var inside: Node3D = _pavilions[id]["inside"]
+		for c in inside.get_children():
+			inside.remove_child(c)
+			c.queue_free()
+		_fill_room(id, inside, lv)
+	var fn := "_level_" + id
+	if has_method(fn):
+		var root: Node3D = _level_roots.get(id)
+		if root == null:
+			root = Node3D.new()
+			root.name = "level_" + id
+			(_place_nodes[id] as Node3D).add_child(root)
+			_level_roots[id] = root
+			_keep.append(root)
+		for c in root.get_children():
+			root.remove_child(c)
+			c.queue_free()
+		call(fn, root, lv)
+		MeshMerge.merge_static(root)
+
+
+func level_built(id: String) -> int:
+	return int(_levels.get(id, 0))
+
+
+## The Totalizator's wheel at the bar.
+func roulette() -> ClubRoulette:
+	return _roulette
+
+
+## Looking down at the wheel: the umbrella's canopy steps out of the way.
+func set_roulette_view(on: bool) -> void:
+	_umbrella.visible = not on
 
 
 func sun() -> DirectionalLight3D:
@@ -287,6 +338,7 @@ func _build_paths() -> void:
 	_box(Vector3(13.0, 0.06, 2.4), Vector3(-HX - 6.0, y, 0.0), _paving, false)    # west: to the arena
 	_box(Vector3(2.4, 0.06, 26.0), Vector3(-HX - 4.0, y, -13.0), _paving, false)  # to the trophy room
 	_box(Vector3(9.0, 0.06, 2.4), Vector3(-HX - 8.0, y, -26.0), _paving, false)
+	_box(Vector3(11.0, 0.06, 2.4), Vector3(HX + 8.5, y, 6.2), _paving, false)    # east: to the shop
 
 
 func _build_places() -> void:
@@ -302,6 +354,10 @@ func _build_places() -> void:
 			_keep.append(s)
 	_pavilion("locker", ClubPlaces.find("locker")["pos"])
 	_pavilion("coach", ClubPlaces.find("coach")["pos"])
+	_pavilion("shop", ClubPlaces.find("shop")["pos"])
+	_build_bar_table()
+	for p in ClubPlaces.LIST:
+		set_level(p["id"], ClubPlaces.level(p["id"]))
 	_build_stakes()
 	_build_gate()
 	_build_arena_site()
@@ -331,6 +387,7 @@ func _sign(pos: Vector3, text: String) -> Node3D:
 	l.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	l.position = Vector3(0, 1.75, 0.04)
 	root.add_child(l)
+	root.set_meta("label", l)
 	walk.add_circle(Vector2(pos.x, pos.z), 0.25)
 	return root
 
@@ -360,14 +417,32 @@ func _pavilion(id: String, c: Vector3) -> void:
 		fade.add_child(front)
 	fade.add_child(_mesh_box(Vector3(door, 0.6, 0.2), Vector3(0, WALL_H - 0.3, hz), wall))
 	fade.add_child(_mesh_box(Vector3(PAVILION.x + 0.8, 0.25, PAVILION.y + 0.8), Vector3(0, WALL_H + 0.12, 0), trim))
-	# The room's things.
+	_pavilions[id] = {"root": root, "fade": fade, "inside": inside}
+	_keep.append_array([fade, inside])
+	# Walls the hero can't walk through (the door stays open).
+	walk.add_wall(Vector2(c.x - hx, c.z - hz), Vector2(c.x + hx, c.z - hz))
+	walk.add_wall(Vector2(c.x - hx, c.z - hz), Vector2(c.x - hx, c.z + hz))
+	walk.add_wall(Vector2(c.x + hx, c.z - hz), Vector2(c.x + hx, c.z + hz))
+	walk.add_wall(Vector2(c.x - hx, c.z + hz), Vector2(c.x - door * 0.5, c.z + hz))
+	walk.add_wall(Vector2(c.x + door * 0.5, c.z + hz), Vector2(c.x + hx, c.z + hz))
+
+
+## A room's things at a level (docs/club/CLUB_BRIEF.md 3: what each level shows). The
+## pavilion is 6 x 5 m, open toward the camera (+z); the back wall at z = -2.5.
+func _fill_room(id: String, inside: Node3D, lv: int) -> void:
+	var hz := PAVILION.y * 0.5
+	var trim := ClubMaterial.pal(ClubMaterial.WOOD_DARK)
 	match id:
 		"locker":
 			var metal := ClubMaterial.pal(ClubMaterial.STEEL)
-			inside.add_child(_mesh_box(Vector3(0.9, 2.0, 0.55), Vector3(-1.6, 1.0, -hz + 0.4), metal))
-			inside.add_child(_mesh_box(Vector3(2.2, 0.08, 0.5), Vector3(0.9, 0.45, -hz + 0.5), ClubMaterial.pal(ClubMaterial.WOOD, false)))
+			var lockers := clampi(1 + lv * 2, 1, 6)
+			for i in lockers:
+				inside.add_child(_mesh_box(Vector3(0.6, 2.0, 0.55), Vector3(-2.4 + i * 0.65, 1.0, -hz + 0.4), metal))
+			inside.add_child(_mesh_box(Vector3(2.2, 0.08, 0.5), Vector3(0.9, 0.45, 0.2), ClubMaterial.pal(ClubMaterial.WOOD, false)))
 			for lx in [0.0, 1.8]:
-				inside.add_child(_mesh_box(Vector3(0.08, 0.45, 0.45), Vector3(lx, 0.22, -hz + 0.5), trim))
+				inside.add_child(_mesh_box(Vector3(0.08, 0.45, 0.45), Vector3(lx, 0.22, 0.2), trim))
+			if lv >= 1:  # a mirror
+				inside.add_child(_mesh_box(Vector3(0.06, 1.6, 1.0), Vector3(2.85, 1.3, -0.6), ClubMaterial.pal(ClubMaterial.GLASS)))
 		"coach":
 			inside.add_child(_mesh_box(Vector3(2.4, 1.3, 0.06), Vector3(0.6, 1.7, -hz + 0.14), ClubMaterial.pal(ClubMaterial.CHALKBOARD)))
 			var chalk := Label3D.new()
@@ -388,14 +463,115 @@ func _pavilion(id: String, c: Vector3) -> void:
 			chair.add_child(_mesh_box(Vector3(0.5, 0.06, 0.5), Vector3(0, 0.45, 0), seat))
 			chair.add_child(_mesh_box(Vector3(0.5, 0.5, 0.05), Vector3(0, 0.72, -0.23), seat))
 			chair.add_child(_mesh_box(Vector3(0.44, 0.45, 0.44), Vector3(0, 0.22, 0), seat))
-	_pavilions[id] = {"root": root, "fade": fade, "inside": inside}
-	_keep.append_array([fade, inside])
-	# Walls the hero can't walk through (the door stays open).
-	walk.add_wall(Vector2(c.x - hx, c.z - hz), Vector2(c.x + hx, c.z - hz))
-	walk.add_wall(Vector2(c.x - hx, c.z - hz), Vector2(c.x - hx, c.z + hz))
-	walk.add_wall(Vector2(c.x + hx, c.z - hz), Vector2(c.x + hx, c.z + hz))
-	walk.add_wall(Vector2(c.x - hx, c.z + hz), Vector2(c.x - door * 0.5, c.z + hz))
-	walk.add_wall(Vector2(c.x + door * 0.5, c.z + hz), Vector2(c.x + hx, c.z + hz))
+			if lv >= 1:  # dumbbells and a mat
+				inside.add_child(_mesh_box(Vector3(1.8, 0.03, 0.9), Vector3(1.4, 0.17, 0.6), ClubMaterial.pal(ClubMaterial.TEAL, false)))
+		"shop":
+			# A counter with a till, a rack of rackets, a glass case of things.
+			inside.add_child(_mesh_box(Vector3(2.6, 1.0, 0.7), Vector3(-0.8, 0.5, -0.2), ClubMaterial.pal(ClubMaterial.WOOD)))
+			inside.add_child(_mesh_box(Vector3(2.7, 0.06, 0.8), Vector3(-0.8, 1.03, -0.2), trim))
+			inside.add_child(_mesh_box(Vector3(0.4, 0.3, 0.3), Vector3(-1.6, 1.21, -0.25), ClubMaterial.pal(ClubMaterial.METAL_DARK, false)))
+			inside.add_child(_mesh_box(Vector3(2.2, 1.6, 0.12), Vector3(0.9, 1.4, -hz + 0.2), ClubMaterial.pal(ClubMaterial.WOOD_DARK)))
+			var frames := [Color("d9473b"), Color("2a54a3"), Color("f2f0ea"), Color("ffd642")]
+			var rackets := 3 + mini(lv, 3)
+			for i in rackets:
+				var rk := MeshInstance3D.new()
+				var tm := TorusMesh.new()
+				tm.inner_radius = 0.13
+				tm.outer_radius = 0.16
+				tm.rings = 10
+				tm.ring_segments = 4
+				rk.mesh = tm
+				rk.material_override = ClubMaterial.get_mat(frames[i % frames.size()], false)
+				rk.rotation.x = PI * 0.5
+				rk.scale = Vector3(0.8, 1.0, 1.0)
+				rk.position = Vector3(0.1 + i * 0.32 * (3.0 / rackets), 1.65, -hz + 0.3)
+				inside.add_child(rk)
+				inside.add_child(_mesh_box(Vector3(0.03, 0.32, 0.03), Vector3(rk.position.x, 1.32, -hz + 0.3), ClubMaterial.pal(ClubMaterial.BLACK, false)))
+			if lv >= 1:  # a glass case with a lit shelf
+				inside.add_child(_mesh_box(Vector3(1.2, 0.9, 0.6), Vector3(2.1, 0.45, 0.6), ClubMaterial.pal(ClubMaterial.GLASS)))
+				inside.add_child(_mesh_box(Vector3(1.1, 0.04, 0.5), Vector3(2.1, 0.92, 0.6), ClubMaterial.glow(UiTheme.GOLD, 1.0)))
+			var sign := Label3D.new()
+			sign.text = "МАГАЗИН"
+			sign.font = UiTheme.display()
+			sign.font_size = 72
+			sign.pixel_size = 0.006
+			sign.modulate = UiTheme.GOLD
+			sign.outline_size = 10
+			sign.outline_modulate = Color(0.1, 0.08, 0.06)
+			sign.shaded = false
+			sign.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			sign.position = Vector3(0, 2.6, -hz + 0.12)
+			inside.add_child(sign)
+
+
+## The bar's table with the roulette under an umbrella (the Totalizator, HANDOFF 9.1).
+## The bar itself grows by levels (H2, _level_bar).
+func _build_bar_table() -> void:
+	var c: Vector3 = ClubPlaces.find("bar")["pos"]
+	var at := Vector3(c.x, 0.0, c.z - 3.2)
+	var root := Node3D.new()
+	root.name = "bar_table"
+	root.position = at
+	add_child(root)
+	_keep.append(root)
+	var top := MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 1.3
+	cyl.bottom_radius = 1.3
+	cyl.height = 0.1
+	cyl.radial_segments = 24
+	cyl.rings = 0
+	top.mesh = cyl
+	top.material_override = ClubMaterial.pal(ClubMaterial.WOOD_DARK)
+	top.position = Vector3(0, 0.8, 0)
+	root.add_child(top)
+	var leg := MeshInstance3D.new()
+	var lc := CylinderMesh.new()
+	lc.top_radius = 0.35
+	lc.bottom_radius = 0.55
+	lc.height = 0.78
+	lc.radial_segments = 12
+	lc.rings = 0
+	leg.mesh = lc
+	leg.material_override = ClubMaterial.pal(ClubMaterial.WOOD_DARK)
+	leg.position = Vector3(0, 0.39, 0)
+	root.add_child(leg)
+	# The umbrella over it, on its pole beside the table.
+	var pole := MeshInstance3D.new()
+	var pc := CylinderMesh.new()
+	pc.top_radius = 0.04
+	pc.bottom_radius = 0.05
+	pc.height = 2.7
+	pc.radial_segments = 6
+	pc.rings = 0
+	pole.mesh = pc
+	pole.material_override = ClubMaterial.pal(ClubMaterial.METAL, false)
+	pole.position = Vector3(1.55, 1.35, -0.3)
+	root.add_child(pole)
+	var canopy := MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = 0.05
+	cm.bottom_radius = 1.9
+	cm.height = 0.55
+	cm.radial_segments = 8
+	cm.rings = 0
+	cm.cap_bottom = false
+	canopy.mesh = cm
+	canopy.material_override = ClubMaterial.pal(ClubMaterial.RED)
+	canopy.position = Vector3(1.55, 2.85, -0.3)
+	root.add_child(canopy)
+	_umbrella = canopy
+	# A wooden deck under the table, and a little counter behind it.
+	var deck := _mesh_box(Vector3(6.0, 0.12, 5.0), Vector3(0, 0.06, -0.4), ClubMaterial.pal(ClubMaterial.WOOD, false))
+	root.add_child(deck)
+	root.add_child(_mesh_box(Vector3(2.2, 1.05, 0.6), Vector3(-1.9, 0.6, -2.3), ClubMaterial.pal(ClubMaterial.WOOD_DARK)))
+	root.add_child(_mesh_box(Vector3(2.3, 0.06, 0.7), Vector3(-1.9, 1.15, -2.3), ClubMaterial.pal(ClubMaterial.TEAL, false)))
+	walk.add_box(Rect2(at.x - 3.0, at.z - 2.65, 2.3, 0.7))
+	_roulette = ClubRoulette.new()
+	_roulette.name = "roulette"
+	_roulette.position = Vector3(0, 0.95, 0)
+	root.add_child(_roulette)
+	walk.add_circle(Vector2(at.x, at.z), 1.45)
 
 
 ## Where the stands will go: stakes and red-and-white tape (the bleachers come in H2).
@@ -536,6 +712,7 @@ func _build_waypoints() -> void:
 		Vector2(0, 31), Vector2(0, 36),
 		Vector2(-14, 31), Vector2(-14, 27.4), Vector2(16, 31), Vector2(16, 27.4),  # doors
 		Vector2(12, -14), Vector2(12, -30), Vector2(-13, 0), Vector2(-13, -26),
+		Vector2(12, 6.2), Vector2(22, 6.2), Vector2(22, 3.4),    # the shop's door
 	]:
 		walk.waypoints.append(p)
 

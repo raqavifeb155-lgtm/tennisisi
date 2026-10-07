@@ -28,14 +28,16 @@ func _shot(name: String, settle := 0.8) -> void:
 	var d := Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
 	var t := Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME) / 1000.0
 	# The club's own budget is for the world: the same frame without the two people.
+	var pv: bool = main.player.visible
+	var cv: bool = main.cpu.visible
 	main.player.visible = false
 	main.cpu.visible = false
 	await process_frame
 	await process_frame
 	var wd := Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
 	var wt := Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME) / 1000.0
-	main.player.visible = true
-	main.cpu.visible = true
+	main.player.visible = pv
+	main.cpu.visible = cv
 	print("saved %s%s.png   draws %d  tris %.1fk   world: draws %d  tris %.1fk" % [out, name, d, t, wd, wt])
 
 
@@ -87,4 +89,29 @@ func _run() -> void:
 	main.club._place = ""
 	main.club._update_place()
 	await _shot("08_last_tournament", 0.6)
+	# B-2: the places.
+	_go("machine")
+	await _shot("09_machine", 1.0)
+	_go("shop")
+	await _shot("10_shop_room", 1.0)
+	main.club._on_choice("club_shop", 0)
+	await _shot("11_shop_screen", 0.8)
+	main._on_ui("menu", 0)
+	SaveData.titles = 1
+	SaveData.gold = 420
+	main.club._refresh()
+	_go("bar")
+	await _shot("12_bar", 1.2)
+	main.club._on_choice("club_roulette", 0)
+	await _shot("13_roulette", 1.0)
+	main.club.spin("red", 25)
+	await _shot("14_roulette_spin", 2.2)
+	main.club.roulette_skip()
+	await _shot("15_roulette_result", 0.5)
+	main.club.roulette_close()
+	_go("arena")
+	await create_timer(0.6).timeout
+	main.club._on_choice("club_place", 0)
+	await _shot("16_arena_card", 0.8)
+	main._on_ui("menu", 0)
 	quit()

@@ -115,6 +115,17 @@ static func palette_image() -> Image:
 	return img
 
 
+## The same look with the colour from the mesh's vertices (one mesh, many colours: the
+## roulette wheel, crowds). No outline.
+static func tinted() -> StandardMaterial3D:
+	var m: StandardMaterial3D = _cache.get("tinted")
+	if m == null:
+		m = get_mat(Color.WHITE, false).duplicate()
+		m.vertex_color_use_as_albedo = true
+		_cache["tinted"] = m
+	return m
+
+
 ## A ghost of something not built yet (H2: the next level on the foreman's card):
 ## see-through gold, no outline.
 static func ghost() -> StandardMaterial3D:

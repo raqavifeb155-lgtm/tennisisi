@@ -9,8 +9,11 @@ func _initialize() -> void:
 	test_places()
 	test_walk()
 	test_material()
+	test_place_levels()
+	test_roulette_physics()
 	await test_world()
 	await test_flow()
+	await test_places_flow()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -27,8 +30,9 @@ func test_places() -> void:
 	for p in ClubPlaces.LIST:
 		ids.append(p["id"])
 		check(float(p["r"]) > 0.5, "%s has a circle" % p["id"])
-		check(p["action"] != "" or p["sign"] != "", "%s has a button or a sign" % p["id"])
-	for id in ["court", "machine", "coach", "gate", "locker", "trophy", "bar", "arena", "board"]:
+		var st0 := ClubPlaces.state(p["id"], 0)
+		check(st0.get("action", "") != "" or st0.get("sign", "") != "", "%s has a button or a sign" % p["id"])
+	for id in ["court", "machine", "coach", "gate", "locker", "shop", "trophy", "bar", "arena", "board"]:
 		check(ids.has(id), "place %s exists" % id)
 	var overlap := false
 	for i in ClubPlaces.LIST.size():
@@ -42,12 +46,70 @@ func test_places() -> void:
 	check(ClubPlaces.is_open(court, 0, 0), "the court is open from the start")
 	var locker := ClubPlaces.find("locker")
 	check(not ClubPlaces.is_open(locker, 0, 0) and ClubPlaces.is_open(locker, 1, 0), "the locker room opens after the first run")
-	check(not ClubPlaces.is_open(ClubPlaces.find("bar"), 9, 3), "the bar is not built in H1")
+	check(not ClubPlaces.is_open(ClubPlaces.find("board"), 9, 3), "the board waits for the online game")
 	check(ClubPlaces.at(court["pos"] + Vector3(0.5, 0, 0)).get("id", "") == "court", "a point in the court's circle is at the court")
 	check(ClubPlaces.at(Vector3(5, 0, 2)).is_empty(), "a point on the court itself is at no place")
 	var machine := ClubPlaces.find("machine")
-	check(ClubPlaces.is_open(machine, 0, 0) and machine["action"] == "practice", "practice is at the ball machine, open from the start")
+	check(ClubPlaces.is_open(machine, 0, 0) and ClubPlaces.state("machine")["action"] == "practice", "practice is at the ball machine, open from the start")
 	check((machine["pos"] as Vector3).z > 0.5 and (machine["pos"] as Vector3).z < Court.HALF_LENGTH, "the machine's circle is on the near half of the main court")
+
+
+## What a place offers is data: per level, the last level described repeats.
+func test_place_levels() -> void:
+	print("place levels")
+	for p in ClubPlaces.LIST:
+		check(p.has("levels") and not (p["levels"] as Array).is_empty(), "%s has levels" % p["id"])
+		for lv in 6:
+			var st := ClubPlaces.state(p["id"], lv)
+			check(st.has("label") and st.has("action") and st["id"] == p["id"], "%s level %d has a button (or none)" % [p["id"], lv])
+	check(ClubPlaces.state("shop", 0)["action"] == "club_shop", "the shop opens its screen")
+	check(ClubPlaces.state("bar", 0)["action"] == "club_roulette", "the bar's button is the roulette")
+	check(ClubPlaces.state("arena", 0)["action"] == "club_place", "the arena site tells what will be there")
+	check(int(ClubPlaces.state("bar", 3)["bet_limit"]) > int(ClubPlaces.state("bar", 0)["bet_limit"]), "a bigger bar takes bigger bets")
+	check(ClubPlaces.state("bar", 9)["bet_limit"] == ClubPlaces.state("bar", 3)["bet_limit"], "past the last level the last one holds")
+	var shop := ClubPlaces.find("shop")
+	check(not ClubPlaces.is_open(shop, 0, 0) and ClubPlaces.is_open(shop, 1, 0), "the shop opens after the first run")
+	var bar := ClubPlaces.find("bar")
+	check(not ClubPlaces.is_open(bar, 5, 0) and ClubPlaces.is_open(bar, 5, 1), "the bar opens after the first title")
+	check(ClubPlaces.find("machine").get("travel", true) == false, "the machine is not in quick travel (it's by the court)")
+	SaveData.club = {"levels": {"bar": 2}}
+	check(ClubPlaces.level("bar") == 2 and ClubPlaces.level("shop") == 0, "levels come from the club's save")
+	SaveData.club = {}
+
+
+## The roulette's ball runs on BallPhysics and always ends on the field drawn before.
+func test_roulette_physics() -> void:
+	print("roulette")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	var wrong := 0
+	var escaped := 0
+	var bounced := 0
+	var longest := 0.0
+	for i in 40:
+		var field := rng.randi_range(0, Bets.FIELDS - 1)
+		var sim := ClubRoulette.simulate(field, rng.randi())
+		var frames: PackedVector3Array = sim["frames"]
+		var wheel: PackedFloat32Array = sim["wheel"]
+		var last := frames.size() - 1
+		if ClubRoulette.pocket_at(frames[last], wheel[last]) != field:
+			wrong += 1
+		for f in frames:
+			var r := Vector2(f.x, f.z).length()
+			if r > ClubRoulette.R_OUT + 0.002 or f.y < ClubRoulette.FLOOR_Y + BallPhysics.RADIUS - 0.01:
+				escaped += 1
+				break
+		if int(sim["bounces"]) > 0:
+			bounced += 1
+		longest = maxf(longest, last * float(sim["dt"]))
+	check(wrong == 0, "the ball stops on the field drawn before (%d wrong of 40)" % wrong)
+	check(escaped == 0, "the ball never leaves the bowl (%d)" % escaped)
+	check(bounced >= 30, "the ball bounces on the way (%d of 40)" % bounced)
+	check(longest <= 8.0, "a spin is over in 8 s (%.1f)" % longest)
+	var a := ClubRoulette.simulate(7, 123)
+	var b := ClubRoulette.simulate(7, 123)
+	check(a["frames"] == b["frames"], "the same draw plays the same way")
+	check(ClubRoulette.field_color(0) == Bets.color_of(0) and ClubRoulette.field_color(5) == Bets.color_of(5), "the wheel's colours are the desk's")
 
 
 ## ClubMaterial: one soft toon material per colour, outlines only where they pay.
@@ -211,3 +273,73 @@ func test_flow() -> void:
 	check(club.hud.current_place() == "coach", "quick travel lands in the coach's circle")
 	main.queue_free()
 	await _frames(2)
+
+
+## The places' own actions: the shop's screen, a place's card, the roulette at the bar.
+func test_places_flow() -> void:
+	print("places flow")
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	root.add_child(main)
+	await _frames(5)
+	SaveData.enabled = false
+	SaveData.club = {}
+	SaveData.active = null
+	SaveData.run = {}
+	SaveData.played = 1
+	SaveData.titles = 1
+	SaveData.gold = 400
+	SaveData.bets = {}
+	Skills.pending = []
+	main._show_menu()
+	await _frames(3)
+	var club = main.club
+	var w = club.world
+	check(not w.walk.route(Vector2(0, 14), Vector2(22, 2)).is_empty(), "a way from the court to the shop")
+	check(not w.walk.route(Vector2(0, 14), Vector2(20, -30)).is_empty(), "a way from the court to the bar")
+	club._travel("shop")
+	await _frames(3)
+	check(club.hud.current_place() == "shop", "quick travel to the shop")
+	var before: int = w.place_node("shop").get_child_count()
+	w.set_level("shop", 2)
+	await _frames(1)
+	check(w.place_node("shop") != null, "the shop rebuilds for a new level")
+	club._on_choice("club_shop", 0)
+	await _frames(3)
+	check(main.ui.is_open(), "the shop's screen opens")
+	main._on_ui("menu", 0)
+	await _frames(3)
+	check(club.active and not main.ui.is_open() and club.hud.current_place() == "shop", "back from the shop: still at the shop")
+	club._travel("arena")
+	await _frames(2)
+	club._on_choice("club_place", 0)
+	await _frames(2)
+	check(main.ui.is_open(), "the arena site tells what will be there")
+	main._on_ui("menu", 0)
+	await _frames(2)
+	# The bar: the roulette in 3D.
+	club._travel("bar")
+	await _frames(3)
+	check(club.hud.current_place() == "bar", "quick travel to the bar")
+	club._on_choice("club_roulette", 0)
+	await _frames(3)
+	check(club.roulette_on() and not main.ui.is_open(), "the roulette is a 3D scene at the bar, not a screen")
+	var limit: int = int(ClubPlaces.state("bar", 0)["bet_limit"])
+	check(club.chips().all(func(c): return c <= limit and c <= Bets.max_stake(SaveData.gold)), "chips within the bar's limit and a quarter of the gold")
+	var gold0: int = SaveData.gold
+	var spin: Dictionary = club.spin("blue", 10)
+	check(not spin.is_empty(), "a spin goes")
+	check(SaveData.gold == gold0 - 10 + int(spin["paid"]), "the stake goes, the win comes (Bets.payout)")
+	check(int(spin["paid"]) == Bets.payout("blue", 10, int(spin["field"])), "paid as the desk pays")
+	check(club.spin("red", 10).is_empty(), "no second spin while the ball rolls")
+	club.roulette_skip()
+	await _frames(2)
+	check(not club.roulette_busy(), "a tap shows the end at once")
+	check(club.spin("red", 100000).is_empty(), "no stake over the limit")
+	club.roulette_close()
+	await _frames(2)
+	check(not club.roulette_on() and club.hud.current_place() == "bar", "back from the roulette: at the bar")
+	main.queue_free()
+	await _frames(2)
+	SaveData.played = 0
+	SaveData.titles = 0
+	SaveData.gold = 0
