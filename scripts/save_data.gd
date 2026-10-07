@@ -35,6 +35,7 @@ static var active: Tournament = null   # the run in progress, written with every
 static var run := {}                   # ...and as read back from the file
 static var crashes := 0                # page reloads while the game was on screen
 static var last_crash := ""            # where the last one happened ("матч · Максимум")
+static var style := {}                 # style records (v0.2 A): best_mult, best_points, total
 static var source := "none"            # where the progress came from: local, old, cloud (telemetry)
 static var _cloud_checked := false
 static var _last_cloud := ""
@@ -85,6 +86,7 @@ static func _apply(cf: ConfigFile) -> void:
 	gfx = cf.get_value("settings", "gfx", {})
 	look = cf.get_value("player", "look", {})
 	run = cf.get_value("run", "data", {})
+	style = cf.get_value("style", "data", {})
 	active = null
 	Skills.xp = cf.get_value("skills", "xp", {})
 	Skills.perks = cf.get_value("skills", "perks", [])
@@ -183,6 +185,8 @@ static func _to_config() -> ConfigFile:
 	cf.set_value("settings", "graphics", graphics)
 	cf.set_value("settings", "gfx", gfx)
 	cf.set_value("player", "look", look)
+	if not style.is_empty():
+		cf.set_value("style", "data", style)
 	if active != null and not active.banked and active.state != Tournament.State.OVER:
 		run = active.to_dict()
 	else:
@@ -218,3 +222,10 @@ static func record_run(t: Tournament) -> void:
 		titles += 1
 	best_round = maxi(best_round, mini(t.stage, t.rounds() - 1))
 	save()
+
+
+## A point scored with style (StyleRules result): keeps the records for the whole game.
+static func note_style(r: Dictionary) -> void:
+	style["best_mult"] = maxf(float(style.get("best_mult", 1.0)), float(r.get("mult", 1.0)))
+	style["best_points"] = maxi(int(style.get("best_points", 0)), int(r.get("points", 0)))
+	style["total"] = int(style.get("total", 0)) + int(r.get("points", 0))
