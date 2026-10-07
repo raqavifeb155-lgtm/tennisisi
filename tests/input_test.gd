@@ -51,6 +51,10 @@ func _initialize() -> void:
 
 func _process(_delta: float) -> bool:
 	frame += 1
+	if frame == 2:
+		# The same rallies every run: the test checks input, not luck (once Main is ready).
+		main.rng.seed = 20261007
+		main.ai.rng.seed = 20261007
 	_flush_events()
 	if main == null or not main.is_inside_tree() or main.hud == null:
 		return false
