@@ -1492,8 +1492,15 @@ func _update_twirl(delta: float, speed: float) -> void:
 ## The elbow is turned round the shoulder-hand line, so the hand stays where it is.
 ## Real shadows switched off in the graphics settings (Tuning.gfx_shadows == 0).
 func _no_sun_shadows() -> bool:
+	if blob_shadows:
+		return true
 	var tuning := get_node_or_null("/root/Tuning")
 	return tuning != null and int(tuning.gfx_shadows) == 0
+
+
+## The club turns the sun's shadow off on the lower presets (docs/club/H1_SPEC.md 7):
+## then everyone stands on the round shadow, as with shadows off in the settings.
+static var blob_shadows := false
 
 
 ## Standing still out of breath, not sliding or down: the hands-on-knees pose.

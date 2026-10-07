@@ -5,9 +5,10 @@ extends SceneTree
 var failures := 0
 
 
-func _init() -> void:
+func _initialize() -> void:
 	test_places()
 	test_walk()
+	await test_world()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -74,3 +75,34 @@ func test_walk() -> void:
 			break
 		q = w.resolve(q, q + d * 0.1)
 	check(q.distance_to(target) < 0.3, "steers to a target (%.1f m off)" % q.distance_to(target))
+
+
+func test_world() -> void:
+	print("world")
+	var w := ClubWorld.new()
+	root.add_child(w)
+	await process_frame
+	var bm := w.ball_machine()
+	check(bm.origin.z < -5.0 and absf(bm.origin.x) < Court.SINGLES_HALF_WIDTH, "ball machine on the far half of the main court")
+	check((-bm.basis.z).z > 0.9, "the ball machine shoots toward the near baseline")
+	for p in ClubPlaces.LIST:
+		check(w.place_node(p["id"]) != null, "%s has its node" % p["id"])
+		var c: Vector3 = p["pos"]
+		check(not w.walk.blocked(Vector2(c.x, c.z)), "%s circle is walkable" % p["id"])
+	# From the court's circle through the gate in the fence to the coach's pavilion.
+	var pos := Vector2(0, 14)
+	var goal := Vector2(16, 26)
+	var via := [Vector2(0, 22), Vector2(0, 31), Vector2(16, 31), goal]
+	for target in via:
+		for i in 400:
+			var d := w.walk.steer(pos, target)
+			if d == Vector2.ZERO:
+				break
+			pos = w.walk.resolve(pos, pos + d * 0.1)
+	check(pos.distance_to(goal) < 0.4, "walks from the court to the coach (%.1f m off)" % pos.distance_to(goal))
+	check(Locations.find("club")["id"] == "club", "the club is a location")
+	var listed := false
+	for l in Locations.LIST:
+		listed = listed or l["id"] == "club"
+	check(not listed, "the club is not on the tournament map")
+	w.queue_free()
