@@ -16,20 +16,18 @@ var _top: Control          # the settings button and panel: above the menu scree
 var _gfx_label: Label
 var _fps_t := 0.0
 var _fps_label: Label
-const MESSAGE_TOP := 214.0     # under the rally count (176..206)
+var announcer: HudAnnouncer   # every call, level-up, big moment and hint (UI_FLOW_TZ 5)
+var _trophy: TrophyPlate       # the trophy mini-game's balls, where the score bug sits
 var _safe_top := 0.0
 var _score: Label
 var _bug: ScoreBug
 var _tired_edge: TextureRect
-var _serve_hint: Label
+var _serve_hint := ""
 var _rally: Label
-var _message: Label
 var _tutorial: Tutorial
 var _debug_text: Label
 var _debug_panel: PanelContainer
 var _debug_btn: Button
-var _message_tween: Tween
-var _level_ups: Array[Label] = []
 
 
 func _ready() -> void:
@@ -48,6 +46,7 @@ func _ready() -> void:
 	ring = TimingRing.new()
 	_root.add_child(ring)
 	_hawkeye = HawkEye.new()
+	_hawkeye.compact = true  # small, beside the score: the TV strip runs under it
 	_root.add_child(_hawkeye)
 	touch = TouchInput.new()
 	_root.add_child(touch)
@@ -79,18 +78,22 @@ func _ready() -> void:
 	_bug.position = Vector2(14.0, 14.0)
 	_bug.visible = false
 	_root.add_child(_bug)
-	_rally = _label(22, HORIZONTAL_ALIGNMENT_LEFT)
-	_rally.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	_rally.offset_left = 18.0
-	_rally.offset_top = 176.0
-	_rally.offset_right = 400.0
-	_rally.offset_bottom = 206.0
-	_rally.modulate = Color(1, 1, 1, 0.75)
-
-	_message = _label(64, HORIZONTAL_ALIGNMENT_CENTER)
-	_message.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-	_place_message()
-	_message.modulate.a = 0.0
+	# The rally count in the top band, between the score bug and the pause button: under
+	# the bug it sat where the calls now go.
+	_rally = _label(24, HORIZONTAL_ALIGNMENT_RIGHT)
+	_rally.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_rally.offset_left = -330.0
+	_rally.offset_right = -136.0
+	_rally.offset_top = 14.0
+	_rally.offset_bottom = 58.0
+	_rally.modulate = Color(1, 1, 1, 0.85)
+	_trophy = TrophyPlate.new()
+	_trophy.position = Vector2(14.0, 14.0)
+	_trophy.visible = false
+	_root.add_child(_trophy)
+	announcer = HudAnnouncer.new()
+	announcer.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_root.add_child(announcer)
 
 	# Debug toggle + panel
 	_debug_btn = Button.new()
@@ -127,12 +130,6 @@ func _ready() -> void:
 
 	_build_debug_panel()
 
-	_serve_hint = _label(22, HORIZONTAL_ALIGNMENT_CENTER)
-	_anchor_band(_serve_hint, 0.775, 76.0)
-	_serve_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_serve_hint.modulate = Color(1, 1, 1, 0.8)
-	_serve_hint.visible = false
-
 	# Its own layer over everything (TournamentUI 10, settings 20): opened from the Club,
 	# under the menu it was covered and the menu took its taps.
 	var tut_layer := CanvasLayer.new()
@@ -167,8 +164,9 @@ func _process(delta: float) -> void:
 func set_safe_area(top: float, bottom: float) -> void:
 	_anchor_top(_score, 18.0 + top, 60.0)
 	_bug.position.y = 14.0 + top
-	_rally.offset_top = 176.0 + top
-	_rally.offset_bottom = 206.0 + top
+	_rally.offset_top = 14.0 + top
+	_rally.offset_bottom = 58.0 + top
+	_trophy.position.y = 14.0 + top
 	_debug_btn.offset_top = 14.0 + top
 	_debug_btn.offset_bottom = 84.0 + top
 	_fps_label.offset_top = 88.0 + top
@@ -180,22 +178,29 @@ func set_safe_area(top: float, bottom: float) -> void:
 	_hawkeye.top_inset = top
 	ring.top_inset = top
 	_safe_top = top
-	_place_message()
-	_anchor_band(_serve_hint, 0.775, 76.0)
-	_serve_hint.offset_top -= bottom
-	_serve_hint.offset_bottom -= bottom
+	announcer.set_safe_area(top, bottom)
 
-
-## Plain text in place of the score bug (the trophy mini-game, nothing at all).
+## Plain text in place of the score bug ("" = nothing at all).
 func set_score(text: String) -> void:
 	_score.text = text
 	_bug.visible = false
+	_trophy.visible = false
 	ring.show_stamina = false
+
+
+## The trophy mini-game: its plate with a ball per serve in place of the score bug.
+func set_trophy(left: int, total: int) -> void:
+	_score.text = ""
+	_bug.visible = false
+	ring.show_stamina = false
+	_trophy.set_balls(left, total)
+	_trophy.visible = true
 
 
 ## The match score, broadcast style. names: [player, opponent].
 func show_board(s: MatchScore, names: Array) -> void:
 	_score.text = ""
+	_trophy.visible = false
 	_bug.show_score(s, names)
 	ring.show_stamina = true
 
@@ -212,14 +217,17 @@ func set_stamina(v: float) -> void:
 
 ## Before the player's toss, for the first few serves: what the fingers do.
 func show_serve_hint(on: bool, tap_controls: bool) -> void:
+	var t := ""
 	if on:
-		_serve_hint.text = ("тап ниже игрока — шаг  ·  " if tap_controls else "") + "тап по корту — подброс\nкороткий свайп вниз до подброса — подача снизу"
-	if _serve_hint.visible != on:
-		_serve_hint.visible = on
+		t = ("тап ниже игрока — шаг  ·  " if tap_controls else "") + "тап по корту — подброс\nкороткий свайп вниз до подброса — подача снизу"
+	if t != _serve_hint:  # called every frame: the plate only changes with the text
+		_serve_hint = t
+		announcer.set_hint(t)
 
 
 func set_rally(text: String) -> void:
 	_rally.text = text
+	_rally.visible = not _hawkeye.is_showing()  # VAR sits in the same place
 
 
 func show_tutorial_once() -> void:
@@ -244,49 +252,17 @@ func popup(text: String, color: Color, sub := "") -> void:
 	ring.feedback(text, color, sub, 2 if text == "PERFECT" else (1 if text == "GOOD" else 0))
 
 
-## Skill level-up: a small gold line under the hit verdict ("+1 ФОРХЕНД · ур. 7").
-## Several at once stack downward. `milestone` (every 5 levels) adds the perk note.
+## Skill level-up: a gold toast in the call column ("ФОРХЕНД 7 · 104 → 109 км/ч").
+## Two at a time, the same skill updates its own; `milestone` (every 5 levels) adds the
+## perk note and a gold frame.
 func level_up(text: String, milestone := false) -> void:
-	var l := Label.new()
-	l.text = text + ("  ·  перк после матча" if milestone else "")
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l.add_theme_font_size_override("font_size", 26)
-	l.add_theme_color_override("font_color", GOLD)
-	l.add_theme_color_override("font_outline_color", Color(0.2, 0.12, 0.0, 0.9))
-	l.add_theme_constant_override("outline_size", 6)
-	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_root.add_child(l)
-	var w := get_viewport().get_visible_rect().size.x
-	l.size = Vector2(w, 36)
-	# "ФОРХЕНД 7 · 104 → 109 км/ч" with the perk note is long: shrunk to fit the width
-	# (a glyph is ~0.56 of the font size wide).
-	l.add_theme_font_size_override("font_size", clampi(int(w * 0.92 / (l.text.length() * 0.56)), 18, 34))
-	l.size.y = 46.0
-	# Under the verdict and its skill bar, clear of the score and VAR in full screen.
-	var y := _safe_top + 300.0 + 46.0 * _level_ups.size()
-	_level_ups.append(l)
-	l.position = Vector2(0.0, y + 12.0)
-	l.modulate.a = 0.0
-	var tw := create_tween()
-	tw.set_ignore_time_scale(true)
-	tw.tween_property(l, "modulate:a", 1.0, 0.15)
-	tw.parallel().tween_property(l, "position:y", y, 0.2)
-	tw.tween_interval(1.6)
-	tw.tween_property(l, "modulate:a", 0.0, 0.5)
-	tw.tween_callback(func() -> void:
-		_level_ups.erase(l)
-		l.queue_free())
+	announcer.toast(text + ("  ·  перк после матча" if milestone else ""), text.get_slice(" ", 0), milestone)
 
 
+## The point's call: "WINNER!" and, after a newline, "GAME · YOU" (see Calls).
 func show_message(text: String, color: Color) -> void:
-	if _message_tween:
-		_message_tween.kill()
-	_message.text = text
-	_message.modulate = color
-	_message_tween = create_tween()
-	_message_tween.set_ignore_time_scale(true)
-	_message_tween.tween_interval(1.1)
-	_message_tween.tween_property(_message, "modulate:a", 0.0, 0.4)
+	var parts := text.split("\n")
+	announcer.call_point(parts[0], parts[1] if parts.size() > 1 else "", color)
 
 
 ## `mark` = the ball mark (half-length, half-width, |cos| of its angle to the line's
@@ -333,13 +309,6 @@ func _label(font_size: int, align: HorizontalAlignment) -> Label:
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(l)
 	return l
-
-
-## The point's verdict ("WINNER!", "CPU OUT" + "GAME ВЫ": up to two lines) hangs under the
-## score and the rally count, below whatever Telegram's buttons take at the top. At a
-## fixed share of the screen it landed on the score once full screen pushed that down.
-func _place_message() -> void:
-	_anchor_top(_message, MESSAGE_TOP + _safe_top, 170.0)
 
 
 func _anchor_top(c: Control, top: float, height: float) -> void:

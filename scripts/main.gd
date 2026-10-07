@@ -59,6 +59,7 @@ var tournament: Tournament
 var tournament_mode := false
 var autoplay_tournament := false
 var cpu_label := "CPU"
+var cpu_call := "CPU"            # the same in Latin, for the court calls (Calls, UI_FLOW_TZ 5.6)
 var _match_over := false
 var _match_stats := {}
 var _after_perks := ""            # screen to open once the pending skill perk choices are made
@@ -787,7 +788,7 @@ func _swing_input(dir: Vector3, pace_k: float, type: int) -> void:
 		return
 	if t_contact > Tuning.early_limit:
 		if t_contact < 3.0:
-			hud.popup("РАНО", COLOR_WARN, "свайпни, когда кольцо дойдёт до круга")
+			hud.popup("EARLY", COLOR_WARN, "свайпни, когда кольцо дойдёт до круга")
 		return
 	if pending_swing.is_empty():
 		pending_swing = {"time": game_time, "dir": dir, "pace_k": pace_k, "type": type}
@@ -1008,7 +1009,7 @@ func _player_hit(err: float, dir: Vector3, pace_k: float, type: int) -> void:
 		stroke += " ×%.1f" % _curl_k
 	if big_curl:
 		sfx.play("swing", -3.0, 0.8)  # the whip of a full turn of the wrist
-	var sub := "%s  ·  %d km/h  ·  %d%%" % [stroke, roundi(r.speed * 3.6), roundi(q * 100.0)]
+	var sub := "%s  ·  %d KM/H  ·  %d%%" % [stroke, roundi(r.speed * 3.6), roundi(q * 100.0)]
 	if not notes.is_empty():
 		sub += "  ·  " + ", ".join(notes)
 	hud.popup(label, color, sub)
@@ -1371,12 +1372,7 @@ func _end_point(winner: int, reason: String) -> void:
 	if reason == "WINNER" and rally == 1 and winner == server:
 		reason = "ACE"
 	GameEvents.point.emit({"winner": winner, "reason": reason, "rally": rally, "server": server, "close_call": _close_call.duplicate(), "best": rally >= best_rally})
-	var text: String
-	var o := cpu_label
-	if winner == Who.PLAYER:
-		text = {"OUT": o + " OUT", "NET": o + " NET", "WINNER": "WINNER!", "ACE": "ACE!", "DOUBLE FAULT": o + " DOUBLE FAULT"}[reason]
-	else:
-		text = {"OUT": "OUT", "NET": "NET", "WINNER": "MISSED", "ACE": o + " ACE", "DOUBLE FAULT": "DOUBLE FAULT"}[reason]
+	var text := Calls.point(winner == Who.PLAYER, reason, cpu_call)
 	if winner == Who.PLAYER and reason == "ACE":
 		_match_stats["aces"] = _match_stats.get("aces", 0) + 1
 	_match_stats["best_rally"] = maxi(_match_stats.get("best_rally", 0), rally)
@@ -1386,7 +1382,6 @@ func _end_point(winner: int, reason: String) -> void:
 	if _stamina_spent > 0.0:
 		_gain_xp("stamina", "", _stamina_spent * Skills.STAMINA_XP)
 		_stamina_spent = 0.0
-	var who := "YOU" if winner == Who.PLAYER else o
 	var ev: int = scoreboard.add_point(winner)
 	match scoreboard.break_after(ev):
 		MatchScore.Break.CHANGE_ENDS:
@@ -1396,13 +1391,9 @@ func _end_point(winner: int, reason: String) -> void:
 			stamina = minf(stamina + Skills.stamina_rest("set"), 1.0)
 	if ev != MatchScore.Event.POINT and not autoplay:
 		SaveData.save()  # the skills grown this game survive a crash or a reload
-	match ev:
-		MatchScore.Event.GAME:
-			text += "\nGAME " + who
-		MatchScore.Event.SET:
-			text += "\nСЕТ " + who
-		MatchScore.Event.MATCH:
-			text += "\nМАТЧ " + who
+	var line2 := Calls.score(ev, winner == Who.PLAYER, cpu_call)
+	if line2 != "":
+		text += "\n" + line2
 	server = scoreboard.server as Who
 	if tournament_mode and scoreboard.is_over():
 		_match_over = true
@@ -1441,7 +1432,7 @@ func _fault(kind: String) -> void:
 		_replay_serve = true
 		phase = Phase.OVER
 		phase_timer = 0.5 if autoplay else 1.2
-		hud.show_message("FAULT" if kind != "NET" else "NET · FAULT", COLOR_WARN)
+		hud.show_message(Calls.fault(kind), COLOR_WARN)
 		if not _close_call.is_empty() and kind != "NET" and int(_close_call.get("rally", -1)) == rally:
 			hud.hawkeye(_close_call["margin"], _close_call["axis"], _close_call.get("mark", Vector3.ZERO))
 		_close_call = {}
@@ -1456,7 +1447,7 @@ func _let() -> void:
 	_replay_serve = true
 	phase = Phase.OVER
 	phase_timer = 0.5 if autoplay else 1.2
-	hud.show_message("LET", COLOR_GOOD)
+	hud.show_message(Calls.LET, COLOR_GOOD)
 
 
 func _reset_point() -> void:
@@ -1638,7 +1629,7 @@ func _player_serve(dir: Vector3, pace_k: float, type: int) -> void:
 		_aim_hold = 0.8
 	var color := Hud.GOLD if label == "PERFECT" else (COLOR_WARN if label == "EARLY" or label == "LATE" else COLOR_GOOD)
 	var kind: String = ["KICK ×%.1f" % _curl_k, "FLAT", "SLICE"][type]
-	hud.popup(label, color, "подача %s  ·  %d km/h" % [kind, roundi(r.speed * 3.6)])
+	hud.popup(label, color, "SERVE %s  ·  %d KM/H" % [kind, roundi(r.speed * 3.6)])
 	cam.impulse(1.0 if label == "PERFECT" else 0.4)
 	_haptic("perfect" if label == "PERFECT" else "medium")
 	last_shot = {
@@ -1675,7 +1666,7 @@ func _player_underarm_serve(dir: Vector3, pace_k: float) -> void:
 	if Tuning.show_aim:
 		_set_aim(origin, target, Court.in_service_box(target, -1, box_side, 0.0))
 		_aim_hold = 0.8
-	hud.popup("UNDERARM", COLOR_GOOD, "подача снизу  ·  %d km/h" % roundi(r.speed * 3.6))
+	hud.popup("UNDERARM", COLOR_GOOD, "UNDERARM SERVE  ·  %d KM/H" % roundi(r.speed * 3.6))
 	_haptic("light")
 
 
@@ -1771,6 +1762,7 @@ func _show_menu() -> void:
 	Rewards.restore()
 	Tuning.ai_skill = _practice_skill
 	cpu_label = "CPU"
+	cpu_call = "CPU"
 	_next_screen("menu")
 
 
@@ -1786,6 +1778,7 @@ func _stop_match() -> void:
 	late_until = -1.0
 	Engine.time_scale = 1.0
 	hud.set_score("")
+	hud.announcer.set_hint("")
 
 
 func _start_practice() -> void:
@@ -1797,6 +1790,7 @@ func _start_practice() -> void:
 	_set_opponent_mods(1.0, 1.0, {})
 	Tuning.ai_skill = _practice_skill
 	cpu_label = "CPU"
+	cpu_call = "CPU"
 	scoreboard = MatchScore.new(1, 99, 0, Who.PLAYER, cpu_label)
 	ui.close()
 	_begin_match()
@@ -1921,10 +1915,11 @@ func _play_match() -> void:
 	cpu.set_look(opp.get("look", Looks.from_shirt(opp.get("shirt", Color(0.22, 0.28, 0.42)))))
 	_set_opponent_mods(tournament.modifier_value("speed"), tournament.modifier_value("serve"), tournament.current_lineup()["racket"])
 	cpu_label = opp["short"]
+	cpu_call = opp.get("short_en", "CPU")
 	scoreboard = tournament.new_score(rng.randi_range(0, 1))
 	ui.close()
 	_begin_match()
-	hud.show_message("%s\n%s" % [tournament.round_name(), opp["name"]], Color.WHITE)
+	hud.announcer.intro(tournament.round_name().to_upper(), opp["name"])
 
 
 ## Opponent difficulty modifiers and the racket in their hand; the player's racket too.
@@ -2156,12 +2151,13 @@ func _start_bonus() -> void:
 	_runner_timer = 0.0
 	if not tournament.pending_loot.is_empty():
 		cpu.set_racket_look(Gear.color(tournament.pending_loot), Gear.glow(tournament.pending_loot))
-	hud.show_message("ТРОФЕЙ!\nпопади в него подачей", Hud.GOLD)
+	hud.announcer.item_card(tournament.pending_loot, "НОКАУТИРУЙ И ЗАБЕРИ")
+	hud.announcer.set_hint("Подача по бегущему: попади в него мячом")
 	_bonus_hud()
 
 
 func _bonus_hud() -> void:
-	hud.set_score("ТРОФЕЙ  ·  мячей: %d" % _bonus_balls)
+	hud.set_trophy(_bonus_balls, BONUS_BALLS)
 
 
 func _update_bonus(delta: float) -> void:
@@ -2226,6 +2222,7 @@ func _bonus_serve(dir: Vector3, pace_k: float, type: int) -> void:
 	player.swing(1, 0.02, bp, Athlete.Style.SERVE)
 	execute_shot(Who.PLAYER, player, bp, target, pace, top, q, err, 1, false, 0.0, false, 0.05, sk["scatter"])
 	toss_active = false
+	hud.announcer.set_hint("")
 	_bonus_state = 1
 	_bonus_t = 0.0
 	_bonus_bounces = 0
@@ -2243,7 +2240,7 @@ func _bonus_hit() -> void:
 	sfx.play("hit_perfect", -2.0)
 	cam.impulse(1.0)
 	_haptic("heavy")
-	hud.show_message("НОКАУТ!", Hud.GOLD)
+	hud.announcer.moment("KNOCKOUT!", UiTheme.GOLD)
 	# The racket flies out of their hand and lands on the court; go and pick it up.
 	_drop_from = cpu.position + Vector3(0.0, 1.1, 0.0)
 	_drop_to = cpu.position + Vector3(rng.randf_range(-1.2, 1.2), 0.04, rng.randf_range(0.6, 1.4))
@@ -2278,7 +2275,7 @@ func _bonus_pickup(delta: float) -> void:
 		player.move_input = Vector2.ZERO
 		player.set_racket_look(Gear.color(tournament.pending_loot), Gear.glow(tournament.pending_loot))
 		player.split_step()
-		hud.show_message("ТРОФЕЙ!\n" + String(tournament.pending_loot.get("name", "")), Gear.color(tournament.pending_loot))
+		hud.announcer.item_card(tournament.pending_loot, "ТРОФЕЙ")
 		sfx.play("point", -4.0, 1.25)
 		cam.impulse(0.8)
 		_haptic("perfect")
@@ -2327,11 +2324,11 @@ func _bonus_miss() -> void:
 	ball.park()
 	_bonus_hud()
 	if _bonus_balls <= 0:
-		hud.show_message("ТРОФЕЙ УПУЩЕН", COLOR_BAD)
+		hud.announcer.moment("TROPHY LOST", UiTheme.LOSE, "ракетка осталась у соперника")
 		_bonus_state = 2
 		_bonus_wait = 0.5 if autoplay else 2.0
 	else:
-		hud.popup("МИМО", COLOR_WARN, "осталось мячей: %d" % _bonus_balls)
+		hud.popup("MISS", COLOR_WARN, "осталось мячей: %d" % _bonus_balls)
 		_bonus_state = 0
 
 
