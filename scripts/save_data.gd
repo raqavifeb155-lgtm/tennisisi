@@ -30,6 +30,7 @@ static var ambience := true
 static var music := true
 static var graphics := 0          # GraphicsQuality preset, 0 = auto
 static var gfx := {}              # the custom graphics parts and the FPS counter (Tuning names)
+static var club := {}             # the player's club (docs/club): last tournament, met the coach...
 static var look := {}             # the player's appearance (Looks), {} = the default
 static var active: Tournament = null   # the run in progress, written with every save
 static var run := {}                   # ...and as read back from the file
@@ -71,7 +72,8 @@ static func _score(cf: ConfigFile) -> float:
 	for k in d:
 		xp += float(d[k])
 	return float(cf.get_value("meta", "played", 0)) * 1000.0 + float(cf.get_value("meta", "titles", 0)) * 500.0 \
-		+ xp + float(cf.get_value("meta", "gold", 0)) * 0.1 + (1.0 if cf.get_value("settings", "control_chosen", false) else 0.0)
+		+ xp + float(cf.get_value("meta", "gold", 0)) * 0.1 + (1.0 if cf.get_value("settings", "control_chosen", false) else 0.0) \
+		+ float((cf.get_value("club", "data", {}) as Dictionary).get("spent", 0)) * 0.1  # v0.2 B: gold built into the club still counts
 
 
 static func _apply(cf: ConfigFile) -> void:
@@ -87,6 +89,7 @@ static func _apply(cf: ConfigFile) -> void:
 	graphics = cf.get_value("settings", "graphics", 0)
 	gfx = cf.get_value("settings", "gfx", {})
 	look = cf.get_value("player", "look", {})
+	club = cf.get_value("club", "data", {})
 	run = cf.get_value("run", "data", {})
 	style = cf.get_value("style", "data", {})
 	bets = cf.get_value("bets", "data", {})
@@ -189,6 +192,7 @@ static func _to_config() -> ConfigFile:
 	cf.set_value("settings", "graphics", graphics)
 	cf.set_value("settings", "gfx", gfx)
 	cf.set_value("player", "look", look)
+	cf.set_value("club", "data", club)
 	if not style.is_empty():
 		cf.set_value("style", "data", style)
 	if not bets.is_empty():

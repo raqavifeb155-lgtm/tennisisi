@@ -154,7 +154,9 @@ func _run() -> void:
 	await _tap(_button(_sheet(), "Выйти в меню"))
 	_check("Матч → пауза → Выйти: спрашивает подтверждение", main.ui.is_open() == false and _sheet().visible)
 	await _wait(0.6)
-	_check("Матч → пауза → Выйти: в итоге Клуб и не на паузе", main.ui.is_open() and not paused)
+	# The Club is the walkable 3D club since v0.2 B (the old list only with --old-menu).
+	var in_club: bool = main.ui.is_open() or (main.get("club") != null and main.club.active)
+	_check("Матч → пауза → Выйти: в итоге Клуб и не на паузе", in_club and not paused)
 
 	# --- A result screen -------------------------------------------------------------
 	var rng := RandomNumberGenerator.new()

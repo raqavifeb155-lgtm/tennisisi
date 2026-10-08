@@ -25,9 +25,19 @@ const LIST := [
 	},
 ]
 
+## Places that are not on the tournament map: the player's own club (docs/club). "sound":
+## whose ambience plays there.
+const PRIVATE := [
+	{
+		"id": "club", "name": "Свой клуб", "surface": "hard", "surface_name": "хард",
+		"desc": "Твой корт на набережной Ист-Ривер", "sound": "park",
+		"scenery": "res://scripts/club/club_world.gd", "tour": "Свой клуб",
+	},
+]
+
 
 static func find(id: String) -> Dictionary:
-	for l in LIST:
+	for l in LIST + PRIVATE:
 		if l["id"] == id:
 			return l
 	return LIST[0]

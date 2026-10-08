@@ -277,7 +277,9 @@ func new_score(first_server: int) -> MatchScore:
 
 func gold_for_win(i: int) -> int:
 	var golden: bool = i < lineup.size() and lineup[i].get("golden", false)
-	return roundi(GOLD_PER_WIN[i] * float(format_info()["reward"])) * (Golden.GOLD_X if golden else 1)
+	var base := roundi(GOLD_PER_WIN[i] * float(format_info()["reward"])) * (Golden.GOLD_X if golden else 1)
+	# v0.2 B hook: the club's stands pay a little more for a won match (ClubBuilds, off online).
+	return roundi(float(base) * (1.0 + ClubBuilds.gold_win_bonus()))
 
 
 ## Records a finished match and moves the run on.
