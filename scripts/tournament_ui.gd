@@ -86,7 +86,7 @@ class Badge extends Control:
 
 
 func _ready() -> void:
-	layer = 10
+	layer = UiTheme.LAYER_SCREENS
 	root = Control.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_STOP
