@@ -131,7 +131,7 @@ func test_rewards() -> void:
 	t.lineup[2]["mods"] = []
 	var plain := t.gold_for_win(2)
 	t.lineup[2]["mods"] = ["fog"]
-	check(t.gold_for_win(2) == roundi(plain * 1.4) or absi(t.gold_for_win(2) - roundi(plain * 1.4)) <= 1, "an aura pays more: %d -> %d" % [plain, t.gold_for_win(2)])
+	check(t.gold_for_win(2) == roundi(plain * Modifiers.find("fog")["reward"]) or absi(t.gold_for_win(2) - roundi(plain * Modifiers.find("fog")["reward"])) <= 1, "an aura pays more: %d -> %d" % [plain, t.gold_for_win(2)])
 	t.lineup[2]["mods"] = ["showman", "fog", "crystal"]
 	check(Modifiers.gold_mult(t, 2) <= Modifiers.MAX_REWARD + 0.001, "the multiplier stops at x%s" % Modifiers.MAX_REWARD)
 	check(Modifiers.loot_bonus("fog") > 0.0 and is_equal_approx(Modifiers.loot_bonus("fast"), 0.08), "auras move his loot up; the old ones keep theirs")
