@@ -10,17 +10,6 @@ extends UiSheet
 const ROW_LINE := Color(1, 1, 1, 0.07)
 const CAPTION := 26
 const ABOUT := UiTheme.T_SMALL
-const WARN_TG := "Может тормозить в Telegram."
-const GFX_NOTES := [
-	"Сама подстраивается под устройство: если кадры проседают, качество снижается.",
-	"Для старых телефонов: меньше пикселей, без сглаживания, простые тени.",
-	"Баланс: картинка чуть мягче, тени жёсткие, без лишних деталей сцены.",
-	"Чёткая картинка, мягкие тени, все детали сцены. " + WARN_TG,
-	"Для флагманов: родное разрешение, сглаживание 4x, мягкие и дальние тени. Телефон может греться. " + WARN_TG,
-	"Своя настройка: части графики выставлены вручную ниже.",
-]
-const AUTO_PHONE_NOTE := " На телефоне — не выше «Средней»."
-
 var _syncs: Array[Callable] = []    # re-read every control from Tuning when the sheet opens
 var _gfx_buttons: Array[Button] = []
 var _gfx_note: Label
@@ -129,26 +118,6 @@ static func value_text(prop: String, val: float) -> String:
 	return str(snappedf(val, 0.01))
 
 
-## The caption of a preset's button: short, with "!" where Telegram may stutter.
-static func preset_caption(i: int) -> String:
-	match i:
-		GraphicsQuality.HIGH:
-			return "Выс !"
-		GraphicsQuality.MAX:
-			return "Макс !"
-		GraphicsQuality.MEDIUM:
-			return "Сред"
-		GraphicsQuality.LOW:
-			return "Низк"
-	return GraphicsQuality.NAMES[i]
-
-
-## What the chosen preset does, in one line (and the phone's cap for "Авто").
-static func preset_note(i: int, phone: bool) -> String:
-	var n: String = GFX_NOTES[clampi(i, 0, GFX_NOTES.size() - 1)]
-	return n + (AUTO_PHONE_NOTE if i == GraphicsQuality.AUTO and phone else "")
-
-
 func _section(parent: Control, caption: String) -> void:
 	parent.add_child(_space(26))
 	parent.add_child(label(caption, UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.GOLD))
@@ -163,7 +132,7 @@ func _graphics_choice(parent: Control) -> void:
 	row.add_theme_constant_override("separation", 6)
 	_gfx_buttons.clear()
 	for i in GraphicsQuality.NAMES.size():
-		var b := _flat_button(preset_caption(i))
+		var b := _flat_button(GraphicsQuality.caption(i))
 		b.pressed.connect(func() -> void:
 			Tuning.graphics = i
 			Tuning.notify_changed()  # the preset fills the manual parts in...
@@ -184,7 +153,7 @@ func _graphics_choice(parent: Control) -> void:
 func _sync_graphics() -> void:
 	for i in _gfx_buttons.size():
 		_lit(_gfx_buttons[i], i == Tuning.graphics)  # "Своя": none lit
-	_gfx_note.text = preset_note(Tuning.graphics, false)
+	_gfx_note.text = GraphicsQuality.note(Tuning.graphics, GraphicsQuality.is_phone())
 
 
 ## The parts of the graphics by hand, folded under the presets. Touching any of them

@@ -17,7 +17,8 @@ func _run() -> void:
 	await test_announcer_moments()
 	await test_modal_stack()
 	test_layers()
-	check(finished == 6, "every test ran to its end: %d of 6" % finished)
+	test_graphics_labels()
+	check(finished == 7, "every test ran to its end: %d of 7" % finished)
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -176,4 +177,19 @@ func test_layers() -> void:
 	sorted.sort()
 	check(order == sorted, "layers go up: %s" % str(order))
 	check(UiTheme.LAYER_SCREENS == 10 and UiTheme.LAYER_PAUSE == 20 and UiTheme.LAYER_HELP == 30, "screens 10, pause 20, help 30")
+	finished += 1
+
+
+## Graphics (HANDOFF 9.6): on a phone "Авто" never goes above Medium (High stutters in
+## Telegram); High and Max say so on the button and in the line under the presets.
+func test_graphics_labels() -> void:
+	print("graphics labels")
+	check(GraphicsQuality.auto_steps(true) == [GraphicsQuality.MEDIUM, GraphicsQuality.LOW], "phone: Auto is Medium, then Low")
+	check(GraphicsQuality.auto_steps(false) == [GraphicsQuality.HIGH, GraphicsQuality.MEDIUM, GraphicsQuality.LOW], "computer: Auto starts at High")
+	for i in [GraphicsQuality.HIGH, GraphicsQuality.MAX]:
+		check("!" in GraphicsQuality.caption(i), "the %s button is marked" % GraphicsQuality.NAMES[i])
+		check("Telegram" in GraphicsQuality.note(i, false), "and its line warns about Telegram")
+	for i in [GraphicsQuality.AUTO, GraphicsQuality.LOW, GraphicsQuality.MEDIUM]:
+		check(not "!" in GraphicsQuality.caption(i) and not "Telegram" in GraphicsQuality.note(i, false), "%s is not marked" % GraphicsQuality.NAMES[i])
+	check("Средней" in GraphicsQuality.note(GraphicsQuality.AUTO, true), "Auto on a phone says its cap")
 	finished += 1
