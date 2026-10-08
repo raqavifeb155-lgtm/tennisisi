@@ -303,8 +303,13 @@ func set_music_enabled(on: bool) -> void:
 	_update_music()
 
 
+## Temporary (owner's request, 08.10): no menu music in the build while the club is being
+## tested on phones. Flip back to true to restore the settings toggle's effect.
+const MUSIC_IN_BUILD := false
+
+
 func _update_music() -> void:
-	var on := _music_wanted and _music_enabled
+	var on := _music_wanted and _music_enabled and MUSIC_IN_BUILD
 	if _music == null:
 		if not on:
 			return
