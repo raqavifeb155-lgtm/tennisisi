@@ -38,12 +38,15 @@ func _run() -> void:
 	SaveData.played = 4
 	SaveData.titles = 0
 	main._show_menu()
+	main.club.close()
+	main.ui.show_formats()
 	RM.open(main, 1)
 	await _shot("01_locked")
 	SaveData.titles = 1
 	RM.open(main, 1)
 	await _shot("02_normal")
 	RM.ui_action(main, "mods_mode", 1)
+	print("hardcore=", RM.hardcore, " titles=", SaveData.titles, " rows=", main.ui._box.get_child_count())
 	await _shot("03_hardcore")
 	RM.ui_action(main, "mods_toggle", 3)
 	RM.ui_action(main, "mods_toggle", 12)
