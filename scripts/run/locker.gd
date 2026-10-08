@@ -56,7 +56,7 @@ static func cap_text(round_i: int) -> String:
 static func insurance(item: Dictionary) -> int:
 	if item.is_empty() or int(item.get("rarity", 0)) < Gear.LEGENDARY:
 		return 0
-	return roundi(Items.price(item) * INSURANCE)
+	return roundi(Items.price(item) * INSURANCE * (1.0 - ClubApi.insurance_discount()))
 
 
 ## Where the run ended for the ceiling: the title = 5, else the round it went out in.

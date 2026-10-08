@@ -63,8 +63,16 @@ static func _rarity(rng: RandomNumberGenerator, cap: int) -> int:
 	return cap
 
 
+## The changing-room perks give some rerolls a run for free (ClubBuilds.shop_free_rerolls).
+static func free_left() -> int:
+	return maxi(0, ClubApi.free_rerolls() - int(_state()["rerolls"]))
+
+
 static func reroll_price() -> int:
-	return roundi(REROLL * pow(REROLL_GROWTH, int(_state()["rerolls"])))
+	if free_left() > 0:
+		return 0
+	var paid := maxi(0, int(_state()["rerolls"]) - ClubApi.free_rerolls())
+	return roundi(REROLL * pow(REROLL_GROWTH, paid))
 
 
 static func reroll() -> bool:
@@ -127,7 +135,7 @@ static func can_restring() -> bool:
 
 static func restring_price(item: Dictionary) -> int:
 	var share := RESTRING_MYTHIC if int(item.get("rarity", 0)) >= Gear.MYTHIC else RESTRING
-	return roundi(Items.price(item) * share)
+	return roundi(Items.price(item) * share * (1.0 - ClubApi.restring_discount()))
 
 
 ## How many string lines a catalog item gets: 1, a legendary or mythic 2.

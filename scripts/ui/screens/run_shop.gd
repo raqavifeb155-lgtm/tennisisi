@@ -54,7 +54,8 @@ static func where_name(where: int) -> String:
 
 
 static func level_name() -> String:
-	return ["Ларёк", "Лавка", "Бутик"][clampi(Shop.level(), 0, 2)]
+	var lv := Shop.level()
+	return "Ларёк" if lv <= 0 else String(ClubBuilds.TABLE["shop"]["levels"][lv - 1]["title"])
 
 
 ## "Ракетка · Эпическая · ур. 3" for a card's tag.
@@ -112,7 +113,7 @@ static func show_shop(ui: TournamentUI) -> void:
 	else:
 		ui._primary("ГОТОВО", back_to)
 	var rp := Shop.reroll_price()
-	var rb := ui._secondary("Переброс витрины  %d" % rp, "shop_reroll")
+	var rb := ui._secondary("Переброс витрины  %s" % ("бесплатно (%d)" % Shop.free_left() if rp == 0 else str(rp)), "shop_reroll")
 	rb.disabled = SaveData.gold < rp
 	rb.add_theme_color_override("font_color", UiTheme.GOLD)
 
@@ -123,8 +124,9 @@ static func _teaser(ui: TournamentUI) -> void:
 	if lv >= ClubBuilds.max_level("shop"):
 		return
 	var n: Dictionary = ClubBuilds.next("shop")
-	var glow := "фиолетовым" if lv == 0 else "оранжевым"
-	var color := UiTheme.rarity_color(Gear.EPIC if lv == 0 else Gear.LEGENDARY)
+	var next_rarity := int(n.get("max_rarity", Gear.EPIC if lv == 0 else Gear.LEGENDARY))
+	var glow := "фиолетовым" if next_rarity <= Gear.EPIC else "оранжевым"
+	var color := UiTheme.rarity_color(clampi(next_rarity, Gear.EPIC, Gear.LEGENDARY))
 	ui._card({"tag": "Закрыто  ·  «%s»  ·  %d" % [n["title"], ClubBuilds.next_price("shop")],
 		"title": "Что-то светится %s" % glow, "desc": "%s\nСтройка — у прораба на входе" % sentence(String(n.get("now", "")))}, "", 0, color)
 
