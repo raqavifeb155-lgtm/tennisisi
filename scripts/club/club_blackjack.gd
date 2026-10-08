@@ -6,9 +6,10 @@ extends Node3D
 ## The rules and the payouts are Blackjack's (scripts/run/blackjack.gd): every action is
 ## decided there first, gold moves and is saved at once; the table only shows it.
 ##
-## Club's hooks: attach() in Club.open (the table stands in the world), open() from the
-## place's button (action "club_blackjack"). The table hides the club's bottom bar while
-## it is open and gives it back; the club's gold chip and gear stay where they are.
+## Club's contract (stream B): the place's button calls the static open(club); the scene
+## stands on ClubWorld.blackjack_root(); attach() in Club.open builds it with the world.
+## The table hides the club's bottom bar while it is open and gives it back; the club's
+## gold chip and gear stay where they are.
 ##
 ## Budget: the felt, the wood, all cards (one MultiMesh) and all chips (another) are
 ## five draw calls; the dealer is an Athlete plus his waistcoat.
@@ -17,7 +18,6 @@ extends Node3D
 
 signal closed
 
-const AT := Vector3(25.0, 0.0, -30.6)
 const TOP := 0.86                       # the felt
 const EDGE_Z := -0.55                   # the dealer's straight edge
 const RADIUS := 1.45                    # the players' arc, round (0, EDGE_Z)
@@ -86,17 +86,27 @@ var _last_bets := {"pp": 0, "main": 0, "t3": 0}
 var _textures_ready := false
 
 
-## The table in the club's world, built once per world (Club.open calls it).
+## The club's button (ClubPlaces "blackjack", action club_blackjack): Club calls this.
+static func open(c: Club) -> void:
+	attach(c).enter()
+
+
+## The table in the club's world, on the node ClubWorld keeps for it (blackjack_root():
+## the table's centre, -z toward the dealer and the river); B's placeholder steps aside.
 static func attach(c: Club) -> ClubBlackjack:
-	var w: ClubWorld = c.world
-	var t := w.get_node_or_null("blackjack") as ClubBlackjack
+	var root: Node3D = c.world.blackjack_root()
+	var t := root.get_node_or_null("blackjack") as ClubBlackjack
 	if t == null:
 		t = ClubBlackjack.new()
 		t.name = "blackjack"
 		t.club = c
-		t.position = AT
-		w.add_child(t)
-		w.walk.add_box(Rect2(AT.x - 1.5, AT.z + DEALER_Z - 0.35, 3.0, 1.0 - DEALER_Z + 0.35 + EDGE_Z + RADIUS - 1.0))
+		root.add_child(t)
+		var ph := root.get_node_or_null("placeholder") as Node3D
+		if ph:
+			ph.visible = false
+		# The straight edge is wider than the world's round obstacle: its corners too.
+		var o := root.global_position if root.is_inside_tree() else root.position
+		c.world.walk.add_box(Rect2(o.x - 1.62, o.z + DEALER_Z - 0.3, 3.24, -DEALER_Z + 0.3 + EDGE_Z + 0.65))
 	t.club = c
 	return t
 
@@ -118,11 +128,20 @@ func is_open() -> bool:
 	return _open
 
 
+## Cards still on their way (a chip dropping on a spot doesn't count).
 func busy() -> bool:
-	return not _queue.is_empty() or _wait > 0.0 or _animating()
+	return not _queue.is_empty() or _wait > 0.0 or _cards_moving()
 
 
-func open() -> void:
+func _cards_moving() -> bool:
+	for c in _cards:
+		if float(c["t"]) < 1.0:
+			return true
+	return false
+
+
+## Into the table's view (the camera at the player's seat, the panel at the bottom).
+func enter() -> void:
 	if _open or club == null:
 		return
 	_open = true

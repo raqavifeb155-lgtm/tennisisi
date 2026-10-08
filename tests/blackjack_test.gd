@@ -415,7 +415,7 @@ func test_simulation() -> void:
 	check(absf(edge - 0.0055) < 4.0 * se + 0.002, "main game: house edge %.2f%% (≈0.5–0.7%% expected, ± %.2f%% noise)" % [edge * 100.0, 1.96 * se * 100.0])
 	check(absf(pp_edge - Blackjack.exact_pp_edge()) < 4.0 * pp_se, "Perfect Pairs: the simulation meets the exact edge")
 	check(absf(t3_edge - Blackjack.exact_t3_edge()) < 4.0 * t3_se, "21+3: the simulation meets the exact edge")
-	check(absf(bj / n - 0.0475) < 0.003, "a blackjack every ~21 hands (%.2f%%)" % (bj * 100.0 / n))
+	check(absf(bj / n - 0.0475) < 4.0 * sqrt(0.0475 * 0.9525 / n) + 0.001, "a blackjack every ~21 hands (%.2f%%)" % (bj * 100.0 / n))
 
 
 ## The table at the bar in the club: the place, the bets, the gold of every move, a hand
@@ -437,19 +437,22 @@ func test_table() -> void:
 	main._show_menu()
 	await _frames(3)
 	var club = main.club
-	var t = club.world.get_node_or_null("blackjack")
-	check(t is ClubBlackjack, "the table stands in the club's world")
+	check(club.world.blackjack_root().get_node_or_null("blackjack") == null, "the table is built by the place's button, not before")
 	var place := ClubPlaces.find("blackjack")
 	check(not place.is_empty() and ClubPlaces.state("blackjack")["action"] == "club_blackjack", "the place blackjack, its button opens the table")
 	check(not ClubPlaces.is_open(place, 5, 0) and ClubPlaces.is_open(place, 5, 1), "it opens after the first title, as the roulette")
-	check(not club.world.walk.route(Vector2(0, 14), Vector2(25, -27.5)).is_empty(), "a way from the court to the table")
-	check(not club.world.walk.blocked(Vector2(25, -27.5), 0.3), "its circle is free to stand in")
+	var pp: Vector3 = place["pos"]
+	check(not club.world.walk.route(Vector2(0, 14), Vector2(pp.x, pp.z)).is_empty(), "a way from the court to the table")
+	check(not club.world.walk.blocked(Vector2(pp.x, pp.z), 0.3), "its circle is free to stand in")
 	main.player.position = place["pos"]
 	club._update_place()
 	await _frames(2)
 	check(club.hud.current_place() == "blackjack", "the hero at the table: its button is up")
 	club._on_choice("club_blackjack", 0)
 	await _frames(3)
+	var t = club.world.blackjack_root().get_node_or_null("blackjack")
+	check(t is ClubBlackjack and t.get_parent() == club.world.blackjack_root(), "ClubBlackjack.open builds the table on the world's blackjack node")
+	check(not club.world.blackjack_root().get_node("placeholder").visible, "the placeholder steps aside")
 	check(t.is_open() and not main.ui.is_open(), "the table is a 3D scene, not a screen")
 	check(not main.player.visible and not (club.hud.get("_bottom") as Control).visible, "the hero steps aside, the club's bottom bar too")
 	check(main.hud.touch.blocked_controls.has(t._ui.catcher), "the joystick leaves the table alone")
