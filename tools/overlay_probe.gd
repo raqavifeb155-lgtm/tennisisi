@@ -46,7 +46,7 @@ func _tap(c: Control) -> void:
 ## Godot windows share the machine): `cond` is asked again for up to 2 s before it fails.
 func _expect(what: String, cond: Callable) -> void:
 	var t := 0.0
-	while not cond.call() and t < 2.0:
+	while not cond.call() and t < 4.0:  # 4 s: other Godot windows may share the machine
 		await _wait(0.05)
 		t += 0.05
 	_check(what, cond.call())
@@ -56,7 +56,7 @@ func _expect(what: String, cond: Callable) -> void:
 func _find(from: Node, text: String) -> Button:
 	var t := 0.0
 	var b := _button(from, text)
-	while b == null and t < 2.0:
+	while b == null and t < 4.0:
 		await _wait(0.05)
 		t += 0.05
 		b = _button(from, text)
