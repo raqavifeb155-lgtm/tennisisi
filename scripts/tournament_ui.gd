@@ -354,9 +354,14 @@ func show_bracket(t: Tournament) -> void:
 	for i in t.rounds():
 		_bracket_row(t, i)
 	var opp := t.opponent()
-	_primary("НА КОРТ: %s" % String(opp["name"]).to_upper(), "play")
+	_primary("НА КОРТ: %s" % String(opp["name"]).to_upper(), "opponent_card", t.stage)  # D-5: his card first
 	_quiet("Сдаться и закончить турнир", "give_up")
 	_scroll_to_current.call_deferred()
+
+
+## D-5: the opponent's stats and auras before the match (scripts/ui/screens/opponent_card.gd).
+func show_opponent_card(t: Tournament, i: int) -> void:
+	OpponentCard.show(self, t, i)
 
 
 func show_result(t: Tournament, won: bool, score_text: String, stats: Dictionary) -> void:
@@ -756,10 +761,18 @@ func _bracket_row(t: Tournament, i: int) -> void:
 		panel.set_meta("current", true)
 	var bg := UiTheme.SURFACE if current else Color(UiTheme.SURFACE, 0.7)
 	panel.add_theme_stylebox_override("panel", UiTheme.box(bg, UiTheme.GOLD if current else UiTheme.LINE, 4 if current else 2, UiTheme.RADIUS, 22))
+	if not done:
+		var tap := Button.new()  # D-5: a tap on the opponent opens his card
+		tap.flat = true
+		tap.focus_mode = Control.FOCUS_NONE
+		tap.pressed.connect(func() -> void: _press(tap, "opponent_card", i))
+		panel.add_child(tap)
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 16)
+	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(h)
 	var v := VBoxContainer.new()
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	v.add_theme_constant_override("separation", 2)
 	h.add_child(v)
@@ -770,7 +783,7 @@ func _bracket_row(t: Tournament, i: int) -> void:
 		if not lu["mods"].is_empty():
 			var names: Array[String] = []
 			for m in lu["mods"]:
-				names.append(Tournament.MODIFIERS[m]["name"])
+				names.append(OpponentCard.mod_name(m))  # D-5: also the auras of stream G
 			v.add_child(_left(_text("Модификаторы: " + ", ".join(names), UiTheme.text(), UiTheme.T_SMALL, Color(1.0, 0.6, 0.35))))
 		RunBag.opponent_hint(self, v, lu)  # v0.2 A: his gear is a hint, revealed on court
 	if current:
