@@ -225,7 +225,7 @@ func _on_match_finished(info: Dictionary) -> void:
 		return
 	var t: Tournament = main.tournament
 	var g := meter.gold(float(t.format_info()["reward"]), t.stage)
-	t.gold += g
+	t.earn("style", g)
 	last_match = {"points": meter.match_points, "gold": g, "best": meter.best}
 	if bool(info.get("won", false)) and t.current_lineup().get("golden", false):
 		Golden.note_beaten(String(t.opponent()["id"]))

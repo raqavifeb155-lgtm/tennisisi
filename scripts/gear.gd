@@ -30,7 +30,6 @@ const FORMS := {
 	"band": ["Обычный", "Редкий", "Эпический", "Легендарный", "Мифический"],
 }
 const NOUNS := {"racket": "ракетка", "shoes": "кроссовки", "band": "напульсник"}
-const PRICES := [3, 6, 12, 25, 50]     # sold for run gold
 const UNIQUE_SHARE := 0.35             # a common or rare is a catalog item this often
 
 ## [key, text with %d, min, max] — percentages; negative keys (scatter, penalties) shrink.
@@ -82,14 +81,16 @@ const NAMES := {
 }
 
 
-## A random item of the given rarity for a slot (a racket when no slot is given).
-static func roll(rarity: int, rng: RandomNumberGenerator, slot := "racket") -> Dictionary:
+## A random item of the given rarity for a slot (a racket when no slot is given), at a
+## level (v0.2 A economy: the island's tier, the shop's best island).
+static func roll(rarity: int, rng: RandomNumberGenerator, slot := "racket", level := 1) -> Dictionary:
 	rarity = clampi(rarity, COMMON, MYTHIC)
+	var it := {}
 	if rarity >= EPIC or rng.randf() < UNIQUE_SHARE:
-		var u := Items.roll(slot, rarity, rng)
-		if not u.is_empty():
-			return u
-	return _affix_item(rarity, rng, slot)
+		it = Items.roll(slot, rarity, rng)
+	if it.is_empty():
+		it = _affix_item(rarity, rng, slot)
+	return Items.set_level(it, level) if level > 1 else it
 
 
 static func _affix_item(rarity: int, rng: RandomNumberGenerator, slot: String) -> Dictionary:
@@ -126,8 +127,9 @@ static func glow(item: Dictionary) -> float:
 	return 0.0 if item.is_empty() else float(RARITIES[int(item["rarity"])]["glow"])
 
 
+## What the item sells for (v0.2 A economy: a third of its buy price, Items.sell_price).
 static func price(item: Dictionary) -> int:
-	return 0 if item.is_empty() else PRICES[clampi(int(item["rarity"]), 0, PRICES.size() - 1)]
+	return Items.sell_price(item)
 
 
 static func slot_name(slot: String) -> String:
@@ -135,4 +137,4 @@ static func slot_name(slot: String) -> String:
 
 
 static func describe(item: Dictionary) -> String:
-	return "\n".join(item.get("lines", []))
+	return Items.describe(item)

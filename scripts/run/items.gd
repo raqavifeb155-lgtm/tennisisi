@@ -11,6 +11,17 @@ class_name Items
 ##   cond_mods  [{"if": {"tiebreak": true}, "mods": {...}}]
 ##   triggers   [{"on": event, "if": {...}, "do": [[primitive, args...]]}]  (RunEffects)
 ## A saved item keeps id, slot, rarity, name, mods and lines; the rest is read from here.
+##
+## Economy (v0.2 A, spec 2026-10-08-v02-A-economy): every item has a buy price by rarity
+## and level, and sells for a third of it. The level (field "level", none = 1) makes the
+## stats stronger: mods = (base + strings) x (1 + LEVEL_POWER x (level - 1)), where "base"
+## are the item's own stats and "strings" the extra line the shop's restringing rolls.
+
+const BUY := [15, 45, 120, 360, 1200]   # buy price by rarity, level 1 (mythic: only for selling and insurance)
+const PRICE_SCALE := 1.0                # one knob to rebalance every price
+const LEVEL_PRICE := 0.15               # +15% price a level
+const LEVEL_POWER := 0.10               # +10% stats a level
+const SELL_SHARE := 1.0 / 3.0
 
 const STROKES := ["forehand", "backhand", "serve", "net", "touch"]
 
@@ -139,5 +150,55 @@ static func expand(mods: Dictionary) -> Dictionary:
 	return out
 
 
+## The card's text: the item's own lines, its strings, its level.
 static func describe(item: Dictionary) -> String:
-	return "\n".join(item.get("lines", []))
+	var out: Array = item.get("lines", []).duplicate()
+	for l in item.get("strings", {}).get("lines", []):
+		out.append("Струны: " + String(l))
+	if level(item) > 1:
+		out.append("Уровень %d: статы +%d%%" % [level(item), roundi(LEVEL_POWER * (level(item) - 1) * 100.0)])
+	return "\n".join(out)
+
+
+# --- Economy ------------------------------------------------------------------------
+
+static func level(item: Dictionary) -> int:
+	return maxi(1, int(item.get("level", 1)))
+
+
+## What the item costs in the shop (and what selling and the locker's insurance count from).
+static func price(item: Dictionary) -> int:
+	if item.is_empty():
+		return 0
+	var r := clampi(int(item.get("rarity", 0)), 0, BUY.size() - 1)
+	return roundi(BUY[r] * (1.0 + LEVEL_PRICE * (level(item) - 1)) * PRICE_SCALE)
+
+
+static func sell_price(item: Dictionary) -> int:
+	return roundi(price(item) * SELL_SHARE)
+
+
+## The item at this level: its stats recounted from the base (levels never stack).
+static func set_level(item: Dictionary, lv: int) -> Dictionary:
+	if not item.has("base"):
+		item["base"] = item.get("mods", {}).duplicate()
+	if lv > 1:
+		item["level"] = lv
+	else:
+		item.erase("level")
+	refresh(item)
+	return item
+
+
+## mods = (base + strings) x the level's power.
+static func refresh(item: Dictionary) -> void:
+	if not item.has("base"):
+		item["base"] = item.get("mods", {}).duplicate()
+	var k := 1.0 + LEVEL_POWER * (level(item) - 1)
+	var mods := {}
+	for src in [item["base"], item.get("strings", {}).get("mods", {})]:
+		for key in src:
+			mods[key] = float(mods.get(key, 0.0)) + float(src[key])
+	for key in mods:
+		mods[key] = float(mods[key]) * k
+	item["mods"] = mods

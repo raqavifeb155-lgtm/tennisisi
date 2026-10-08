@@ -241,7 +241,7 @@ func test_gear_slots() -> void:
 	var prices := []
 	for r in 5:
 		prices.append(Gear.price({"rarity": r}))
-	check(prices == [3, 6, 12, 25, 50], "sell prices %s" % [prices])
+	check(prices == [5, 15, 40, 120, 400], "sell prices: a third of 15/45/120/360/1200 (v0.2 A economy) %s" % [prices])
 	var gen := Gear.roll(Gear.COMMON, rng, "shoes")
 	while gen.has("id"):
 		gen = Gear.roll(Gear.COMMON, rng, "shoes")
@@ -372,7 +372,7 @@ func test_tournament_gear() -> void:
 	var ok := true
 	for r in 5:
 		ok = ok and absf(rates[r] - Tournament.DROP_CHANCE[r]) < 0.015
-	check(ok, "drop rates %s ~ 30/20/12/6/3%%" % [rates.map(func(x): return snappedf(x, 0.001))])
+	check(ok, "drop rates %s ~ 35/18/7/2/0.4%%" % [rates.map(func(x): return snappedf(x, 0.001))])
 	check(Tournament.drops({"band": {"slot": "band", "rarity": 0, "name": "x", "mods": {}}}, rng, 1.0).size() == 1, "a sure drop (bonus 1) always drops")
 	# The bag.
 	var b := Tournament.new(1, 8)
