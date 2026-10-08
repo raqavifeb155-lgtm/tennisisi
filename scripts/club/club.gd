@@ -311,7 +311,7 @@ func place_buttons(id: String) -> Dictionary:
 		if SaveData.club.has("last_location"):
 			var loc := Locations.find(SaveData.club["last_location"])
 			return {"label": "НОВАЯ ИГРА  ·  %s" % String(loc["name"]).to_upper(), "action": "club_tournament",
-				"extra": [["Другое место", "start_tournament"]]}
+				"extra": [["Другое место", "club_locations"]]}
 		return {"label": "НОВАЯ ИГРА", "action": "club_tournament", "extra": []}
 	if id == "coach":
 		if ClubQuests.claimable_count() > 0:
@@ -378,6 +378,8 @@ func ui_action(action: String, arg: int) -> void:
 				ClubScreens.place(main.ui, ClubPlaces.state("blackjack"))
 		"club_quests":
 			ClubScreens.quests(main.ui)
+		"club_locations":
+			ClubScreens.locations(main.ui)
 
 
 ## 'Забрать' at the coach's: every finished quest's reward at once.

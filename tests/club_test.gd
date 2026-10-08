@@ -423,6 +423,24 @@ func test_flow() -> void:
 	check(club.active and main.player.position.distance_to(club.START) < 0.5, "back in the club, at the court")
 	var again: Dictionary = club.place_buttons("court")
 	check(again["label"].begins_with("НОВАЯ ИГРА  ·  ИСПАНИЯ") and again["extra"].size() == 1, "the button names the last place, one quiet 'другое место'")
+	check(again["extra"][0][1] == "club_locations", "'Другое место' opens the club's islands screen")
+	var screens: GDScript = load("res://scripts/club/club_screens.gd")  # loaded: it reaches the autoloads
+	check(screens.loc_unlocked("grass") and screens.loc_hint("grass") == "", "no Locations.unlocked yet: everything open (a stub)")
+	club._on_choice("club_locations", 0)
+	await _frames(2)
+	check(main.ui.is_open(), "the islands screen opens")
+	screens.locations(main.ui, func(id: String) -> bool: return id == "park", func(id: String) -> String: return "за титул в Испании")
+	await _frames(1)
+	var locked := 0
+	for c in main.ui._box.get_children():
+		if c is Button and (c as Button).disabled:
+			locked += 1
+	check(locked == Locations.LIST.size() - 1, "locked islands show a lock and can't be picked (%d)" % locked)
+	main._on_ui("location", 0)
+	await _frames(2)
+	check(main.ui.is_open(), "an open island: on to the formats, as before")
+	main._on_ui("menu", 0)
+	await _frames(2)
 	club._on_choice("club_tournament", 0)
 	await _frames(3)
 	check(main.tournament != null and main.location_id == "clay" and main.ui.is_open(), "one tap: the bracket in Spain")

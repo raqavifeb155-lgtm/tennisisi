@@ -62,3 +62,50 @@ static func quests(ui: TournamentUI) -> void:
 	var waiting: Array = SaveData.club.get("quest_items", [])
 	if not waiting.is_empty():
 		ui._note("Вещи за задания ждут шкафчика: %d" % waiting.size())
+
+
+# --- The islands (hub spec 4): stream A's Locations API, read through the script so the
+# club works before it exists (then everything is open).
+
+static func _loc_api(method: String) -> bool:
+	var scr: GDScript = load("res://scripts/locations.gd")
+	for m in scr.get_script_method_list():
+		if m["name"] == method:
+			return true
+	return false
+
+
+static func loc_unlocked(id: String) -> bool:
+	return bool(load("res://scripts/locations.gd").call("unlocked", id)) if _loc_api("unlocked") else true
+
+
+static func loc_hint(id: String) -> String:
+	return String(load("res://scripts/locations.gd").call("unlock_hint", id)) if _loc_api("unlock_hint") else ""
+
+
+## "Куда едем?": the tournament places, the closed ones with a lock and what opens them.
+## A pick is Main's "location" (then the formats, as before). unlocked / hint: for tests.
+static func locations(ui: TournamentUI, unlocked := Callable(), hint := Callable()) -> void:
+	if not unlocked.is_valid():
+		unlocked = loc_unlocked
+	if not hint.is_valid():
+		hint = loc_hint
+	ui._open(null, true, "menu")
+	ui._title("Куда едем?")
+	ui._sub("Каждый остров сильнее и щедрее предыдущего")
+	for i in Locations.LIST.size():
+		var l: Dictionary = Locations.LIST[i]
+		var id: String = l["id"]
+		var tier := ClubQuests.tier_of(id)
+		var stars := "★".repeat(tier + 1)
+		if unlocked.call(id):
+			# _row reports arg 0: point it at this island.
+			var b := ui._row("%s  %s" % [l["name"], stars], l["surface_name"], "location")
+			for c in b.pressed.get_connections():
+				b.pressed.disconnect(c["callable"])
+			b.pressed.connect(func() -> void: ui._press(b, "location", i))
+		else:
+			var h: String = hint.call(id)
+			var b := ui._row("🔒  %s" % l["name"], h if h != "" else "закрыто", "location")
+			b.disabled = true
+			b.modulate.a = 0.6
