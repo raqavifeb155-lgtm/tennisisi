@@ -172,8 +172,8 @@ var _drop_t := 0.0
 func _ready() -> void:
 	rng.randomize()
 	for a in OS.get_cmdline_user_args():
-		if a == "--autoplay":
-			autoplay = true
+		if a == "--autoplay" or a == "--ai-vs-ai":
+			autoplay = true  # --ai-vs-ai (AiVsAi, D-6): the bot against OpponentAI, no input
 		elif a.begins_with("--bonus-test"):
 			_bonus_rounds = int(a.get_slice("=", 1)) if "=" in a else 8
 		elif a == "--dive-test":
@@ -192,6 +192,12 @@ func _ready() -> void:
 			_profile_t = 5.0  # print frame statistics every 5 s (a profiling run, not headless)
 		elif a.begins_with("--bot-sd="):
 			_bot_sd = float(a.get_slice("=", 1))  # bot timing error (s): ~0.035 sharp, ~0.07 a thumb on a phone
+		elif a.begins_with("--adapt-floor="):
+			Opponents.floor_slope = float(a.get_slice("=", 1))  # D-5: how fast the opponents keep up with the player's level
+		elif a.begins_with("--adapt-ease="):
+			Opponents.ease_max = float(a.get_slice("=", 1))
+		elif a.begins_with("--adapt-add="):
+			Opponents.add_slope = float(a.get_slice("=", 1))
 		elif a.begins_with("--xp="):
 			_bot_xp = float(a.get_slice("=", 1))  # every skill starts with this much experience
 
@@ -317,6 +323,10 @@ func _ready() -> void:
 				Skills.add_xp(id, _bot_xp)  # --xp: a player some tournaments in
 			Skills.pending = []
 		_start_tournament(_autoplay_format)
+	elif AiVsAi.requested():
+		var duel := AiVsAi.new()  # D-6: two AIs play tiebreaks to 7 (scripts/ai/ai_vs_ai.gd)
+		add_child(duel)
+		duel.start(self)
 	elif autoplay or _headless():
 		_start_practice()
 	else:
@@ -1799,7 +1809,7 @@ func _stop_match() -> void:
 	hud.announcer.set_hint("")
 
 
-func _start_practice() -> void:
+func _start_practice(board: MatchScore = null) -> void:  # board: AiVsAi plays tiebreaks
 	tournament = null
 	tournament_mode = false
 	set_location("club" if club.active else _next_location)  # from the club: its own court
@@ -1809,7 +1819,7 @@ func _start_practice() -> void:
 	Tuning.ai_skill = _practice_skill
 	cpu_label = "CPU"
 	cpu_call = "CPU"
-	scoreboard = MatchScore.new(1, 99, 0, Who.PLAYER, cpu_label)
+	scoreboard = board if board != null else MatchScore.new(1, 99, 0, Who.PLAYER, cpu_label)
 	ui.close()
 	_begin_match()
 
@@ -1929,7 +1939,7 @@ func _continue_tournament() -> void:
 func _play_match() -> void:
 	var opp := tournament.opponent()
 	Rewards.apply(tournament.perks)
-	Tuning.ai_skill = clampf(float(opp["skill"]) + tournament.modifier_value("skill"), 0.0, 1.0)
+	Tuning.ai_skill = clampf(Opponents.adapted_skill(float(opp["skill"])) + tournament.modifier_value("skill"), 0.0, 1.0)  # D-5: keeps up with the player
 	cpu.set_look(opp.get("look", Looks.from_shirt(opp.get("shirt", Color(0.22, 0.28, 0.42)))))
 	_set_opponent_mods(tournament.modifier_value("speed"), tournament.modifier_value("serve"), tournament.current_lineup()["racket"])
 	cpu_label = opp["short"]
