@@ -351,6 +351,7 @@ func show_bracket(t: Tournament) -> void:
 	_sub(info)
 	RunBag.bracket_extra(self, t)  # v0.2 A: the bag
 	RunBets.bracket_extra(self, t)  # v0.2 A: a bet on the coming match
+	RunMods.bracket_extra(self, t)  # v0.2 G: the run's conditions
 	for i in t.rounds():
 		_bracket_row(t, i)
 	var opp := t.opponent()
