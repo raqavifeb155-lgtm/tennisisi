@@ -278,6 +278,12 @@ func _run() -> void:
 	main.club._on_choice("club_locations", 0)
 	await _shot("21_islands", 0.8)
 	main._on_ui("menu", 0)
+	# H: running with the stick: a full push, the camera a little farther and lower
+	_go("court")
+	await create_timer(0.4).timeout
+	main.hud.touch._stick_vector = Vector2(0.4, -1.0).normalized()
+	await _shot("21b_stick_run", 1.6)
+	main.hud.touch._stick_vector = Vector2.ZERO
 	# H: quick travel is a run along the path with the camera behind the hero; a tap skips.
 	_go("court")
 	await create_timer(0.4).timeout

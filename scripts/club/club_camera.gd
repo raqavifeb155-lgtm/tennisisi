@@ -13,6 +13,8 @@ const HEIGHT := 3.9        # metres over the ground, behind the hero's back
 const BACK := 8.8
 const AHEAD := 6.5         # the look point, ahead of the hero
 const LOOK_Y := 0.0
+const RUN_BACK := 1.4       # running: a little farther back...
+const RUN_DOWN := 0.6       # ...and lower
 const MIN_BACK := 2.6      # when a wall is behind him the camera comes closer, not through it
 const FOLLOW_K := 5.0      # 1/s, position
 const YAW_K := 2.2         # 1/s, how fast it swings behind a turning hero
@@ -24,6 +26,7 @@ var run_mode := false           # the auto-run: swing behind faster
 var _frame_pos := Vector3.INF   # a held framing (a room), or INF = follow the hero
 var _frame_look := Vector3.ZERO
 var _look := Vector3.ZERO
+var _run_k := 0.0               # 0 standing or walking .. 1 running (smoothed)
 var _back := BACK               # the current distance (shorter near walls)
 var _tw: Tween
 
@@ -44,12 +47,16 @@ func stick_yaw() -> float:
 	return 0.0 if _frame_pos != Vector3.INF else yaw
 
 
+func _back_max() -> float:
+	return BACK + RUN_BACK * _run_k
+
+
 func _clear_back(p: Vector3) -> float:
 	var walk := _walk()
 	if walk == null:
-		return BACK
+		return _back_max()
 	var back_dir := -forward_of(yaw)
-	var d := BACK
+	var d := _back_max()
 	# The gate's arch, beam and sign hang over the way in: the camera never goes through
 	# them to the street while the hero is inside (it stays a metre short, close above him).
 	if p.z < ClubLevels.GATE_Z - 0.3 and back_dir.z > 0.05 and absf(p.x + back_dir.x * (ClubLevels.GATE_Z - p.z) / back_dir.z) < 7.0:
@@ -58,7 +65,7 @@ func _clear_back(p: Vector3) -> float:
 	var from := Vector2(p.x, p.z)
 	var step := 0.5
 	var t := 1.5
-	while t <= BACK:
+	while t <= _back_max():
 		var q := from + Vector2(back_dir.x, back_dir.z) * t
 		if walk.blocked(q, 0.15):
 			d = minf(d, maxf(t - 0.8, MIN_BACK))
@@ -79,12 +86,12 @@ func _walk() -> ClubWalk:
 func _follow_pos() -> Vector3:
 	var p := target.global_position
 	# pulled in by a wall or the gate, the camera rises: it looks down on him, he doesn't fill the frame
-	return p - forward_of(yaw) * _back + Vector3(0.0, HEIGHT + clampf(BACK - _back, 0.0, 6.0) * 0.5, 0.0)
+	return p - forward_of(yaw) * _back + Vector3(0.0, HEIGHT - RUN_DOWN * _run_k + clampf(_back_max() - _back, 0.0, 6.0) * 0.5, 0.0)
 
 
 func _follow_look() -> Vector3:
 	var p := target.global_position
-	return p + forward_of(yaw) * AHEAD * clampf(_back / BACK, 0.12, 1.0) + Vector3(0.0, LOOK_Y, 0.0)
+	return p + forward_of(yaw) * AHEAD * clampf(_back / _back_max(), 0.12, 1.0) + Vector3(0.0, LOOK_Y, 0.0)
 
 
 ## Straight to where the camera should be (entering the club, after quick travel). On a
@@ -152,7 +159,9 @@ func _process(delta: float) -> void:
 	if follow:
 		# Swing behind the hero while he walks; hold the heading when he stands.
 		var p3 := target as Athlete
-		var moving := p3 != null and Vector2(p3.velocity.x, p3.velocity.z).length() > 0.8
+		var speed := Vector2(p3.velocity.x, p3.velocity.z).length() if p3 != null else 0.0
+		var moving := speed > 0.8
+		_run_k = lerpf(_run_k, clampf((speed - 2.6) / 2.0, 0.0, 1.0), 1.0 - exp(-2.5 * delta))
 		if moving:
 			var k_yaw := 1.0 - exp(-(YAW_K_RUN if run_mode else YAW_K) * delta)
 			yaw = lerp_angle(yaw, target.rotation.y, k_yaw)

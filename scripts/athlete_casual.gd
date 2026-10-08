@@ -9,7 +9,7 @@ class_name AthleteCasual
 ## stride and the cadence that match the ground speed (no skating on the spot), and
 ## hands the arms their own swing: opposite to the legs, bent at the elbow on the jog.
 
-const WALK_TO_JOG := Vector2(1.8, 4.0)      # speeds (m/s) where the walk turns into a jog
+const WALK_TO_JOG := Vector2(2.0, 3.8)      # speeds (m/s) where the walk turns into a jog
 
 
 ## Whether a node walks casually.

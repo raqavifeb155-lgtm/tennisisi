@@ -10,7 +10,11 @@ extends Node
 ## match loop and touch handling while `active`, practises on the club court, and tells
 ## remember() the tournament format chosen.
 
-const WALK_SPEED := 4.6               # a jog at a full stick (a walk when the finger is near the centre)
+const JOG_SPEED := 5.5                # a full stick: the hero runs
+const JOG_FROM := 4.2                 # past half a stick he jogs at once, at least this fast
+const WALK_TOP := 1.9                 # a stick under half: a walk, faster the farther it is pushed
+const ACCEL := 40.0                   # no inertia: full speed in ~0.15 s (a match's 22 is the court's)
+const DECEL := 48.0
 const RUN_MIN := 6.5                  # the auto-run to a place (quick travel): m/s at least...
 const RUN_MAX := 10.5                 # ...and fast enough to take about five seconds
 const START := Vector3(0, 0, 14.0)     # the court's circle: "Турнир" is one tap away
@@ -151,6 +155,8 @@ func close() -> void:
 	_hero = main.player.position if _place != "" else START
 	var p: Athlete = main.player
 	p.set_meta("casual", false)
+	p.accel = 22.0   # the court's own pick-up and braking (Athlete's defaults)
+	p.decel = 30.0
 	_auto = ""
 	cam.run_mode = false
 	p.area = main.PLAYER_AREA
@@ -304,7 +310,17 @@ func _physics_process(delta: float) -> void:
 			mv = Vector2.ZERO
 		if _route.is_empty() and mv == Vector2.ZERO:
 			_move_target = Vector3.INF
-	p.max_speed = _auto_speed if _auto != "" else WALK_SPEED
+	if _auto != "":
+		p.max_speed = _auto_speed
+	elif mv != Vector2.ZERO:
+		# By how far the stick is pushed, not by how fast he happens to be going.
+		var d := minf(mv.length(), 1.0)
+		p.max_speed = d / 0.5 * WALK_TOP if d < 0.5 else lerpf(JOG_FROM, JOG_SPEED, (d - 0.5) / 0.5)
+		mv = mv.normalized()
+	else:
+		p.max_speed = JOG_SPEED
+	p.accel = ACCEL
+	p.decel = DECEL
 	p.move_input = mv
 	# The hero faces where he walks (the match keeps him facing the net).
 	var v := Vector2(p.velocity.x, p.velocity.z)

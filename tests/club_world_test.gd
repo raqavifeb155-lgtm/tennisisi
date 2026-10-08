@@ -235,6 +235,31 @@ func test_in_the_club() -> void:
 		await physics_frame
 	main.hud.touch.move_vector = Vector2.ZERO
 	check(club.running_to() == "", "the stick takes the hero back from the run")
+	# the stick: by its deflection, a jog past half, no inertia
+	club._travel("court")
+	await _frames(3)
+	main.hud.touch._stick_vector = Vector2(0, -0.3)
+	for i in 30:
+		await physics_frame
+	var walk_v := Vector2(hero.velocity.x, hero.velocity.z).length()
+	check(walk_v > 0.8 and walk_v < 2.3, "a small push of the stick is a walk (%.1f m/s)" % walk_v)
+	main.hud.touch._stick_vector = Vector2(0, -0.6)
+	for i in 10:
+		await physics_frame
+	var jog_v := Vector2(hero.velocity.x, hero.velocity.z).length()
+	check(jog_v > 3.8, "past half a stick he jogs within a sixth of a second (%.1f m/s)" % jog_v)
+	main.hud.touch._stick_vector = Vector2(0, -1.0)
+	for i in 20:
+		await physics_frame
+	var run_v := Vector2(hero.velocity.x, hero.velocity.z).length()
+	check(run_v > 5.2 and run_v < 5.7, "a full stick is a run at ~5.5 m/s (%.2f)" % run_v)
+	for i in 40:
+		await physics_frame
+	check(cam.global_position.distance_to(hero.global_position) > 9.7 and cam.global_position.y < 3.8, "running, the camera is a little farther and lower (%.1f m, %.1f high)" % [cam.global_position.distance_to(hero.global_position), cam.global_position.y])
+	main.hud.touch._stick_vector = Vector2.ZERO
+	for i in 12:
+		await physics_frame
+	check(Vector2(hero.velocity.x, hero.velocity.z).length() < 0.8, "let go: he stops almost at once")
 	# next door: no run at all
 	club._travel("court")
 	await _frames(2)
