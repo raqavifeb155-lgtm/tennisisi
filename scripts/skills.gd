@@ -127,6 +127,19 @@ static func k(lv: int) -> float:
 	return 1.0 - pow(1.0 - clampf(float(lv) / MAX_LEVEL, 0.0, 1.0), 1.6)
 
 
+## The beginner's handicap (HANDOFF 9.3): 1 at level 0, fading to nothing by level
+## EARLY_UNTIL. The first levels are harder and clumsier than the base curves alone (a
+## narrower window, a faster ring, more scatter, slower feet); from level 10 on the curves
+## are exactly as before.
+const EARLY_UNTIL := 10
+
+
+static func early(lv: int) -> float:
+	if lv >= EARLY_UNTIL:
+		return 0.0
+	return pow(1.0 - float(maxi(lv, 0)) / EARLY_UNTIL, 1.5)
+
+
 static func level(id: String) -> int:
 	var total: float = xp.get(id, 0.0)
 	var n := 0
@@ -232,25 +245,29 @@ static func find_perk(perk_id: String) -> Dictionary:
 ##   pace, scatter, spin  power, aim error and spin of the shot
 ## lv: a level to look at (for "104 -> 109 km/h" on a level-up); -1 = the current one.
 static func stroke(id: String, lv := -1) -> Dictionary:
-	var t := k(level(id) if lv < 0 else lv)
+	var n := level(id) if lv < 0 else lv
+	var t := k(n)
+	var e := early(n)
 	return {
-		"window": lerpf(0.55, 1.5, t) * (1.0 + mod(id + "_window")),
+		"window": lerpf(0.55, 1.5, t) * (1.0 - 0.30 * e) * (1.0 + mod(id + "_window")),
 		"good": lerpf(0.9, 1.3, t) * (1.0 + mod(id + "_window") * 0.5),
-		"ring": lerpf(0.6, 0.95, t),
-		"ring_speed": lerpf(1.4, 0.9, t),
+		"ring": lerpf(0.6, 0.95, t) * (1.0 - 0.15 * e),
+		"ring_speed": lerpf(1.4, 0.9, t) * (1.0 + 0.30 * e),
 		"pace": lerpf(0.70, 1.25, t) * (1.0 + mod(id + "_pace")),
-		"scatter": maxf(lerpf(1.8, 0.5, t) * (1.0 + mod(id + "_scatter")), 0.3),
+		"scatter": maxf(lerpf(1.8, 0.5, t) * (1.0 + 0.35 * e) * (1.0 + mod(id + "_scatter")), 0.3),
 		"spin": lerpf(0.75, 1.2, t) * (1.0 + mod(id + "_spin")),
 	}
 
 
 static func run_speed_mult(lv := -1) -> float:
-	return lerpf(0.75, 1.15, k(level("feet") if lv < 0 else lv)) * (1.0 + mod("run_speed"))
+	var n := level("feet") if lv < 0 else lv
+	return lerpf(0.75, 1.15, k(n)) * (1.0 - 0.10 * early(n)) * (1.0 + mod("run_speed"))
 
 
 ## How much of the "hitting on the run" penalty remains (1 = all of it).
 static func move_penalty_mult() -> float:
-	return clampf(lerpf(1.3, 0.7, k(level("feet"))) * (1.0 + mod("move_penalty")), 0.1, 1.5)
+	var n := level("feet")
+	return clampf(lerpf(1.3, 0.7, k(n)) * (1.0 + 0.30 * early(n)) * (1.0 + mod("move_penalty")), 0.1, 2.0)
 
 
 ## Stamina spend multiplier (cost / tank size): a beginner burns it twice as fast with a

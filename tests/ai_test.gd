@@ -15,6 +15,7 @@ func _run() -> void:
 	var tests := [
 		test_metrics_endings,
 		test_metrics_serve,
+		test_early_difficulty,
 	]
 	expected = tests.size()
 	for t in tests:
@@ -104,4 +105,44 @@ func test_metrics_serve() -> void:
 	g.player.free()
 	g.cpu.free()
 	g.free()
+	finished += 1
+
+
+## The curves before D-1, to check the late levels did not move.
+static func _old_k(lv: int) -> float:
+	return 1.0 - pow(1.0 - clampf(float(lv) / 25.0, 0.0, 1.0), 1.6)
+
+
+func test_early_difficulty() -> void:
+	print("D-1: a harder start, the same late game")
+	Skills.reset()
+	check(is_equal_approx(Skills.early(0), 1.0) and Skills.early(5) > 0.2 and Skills.early(5) < 0.5 and Skills.early(10) == 0.0 and Skills.early(25) == 0.0, "the early penalty: 1 at level 0, fades out by level 10")
+	var b0 := Skills.stroke("forehand", 0)
+	check(b0["window"] < 0.55 * 0.8, "level 0: PERFECT window narrower than before (%.2f < 0.44)" % b0["window"])
+	check(b0["ring_speed"] > 1.4 * 1.15 and b0["ring"] < 0.6, "level 0: the ring shows later and closes faster (%.2f, %.2f)" % [b0["ring"], b0["ring_speed"]])
+	check(b0["scatter"] > 1.8 * 1.25, "level 0: more scatter (%.2f)" % b0["scatter"])
+	check(Skills.run_speed_mult(0) < 0.75 * 0.92, "level 0: slower feet (%.3f)" % Skills.run_speed_mult(0))
+	var same := true
+	var worst := ""
+	for lv in range(12, 26):
+		var t := _old_k(lv)
+		var s := Skills.stroke("serve", lv)
+		var old := {"window": lerpf(0.55, 1.5, t), "good": lerpf(0.9, 1.3, t), "ring": lerpf(0.6, 0.95, t), "ring_speed": lerpf(1.4, 0.9, t),
+			"pace": lerpf(0.70, 1.25, t), "scatter": maxf(lerpf(1.8, 0.5, t), 0.3), "spin": lerpf(0.75, 1.2, t)}
+		for key in old:
+			if absf(float(s[key]) / float(old[key]) - 1.0) > 0.03:
+				same = false
+				worst = "%s at %d: %.3f vs %.3f" % [key, lv, s[key], old[key]]
+		if absf(Skills.run_speed_mult(lv) / lerpf(0.75, 1.15, t) - 1.0) > 0.03:
+			same = false
+			worst = "run speed at %d" % lv
+	check(same, "levels 12-25 within 3%% of the old curves %s" % worst)
+	var mono := true
+	for lv in range(0, 25):
+		var a := Skills.stroke("backhand", lv)
+		var b := Skills.stroke("backhand", lv + 1)
+		if b["window"] < a["window"] or b["scatter"] > a["scatter"] or b["ring_speed"] > a["ring_speed"] or Skills.run_speed_mult(lv + 1) < Skills.run_speed_mult(lv):
+			mono = false
+	check(mono, "every level is a step up: window, scatter, ring and feet only improve")
+	check(Skills.stroke("forehand", 8)["window"] > b0["window"] * 1.8, "level 8 feels much easier than level 0 (window x%.1f)" % (Skills.stroke("forehand", 8)["window"] / b0["window"]))
 	finished += 1
