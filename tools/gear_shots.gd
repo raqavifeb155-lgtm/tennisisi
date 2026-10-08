@@ -5,6 +5,7 @@ extends SceneTree
 ## through the match camera with both players in that rarity's kit, and close-ups of the
 ## kit along the bottom (racket face on, the body, the shoes and the wristband). Plus
 ## gear_rackets.png: every racket in the catalog and by rarity, face on.
+## --club: the hero in the club in the mythic kit of a current run, gear_<tag>_<h>_club.png.
 ## --draws: draw calls of the match on Low and High, nothing worn vs. both players in
 ## mythics (the budget: at most +6 for the match, docs/PERFORMANCE.md).
 ## PNGs go to the user data folder (path printed).
@@ -56,6 +57,10 @@ func _run() -> void:
 	SaveData.control_chosen = true
 	SaveData.enabled = false  # look, don't touch the player's progress
 	Skills.pending = []
+	if "--club" in OS.get_cmdline_user_args():
+		await _club_shot()
+		quit()
+		return
 	if main.club.active:
 		main.club.close()
 	main._next_location = "park"
@@ -187,6 +192,22 @@ func _rackets_sheet() -> void:
 	print("saved ", out + "rackets.png")
 
 
+## The hero in the club wears the current run's gear (club.gd open()).
+func _club_shot() -> void:
+	var t := Tournament.new(0, 1)
+	var kit := kit_items(KITS[5][1])
+	t.equip = {"racket": kit[0], "shoes": kit[1], "band": kit[2]}
+	main.tournament = t
+	if main.club.active:
+		main.club.close()
+	main.club.open()
+	await create_timer(1.5).timeout
+	await RenderingServer.frame_post_draw
+	root.get_texture().get_image().save_png(out + "club.png")
+	print("saved ", out + "club.png")
+	print("hero gear: ", main.player.gear().keys().map(func(k): return String(main.player.gear()[k].get("id", "-"))))
+
+
 func _measure() -> float:
 	await process_frame
 	await process_frame
@@ -197,21 +218,25 @@ func _measure() -> float:
 	return d / 30.0
 
 
+## Both players in a kit, measured in turns with nothing worn (the match's own draw count
+## drifts a little with time: crowd, ball, dust), so each kit is compared with the stock
+## measured next to it.
 func _draws() -> void:
+	paused = true  # the match stands still: the same frame every time
 	for preset in [1, 3]:
 		main.graphics.set_preset(preset)
-		main.player.set_gear([])
-		main.cpu.set_gear([])
-		await create_timer(0.5).timeout
-		var none := await _measure()
-		var mythic := kit_items(KITS[5][1])
-		main.player.set_gear(mythic)
-		main.cpu.set_gear(mythic)
-		await create_timer(0.5).timeout
-		var both := await _measure()
-		main.player.set_gear(kit_items(KITS[4][1]))
-		main.cpu.set_gear(kit_items(KITS[3][1]))
-		await create_timer(0.5).timeout
-		var mixed := await _measure()
-		print("DRAWS %s: nothing worn %.0f | both mythic %.0f (%+.0f) | legendary + epic %.0f (%+.0f)" % [
-			main.graphics.level_name(), none, both, both - none, mixed, mixed - none])
+		var line := ""
+		var last_stock := 0.0
+		for name in [0, 5, 0, 5, 0, 4, 0, 3, 0, 2, 0, 1, 0]:
+			var kit: Array = KITS[name]
+			var items := kit_items(kit[1])
+			main.player.set_gear(items)
+			main.cpu.set_gear(items)
+			await create_timer(0.5).timeout
+			var d := await _measure()
+			if name == 0:
+				last_stock = d
+				line += " | stock %.0f" % d
+			else:
+				line += " | %s %.0f (%+.0f)" % [String(kit[0]).get_slice("_", 1), d, d - last_stock]
+		print("DRAWS %s:%s" % [main.graphics.level_name(), line])
