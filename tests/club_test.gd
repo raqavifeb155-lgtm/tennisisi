@@ -461,7 +461,7 @@ func test_flow() -> void:
 	# Walking by a tap: the hero heads there and never ends up in a wall.
 	club._move_target = Vector3(16, 0, 31)
 	var inside_wall := false
-	for i in 400:
+	for i in 560:  # a jog (4.6 m/s), not a sprint
 		await physics_frame
 		var p: Vector3 = main.player.position
 		if club.world.walk.blocked(Vector2(p.x, p.z), 0.3):

@@ -1137,6 +1137,7 @@ func _process(delta: float) -> void:
 	_head_yaw = lerpf(_head_yaw, yaw_t, 1.0 - exp(-8.0 * delta))
 	_head_pitch = lerpf(_head_pitch, pitch_t, 1.0 - exp(-8.0 * delta))
 
+	amt = AthleteCasual.shape(self, delta, speed, amt)  # the club's walk: no racket (stream H)
 	_pose(local_v, amt, near_contact)
 
 

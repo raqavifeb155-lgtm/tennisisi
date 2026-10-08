@@ -58,7 +58,16 @@ func _run() -> void:
 	main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(main)
 	SaveData.enabled = false  # look, don't touch the player's progress
-	await create_timer(7.0).timeout  # loading screen
+	await create_timer(3.0).timeout  # loading screen (it can take longer on a busy machine: wait it out)
+	for i in 60:
+		var loading := false
+		for c in main.get_children():
+			if c is CanvasLayer and (c as CanvasLayer).layer == 100:
+				loading = true
+		if not loading:
+			break
+		await create_timer(0.5).timeout
+	await create_timer(0.5).timeout
 	if gfx >= 0:
 		main.graphics.set_preset(gfx)
 	SaveData.control_chosen = true
@@ -153,6 +162,14 @@ func _run() -> void:
 	main.club._on_choice("club_locations", 0)
 	await _shot("21_islands", 0.8)
 	main._on_ui("menu", 0)
+	# H: quick travel is a run along the path with the camera behind the hero; a tap skips.
+	_go("court")
+	await create_timer(0.4).timeout
+	main.club.travel_run("trophy")
+	await _shot("22_run_start", 0.5)
+	await _shot("23_run_middle", 1.6)
+	main.club.skip_run()
+	await _shot("24_run_skipped", 0.8)
 	quit()
 
 
