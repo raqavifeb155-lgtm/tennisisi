@@ -68,7 +68,7 @@ func _run() -> void:
 	await create_timer(0.5).timeout
 	main.hud._toggle_debug()
 	await _shot("03_settings_menu")
-	var sheet_scroll: ScrollContainer = main.hud._debug_panel.get_child(0)
+	var sheet_scroll: ScrollContainer = main.hud.settings_sheet.scroll
 	sheet_scroll.scroll_vertical = 1400
 	await _shot("04_settings_scrolled")
 	sheet_scroll.scroll_vertical = 100000
@@ -85,9 +85,16 @@ func _run() -> void:
 	await create_timer(0.4).timeout
 	main.hud.show_board(main.scoreboard, ["ВЫ", "CPU"])
 	await _shot("06_serve_hint")
-	main.hud._toggle_debug()  # in a match: the sheet is the pause
+	main.hud._toggle_debug()  # in a match: the short pause
 	await _shot("07_pause")
-	main.hud._toggle_debug()
+	main.hud.open_settings()  # the pause's "Настройки": the sheet over it
+	await _shot("07b_pause_settings")
+	main.hud.close_settings()
+	main.hud._tournament_match = true  # leaving a tournament match asks first
+	main.hud._leave()
+	await _shot("07c_pause_confirm")
+	main.hud._tournament_match = false
+	main.hud.resume()
 
 	# --- A match: the score, the ring verdict, level-ups, point verdicts -----------
 	var s: MatchScore = MatchScore.new(2, 4, 3, 0, "БАСИЛАШВИЛИ")
