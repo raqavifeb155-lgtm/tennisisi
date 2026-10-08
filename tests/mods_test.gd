@@ -19,6 +19,7 @@ func _initialize() -> void:
 	test_rewards()
 	test_run()
 	test_card()
+	test_hardcore()
 	_live.call_deferred()
 
 
@@ -176,6 +177,33 @@ func test_run() -> void:
 	check(a1 > a0 * 2, "«Элитные чаще»: auras %d -> %d" % [a0, a1])
 
 
+func test_hardcore() -> void:
+	print("hardcore")
+	var h := Tournament.new(1, 5, true)
+	Modifiers.set_run(h, ["tier_up", "fog", "short_ring", "echo"])
+	check(h.hardcore and h.run_modifiers == ["hardcore", "fog", "echo"], "hardcore first, what it holds is not added again: %s" % [h.run_modifiers])
+	check(absf(Modifiers.reward(["hardcore"]) - 2.5) < 0.001, "hardcore pays x2.5")
+	check(absf(Modifiers.reward(h.run_modifiers) - 3.78) < 0.001 or Modifiers.reward(h.run_modifiers) <= Modifiers.MAX_HARD, "with conditions the cap is x4 (%.2f)" % Modifiers.reward(h.run_modifiers))
+	check(Modifiers.reward(["hardcore", "no_ring", "mirror", "fog"]) == Modifiers.MAX_HARD, "x4 at most")
+	check(Modifiers.reward(["no_ring", "mirror", "fog"]) == Modifiers.MAX_REWARD, "without hardcore x3 at most")
+	h.lineup[h.stage]["mods"] = []
+	check(absf(Modifiers.gold_mult(h, h.stage) - Modifiers.reward(h.run_modifiers)) < 0.001, "a win pays x%.2f" % Modifiers.gold_mult(h, h.stage))
+	check(Modifiers.style_mult(h) == 1.5 and Modifiers.style_mult(Tournament.new(1, 5)) == 1.0, "style gold x1.5 only in hardcore")
+	check(h.modifier_value("skill") >= 0.099, "opponents a tier up (+%.2f)" % h.modifier_value("skill"))
+	var back := Tournament.from_dict(h.to_dict())
+	check(back.hardcore and back.run_modifiers == h.run_modifiers, "hardcore is saved with the run (%s %s)" % [back.hardcore, back.run_modifiers])
+	var a := 0
+	var b := 0
+	for k in 300:
+		var p := Tournament.new(1, k + 1, false)
+		var q := Tournament.new(1, k + 1, true)
+		for i in range(1, 5):
+			for slot in Gear.SLOTS:
+				a += 1 if int(p.lineup[i]["gear"][slot]["rarity"]) >= Gear.LEGENDARY else 0
+				b += 1 if int(q.lineup[i]["gear"][slot]["rarity"]) >= Gear.LEGENDARY else 0
+	check(b > a, "more legendary gear on hardcore opponents (%d -> %d of %d)" % [a, b, 300 * 4 * Gear.SLOTS.size()])
+
+
 func test_card() -> void:
 	print("card data")
 	var lu := {"mods": ["fast", "fog", "moon"], "hidden": ["moon"]}
@@ -195,7 +223,7 @@ func _snap() -> Dictionary:
 	var mat := (main.ball._mesh as MeshInstance3D).material_override as StandardMaterial3D
 	var s := {
 		"tuning": [_tun().perfect_window, _tun().good_window, _tun().slowmo_enabled, _tun().slowmo_scale, _tun().show_aim,
-			_tun().show_landing, _tun().hawkeye_range, snappedf(_tun().ai_skill, 0.0001)],
+			_tun().show_landing, _tun().assist, _tun().hawkeye_range, snappedf(_tun().ai_skill, 0.0001)],
 		"physics": [BallPhysics.gravity_scale, BallPhysics.wind, BallPhysics.rubber_net, BallPhysics.friction, BallPhysics.pace, BallPhysics.bounce_offset],
 		"court": [Court.inset, main.court._court_mat.albedo_color, main.court.get_child_count()],
 		"skills": Skills.mods_layer.duplicate(),
@@ -325,4 +353,37 @@ func _run_screen() -> void:
 	check(t.modifier_value("skill") >= 0.099 and absf(Modifiers.gold_mult(t, 3) - Modifiers.reward(t.run_modifiers) * Modifiers.reward(t.lineup[3]["mods"])) < 0.001,
 		"opponents a tier up and the prize multiplied")
 	RM.ui_action(main, "mods_back", 0)
+	# The mode cards: hardcore opens with the first title.
+	SaveData.titles = 0
+	RM.open(main, 1)
+	RM.ui_action(main, "mods_mode", 1)
+	check(not RM.hardcore, "no title: hardcore stays locked")
+	SaveData.titles = 1
+	RM.ui_action(main, "mods_toggle", RM.choices().find_custom(func(e): return e["id"] == "tier_up"))
+	RM.ui_action(main, "mods_mode", 1)
+	check(RM.hardcore and not RM.picked.has("tier_up") and RM.choices().all(func(e): return not Modifiers.HARD_HAS.has(e["id"])), "hardcore: its own conditions leave the list")
+	check(absf(RM.total() - 2.5) < 0.001, "the button says x2.5")
+	RM.ui_action(main, "mods_toggle", 0)
+	check(absf(RM.total() - minf(2.5 * Modifiers.find(RM.choices()[0]["id"])["reward"], 4.0)) < 0.001, "a condition on top multiplies")
+	RM.ui_action(main, "mods_go", 0)
+	var hc: Tournament = main.tournament
+	check(hc != null and hc.hardcore and hc.run_modifiers[0] == "hardcore", "the run starts hardcore")
+	await _hard_match(hc)
+	SaveData.titles = 0
 	SaveData.played = 0
+
+
+## A hardcore match: no help, back as before after it.
+func _hard_match(hc: Tournament) -> void:
+	main.tournament = hc
+	main.tournament_mode = true
+	var h: ModsHub = main.mods_hub
+	var before := [_tun().assist, _tun().slowmo_enabled, _tun().show_aim, _tun().show_landing]
+	main._play_match()
+	await process_frame
+	check(h.active.has("hardcore") and _tun().assist == 0.0 and not _tun().slowmo_enabled and not _tun().show_aim and not _tun().show_landing, "in the match: no assist, no slow-mo, no aim, no landing mark")
+	check(float(Skills.mods_layer.get("forehand_window", 0.0)) < -0.29, "the ring's window is 30% narrower")
+	main._show_menu()
+	await physics_frame
+	await physics_frame
+	check([_tun().assist, _tun().slowmo_enabled, _tun().show_aim, _tun().show_landing] == before and Skills.mods_layer.is_empty(), "after it everything is back")
