@@ -350,6 +350,25 @@ func _run() -> void:
 		_chosen = ""
 		await _tap(club.hud._roulette_back)
 		await _expect("Участок: «Назад» закрывает лист", func() -> bool: return not club.foreman_on() and club.active)
+		# T-2: hiring a student (the list, a candidate's card, «Взять») and the student's own card.
+		var acad = load("res://scripts/academy/academy.gd")
+		SaveData.played = 1
+		SaveData.academy = {}
+		club._refresh()
+		await _club_screen("Клуб 3D → Новый ученик", "club_hire", "Новый ученик")
+		club.ui_action("club_hire_pick", 0)
+		await _wait(0.8)
+		await _screen_shape("Кандидат: карточка")
+		await _expect("Кандидат: «ВЗЯТЬ» есть", func() -> bool: return _button(main.ui.root, "ВЗЯТЬ") != null)
+		await _tap(await _find(main.ui.root, "Назад"))
+		await _expect("Кандидат: «Назад» ведёт к списку", func() -> bool: return main.ui.is_open() and main.ui.root.find_children("*", "Label", true, false).any(func(l): return (l as Label).is_visible_in_tree() and "Новый ученик" in (l as Label).text))
+		club.ui_action("club_hire_pick", 1)
+		await _wait(0.8)
+		await _tap(await _find(main.ui.root, "ВЗЯТЬ"))
+		await _expect("Кандидат: «ВЗЯТЬ» берёт, мы в клубе", func() -> bool: return acad.students().size() == 1 and club.active and not main.ui.is_open())
+		await _wait(0.5)
+		await _club_screen("Клуб 3D → Ученик", "club_npc_train:s1", String(acad.students()[0]["name"]).get_slice(" ", 0))
+		SaveData.academy = {}
 		SaveData.club["lots"] = {"n1": "locker", "n2": "coach", "n3": "trophy", "n4": "stands", "n5": "bar"}
 		club._refresh()
 		# The foreman: his strip stands over the 3D club, the gear is above it and works.
