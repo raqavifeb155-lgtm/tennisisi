@@ -22,6 +22,7 @@ const RESERVED := [                      # no trees here: places, the arena site
 	Rect2(16, -4, 14, 14), Rect2(12, 4, 12, 4),        # the shop and the way to it
 	Rect2(14, -38, 13, 14),               # the bar's terrace
 	Rect2(26, -36, 5, 10),                # the blackjack table beside it
+	Rect2(28, 10, 8, 8),                  # the academy's sign (ACADEMY_LEGACY_TZ 4.1)
 ]
 
 var walk := ClubWalk.new()

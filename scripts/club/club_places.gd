@@ -123,6 +123,20 @@ const LIST := [
 		],
 	},
 	{
+		# Reserved for the next patch (docs/ACADEMY_LEGACY_TZ.md 4.1): the academy on the
+		# east lawn, 18 x 14 m around (32, 14). A sign only.
+		"id": "academy", "name": "Академия", "pos": Vector3(32, 0, 14), "r": 2.0,
+		"unlock": "never", "sign": "Академия · скоро", "travel": false,
+		"levels": [{"label": "Академия", "action": "", "note": "Лужайка под академию"}],
+	},
+	{
+		# Reserved (ACADEMY_LEGACY_TZ 6): the coach's booth behind the near baseline, at the
+		# court's corner, for the juniors' matches. A sign only.
+		"id": "booth", "name": "Будка тренера", "pos": Vector3(-6.8, 0, 15.6), "r": 1.4,
+		"unlock": "never", "sign": "Будка тренера · скоро", "travel": false,
+		"levels": [{"label": "Будка", "action": "", "note": "Место под будку тренера"}],
+	},
+	{
 		"id": "board", "name": "Доска-табло", "pos": Vector3(22, 0, -14), "r": 1.8,
 		"unlock": "never", "sign": "Онлайн · скоро",
 		"levels": [

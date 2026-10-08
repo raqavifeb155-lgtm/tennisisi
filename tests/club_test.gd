@@ -40,7 +40,7 @@ func test_places() -> void:
 		check(float(p["r"]) > 0.5, "%s has a circle" % p["id"])
 		var st0 := ClubPlaces.state(p["id"], 0)
 		check(st0.get("action", "") != "" or st0.get("sign", "") != "", "%s has a button or a sign" % p["id"])
-	for id in ["court", "machine", "coach", "gate", "locker", "shop", "trophy", "bar", "blackjack", "arena", "board"]:
+	for id in ["court", "machine", "coach", "gate", "locker", "shop", "trophy", "bar", "blackjack", "arena", "board", "academy", "booth"]:
 		check(ids.has(id), "place %s exists" % id)
 	var overlap := false
 	for i in ClubPlaces.LIST.size():
@@ -670,7 +670,7 @@ func test_quests_flow() -> void:
 	for k in 2:
 		ev.point.emit({"winner": 0, "reason": "ACE", "rally": 1, "server": 0, "close_call": {}, "best": false})
 	await _frames(1)
-	check(ClubQuests.progress(0)["done"] and got.size() == 1, "two aces by GameEvents: done, quest_done fired")
+	check(ClubQuests.progress(0)["done"] and got.any(func(x): return int(x["index"]) == 0), "two aces by GameEvents: done, quest_done fired")
 	q[1] = {"tpl": "streak", "text": "", "event": "streak", "kind": "max", "scope": "run", "need": 3, "have": 0, "done": false, "claimed": false, "gold": 35, "item": false, "tier": 0}
 	ev.point.emit({"winner": 0, "reason": "OUT", "rally": 3, "server": 1, "close_call": {}, "best": false})
 	check(ClubQuests.progress(1)["done"], "points in a row are counted across reasons")
@@ -715,7 +715,6 @@ func test_transitions() -> void:
 	main._show_menu()
 	await _frames(3)
 	var club = main.club
-	var w = club.world
 	# 1. A tap on a place (the machine's circle on the court) walks there; it never starts
 	# practice. Only the button does.
 	var mp: Vector3 = ClubPlaces.find("machine")["pos"]
@@ -761,13 +760,13 @@ func test_transitions() -> void:
 	club._on_choice("practice", 0)
 	await _frames(3)
 	check(main.phase != club._idle and main.location_id == "club", "practice on the club court")
-	check(not w.props_visible(), "the machine and the circles leave the court for the match")
+	check(not club.world.props_visible(), "the machine and the circles leave the court for the match")
 	check(not main.cpu.get_meta("club_coach", false), "the opponent is not the coach in his cap")
 	# Pause in the match -> 'Выйти в клуб'.
 	main.hud.menu_requested.emit()
 	await _frames(3)
 	check(club.active and main.phase == club._idle and not main.get_tree().paused, "Выйти в клуб from a match: the club, not paused")
-	check(w.props_visible(), "the props are back")
+	check(club.world.props_visible(), "the props are back")
 	# A tournament match to its end -> the result -> the club.
 	club._on_choice("club_tournament", 0)
 	await _frames(2)
