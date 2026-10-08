@@ -249,7 +249,7 @@ func _run() -> void:
 		var lock_rows := 0
 		for c in main.ui.root.find_children("*", "Button", true, false):
 			var b := c as Button
-			if b.is_visible_in_tree() and b.find_children("*", "Label", true, false).any(func(l): return "🔒" in (l as Label).text):
+			if b.is_visible_in_tree() and b.find_children("*", "Label", true, false).any(func(l): return "✕" in (l as Label).text):
 				lock_rows += 1
 				_check("Куда едем?: закрытый остров не нажимается", b.disabled)
 		await _expect("Куда едем?: закрытые острова есть, с замком", func() -> bool: return lock_rows > 0)
