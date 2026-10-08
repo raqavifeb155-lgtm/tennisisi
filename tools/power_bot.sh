@@ -15,7 +15,7 @@ for c in $CONFIGS; do
   done
 done | xargs -P $JOBS -L 1 bash -c '
   IFS=: read xp gear loc <<< "$1"
-  $0 --headless --path . --fixed-fps 60 -s tools/power_bot.gd -- --autoplay --bot-sd='$SD' --points='$PTS' --p-stage='$STAGE' --p-xp=$xp --p-gear=$gear --p-loc=$loc --p-seed=$2 2>&1 | grep "^POWER xp" > '$OUT'/${1//:/_}_$2.txt
+  $0 --headless --path . --fixed-fps 60 -s tools/power_bot.gd -- --autoplay --bot-sd='$SD' --points='$PTS' --p-stage='$STAGE' --p-xp=$xp --p-gear=$gear --p-loc=$loc --p-pkg=${PKG:-1} --p-seed=$2 2>&1 | grep "^POWER xp" > '$OUT'/${1//:/_}_$2.txt
 ' "$G"
 echo "opponent: round $STAGE, $PTS points a trial, $N trials, bot-sd $SD"
 for c in $CONFIGS; do

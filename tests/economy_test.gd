@@ -21,6 +21,7 @@ func _run() -> void:
 	test_drop_chances()
 	test_prize_money()
 	test_income_scale()
+	test_package()
 	test_income()
 	test_sell_extra()
 	test_locker()
@@ -247,6 +248,11 @@ func test_goals() -> void:
 	SaveData.gold = 10
 	var g := Goals.next_goal()
 	check(not g.is_empty() and int(g["left"]) > 0 and int(g["left"]) == int(g["price"]) - 10, "a next goal and how far: %s" % [g])
+	var cheapest := 1 << 30
+	for id in ClubBuilds.ORDER:
+		if ClubBuilds.is_open(id) and not ClubBuilds.next(id).is_empty():
+			cheapest = mini(cheapest, ClubBuilds.next_price(id))
+	check(int(g["price"]) <= cheapest or g["kind"] == "item", "the goal is the nearest purchase at today's prices (%d, cheapest build %d)" % [g["price"], cheapest])
 	SaveData.gold = 100000
 	check(not Goals.affordable().is_empty(), "rich: things within reach")
 	_reset_save()
@@ -412,3 +418,18 @@ func test_shipped_scale(scale: float) -> void:
 	check(Items.price(_item(Gear.EPIC)) == roundi(120 * scale), "an epic costs 120 x %.2f = %d" % [scale, Items.price(_item(Gear.EPIC))])
 	check(ClubBuilds.next_price("court") == roundi(40 * scale), "the court's first level: 40 x %.2f" % scale)
 	check(is_equal_approx(Tournament.INCOME_SCALE, 0.5), "the long-run income scale is 0.5")
+
+
+func test_package() -> void:
+	print("epic+ stat package")
+	var epic := Items.instance(Items.find("sledgehammer"))  # an effect item: a trigger only
+	check(float(epic["mods"].get("forehand_pace", 0.0)) > 0.05 and float(epic["mods"].get("net_scatter", 0.0)) < -0.1, "an epic racket also hits harder and truer")
+	check(String(epic["lines"][epic["lines"].size() - 1]).begins_with("Класс:"), "the card says so: «%s»" % epic["lines"][epic["lines"].size() - 1])
+	var common := Items.instance(Items.find("runners"))
+	check(is_equal_approx(float(common["mods"]["run_speed"]), 0.04), "a common item has no package")
+	var p3 := float(Items.instance(Items.find("cutter"))["mods"]["forehand_pace"])
+	check(p3 > float(epic["mods"]["forehand_pace"]) * 1.5, "a legendary's package is bigger (%.2f vs %.2f)" % [p3, float(epic["mods"]["forehand_pace"])])
+	var band := Items.instance(Items.find("cold_pack"))
+	check(float(band["mods"]["serve_window"]) > 0.1, "an epic wristband widens every PERFECT window")
+	var lv := Items.set_level(Items.instance(Items.find("sledgehammer")), 3)
+	check(float(lv["mods"]["forehand_pace"]) > float(epic["mods"]["forehand_pace"]) * 1.15, "level 3 strengthens the package too")
