@@ -27,6 +27,7 @@ func _run() -> void:
 		test_opponent_card,
 		test_adapt,
 		test_ai_profile,
+		test_drop_return,
 	]
 	expected = tests.size()
 	for t in tests:
@@ -587,4 +588,108 @@ func test_ai_profile() -> void:
 	ai.set_profile(c)
 	check(ai.ratings["net"] == 9 and ai.style_id == "allcourt", "OpponentAI plays by a dictionary of stats")
 	ai.free()
+	finished += 1
+
+
+## A stand-in for the player and for Main with what the AI reads when it plays a drop shot back.
+class DropPlayer:
+	extends Node3D
+	var velocity := Vector3.ZERO
+	func right() -> Vector3:
+		return Vector3(1.0, 0.0, 0.0)
+
+
+class DropGame:
+	extends Node
+	var player := DropPlayer.new()
+	var ball: Ball
+	var serve_flight := false
+	var rally := 3
+	var bounces := 0
+	var autoplay := false
+	var last_serve_kmh := 100.0
+	var hits := 0
+	func timing_quality(_e: float, _w := 1.0, _g := -1.0) -> Array:
+		return [1.0, "GOOD"]
+	func position_quality(_l: float, _h: float) -> float:
+		return 1.0
+	func movement_quality(_s: float, _p := 1.0) -> float:
+		return 1.0
+	func execute_shot(_who: int, _h: Node3D, _c: Vector3, _t: Vector3, _p: float, _top: float, _q: float, _te: float, _s: int, _lob := false, _ss := 0.0, _drop := false, _nm := 0.3, _sc := 1.0) -> void:
+		hits += 1
+		ball.park()
+
+
+## The player's drop shot from the baseline, `n` times, against an OpponentAI of this profile
+## standing on its baseline: returns {"hit", "ran_up" (got there, no swing), "far", "n"}.
+func _drops_against(profile: Dictionary, n: int, seed_v: int) -> Dictionary:
+	var g := DropGame.new()
+	root.add_child(g)
+	g.add_child(g.player)
+	var ball := Ball.new()
+	g.add_child(ball)
+	g.ball = ball
+	var me := Athlete.new()
+	g.add_child(me)
+	me.setup(1.0, Color(0.2, 0.3, 0.4), Rect2(-6.0, -14.0, 12.0, 14.0))
+	var ai: Node = load("res://scripts/opponent_ai.gd").new()
+	g.add_child(ai)
+	ai.setup(g, me, ball)
+	ai.rng.seed = seed_v
+	ai.set_profile(profile)
+	ai.spared = 0.0
+	ball.bounced.connect(func(p: Vector3, _s: float) -> void:
+		if p.z < 0.0:
+			g.bounces += 1)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_v
+	var out := {"hit": 0, "ran_up": 0, "far": 0, "n": n}
+	for i in n:
+		var px := rng.randf_range(-3.0, 3.0)
+		var contact := Vector3(px, 1.0, 12.4)
+		var depth := rng.randf_range(1.3, 2.7)
+		var target := Vector3(signf(rng.randf() - 0.5) * rng.randf_range(2.6, 3.5), BallPhysics.RADIUS, -depth)  # wide ones: the far corner of the net court
+		var r := ShotSolver.solve_drop(contact, target, -rng.randf_range(260.0, 320.0) * rng.randf_range(1.3, 1.9))
+		g.player.position = Vector3(px, 0.0, 12.4)
+		me.position = Vector3(rng.randf_range(-1.5, 1.5), 0.0, -12.4)
+		me.velocity = Vector3.ZERO
+		g.hits = 0
+		g.bounces = 0
+		ai.new_match()
+		ai.on_cpu_hit(0.0)
+		ball.launch(contact, r.velocity, r.spin)
+		ai.on_player_hit()
+		var closest := INF
+		for step in 420:
+			ai.tick(1.0 / 60.0, true)
+			me._physics_process(1.0 / 60.0)
+			ball.step(1.0 / 60.0)
+			if g.hits > 0 or not ball.active:
+				break
+			closest = minf(closest, Vector2(ball.state.pos.x - me.position.x, ball.state.pos.z - me.position.z).length())
+			if g.bounces >= 2:
+				break
+		if g.hits > 0:
+			out["hit"] += 1
+		elif closest <= 1.3:
+			out["ran_up"] += 1
+		else:
+			out["far"] += 1
+	g.free()
+	return out
+
+
+## D-7 ("an AI that runs up to a drop shot and does not hit it loses the point"): played from the
+## baseline, the drop is hit back; a good net stat gets there more often than a weak one.
+func test_drop_return() -> void:
+	print("D-7: the drop shot is played back")
+	var good: Dictionary = _drops_against({"skill": 0.5, "stats": {"serve": 5, "forehand": 5, "backhand": 5, "net": 9, "speed": 5, "stamina": 5}}, 300, 21)
+	var tuning := root.get_node("Tuning")
+	var s0: float = tuning.ai_skill
+	tuning.ai_skill = 0.0  # a tired or "weakened" opponent: the stats all drop by the skill it lost
+	var weak: Dictionary = _drops_against({"skill": 0.5, "stats": {"serve": 5, "forehand": 5, "backhand": 5, "net": 2, "speed": 3, "stamina": 5}}, 300, 22)
+	tuning.ai_skill = s0
+	check(good["hit"] >= 285, "good net stat: hit %d of %d (ran up and did not swing %d, too far %d)" % [good["hit"], good["n"], good["ran_up"], good["far"]])
+	check(weak["hit"] >= 270, "weak net stat: hit %d of %d (ran up and did not swing %d, too far %d)" % [weak["hit"], weak["n"], weak["ran_up"], weak["far"]])
+	check(good["ran_up"] <= 3 and weak["ran_up"] <= 6, "getting there means hitting: no run-ups without a swing (%d / %d)" % [good["ran_up"], weak["ran_up"]])
 	finished += 1
