@@ -313,11 +313,27 @@ static func make(id: String) -> ArrayMesh:
 			var shirt: Color = {"sitter_a": Color("d9473b"), "sitter_b": Color("2a54a3"), "sitter_c": Color("ffd642")}[id]
 			s.box(Vector3(0.36, 0.16, 0.5), Vector3(0, 0.63, 0.15), Color("2c3a52"))
 			s.box(Vector3(0.3, 0.45, 0.14), Vector3(0, 0.34, 0.4), Color("2c3a52"))
-			s.ball(0.22, Vector3(0, 0.98, -0.02), shirt, Vector3(1.0, 1.35, 0.7), 7, 4)
-			s.ball(0.14, Vector3(0, 1.38, 0.0), Color("e3b48a"), Vector3(1, 1.1, 1), 7, 4)
-			s.ball(0.15, Vector3(0, 1.43, -0.02), Color("3b2a1e"), Vector3(1, 0.7, 1), 7, 3)
+			s.ball(0.22, Vector3(0, 0.98, -0.02), shirt, Vector3(1.0, 1.35, 0.7), 6, 3)
+			s.ball(0.14, Vector3(0, 1.38, 0.0), Color("e3b48a"), Vector3(1, 1.1, 1), 6, 3)
+			s.ball(0.15, Vector3(0, 1.43, -0.02), Color("3b2a1e"), Vector3(1, 0.7, 1), 5, 2)
 			for x in [-0.25, 0.25]:
 				s.box(Vector3(0.09, 0.09, 0.4), Vector3(x, 0.92, 0.18), shirt, 0.0, Vector3(0.5, 0, 0))
+		"palm":
+			s.cyl(0.16, 0.26, 5.6, Vector3(0, 2.8, 0), Color("8c6a46"), 6, Vector3(0.05, 0, 0.04))
+			for k in 6:
+				var a := k * TAU / 6.0
+				s.cyl(0.0, 0.3, 3.0, Vector3(cos(a) * 1.0, 6.2, sin(a) * 1.0), Color("4d7a33"), 4, Vector3(sin(a) * 1.15, 0.0, -cos(a) * 1.15))
+		"standee_a", "standee_b", "standee_c":
+			# somebody standing, facing +z (a fan at a fence, a ball kid)
+			var shirt: Color = {"standee_a": Color("d9473b"), "standee_b": Color("2a54a3"), "standee_c": Color("f2f0ea")}[id]
+			for x in [-0.1, 0.1]:
+				s.cyl(0.085, 0.07, 0.86, Vector3(x, 0.43, 0), Color("2c3a52"), 5)
+			s.ball(0.23, Vector3(0, 1.2, 0), shirt, Vector3(1.0, 1.35, 0.68), 6, 3)
+			s.ball(0.2, Vector3(0, 1.0, 0), shirt, Vector3(1.0, 1.0, 0.7), 6, 3)
+			for x in [-0.27, 0.27]:
+				s.cyl(0.055, 0.05, 0.5, Vector3(x, 1.12, 0.0), shirt, 4)
+			s.ball(0.15, Vector3(0, 1.7, 0), Color("e3b48a"), Vector3(1, 1.1, 1.0), 6, 3)
+			s.ball(0.158, Vector3(0, 1.75, -0.025), Color("3b2a1e"), Vector3(1, 0.7, 1.0), 5, 2)
 		"poster":
 			# a tournament poster on its two posts, face to +z
 			s.box(Vector3(0.07, 1.9, 0.07), Vector3(-0.5, 0.95, -0.06), TRUNK)

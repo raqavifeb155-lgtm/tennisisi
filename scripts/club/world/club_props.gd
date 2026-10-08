@@ -94,6 +94,21 @@ static func bake(list: Array[Prop], shadows := true) -> Dictionary:
 	return out
 
 
+## All of `list` in one go, without squares: {"big": mesh, "tall": mesh} (a key only when it has
+## something). For a scenery that wants two draw calls for its whole set of props.
+static func bake_one(list: Array[Prop], shadows := true) -> Dictionary:
+	var big := _Acc.new()
+	var tall := _Acc.new()
+	for p in list:
+		(tall if (p.shadow and shadows) else big).add(ClubPack.mesh(p.id), p.xf, p.tint)
+	var out := {}
+	if big.v.size() > 0:
+		out["big"] = big.build()
+	if tall.v.size() > 0:
+		out["tall"] = tall.build()
+	return out
+
+
 ## Collects transformed vertices of many meshes into one.
 class _Acc:
 	var v := PackedVector3Array()

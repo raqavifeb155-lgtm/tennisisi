@@ -126,6 +126,7 @@ func _ready() -> void:
 	_build_drizzle()
 	_build_flock()
 	_flush()
+	SceneryDetail.apply(self, "grass")  # stream H-6: people and props from the club's pack
 
 
 func _process(delta: float) -> void:

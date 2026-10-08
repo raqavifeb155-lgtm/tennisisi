@@ -77,6 +77,7 @@ PICKS = {
     "tree_small": (NN + "tree_small.glb", 4.0, 0.88),
     "tree_pine": (NN + "tree_pineTallA.glb", 8.0, 0.88),
     "tree_pine_small": (NN + "tree_pineSmallA.glb", 3.5, 0.88),
+    "palm": (NN + "tree_palmDetailedTall.glb", 7.0, 0.88),
     "bush": (NN + "plant_bush.glb", 0.8, 0.88),
     "bush_large": (NN + "plant_bushLarge.glb", 1.2, 0.88),
     "flowers_red": (NN + "flower_redA.glb", 0.35, 0.3),
