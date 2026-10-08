@@ -208,6 +208,8 @@ func _ready() -> void:
 			_bot_drop = float(a.get_slice("=", 1))  # D-7: the share of the bot's strokes that are drop shots (0..1)
 		elif a.begins_with("--adapt-floor="):
 			Opponents.floor_slope = float(a.get_slice("=", 1))  # D-5: how fast the opponents keep up with the player's level
+		elif a.begins_with("--adapt-round="):
+			Opponents.round_floor = float(a.get_slice("=", 1))
 		elif a.begins_with("--adapt-ease="):
 			Opponents.ease_max = float(a.get_slice("=", 1))
 		elif a.begins_with("--adapt-add="):
@@ -1976,7 +1978,7 @@ func _continue_tournament() -> void:
 func _play_match() -> void:
 	var opp := tournament.opponent()
 	Rewards.apply(tournament.perks)
-	Tuning.ai_skill = clampf(Opponents.adapted_skill(float(opp["skill"]), -1.0, bool(opp.get("boss", false))) + tournament.modifier_value("skill"), 0.0, 1.0)  # D-5: keeps up with the player
+	Tuning.ai_skill = clampf(Opponents.adapted_skill(float(opp["skill"]), -1.0, bool(opp.get("boss", false)), tournament.stage) + tournament.modifier_value("skill"), 0.0, 1.0)  # D-5: keeps up with the player
 	cpu.set_look(opp.get("look", Looks.from_shirt(opp.get("shirt", Color(0.22, 0.28, 0.42)))))
 	_set_opponent_mods(tournament.modifier_value("speed"), tournament.modifier_value("serve"), tournament.current_lineup()["racket"])
 	cpu_label = opp["short"]
@@ -2002,7 +2004,8 @@ func _set_opponent_mods(speed: float, serve: float, cpu_racket: Dictionary) -> v
 
 
 func _begin_match() -> void:
-	GameEvents.match_started.emit({"tournament": tournament_mode, "opponent": tournament.opponent()["id"] if tournament_mode and tournament != null else ""})
+	GameEvents.match_started.emit({"tournament": tournament_mode, "opponent": tournament.opponent()["id"] if tournament_mode and tournament != null else "",
+		"profile": tournament.opponent() if tournament_mode and tournament != null else {}})  # D-8: the draw has random players, the AI takes the profile itself
 	sfx.set_music(false)
 	stamina = mods_hub.start_stamina  # v0.2 G: 1.0, or «Полбака»
 	score = [0, 0]
@@ -2186,7 +2189,7 @@ func _levels_text() -> String:
 ## --autoplay --tournament: the bot plays a whole tournament, picking rewards itself.
 func _autoplay_after_match(won: bool, st: String) -> void:
 	var last: Dictionary = tournament.results.back()
-	var opp: Dictionary = Opponents.ROSTER[last["stage"]]
+	var opp: Dictionary = tournament.opp(last["stage"])
 	print("MATCH %s vs %s: %s %s   [%s]" % [Opponents.ROUND_NAMES[last["stage"]], opp["name"], "WON" if won else "LOST", st, _levels_text()])
 	if _bot_measure > 0:  # measuring: the same opponent again, nothing carried over
 		tournament.pending_loot = {}

@@ -73,10 +73,111 @@ static func play_style(opp: Dictionary) -> Dictionary:
 
 
 static func find(id: String) -> Dictionary:
-	for o in ROSTER:
-		if o["id"] == id:
-			return o
+	var all := roster()
+	for i in ROSTER.size():
+		if all[i]["id"] == id:
+			return all[i]
+	if id.length() == 4 and id.begins_with("p") and id.substr(1).is_valid_int():
+		var r := id.substr(1).to_int()
+		if r >= 1 and r <= RosterData.PLAYERS.size():
+			return all[ROSTER.size() + r - 1]
 	return {}
+
+
+## Everybody: the five fixed opponents (ROSTER, the tutorial and the boss) and the top-100 of
+## RosterData as profiles (ids p001..p100; the twins of the fixed ones carry alias_of). Built
+## once; the stats and styles of the hundred are made up from the rank, the same every run.
+static var _roster: Array = []
+
+
+static func roster() -> Array:
+	if _roster.is_empty():
+		var tier_ranks := {}
+		for r in RosterData.PLAYERS:
+			var t: Array = tier_ranks.get(r["tier"], [])
+			t.append(r["rank"])
+			tier_ranks[r["tier"]] = t
+		for k in tier_ranks:
+			tier_ranks[k].sort()
+		var all: Array = []
+		for o in ROSTER:
+			var named: Dictionary = o.duplicate()
+			named["stats"] = stats(o)
+			named["tier"] = NAMED_TIERS.get(o["id"], "D")
+			all.append(named)
+		for r in RosterData.PLAYERS:
+			all.append(OpponentGen.from_record(r, tier_ranks))
+		_roster = all
+	return _roster
+
+
+## The fixed ones' place in the tiers (the research puts a player of skill .45 in C).
+const NAMED_TIERS := {"dzumhur": "E", "basilashvili": "D", "rublev": "C", "zverev": "B", "djokovic": "S"}
+
+
+## A random player: name, stats, style, looks by seed and tier (OpponentGen.random). opts:
+## overpowered, op_chance, weakness (true or a stat key), country, style.
+static func random(seed_v: int, tier := "D", opts := {}) -> Dictionary:
+	return OpponentGen.random(seed_v, tier, opts)
+
+
+## The players of a tier of the top-100 (not the twins of the fixed ones).
+static func of_tier(tier: String) -> Array:
+	var out: Array = []
+	for o in roster():
+		if o.get("tier", "") == tier and o.has("rank") and not o.has("alias_of"):
+			out.append(o)
+	return out
+
+
+## Who stands in the draw of an island, round by round (the last one is the fixed boss): tiers
+## by island, a share of the places goes to random players (some of them overpowered, now and
+## then with a marked weak spot). A spec per round: {"id": ..} or {"rnd": seed, "tier": .., "opts": ..},
+## so a run saves five small dictionaries and gets the same field back (resolve()).
+const ISLANDS := {
+	"park": {"slots": [["E"], ["E", "D"], ["D"], ["D"]], "random": 0.35, "tutor": "dzumhur"},
+	"clay": {"slots": [["D"], ["D", "C"], ["C"], ["C"]], "random": 0.3},
+	"grass": {"slots": [["C", "B"], ["B"], ["B"], ["B", "A"]], "random": 0.3},
+	"paris": {"slots": [["B", "A"], ["A"], ["A"], ["A", "S"]], "random": 0.25},
+}
+const BOSS_ID := "djokovic"
+
+
+static func draw(location: String, seed_v: int, newbie := false) -> Array:
+	var isl: Dictionary = ISLANDS.get(location, ISLANDS["park"])
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_v
+	var out: Array = []
+	var used := {}
+	var slots: Array = isl["slots"]
+	for i in slots.size():
+		var tiers: Array = slots[i]
+		var tier: String = tiers[rng.randi_range(0, tiers.size() - 1)]
+		if i == 0 and isl.has("tutor") and (newbie or rng.randf() < 0.25):
+			out.append({"id": isl["tutor"]})  # the first match of the first island: the old tutorial
+			continue
+		if rng.randf() < float(isl["random"]):
+			var opts := {"weakness": rng.randf() < 0.5}
+			if i < 2:
+				opts["overpowered"] = false  # nobody is a monster in the first two rounds
+			out.append({"rnd": rng.randi() % 1000000 + 1, "tier": tier, "opts": opts})
+			continue
+		var pool := of_tier(tier)
+		var pick: Dictionary = pool[rng.randi_range(0, pool.size() - 1)]
+		var guard := 0
+		while used.has(pick["id"]) and guard < 20:
+			pick = pool[rng.randi_range(0, pool.size() - 1)]
+			guard += 1
+		used[pick["id"]] = true
+		out.append({"id": pick["id"]})
+	out.append({"id": BOSS_ID})
+	return out
+
+
+static func resolve(spec: Dictionary) -> Dictionary:
+	if spec.has("rnd"):
+		return random(int(spec["rnd"]), String(spec.get("tier", "D")), spec.get("opts", {}))
+	return find(String(spec.get("id", BOSS_ID)))
 
 
 ## The opponent's stats, 1..10 (D-5, hub-economy spec 10). OpponentAI plays by them:
@@ -124,7 +225,8 @@ static func stats(opp: Dictionary, skill := 0.5) -> Dictionary:
 ## roster are tuned for a player who has levelled, and D-1's numbers must stand for the new one.
 const ADAPT_FROM := 2.0
 const EASE_UNTIL := 4.0            # a beginner is spared up to this average level (D-1: he must be able to win points)
-const FLOOR_MAX := 0.6
+const FLOOR_MAX := 0.7
+static var round_floor := 0.3      # extra floor per round (--adapt-round=)
 const ADD_MAX := 0.1
 static var floor_slope := 0.055    # floor of the AI skill per skill level above ADAPT_FROM
 static var add_slope := 0.014      # and the gain for all (--adapt-floor= / --adapt-add= for the bot)
@@ -142,11 +244,14 @@ static func player_level() -> float:
 ## The AI skill an opponent of this roster skill plays with against a player of this level
 ## (-1: the current one). Modifiers and gear come on top (Tournament.modifier_value).
 ## The boss only gets the floor (he is the top of the roster already: no gain on top).
-static func adapted_skill(skill: float, level := -1.0, boss := false) -> float:
+## D-8: the draw's opponents of an island are all of its tiers, so the floor grows with the round
+## (x round_floor per round): the later the round, the more of a veteran's level it asks.
+static func adapted_skill(skill: float, level := -1.0, boss := false, round_i := 0) -> float:
 	var lv := player_level() if level < 0.0 else level
 	var over := maxf(lv - ADAPT_FROM, 0.0)
 	var gain := 0.0 if boss else minf(over * add_slope, ADD_MAX)
-	return clampf(maxf(skill, minf(over * floor_slope, FLOOR_MAX)) + gain, 0.0, 1.0)
+	var floor_k := 1.0 + round_floor * float(round_i)
+	return clampf(maxf(skill, minf(over * floor_slope * floor_k, FLOOR_MAX)) + gain, 0.0, 1.0)
 
 
 ## What a beginner is spared: stats points x 1/9 taken off every stat of the opponent (OpponentAI
@@ -157,10 +262,10 @@ static func spared(level := -1.0) -> float:
 
 
 ## The stats as the opponent plays them against this player (what the card shows).
-static func shown_stats(opp: Dictionary, level := -1.0) -> Dictionary:
+static func shown_stats(opp: Dictionary, level := -1.0, round_i := 0) -> Dictionary:
 	var st := stats(opp)
 	var sk := float(opp.get("skill", 0.5))
-	var shift := (adapted_skill(sk, level, bool(opp.get("boss", false))) - sk - spared(level)) * 9.0
+	var shift := (adapted_skill(sk, level, bool(opp.get("boss", false)), round_i) - sk - spared(level)) * 9.0
 	for k in STAT_KEYS:
 		st[k] = clampi(roundi(float(st[k]) + shift), 1, 10)
 	return st
