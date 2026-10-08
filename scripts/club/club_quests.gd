@@ -111,7 +111,8 @@ static func _make(tpl: Dictionary, tier: int, item: bool) -> Dictionary:
 		text = text % int(n)
 	return {"tpl": tpl["id"], "text": text, "event": tpl["event"], "kind": tpl["kind"], "scope": tpl["scope"],
 		"need": n, "have": 0, "done": false, "claimed": false, "item": item, "tier": tier,
-		"gold": roundi(int(tpl["gold"]) * float(GOLD_MULT[clampi(tier, 0, GOLD_MULT.size() - 1)]) * (1.0 + ClubBuilds.quest_gold_bonus()))}
+		"gold": roundi(int(tpl["gold"]) * float(GOLD_MULT[clampi(tier, 0, GOLD_MULT.size() - 1)]) * (1.0 + ClubBuilds.quest_gold_bonus())
+			* Tournament.income_scale())}  # v0.2 A: quests scale with the rest of the income
 
 
 ## Something happened in a match. Returns the indexes of the quests it finished.
@@ -218,13 +219,10 @@ static func claim_all() -> Dictionary:
 ## Where a quest's item goes: stream A's locker if it's there, the bag of a run on, or it
 ## waits in the club's save (SaveData.club.quest_items) for the locker.
 static func _stash(item: Dictionary) -> String:
-	for c in ProjectSettings.get_global_class_list():
-		if c["class"] == "Locker":
-			var scr: GDScript = load(c["path"])
-			for m in scr.get_script_method_list():
-				if m["name"] == "put":
-					scr.call("put", item, 4)  # round 4 = a title: any rarity may go in
-					return "locker"
+	# v0.2 A: the locker takes it, or hands it to the next run when it is full ("next").
+	var where := Locker.gift(item)
+	if where == "locker":
+		return "locker"
 	var run := SaveData.resumable()
 	if run != null and run.state != Tournament.State.OVER:
 		run.add_to_bag(item)

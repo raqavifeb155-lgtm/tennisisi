@@ -379,13 +379,7 @@ func show_controls(first := false) -> void:
 # --- Tournament ------------------------------------------------------------------
 
 func show_locations() -> void:
-	_open(null, true, "menu")
-	_title("Где играем")
-	_sub("У каждого покрытия своя физика мяча")
-	var colors := {"hard": Color(0.4, 0.62, 1.0), "clay": Color(0.95, 0.55, 0.3), "grass": Color(0.5, 0.85, 0.4)}
-	for i in Locations.LIST.size():
-		var l: Dictionary = Locations.LIST[i]
-		_card({"tag": String(l["surface_name"]).capitalize(), "title": l["name"], "desc": l["desc"]}, "location", i, colors.get(l["surface"], UiTheme.LINE))
+	RunIslands.show_locations(self)  # v0.2 A-4: the islands, the closed ones locked
 
 
 func show_formats() -> void:
@@ -427,8 +421,8 @@ func show_result(t: Tournament, won: bool, score_text: String, stats: Dictionary
 	_box.add_child(_text(score_text, UiTheme.display(), 64, UiTheme.INK))
 	if not MatchStats.block(self, stats, String(opp.get("short", "соперник"))):  # C-5: the match's numbers
 		_sub("PERFECT: %d   ·   эйсы: %d   ·   лучший розыгрыш: %d" % [stats.get("perfect", 0), stats.get("aces", 0), stats.get("best_rally", 0)])
-	if won:
-		var gain := t.gold_for_win(t.stage - 1) + (roundi(Tournament.CHAMPION_BONUS * float(t.format_info()["reward"])) if t.champion else 0) + RunResult.style_gold(self)
+	var gain := t.last_prize + RunResult.style_gold(self)  # v0.2 A: prize money (a lost run pays too) and style
+	if gain > 0:
 		var gl := _text("+%d золота в забег" % gain, UiTheme.display(), UiTheme.T_HEAD, UiTheme.GOLD)
 		_box.add_child(gl)
 		_set_run(t.gold - gain, true)
@@ -523,28 +517,10 @@ func show_reward(t: Tournament) -> void:
 
 
 func show_summary(t: Tournament) -> void:
-	_open(t)
-	_box.add_child(_text("ЧЕМПИОН!" if t.champion else "Турнир окончен", UiTheme.display(), UiTheme.T_HERO if t.champion else UiTheme.T_TITLE, UiTheme.GOLD if t.champion else UiTheme.INK))
-	_sub(t.finish_text())
-	var wins := 0
-	for r in t.results:
-		if r["won"]:
-			wins += 1
-	_box.add_child(_text("Побед: %d" % wins, UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.INK))
-	if t.gold > 0:
-		# The run's gold goes into the bank now: the coins fly from one chip to the other.
-		_box.add_child(_text("В банк: +%d золота" % t.gold, UiTheme.display(), UiTheme.T_HEAD, UiTheme.GOLD))
-		if t.banked:
-			_set_run(t.gold, true)
-			_bank_run(t.gold)
-	_primary("ЕЩЁ ТУРНИР", "start_tournament")
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 12)
-	_actions.add_child(row)
-	for pair in [["В клуб", "menu"], ["Тренерская", "character"]]:
-		var b := _make_button(pair[0], pair[1], 0, "")
-		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		row.add_child(b)
+	RunResult.show_summary(self, t)  # v0.2 A-2: income by lines, the locker, the next goal
+	if t.gold > 0 and t.banked:  # C-4: the run's gold flies into the bank chip
+		_set_run(t.gold, true)
+		_bank_run(t.gold)
 
 
 # --- Building blocks ------------------------------------------------------------

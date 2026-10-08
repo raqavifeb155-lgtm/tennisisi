@@ -158,7 +158,7 @@ func _run(actions: Array) -> void:
 			"self_stamina":
 				main.stamina = minf(main.stamina + float(a[1]), 1.0)
 			"money":
-				t.gold += int(a[1])
+				t.earn("bonus", int(a[1]))
 
 
 static func clone(sb: MatchScore) -> MatchScore:

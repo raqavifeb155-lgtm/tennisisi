@@ -154,6 +154,7 @@ static func add_xp(id: String, amount: float) -> int:
 		return -1
 	var before := level(id)
 	xp[id] = float(xp.get(id, 0.0)) + amount
+	SaveData.lifetime_xp += amount  # never reset: a monotonic measure of progress (ACADEMY_LEGACY_TZ)
 	var after := level(id)
 	if after == before:
 		return -1

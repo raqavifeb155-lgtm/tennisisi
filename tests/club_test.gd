@@ -500,6 +500,8 @@ func test_flow() -> void:
 	club._on_choice("club_tournament", 0)
 	await _frames(2)
 	check(main.ui.is_open() and main.tournament == null, "no last tournament: the location screen")
+	SaveData.titles = 4  # v0.2 A: the islands open by titles; Spain needs one, England a Spanish one
+	SaveData.titles_by_loc = {"park": 1, "clay": 1, "grass": 1}
 	main._on_ui("location", 1)  # Spain
 	main._on_ui("format", 0)
 	await _frames(3)
@@ -515,7 +517,10 @@ func test_flow() -> void:
 	check(again["label"].begins_with("НОВАЯ ИГРА  ·  ИСПАНИЯ") and again["extra"].size() == 1, "the button names the last place, one quiet 'другое место'")
 	check(again["extra"][0][1] == "club_locations", "'Другое место' opens the club's islands screen")
 	var screens: GDScript = load("res://scripts/club/club_screens.gd")  # loaded: it reaches the autoloads
-	check(screens.loc_unlocked("grass") and screens.loc_hint("grass") == "", "no Locations.unlocked yet: everything open (a stub)")
+	check(screens.loc_unlocked("grass"), "with a Spanish title England is open")
+	SaveData.titles_by_loc = {"park": 1}
+	check(not screens.loc_unlocked("grass") and screens.loc_hint("grass") != "", "without it England is locked, with a hint")
+	SaveData.titles_by_loc = {"park": 1, "clay": 1, "grass": 1}
 	club._on_choice("club_locations", 0)
 	await _frames(2)
 	check(main.ui.is_open(), "the islands screen opens")
