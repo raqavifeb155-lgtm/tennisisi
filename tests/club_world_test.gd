@@ -147,9 +147,9 @@ func test_in_the_club() -> void:
 	check(hero.has_meta("casual") and hero.get_meta("casual"), "the hero walks casually in the club")
 	check(not (hero.get("_racket") as Node3D).visible, "no racket in his hand")
 	# ruin: boards on the shut shop and locker room, a sagging net, rusty fence
-	check(scenery._boards.has("shop") and (scenery._boards["shop"] as Node3D).visible, "the shop is boarded up while it is shut")
+	check(not scenery._boards.has("shop") or not (scenery._boards["shop"] as Node3D).visible, "the shop stands open from the start (T), no boards")
 	check(scenery._boards.has("locker") and (scenery._boards["locker"] as Node3D).visible, "so is the locker room")
-	var door := ClubPlaces.find("shop")["pos"] as Vector3
+	var door := ClubPlaces.find("locker")["pos"] as Vector3
 	check(w.walk.blocked(Vector2(door.x, door.z + ClubWorld.PAVILION.y * 0.5 + 0.1), 0.35), "a boarded door can't be walked through")
 	var court = main.court
 	var net_root: Node3D = court.get("_net_root")
@@ -166,7 +166,7 @@ func test_in_the_club() -> void:
 	SaveData.played = 1
 	club._refresh()
 	await _frames(4)
-	check(not (scenery._boards["shop"] as Node3D).visible, "played once: the boards are off the shop")
+	check(not (scenery._boards["locker"] as Node3D).visible, "played once: the boards are off the locker room")
 	check(not w.walk.blocked(Vector2(door.x, door.z + ClubWorld.PAVILION.y * 0.5 + 0.1), 0.2), "and the door is free")
 	# built: the ruin around the construction goes
 	SaveData.club["levels"] = {"court": 3, "gate": 2, "stands": 2, "trophy": 1, "bar": 1, "shop": 1, "locker": 1}
