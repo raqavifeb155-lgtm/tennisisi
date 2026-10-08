@@ -273,6 +273,22 @@ static func complete_ready() -> Array:
 	return done
 
 
+## "СТРОИТСЯ · ещё 2 забега" over the scaffolding.
+static func scaffold_text(id: String) -> String:
+	var n := ClubBuilds.runs_left(id)
+	if n <= 0:
+		return "ГОТОВО"
+	return "СТРОИТСЯ\nещё %d %s" % [n, runs_word(n)]
+
+
+static func runs_word(n: int) -> String:
+	if n % 10 == 1 and n % 100 != 11:
+		return "забег"
+	if n % 10 >= 2 and n % 10 <= 4 and (n % 100 < 10 or n % 100 >= 20):
+		return "забега"
+	return "забегов"
+
+
 # --- What the levels give -------------------------------------------------------------
 
 static func _at(arr: Array, id: String):

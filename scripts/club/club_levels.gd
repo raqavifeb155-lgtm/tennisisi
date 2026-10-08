@@ -325,13 +325,13 @@ static func _gate(w: ClubWorld, root: Node3D, lv: int, ghost: bool) -> void:
 		_obstacle_box(w, ghost, tag, Rect2(7.4, 34.3, 2.0, 4.4))
 	if lv >= 5:
 		# A red carpet from the gate, gold posts with ropes, flags and gold balls on the pillars.
-		_box(root, Vector3(2.4, 0.02, 7.5), Vector3(0, 0.04, z - 4.2), ClubMaterial.pal(ClubMaterial.RED, false))
+		_box(root, Vector3(3.0, 0.02, 10.0), Vector3(0, 0.04, z - 5.5), ClubMaterial.pal(ClubMaterial.RED, false))
 		for s in [-1.0, 1.0]:
-			for k in 4:
+			for k in 5:
 				var pz := z - 1.0 - k * 2.0
-				_cyl(root, 0.05, 0.07, 0.9, Vector3(s * 1.4, 0.45, pz), ClubMaterial.glow(UiTheme.GOLD, 1.0), 6)
-				if k < 3:
-					_box(root, Vector3(0.04, 0.04, 2.0), Vector3(s * 1.4, 0.8, pz - 1.0), ClubMaterial.pal(ClubMaterial.RED, false))
+				_cyl(root, 0.05, 0.07, 0.9, Vector3(s * 1.9, 0.45, pz), ClubMaterial.glow(UiTheme.GOLD, 1.0), 6)
+				if k < 4:
+					_box(root, Vector3(0.04, 0.04, 2.0), Vector3(s * 1.9, 0.8, pz - 1.0), ClubMaterial.pal(ClubMaterial.RED, false))
 			_cyl(root, 0.03, 0.03, 5.0, Vector3(s * 3.6, 2.5, z), ClubMaterial.pal(ClubMaterial.METAL, false), 6)
 			_box(root, Vector3(0.03, 0.8, 1.3), Vector3(s * 3.6, 4.6, z + 0.65), ClubMaterial.get_mat(ClubBuilds.club_color(), false))
 			_cyl(root, 0.3, 0.3, 0.6, Vector3(s * 1.9, 4.15, z), ClubMaterial.glow(UiTheme.GOLD, 1.0), 8)
@@ -401,8 +401,8 @@ static func _trophy(w: ClubWorld, root: Node3D, lv: int, ghost: bool) -> void:
 		_obstacle_box(w, ghost, tag, Rect2(at.x - 6.0, at.z - 1.45, 12.0, 0.4))
 	if lv >= 5:
 		# The hall of fame: a gold statue of the player on a tall pedestal under a spotlight.
-		var sp := at + Vector3(0, 0, 2.2) + Vector3(7.8, 0, -2.0)
-		_cyl(root, 0.8, 0.95, 1.2, sp + Vector3(0, 0.6, 0), ClubMaterial.pal(ClubMaterial.PLASTER), 10)
+		var sp := at + Vector3(4.6, 0, 0.9)
+		_cyl(root, 0.6, 0.72, 1.2, sp + Vector3(0, 0.6, 0), ClubMaterial.pal(ClubMaterial.PLASTER), 10)
 		var gold_m := ClubMaterial.glow(UiTheme.GOLD, 1.0)
 		_cyl(root, 0.2, 0.28, 0.9, sp + Vector3(0, 1.65, 0), gold_m, 8)
 		var head := SphereMesh.new()
@@ -420,7 +420,7 @@ static func _trophy(w: ClubWorld, root: Node3D, lv: int, ghost: bool) -> void:
 		rk.rotation.z = -0.4
 		var beam := _cyl(root, 0.15, 1.0, 4.2, sp + Vector3(0, 2.4, 0), ClubMaterial.ghost(), 10)
 		beam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		_obstacle_circle(w, ghost, tag, Vector2(sp.x, sp.z), 0.9)
+		_obstacle_circle(w, ghost, tag, Vector2(sp.x, sp.z), 0.8)
 
 
 # --- Bar ------------------------------------------------------------------------------
@@ -499,7 +499,7 @@ static func _bar(w: ClubWorld, root: Node3D, lv: int, ghost: bool) -> void:
 		# The VIP lounge: sofas, palms and spotlights.
 		var gold := ClubMaterial.glow(UiTheme.GOLD, 0.9)
 		for z in [-2.6, 0.4]:
-			var sf := Vector3(at.x - 8.2, 0, at.z + z)
+			var sf := Vector3(at.x - 6.9, 0, at.z + z)
 			_box(root, Vector3(1.0, 0.45, 2.0), sf + Vector3(0, 0.22, 0), ClubMaterial.pal(ClubMaterial.RED))
 			_box(root, Vector3(0.25, 0.6, 2.0), sf + Vector3(-0.5, 0.6, 0), ClubMaterial.pal(ClubMaterial.RED))
 			_box(root, Vector3(1.0, 0.04, 0.04), sf + Vector3(0, 0.47, 1.0), gold)

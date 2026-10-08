@@ -344,6 +344,40 @@ func test_long_build() -> void:
 	SaveData.played = 9
 	check(ClubBuilds.complete_ready() == ["court"] and ClubBuilds.level("court") == 4 and ClubBuilds.runs_left("court") == 0, "two runs later: level 4 is up")
 	check(ClubBuilds.buy("court") and ClubBuilds.runs_left("court") == 3, "level 5 takes three runs")
+	# What the levels give: shop, locker room, bar chips, quests, the words on the scaffolding.
+	var free := []
+	var disc := []
+	var ins := []
+	for l in 6:
+		SaveData.club = {"levels": {"shop": l, "locker": l}}
+		free.append(ClubBuilds.shop_free_rerolls())
+		disc.append(snappedf(ClubBuilds.restring_discount(), 0.01))
+		ins.append(snappedf(ClubBuilds.insurance_discount(), 0.01))
+	check(free == [0, 0, 0, 1, 1, 2] and disc == [0.0, 0.0, 0.0, 0.0, 0.1, 0.2], "the shop: free rerolls %s, cheaper strings %s" % [str(free), str(disc)])
+	check(ins == [0.0, 0.0, 0.1, 0.1, 0.25, 0.25], "the locker room: insurance %s" % str(ins))
+	var chips := []
+	for l in 6:
+		SaveData.club = {"levels": {"bar": l}}
+		chips.append(ClubBuilds.bar_chips().back())
+	check(chips == [25, 50, 100, 250, 500, 1000], "the bar's biggest chip grows with it %s" % str(chips))
+	SaveData.club = {"levels": {"coach": 5}}
+	var q := ClubQuests._make(ClubQuests.find_template("aces"), 0, false)
+	SaveData.club = {}
+	var q0 := ClubQuests._make(ClubQuests.find_template("aces"), 0, false)
+	check(int(q["gold"]) > int(q0["gold"]), "the coach's room: quests pay more (%d vs %d)" % [q["gold"], q0["gold"]])
+	check(ClubBuilds.scaffold_text("court") == "ГОТОВО", "no scaffolding text without a build")
+	check(ClubBuilds.runs_word(1) == "забег" and ClubBuilds.runs_word(2) == "забега" and ClubBuilds.runs_word(5) == "забегов" and ClubBuilds.runs_word(11) == "забегов", "the word for runs")
+	# Two levels in progress at once, the second one's runs counted from its own purchase.
+	SaveData.club = {"levels": {"court": 3, "stands": 3}}
+	SaveData.played = 4
+	SaveData.titles = 1
+	SaveData.gold = 100000
+	ClubBuilds.buy("court")
+	SaveData.played = 5
+	ClubBuilds.buy("stands")
+	check(ClubBuilds.runs_left("court") == 1 and ClubBuilds.runs_left("stands") == 2, "each building counts its own runs")
+	SaveData.played = 6
+	check(ClubBuilds.complete_ready() == ["court"] and ClubBuilds.is_building("stands") and ClubBuilds.level("court") == 4, "only the one whose runs are played is done")
 	SaveData.club = {}
 	SaveData.played = 0
 	SaveData.titles = 0

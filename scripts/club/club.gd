@@ -193,23 +193,7 @@ func _refresh() -> void:
 func _sync_scaffolds() -> void:
 	for id in ClubBuilds.ORDER:
 		var on := ClubBuilds.is_building(id)
-		world.set_scaffold(id, on, scaffold_text(id) if on else "")
-
-
-## "СТРОИТСЯ · ещё 2 забега" over the scaffolding.
-static func scaffold_text(id: String) -> String:
-	var n := ClubBuilds.runs_left(id)
-	if n <= 0:
-		return "ГОТОВО"
-	return "СТРОИТСЯ · ещё %d %s" % [n, runs_word(n)]
-
-
-static func runs_word(n: int) -> String:
-	if n % 10 == 1 and n % 100 != 11:
-		return "забег"
-	if n % 10 >= 2 and n % 10 <= 4 and (n % 100 < 10 or n % 100 >= 20):
-		return "забега"
-	return "забегов"
+		world.set_scaffold(id, on, ClubBuilds.scaffold_text(id) if on else "")
 
 
 ## The runs are played: scaffolding comes down, the levels go up (the saved data now, the
@@ -647,7 +631,7 @@ const BUILD_VIEW := {
 	"court": [Vector3(0, 27.0, 36.0), Vector3(0, 0, 10.0)],
 	"stands": [Vector3(14.0, 9.0, 12.0), Vector3(11.5, 0.5, -3.0)],
 	"gate": [Vector3(3.5, 21.0, 60.0), Vector3(3.5, 0.0, 42.0)],
-	"trophy": [Vector3(-17.5, 10.0, -11.0), Vector3(-17.5, 0.0, -24.5)],
+	"trophy": [Vector3(-16.8, 12.5, -8.5), Vector3(-16.8, 0.0, -24.0)],
 	"shop": [Vector3(22.0, 11.0, 13.0), Vector3(22.0, 0.0, 4.6)],
 	"locker": [Vector3(-14.0, 11.0, 37.0), Vector3(-14.0, 0.0, 28.6)],
 	"bar": [Vector3(20.0, 17.0, -9.0), Vector3(20.0, 0.0, -27.5)],
@@ -733,7 +717,7 @@ func foreman_show(id: String) -> void:
 		var nb: Dictionary = t["levels"][lv]
 		var left := ClubBuilds.runs_left(id)
 		card["title"] = "Идёт стройка: %s" % nb["title"]
-		card["desc"] = "Сейчас: %s\nБудет: %s\n%s" % [String(t["levels"][lv - 1]["now"]) if lv > 0 else String(t.get("start", "ничего")), nb["now"], ("Леса стоят: ещё %d %s" % [left, runs_word(left)]) if left > 0 else "Готово — зайди в клуб заново"]
+		card["desc"] = "Сейчас: %s\nБудет: %s\n%s" % [String(t["levels"][lv - 1]["now"]) if lv > 0 else String(t.get("start", "ничего")), nb["now"], ("Леса стоят: ещё %d %s" % [left, ClubBuilds.runs_word(left)]) if left > 0 else "Готово — зайди в клуб заново"]
 		build = {"text": "Леса стоят · ещё %d" % left if left > 0 else "Готово", "can": false}
 	else:
 		var nx: Dictionary = t["levels"][lv]
@@ -746,7 +730,7 @@ func foreman_show(id: String) -> void:
 		var price := ClubBuilds.next_price(id)
 		var runs := int(nx.get("runs", 0))
 		if runs > 0:
-			card["desc"] += "\nСтройка: %d %s после оплаты" % [runs, runs_word(runs)]
+			card["desc"] += "\nСтройка: %d %s после оплаты" % [runs, ClubBuilds.runs_word(runs)]
 		if ClubBuilds.can_afford(id):
 			build = {"text": "ПОСТРОИТЬ  ·  %d ●" % price, "can": true}
 		else:
@@ -800,7 +784,7 @@ func foreman_build() -> bool:
 		main.sfx.play("club_build" if main.sfx.has("club_build") else "bounce", -2.0, 0.8)
 		TelegramApp.haptic("heavy")
 		var n := ClubBuilds.runs_left(id)
-		coach.say("Леса стоят. Будет готово через %d %s" % [n, runs_word(n)], true)
+		coach.say("Леса стоят. Будет готово через %d %s" % [n, ClubBuilds.runs_word(n)], true)
 		foreman_show(id)
 		return true
 	world.set_level(id, lv)

@@ -54,7 +54,7 @@ var _scaffolds := {}                   # construction id -> Node3D (scaffolding 
 ## Where the scaffolding stands while a level takes runs (hub spec 13): centre and size x, z.
 const SCAFFOLD_AT := {
 	"court": [Vector3(-Scenery.HX - 3.0, 0, 9.0), Vector2(2.4, 3.6)],
-	"stands": [Vector3(Scenery.HX + 5.6, 0, -9.0), Vector2(2.2, 8.0)],
+	"stands": [Vector3(Scenery.HX + 2.5, 0, -9.0), Vector2(3.8, 6.0)],
 	"gate": [Vector3(0, 0, 41.0), Vector2(6.4, 1.4)],
 	"shop": [Vector3(26.4, 0, 2.0), Vector2(2.2, 4.0)],
 	"locker": [Vector3(-18.4, 0, 26.0), Vector2(2.2, 4.0)],
@@ -290,7 +290,7 @@ func _make_scaffold(id: String) -> Node3D:
 	l.text = "СТРОИТСЯ"
 	l.font = UiTheme.display()
 	l.font_size = 64
-	l.pixel_size = 0.006
+	l.pixel_size = 0.0048
 	l.modulate = UiTheme.GOLD
 	l.outline_size = 10
 	l.outline_modulate = Color(0.1, 0.08, 0.06)
@@ -732,9 +732,9 @@ func _fill_room(id: String, inside: Node3D, lv: int) -> void:
 				inside.add_child(_mesh_box(Vector3(0.06, 1.2, 1.5), Vector3(-2.95, 1.6, -0.4), ClubMaterial.pal(ClubMaterial.TEAL)))
 				for k in 3:
 					inside.add_child(_mesh_box(Vector3(0.04, 0.04, 0.5), Vector3(-2.9, 1.6 + (k - 1) * 0.3, -0.4), ClubMaterial.pal(ClubMaterial.WHITE, false)))
-				inside.add_child(_mesh_box(Vector3(1.6, 0.06, 0.3), Vector3(2.3, 1.0, -hz + 0.3), trim))
+				inside.add_child(_mesh_box(Vector3(1.6, 0.5, 0.4), Vector3(2.0, 0.25, -hz + 0.4), trim))
 				for k in 3:
-					inside.add_child(_mesh_cyl(0.09, 0.05, 0.24, Vector3(1.8 + k * 0.5, 1.15, -hz + 0.3), ClubMaterial.glow(UiTheme.GOLD, 1.0)))
+					inside.add_child(_mesh_cyl(0.11, 0.06, 0.3, Vector3(1.5 + k * 0.5, 0.65, -hz + 0.4), ClubMaterial.glow(UiTheme.GOLD, 1.0)))
 		"shop":
 			# A counter with a till and the window: 2 / 3 / 4 stands with a thing each
 			# (ClubBuilds.shop_stock); the boutique's window glows in the rarities' colours.
