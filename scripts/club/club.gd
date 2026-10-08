@@ -351,8 +351,13 @@ func place_buttons(id: String) -> Dictionary:
 				"extra": [["Новая игра", "club_tournament_new"]]}
 		if SaveData.club.has("last_location"):
 			var loc := Locations.find(SaveData.club["last_location"])
+			var extra := [["Другое место", "club_locations"]]
+			if SaveData.played >= 1 and Modifiers.enabled:
+				# The quick start skips the conditions screen: a quiet link to it (v0.2 G).
+				var k := snappedf(Modifiers.reward(RunMods.preset()["mods"]), 0.01)
+				extra.append(["Условия · ×%s" % str(k).trim_suffix(".0"), "club_mods"])
 			return {"label": "НОВАЯ ИГРА  ·  %s" % String(loc["name"]).to_upper(), "action": "club_tournament",
-				"extra": [["Другое место", "club_locations"]]}
+				"extra": extra}
 		return {"label": "НОВАЯ ИГРА", "action": "club_tournament", "extra": []}
 	if id == "coach":
 		if ClubQuests.claimable_count() > 0:
@@ -421,6 +426,11 @@ func ui_action(action: String, arg: int) -> void:
 			ClubScreens.quests(main.ui)
 		"club_locations":
 			ClubScreens.locations(main.ui)
+		"club_mods":
+			# The run's conditions, then the run in the remembered place and format.
+			if SaveData.club.has("last_location"):
+				main._next_location = SaveData.club["last_location"]
+			RunMods.open(main, int(SaveData.club.get("last_format", 1)))
 
 
 ## 'Забрать' at the coach's: every finished quest's reward at once.
