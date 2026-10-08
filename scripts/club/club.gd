@@ -70,6 +70,7 @@ func setup(m: Node) -> void:
 	for b in hud.buttons:
 		main.hud.touch.blocked_controls.append(b)
 	main.hud.touch.tapped.connect(_on_tap)
+	main.hud.touch.held.connect(_on_hold)
 	coach.setup(self, main.cpu)
 	quests = ClubQuests.Watch.new()
 	add_child(quests)
@@ -84,6 +85,7 @@ func open() -> bool:
 		world = main.scenery as ClubWorld
 		if world == null:
 			return false  # the club's scenery failed to load: Main keeps its old menu
+		world.set_props_visible(true)
 		if not world.roulette().finished.is_connected(_on_spun):
 			world.roulette().finished.connect(_on_spun)
 		_roulette_on = false
@@ -105,6 +107,7 @@ func open() -> bool:
 		_place = ""
 		hud.hide_place()
 	main.ui.close()
+	world.set_props_visible(true)
 	_refresh()
 	hud.visible = true
 	if not SaveData.club.get("met_coach", false):
@@ -138,6 +141,9 @@ func close() -> void:
 	p.area = main.PLAYER_AREA
 	p.rotation.y = 0.0
 	p.move_input = Vector2.ZERO
+	if is_instance_valid(world):
+		world.set_props_visible(false)  # a match on the club court: no machine, no circles
+	main.cpu.set_meta("club_coach", false)
 	main.cpu.area = main.CPU_AREA
 	main.cpu.rotation.y = PI
 	main.cpu.move_input = Vector2.ZERO
@@ -262,7 +268,14 @@ func _update_place() -> void:
 	world.highlight(id)
 	if id == _place:
 		return
+	var left_court := _place == "court" and id == ""
 	_place = id
+	if left_court and not SaveData.club.get("walk_hint", false):
+		SaveData.club["walk_hint"] = true
+		SaveData.save()
+		var tap_mode: bool = get_node("/root/Tuning").tap_controls
+		hud.show_hint(("Это твой клуб. Тап по земле — иди туда, держи палец — иди за ним" if tap_mode else
+			"Это твой клуб. Веди пальцем внизу экрана — гуляй") + ". ◎ слева внизу — быстро к корту")
 	if id == "":
 		hud.hide_place()
 	else:
@@ -554,14 +567,30 @@ func _on_tap(screen_pos: Vector2) -> void:
 	if d.y > -0.01:
 		return
 	var g := o + d * (-o.y / d.y)
+	# A tap on a place walks the hero into its circle; only its button acts (the owner's
+	# phone test: a tap on the court started practice by the machine).
 	for id in _open_ids:
 		var p := ClubPlaces.find(id)
 		var c: Vector3 = p["pos"]
 		if Vector2(g.x - c.x, g.z - c.z).length() <= float(p["r"]) + 0.6:
-			_on_choice(place_buttons(id)["action"], 0)
-			return
+			g = Vector3(c.x, 0.0, c.z)
+			break
 	_move_target = g
 	_route = []
+
+
+## Holding the finger (tap controls): the hero keeps walking toward it.
+func _on_hold(screen_pos: Vector2) -> void:
+	if not active or main.ui.is_open() or hud.travel_open() or _roulette_on or _foreman_on:
+		return
+	var o := cam.project_ray_origin(screen_pos)
+	var d := cam.project_ray_normal(screen_pos)
+	if d.y > -0.01:
+		return
+	var g := o + d * (-o.y / d.y)
+	if _move_target == Vector3.INF or Vector2(g.x - _move_target.x, g.z - _move_target.z).length() > 0.6:
+		_move_target = g
+		_route = []
 
 
 # --- The foreman: buying the constructions' levels (H2) --------------------------------

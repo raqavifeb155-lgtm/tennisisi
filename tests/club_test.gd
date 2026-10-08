@@ -17,6 +17,7 @@ func _initialize() -> void:
 	test_shop_locker()
 	await test_world()
 	await test_flow()
+	await test_transitions()
 	await test_places_flow()
 	await test_build_world()
 	await test_foreman_flow()
@@ -696,3 +697,93 @@ func test_quests_flow() -> void:
 	SaveData.club = {}
 	SaveData.played = 0
 	SaveData.gold = 0
+
+
+## The owner's phone test (08.10): taps walk, never press; the club's props leave the
+## court for a match; every way out of the club comes back to it.
+func test_transitions() -> void:
+	print("transitions")
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	root.add_child(main)
+	await _frames(5)
+	SaveData.enabled = false
+	SaveData.club = {"last_location": "clay", "last_format": 0, "met_coach": true}
+	SaveData.active = null
+	SaveData.run = {}
+	SaveData.played = 1
+	Skills.pending = []
+	main._show_menu()
+	await _frames(3)
+	var club = main.club
+	var w = club.world
+	# 1. A tap on a place (the machine's circle on the court) walks there; it never starts
+	# practice. Only the button does.
+	var mp: Vector3 = ClubPlaces.find("machine")["pos"]
+	var screen: Vector2 = club.cam.unproject_position(mp)
+	club._on_tap(screen)
+	await _frames(3)
+	check(club.active and main.phase == club._idle, "a tap on the machine's circle doesn't start a match")
+	check(club._move_target != Vector3.INF and Vector2(club._move_target.x - mp.x, club._move_target.z - mp.z).length() < 0.5, "it walks the hero to the place")
+	for i in 240:
+		await physics_frame
+		if club.hud.current_place() == "machine":
+			break
+	check(club.hud.current_place() == "machine", "arrived: the place's button shows (%s)" % club.hud.current_place())
+	check(not club.hud.buttons.has(club.hud._bubble) and club.hud._bubble.mouse_filter == Control.MOUSE_FILTER_IGNORE, "the coach's bubble never eats a tap")
+	# Hold to walk (tap mode): the hero follows the finger.
+	club._move_target = Vector3.INF
+	club._on_hold(club.cam.unproject_position(Vector3(-4, 0, 12)))
+	check(club._move_target != Vector3.INF, "holding the finger walks the hero toward it")
+	club._move_target = Vector3.INF
+	# 3. Leaving the court's circle: the buttons go, a hint once.
+	club._travel("court")
+	await _frames(2)
+	check(club.hud.current_place() == "court", "the main screen's buttons in the court's circle")
+	SaveData.club.erase("walk_hint")
+	main.player.position = Vector3(0, 0, 20.5)
+	await _frames(3)
+	check(club.hud.current_place() == "", "out of the circle: Новая игра / Продолжить ride away")
+	check(club.hud.hint_shown(), "a hint how to walk, the first time")
+	check(SaveData.club.get("walk_hint", false), "only once")
+	club._travel("court")
+	await _frames(2)
+	# Club -> the bracket -> back: in the club, the hero where he was.
+	var before: Vector3 = main.player.position
+	club._on_choice("club_tournament", 0)
+	await _frames(3)
+	check(main.ui.is_open() and not club.active, "the bracket")
+	main._on_ui("menu", 0)
+	await _frames(3)
+	check(club.active and main.location_id == "club" and main.player.position.distance_to(before) < 0.6, "back from the bracket: the club, the hero where he was")
+	SaveData.active = null
+	SaveData.run = {}
+	# 2. Practice on the club's court: no machine, coach props or circles on it.
+	club._on_choice("practice", 0)
+	await _frames(3)
+	check(main.phase != club._idle and main.location_id == "club", "practice on the club court")
+	check(not w.props_visible(), "the machine and the circles leave the court for the match")
+	check(not main.cpu.get_meta("club_coach", false), "the opponent is not the coach in his cap")
+	# Pause in the match -> 'Выйти в клуб'.
+	main.hud.menu_requested.emit()
+	await _frames(3)
+	check(club.active and main.phase == club._idle and not main.get_tree().paused, "Выйти в клуб from a match: the club, not paused")
+	check(w.props_visible(), "the props are back")
+	# A tournament match to its end -> the result -> the club.
+	club._on_choice("club_tournament", 0)
+	await _frames(2)
+	main._on_ui("play", 0)
+	await _frames(3)
+	check(main.phase != club._idle and not club.active, "a tournament match")
+	main.scoreboard.winner = 0
+	main._finish_match()
+	await _frames(3)
+	check(main.ui.is_open(), "its result")
+	main._on_ui("menu", 0)
+	await _frames(3)
+	check(club.active and main.location_id == "club" and club.world.props_visible(), "from the result: back in the club")
+	main.queue_free()
+	await _frames(2)
+	SaveData.club = {}
+	SaveData.played = 0
+	SaveData.active = null
+	SaveData.run = {}

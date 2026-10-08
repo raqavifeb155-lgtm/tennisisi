@@ -42,6 +42,7 @@ func setup(c: Node, b: Athlete) -> void:
 ## Into the club: dressed, at his spot by the court.
 func enter() -> void:
 	body.set_look(LOOK)
+	body.set_meta("club_coach", true)
 	body.area = club.world.walk.bounds
 	body.position = HOME
 	body.velocity = Vector3.ZERO

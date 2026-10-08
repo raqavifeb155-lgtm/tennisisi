@@ -46,6 +46,7 @@ var _high := true
 var _board := "Задания — с началом турнира"
 var _chalk: Label3D
 var _focus_room := ""
+var _props_on := true
 var _blackjack: Node3D
 
 
@@ -210,6 +211,21 @@ func show_ghost(id: String, lv: int) -> void:
 		else:
 			g.material_override = mat
 	_ghost_id = id
+
+
+## The club's props on the main court (the ball machine, the places' circles): away for
+## a match on the club court, back in the club.
+func set_props_visible(on: bool) -> void:
+	_props_on = on
+	var m := get_node_or_null("machine_model") as Node3D
+	if m:
+		m.visible = on
+	if _rings:
+		_rings.visible = on
+
+
+func props_visible() -> bool:
+	return _props_on
 
 
 func ghost_id() -> String:
