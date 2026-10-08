@@ -79,6 +79,32 @@ func _button(from: Node, text: String) -> Button:
 	return null
 
 
+## The bag chip is on screen, inside the width, and clear of the ⚙ button, the bank and the
+## run's chips and (`back`) of «Назад».
+func _chip_clear(ui, back := false) -> bool:
+	var c: Control = ui.bag_chip
+	if not c.is_visible_in_tree():
+		return false
+	var r := c.get_global_rect()
+	if r.position.x < 0.0 or r.end.x > 720.0 - 132.0 + 14.0:  # TournamentUI.HUD_BUTTON_W
+		return false
+	for other in [ui._chip, ui._run_chip]:
+		if (other as Control).is_visible_in_tree() and r.intersects((other as Control).get_global_rect()):
+			return false
+	if r.intersects(_gear().get_global_rect()):
+		return false
+	if back:
+		for b in ui._back_slot.get_children():
+			if (b as Control).is_visible_in_tree() and r.intersects((b as Control).get_global_rect()):
+				return false
+	return true
+
+
+# Scripts that use TournamentUI are loaded at run time: a tool compiles before the autoloads exist.
+func _run_bag():
+	return load("res://scripts/ui/screens/run_bag.gd")
+
+
 func _tut() -> Control:
 	return main.hud._tutorial
 
@@ -401,6 +427,46 @@ func _run() -> void:
 	await _expect("Золото: итоги начинаются с банка до забега", func() -> bool: return main.ui.chip_values().x == bank0 and main.ui.run_chip_shown())
 	await _wait(2.0)
 	await _expect("Золото: на итогах забег ушёл в банк", func() -> bool: return main.ui.chip_values().x == bank0 + 75 and not main.ui.run_chip_shown())
+
+	# --- Loot cards (v0.2 L): backs, the turn, the bag chip, the flight into it ---------------
+	var lt := Tournament.new(1, 5)
+	main.tournament = lt
+	main.tournament_mode = true
+	lt.state = Tournament.State.REWARD
+	var lrng := RandomNumberGenerator.new()
+	lrng.seed = 9
+	var shoes := Gear.roll(Gear.RARE, lrng, "shoes")
+	lt.offer = [
+		{"kind": "item", "item": shoes, "title": shoes["name"], "desc": Gear.describe(shoes)},
+		{"kind": "item", "item": Gear.roll(Gear.COMMON, lrng, "band"), "title": "Напульсник", "desc": "x"},
+		Rewards.WILDCARD.duplicate()]
+	main.ui.show_reward(lt)
+	await _wait(0.4)
+	var cards: Array = main.ui._box.get_children().filter(func(c): return c is GameCard)
+	_check("Награда: три карточки, все рубашкой вверх, читать нечего", cards.size() == 3 and cards.all(func(c): return c.face_down and c.visible_text() == ""))
+	_check("Награда: чип сумки виден, не налезает на ⚙, золото и забег", _chip_clear(main.ui))
+	await _tap(cards[0])
+	await _expect("Награда: тап по рубашке открывает весь ряд", func() -> bool: return cards.all(func(c): return c.is_open() and c.visible_text() != ""))
+	_chosen = ""
+	var had: int = _run_bag().carried(lt)
+	var shoes_slot: String = shoes["slot"]
+	await _tap(cards[0])
+	await _expect("Награда: тап по открытой карте берёт её", func() -> bool: return _chosen == "reward")
+	await _expect("Награда: вещь долетела до чипа сумки: число выросло, бейдж +1", func() -> bool: return main.ui.bag_chip.count == had + 1)
+	lt.pending_loot = Gear.roll(Gear.EPIC, lrng)
+	main.ui.show_loot(lt)
+	await _wait(0.8)
+	_check("Трофей: чип сумки не налезает на ⚙, золото и забег", _chip_clear(main.ui))
+	var carried_before: int = _run_bag().carried(lt)
+	_chosen = ""
+	await _tap(await _find(main.ui.root, "НАДЕТЬ"))
+	await _expect("Трофей: «НАДЕТЬ» — вещь летит в сумку, потом экран меняется", func() -> bool: return _chosen == "loot" and main.ui.bag_chip.count == carried_before + 1)
+	SaveData.gold = 700
+	var shop = load("res://scripts/ui/screens/run_shop.gd")
+	shop.back_to = "menu"
+	shop.show_shop(main.ui)
+	await _wait(0.5)
+	_check("Магазин: чип (шкафчик) на месте, «Назад» и золото не задеты", _chip_clear(main.ui, true))
 
 	# --- The trophy mini-game ------------------------------------------------------
 	main.ui.close()
