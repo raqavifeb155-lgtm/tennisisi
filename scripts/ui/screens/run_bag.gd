@@ -60,14 +60,22 @@ static func stock_name(slot: String) -> String:
 	return {"racket": "Стандартная ракетка", "shoes": "Свои кроссовки", "band": "Без напульсника"}.get(slot, "—")
 
 
-static func item_card(ui: TournamentUI, item: Dictionary, what: String, slot: String, action := "", arg := 0) -> GameCard:
+## How many things the player has: worn and in the bag (the bag chip's number).
+static func carried(t: Tournament) -> int:
+	var n := t.bag.size()
+	for s in Gear.SLOTS:
+		n += 0 if t.equip.get(s, {}).is_empty() else 1
+	return n
+
+
+static func item_card(ui: TournamentUI, item: Dictionary, what: String, slot: String, action := "", arg := 0, thumb := true) -> GameCard:
 	if item.is_empty():
 		var empty_tag := Gear.slot_name(slot) if what == "" else "%s  ·  %s" % [what, Gear.slot_name(slot)]
-		return ui._card({"tag": empty_tag, "title": stock_name(slot), "desc": "без бонусов"}, action, arg, Color(0, 0, 0, 0))
+		return ui._card({"tag": empty_tag, "title": stock_name(slot), "desc": "без бонусов", "slot": slot if slot != "" else "racket"}, action, arg, Color(0, 0, 0, 0))
 	var r := int(item["rarity"])
 	var tag := "%s  ·  %s  ·  %s" % [what, Gear.slot_name(String(item["slot"])), UiTheme.RARITY_NAMES[r]] if what != "" \
 		else "%s  ·  %s" % [Gear.slot_name(String(item["slot"])), UiTheme.RARITY_NAMES[r]]
-	return ui._card({"tag": tag, "title": item["name"], "desc": Gear.describe(item)}, action, arg, Color(0, 0, 0, 0), r)
+	return ui._card({"tag": tag, "title": item["name"], "desc": Gear.describe(item), "item": item if thumb else {}}, action, arg, Color(0, 0, 0, 0), r)
 
 
 # --- Hooks into the tournament screens ------------------------------------------
@@ -114,7 +122,7 @@ static func reward_tag(t: Tournament, item: Dictionary) -> String:
 
 static func show_bag(ui: TournamentUI, t: Tournament) -> void:
 	ui._open(t, true, "bag_back")
-	ui._title("Сумка")
+	ui._title("Сумка")  # no bag chip on this screen: with «Назад», the run's gold and the bank it would not fit 720 px
 	RunLocker.bag_section(ui, t)  # v0.2 A-2: the kept things, until the first match
 	ui._sub("Надето")
 	for i in Gear.SLOTS.size():
@@ -132,6 +140,7 @@ static func show_bag(ui: TournamentUI, t: Tournament) -> void:
 			sum += Gear.price(it)
 		var b := ui._secondary("Продать всё лишнее (%d)  +%d" % [extra.size(), sum], "sell_extra")
 		b.add_theme_color_override("font_color", UiTheme.GOLD)
+		ui.carry_coins(b, b, sum, t.gold + sum)  # v0.2 L-3: the coins pour into the run's chip
 	ui._primary("К СЕТКЕ", "bag_back")
 
 
@@ -145,7 +154,7 @@ static func show_item(ui: TournamentUI, t: Tournament, arg: int) -> void:
 		return
 	var slot := String(item["slot"])
 	ui._title(Gear.slot_name(slot), UiTheme.rarity_color(int(item["rarity"])))
-	item_card(ui, item, "", slot)
+	var card := item_card(ui, item, "", slot)
 	if in_bag:
 		var worn: Dictionary = t.equip.get(slot, {})
 		var lines := compare(item, worn)
@@ -156,7 +165,8 @@ static func show_item(ui: TournamentUI, t: Tournament, arg: int) -> void:
 		if lines.is_empty():
 			ui._note("Статы те же — разница в эффекте")
 		ui._primary("НАДЕТЬ", "equip", arg - BAG_ARG)
-		ui._secondary("Продать  +%d" % Gear.price(item), "sell", arg - BAG_ARG)
+		var sell := ui._secondary("Продать  +%d" % Gear.price(item), "sell", arg - BAG_ARG)
+		ui.carry_coins(sell, card, Gear.price(item), t.gold + Gear.price(item))  # v0.2 L-3
 	else:
 		ui._note("Надето. Заменить можно вещью из сумки.")
 
