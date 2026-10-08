@@ -55,6 +55,7 @@ var scoreboard := MatchScore.new(1, 99, 0)  # practice: one endless set
 # Tournament / menus (TournamentUI) and skills (Skills)
 var ui: TournamentUI
 var run_hub: RunHub
+var mods_hub: ModsHub             # v0.2 G: modifiers of the match (scripts/mods)
 var club: Club                    # v0.2 B: the club as the main screen (scripts/club)
 var tournament: Tournament
 var tournament_mode := false
@@ -70,6 +71,10 @@ var _autoplay_format := 0
 var _bot_dive_test := false
 var _bot_sd := 0.035
 var _bot_xp := -1.0
+var _bot_measure := 0        # v0.2 G: --measure=N: the bot plays N points against the same opponent (--stage, --seed) and reports its share
+var _bot_stage := 1
+var _bot_seed := 0
+var _bot_pts := [0, 0]
 var _cpu_serve_mult := 1.0        # difficulty modifier "Бомбардир"
 var _run_dist := 0.0              # metres run this rally (experience for "Ноги")
 var shot_type := ShotType.TOPSPIN
@@ -190,6 +195,12 @@ func _ready() -> void:
 			_profile_t = 5.0  # print frame statistics every 5 s (a profiling run, not headless)
 		elif a.begins_with("--bot-sd="):
 			_bot_sd = float(a.get_slice("=", 1))  # bot timing error (s): ~0.035 sharp, ~0.07 a thumb on a phone
+		elif a.begins_with("--measure="):
+			_bot_measure = int(a.get_slice("=", 1))
+		elif a.begins_with("--stage="):
+			_bot_stage = int(a.get_slice("=", 1))
+		elif a.begins_with("--seed="):
+			_bot_seed = int(a.get_slice("=", 1))
 		elif a.begins_with("--xp="):
 			_bot_xp = float(a.get_slice("=", 1))  # every skill starts with this much experience
 
@@ -244,6 +255,9 @@ func _ready() -> void:
 	run_hub = RunHub.new()  # v0.2 A: style, gear effects, opponent stamina, bets (scripts/run)
 	add_child(run_hub)
 	run_hub.setup(self)
+	mods_hub = ModsHub.new()  # v0.2 G: auras, the run's conditions (after RunHub: its match comes first)
+	add_child(mods_hub)
+	mods_hub.setup(self)
 	club = Club.new()  # v0.2 B: the walkable club replaces the menu list (scripts/club)
 	add_child(club)
 	club.setup(self)
@@ -756,6 +770,8 @@ func _swipe_world_dir(start: Vector2, end: Vector2) -> Vector3:
 		var v := end - start
 		d = Vector3(v.x, 0.0, v.y)
 	d = d.normalized()
+	if mods_hub.mirror:
+		d.x = -d.x  # v0.2 G: «Зеркало»
 	if d.z > -0.3:  # always toward the opponent
 		d = Vector3(d.x, 0.0, -0.3).normalized() if absf(d.x) > 0.01 else Vector3(0, 0, -1)
 	return d
@@ -816,7 +832,7 @@ func _swing_input(dir: Vector3, pace_k: float, type: int) -> void:
 ## just inside it; a wider line goes into that deep corner. So with perfect timing the
 ## ball goes where the line points and stays in; errors are what make it miss.
 func rally_target(origin: Vector3, d: Vector3, pace_k: float) -> Vector3:
-	var w := Court.SINGLES_HALF_WIDTH - 0.6
+	var w := Court.half_width() - 0.6
 	var zt := -(Court.HALF_LENGTH - lerpf(2.6, 1.5, pace_k))
 	var p := origin + d * ((zt - origin.z) / d.z)
 	if absf(p.x) > w:
@@ -830,7 +846,7 @@ func rally_target(origin: Vector3, d: Vector3, pace_k: float) -> Vector3:
 ## Lob target: along the aim line, deep behind a player at the net. A clean scoop lands
 ## a couple of metres inside the baseline; a poor one drops short, where it gets smashed.
 func lob_target(origin: Vector3, d: Vector3, q: float) -> Vector3:
-	var w := Court.SINGLES_HALF_WIDTH - 0.8
+	var w := Court.half_width() - 0.8
 	var depth := Court.HALF_LENGTH - lerpf(5.0, 2.0, q)
 	var p := origin + d * ((-depth - origin.z) / d.z)
 	p.x = clampf(p.x, -w, w)
@@ -842,7 +858,7 @@ func lob_target(origin: Vector3, d: Vector3, q: float) -> Vector3:
 ## Drop shot target: along the aim line, just over the net. A clean touch dies close to
 ## the net; a poor one sits up deeper, where the opponent can punish it.
 func drop_target(origin: Vector3, d: Vector3, pace_k: float, q: float) -> Vector3:
-	var w := Court.SINGLES_HALF_WIDTH - 0.6
+	var w := Court.half_width() - 0.6
 	var depth := lerpf(1.3, 2.3, pace_k) + (1.0 - q) * 3.5
 	var p := origin + d * ((-depth - origin.z) / d.z)
 	p.x = clampf(p.x, -w, w)
@@ -858,7 +874,7 @@ func serve_target(origin: Vector3, d: Vector3, pace_k: float) -> Vector3:
 	var zt := -(Court.SERVICE_LINE - lerpf(1.1, 0.6, pace_k))
 	var p := origin + d * ((zt - origin.z) / d.z)
 	var lo := 0.25
-	var hi := Court.SINGLES_HALF_WIDTH - 0.2
+	var hi := Court.half_width() - 0.2
 	var bx := p.x * box_side
 	if bx < lo and bx > lo - 1.5:
 		p.x = box_side * lo
@@ -1147,6 +1163,8 @@ func _update_player_movement() -> void:
 		player.move_input = Vector2.ZERO
 		return
 	var mv := hud.touch.move_vector
+	if mods_hub.mirror:
+		mv.x = -mv.x  # v0.2 G: «Зеркало»
 	if hud.touch.stick_active:
 		_assist_suppressed = true  # the thumb is steering: no auto-positioning this ball
 	if mv != Vector2.ZERO:
@@ -1248,7 +1266,7 @@ func execute_shot(who: int, hitter: Athlete, contact: Vector3, target: Vector3, 
 	elif err_kind == 3:
 		# Wide: lands past the sideline on the side it was going to.
 		var sx := signf(target.x) if absf(target.x) > 0.3 else (1.0 if rng.randf() < 0.5 else -1.0)
-		target.x = sx * (Court.SINGLES_HALF_WIDTH + rng.randf_range(0.2, 1.1))
+		target.x = sx * (Court.half_width() + rng.randf_range(0.2, 1.1))
 	var flat := target - contact
 	flat.y = 0.0
 	var dist := flat.length()
@@ -1277,7 +1295,7 @@ func execute_shot(who: int, hitter: Athlete, contact: Vector3, target: Vector3, 
 		# Into the net: launched so it reaches the net plane below the tape.
 		var t_net := absf(contact.z) / absf(v.z)
 		var h_net := Court.net_height(contact.x + v.x * t_net) * rng.randf_range(0.35, 0.8)
-		v.y = (h_net - contact.y + 0.5 * BallPhysics.GRAVITY * t_net * t_net) / t_net
+		v.y = (h_net - contact.y + 0.5 * BallPhysics.gravity() * t_net * t_net) / t_net
 	ball.launch(contact, v, r.spin)
 	last_hitter = who as Who
 	bounces = 0
@@ -1345,11 +1363,11 @@ func _line_call(pos: Vector3, half: int) -> void:
 		var x := pos.x * box_side
 		var m_service := Court.SERVICE_LINE + rz - z
 		var m_center := x + rx
-		var m_side := Court.SINGLES_HALF_WIDTH + rx - x
+		var m_side := Court.half_width() + rx - x
 		margin = minf(m_service, minf(m_center, m_side))
 		line_axis = 1 if margin == m_service else 0
 	else:
-		var m_side := Court.SINGLES_HALF_WIDTH + rx - absf(pos.x)
+		var m_side := Court.half_width() + rx - absf(pos.x)
 		var m_base := Court.HALF_LENGTH + rz - z
 		margin = minf(m_side, m_base)
 		line_axis = 1 if m_base < m_side else 0
@@ -1434,6 +1452,11 @@ func _end_point(winner: int, reason: String) -> void:
 	_stats["serve"][srv_key + outcome] = _stats["serve"].get(srv_key + outcome, 0) + 1
 	var key := ("YOU " if winner == Who.PLAYER else "CPU ") + "wins: " + text.split("\n")[0]
 	_stats["reasons"][key] = _stats["reasons"].get(key, 0) + 1
+	if autoplay and autoplay_tournament and _bot_measure > 0:
+		_bot_pts[winner] += 1
+		if _bot_pts[0] + _bot_pts[1] >= _bot_measure:
+			print("BOTPTS you=%d cpu=%d share=%.3f" % [_bot_pts[0], _bot_pts[1], float(_bot_pts[0]) / float(_bot_measure)])
+			get_tree().quit()
 	if autoplay and not autoplay_tournament:
 		print("point %d: %s (rally %d) -> %s %s  stamina %d%%" % [_points_played, key, rally, scoreboard.point_text(), scoreboard.games_text(), roundi(stamina * 100.0)])
 		if _points_played >= autoplay_points:
@@ -1552,8 +1575,8 @@ func _setup_serve() -> void:
 	srv.serve_ready()
 	if server == Who.PLAYER:
 		# Rules: behind the baseline, between the centre mark and the sideline on this side.
-		var x0 := 0.15 if sx > 0.0 else -Court.SINGLES_HALF_WIDTH
-		player.area = Rect2(x0, Court.HALF_LENGTH + 0.08, Court.SINGLES_HALF_WIDTH - 0.15, 1.6)
+		var x0 := 0.15 if sx > 0.0 else -Court.half_width()
+		player.area = Rect2(x0, Court.HALF_LENGTH + 0.08, Court.half_width() - 0.15, 1.6)
 		_move_target = Vector3.INF
 		pass
 	else:
@@ -1595,7 +1618,7 @@ func _start_toss() -> void:
 	var hand := _ball_in_hand(srv)
 	ball.launch(hand, Vector3(0.0, TOSS_SPEED, 0.0), Vector3.ZERO)
 	toss_active = true
-	var g := BallPhysics.GRAVITY
+	var g := BallPhysics.gravity()  # v0.2 G: «Лунная гравитация» slows the toss too
 	var disc := maxf(0.0, TOSS_SPEED * TOSS_SPEED - 2.0 * g * (SERVE_CONTACT_H - hand.y))
 	toss_ideal = game_time + (TOSS_SPEED + sqrt(disc)) / g
 	srv.prepare_serve()
@@ -1670,7 +1693,7 @@ func _player_underarm_serve(dir: Vector3, pace_k: float) -> void:
 	var depth := lerpf(1.4, 2.6, pace_k)
 	var target := origin + dir * ((-depth - origin.z) / dir.z)
 	var lo := 0.4
-	var hi := Court.SINGLES_HALF_WIDTH - 0.4
+	var hi := Court.half_width() - 0.4
 	target.x = box_side * clampf(target.x * box_side, lo, hi)
 	target.z = -depth
 	target.y = BallPhysics.RADIUS
@@ -1813,10 +1836,15 @@ func _start_practice() -> void:
 	_begin_match()
 
 
-func _start_tournament(format_index: int) -> void:
+func _start_tournament(format_index: int, run_conditions: Array = []) -> void:
 	if not autoplay and not Locations.unlocked(_next_location):
 		_next_location = Locations.best_unlocked()  # v0.2 A-4: an old "last tournament" on a closed island
-	tournament = Tournament.new(format_index)
+	tournament = Tournament.new(format_index, _bot_seed)
+	if autoplay and _bot_measure > 0:
+		tournament.stage = clampi(_bot_stage, 0, tournament.rounds() - 1)
+		tournament.current_lineup()["mods"] = []  # the same opponent every time: only --mods differs
+	if not run_conditions.is_empty():
+		Modifiers.set_run(tournament, run_conditions)  # v0.2 G: the run's conditions (RunMods screen)
 	tournament.location = _next_location
 	Locker.board(tournament)  # v0.2 A-2: what was bought in the shop comes along
 	SaveData.active = tournament
@@ -1959,7 +1987,7 @@ func _set_opponent_mods(speed: float, serve: float, cpu_racket: Dictionary) -> v
 func _begin_match() -> void:
 	GameEvents.match_started.emit({"tournament": tournament_mode, "opponent": tournament.opponent()["id"] if tournament_mode and tournament != null else ""})
 	sfx.set_music(false)
-	stamina = 1.0
+	stamina = mods_hub.start_stamina  # v0.2 G: 1.0, or «Полбака»
 	score = [0, 0]
 	rally = 0
 	best_rally = 0
@@ -2017,7 +2045,7 @@ func _on_ui(action: String, arg: int) -> void:
 			ui.show_formats()
 		"format":
 			club.remember(_next_location, arg)  # the club's "Турнир" goes straight to the bracket next time
-			_start_tournament(arg)
+			RunMods.open(self, arg)  # v0.2 G: the run's conditions screen, then _start_tournament
 		"practice":
 			_start_practice()
 		"character":
@@ -2088,6 +2116,8 @@ func _on_ui(action: String, arg: int) -> void:
 			ui.show_character(false)
 		"bets", "wheel_chip", "spin", "bet_match", "bet_chip", "bet_win", "bet_sweep", "bet_back":
 			RunBets.ui_action(self, action, arg)  # v0.2 A: the betting desk
+		"mods_toggle", "mods_preset", "mods_go", "mods_back":
+			RunMods.ui_action(self, action, arg)  # v0.2 G: the run's conditions
 		"bag", "bag_item", "bag_back", "equip", "sell":
 			RunBag.ui_action(self, action, arg)  # v0.2 A: the bag between matches
 		"replay", "share":
@@ -2137,6 +2167,13 @@ func _autoplay_after_match(won: bool, st: String) -> void:
 	var last: Dictionary = tournament.results.back()
 	var opp: Dictionary = Opponents.ROSTER[last["stage"]]
 	print("MATCH %s vs %s: %s %s   [%s]" % [Opponents.ROUND_NAMES[last["stage"]], opp["name"], "WON" if won else "LOST", st, _levels_text()])
+	if _bot_measure > 0:  # measuring: the same opponent again, nothing carried over
+		tournament.pending_loot = {}
+		tournament.stage = clampi(_bot_stage, 0, tournament.rounds() - 1)
+		tournament.state = Tournament.State.BRACKET
+		tournament.champion = false
+		_play_match()
+		return
 	while true:
 		var c := Skills.next_pending(rng)
 		if c.is_empty():
@@ -2471,10 +2508,10 @@ func _update_timing_ring() -> void:
 		hud.touch.stick_zone_top = INF  # tap mode: no joystick, the whole screen is court
 	else:
 		hud.touch.stick_zone_top = clampf(cam.unproject_position(player.global_position).y + 28.0, vh * 0.66, vh * 0.9)
-	if autoplay:
+	if autoplay or mods_hub.no_ring:  # v0.2 G: «Без кольца»
 		ring.hide_ring()
 		return
-	if ((phase == Phase.SERVE and server == Who.PLAYER) or phase == Phase.BONUS) and toss_active:
+	if ((phase == Phase.SERVE and server == Who.PLAYER) or phase == Phase.BONUS) and toss_active and toss_ideal - game_time < mods_hub.ring_late:
 		var ss := Skills.stroke("serve")
 		ring.show_ring(anchor, toss_ideal - game_time - lag, Tuning.perfect_window * float(ss["window"]), Tuning.good_window * float(ss["good"]), ss["ring_speed"])
 		return
@@ -2488,7 +2525,7 @@ func _update_timing_ring() -> void:
 		if late_until > 0.0:
 			ring.show_ring(anchor + Vector2(lean, 0.0), late_cross_time - game_time - lag, pw, gw, sk["ring_speed"])
 			return
-		if t_contact < float(sk["ring"]) and absf(player.lateral_of(contact_pred)) < 3.0 and contact_pred.y < MAX_CONTACT_H:
+		if t_contact < minf(float(sk["ring"]), mods_hub.ring_late) and absf(player.lateral_of(contact_pred)) < 3.0 and contact_pred.y < MAX_CONTACT_H:
 			ring.show_ring(anchor + Vector2(lean, 0.0), t_contact - lag, pw, gw, sk["ring_speed"])
 			return
 	ring.hide_ring()

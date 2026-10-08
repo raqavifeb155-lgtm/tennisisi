@@ -95,6 +95,7 @@ var bag: Array = []               # spare items (BAG_SIZE)
 var new_items: Array = []         # what the last win put into the bag
 var auto_sold := 0                # gold from items sold because the bag was full (last win)
 var run_mods := {}                # mods that last the run (RunEffects run_mod, e.g. Корона)
+var run_modifiers: Array = []     # v0.2 G: the run's conditions picked before it (Modifiers ids)
 var mythic_rolled := false        # a mythic already showed up this run (one per run)
 var drop_bonus := 0.0             # added to the drop chances (1 = everything drops)
 var bet := {}                     # a bet on the coming match (Bets): stake, odds, sweep
@@ -139,7 +140,7 @@ func _init(format_index := 0, seed_value := 0) -> void:
 const SAVED := ["format", "location", "lineup", "racket", "pending_loot", "missed_loot", "banked",
 	"state", "stage", "wildcards", "perks", "results", "gold", "champion", "offer",
 	"equip", "bag", "new_items", "auto_sold", "run_mods", "mythic_rolled", "drop_bonus", "bet",
-	"income", "locker_done"]
+	"income", "locker_done", "run_modifiers"]
 
 
 ## The run as plain data, for the save file: a phone that reloads the page (Telegram
@@ -180,9 +181,12 @@ func roll_lineup() -> void:
 				var id: String = ids[rng.randi_range(0, ids.size() - 1)]
 				if not mods.has(id):
 					mods.append(id)
+		# v0.2 G: rare auras (scripts/mods), "???" ones named on the first point.
+		var aur := Modifiers.roll_auras(rng.seed, i, Opponents.ROSTER[i].get("boss", false), 1.0, SaveData.played == 0)
+		mods += aur["mods"]
 		var bonus := 0.0
 		for id in mods:
-			bonus += float(MODIFIERS[id]["loot"])
+			bonus += Modifiers.loot_bonus(id)
 		if Opponents.ROSTER[i].get("boss", false):
 			bonus += BOSS_LOOT_BONUS
 		var gear := {}
@@ -199,7 +203,7 @@ func roll_lineup() -> void:
 			gear["racket"] = Gear.roll(Gear.LEGENDARY, rng, "racket", lvl + 1)
 		elif golden:
 			gear["racket"] = Items.set_level(gear["racket"], lvl + 1)
-		lineup.append({"mods": mods, "gear": gear, "racket": gear["racket"], "golden": golden})
+		lineup.append({"mods": mods, "hidden": aur["hidden"], "gear": gear, "racket": gear["racket"], "golden": golden})
 
 
 ## The level of the gear opponents wear here: 1 + the island's tier (v0.2 A-4).
@@ -242,7 +246,7 @@ func modifier_value(key: String) -> float:
 	else:
 		v *= 1.0 + extra
 	for id in current_lineup()["mods"]:
-		var m: Dictionary = MODIFIERS[id]
+		var m: Dictionary = MODIFIERS.get(id, {})  # auras (v0.2 G) are not in here
 		if m.has(key):
 			v = v + float(m[key]) if key == "skill" else v * float(m[key])
 	if key == "skill":
@@ -250,7 +254,7 @@ func modifier_value(key: String) -> float:
 		for slot in gear:
 			if not gear[slot].is_empty():
 				v += SKILL_PER_RARITY * int(gear[slot]["rarity"])
-	return v
+	return Modifiers.opp_value(self, key, v)  # v0.2 G: auras and the run's conditions
 
 
 ## The trophy: put on (what was worn goes into the bag) or into the bag.
@@ -406,7 +410,8 @@ func gold_for_win(i: int) -> int:
 	var golden: bool = i < lineup.size() and lineup[i].get("golden", false)
 	var base := roundi(GOLD_PER_WIN[i] * prize_mult()) * (Golden.GOLD_X if golden else 1)
 	# v0.2 B hook: the club's stands pay a little more for a won match (ClubBuilds, off online).
-	return roundi(float(base) * (1.0 + ClubBuilds.gold_win_bonus()))
+	# v0.2 G: his auras and the run's conditions pay more (Modifiers.gold_mult, x3 at most).
+	return roundi(float(base) * (1.0 + ClubBuilds.gold_win_bonus()) * Modifiers.gold_mult(self, i))
 
 
 ## Records a finished match and moves the run on.

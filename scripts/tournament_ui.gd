@@ -405,6 +405,7 @@ func show_bracket(t: Tournament) -> void:
 		_note("Золото забега +%d уйдёт в банк в конце турнира" % t.gold)
 	RunBag.bracket_extra(self, t)  # v0.2 A: the bag
 	RunBets.bracket_extra(self, t)  # v0.2 A: a bet on the coming match
+	RunMods.bracket_extra(self, t)  # v0.2 G: the run's conditions
 	for i in t.rounds():
 		_bracket_row(t, i)
 	var opp := t.opponent()
@@ -835,10 +836,10 @@ func _bracket_row(t: Tournament, i: int) -> void:
 	if not done and i < t.lineup.size():
 		var lu: Dictionary = t.lineup[i]
 		if not lu["mods"].is_empty():
-			var names: Array[String] = []
-			for m in lu["mods"]:
-				names.append(Tournament.MODIFIERS[m]["name"])
-			v.add_child(_left(_text("Модификаторы: " + ", ".join(names), UiTheme.text(), UiTheme.T_SMALL, Color(1.0, 0.6, 0.35))))
+			# v0.2 G: old modifiers and auras ("???" while hidden), with the prize multiplier
+			var mt := _left(_text(Modifiers.bracket_text(lu), UiTheme.text(), UiTheme.T_SMALL, Color(1.0, 0.6, 0.35)))
+			mt.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			v.add_child(mt)
 		RunBag.opponent_hint(self, v, lu)  # v0.2 A: his gear is a hint, revealed on court
 	if current:
 		var lesson := _left(_text(o["lesson"], UiTheme.text(), UiTheme.T_SMALL, UiTheme.MUTED))
