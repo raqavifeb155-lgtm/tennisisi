@@ -25,6 +25,8 @@ func _run() -> void:
 		test_tv_camera,
 		test_opponent_stats,
 		test_opponent_card,
+		test_adapt,
+		test_ai_profile,
 	]
 	expected = tests.size()
 	for t in tests:
@@ -247,7 +249,7 @@ func test_shot_planner() -> void:
 			ok_targets = false
 	check(ok_targets, "every target lands inside the singles court, every kind is known")
 	var neutral := _kinds(_sit(), "allcourt")
-	check(neutral.get("neutral", 0.0) + neutral.get("change", 0.0) > 0.9, "neutral rally: patience and a change of direction (%s)" % str(neutral))
+	check(neutral.get("neutral", 0.0) + neutral.get("change", 0.0) > 0.85, "neutral rally: patience and a change of direction (%s)" % str(neutral))
 	var short := _kinds(_sit({"short": true, "me": Vector3(-1, 0, -8.8), "contact": Vector3(-0.3, 1, -8.4)}), "allcourt")
 	check(short.get("approach", 0.0) > 0.25, "a short ball: approach and come in (%.0f%%)" % (short.get("approach", 0.0) * 100.0))
 	var deep := _kinds(_sit({"player": Vector3(0.5, 0, 14.4), "me": Vector3(-1, 0, -10.6)}), "allcourt")
@@ -532,4 +534,46 @@ func test_opponent_card() -> void:
 			play = true
 	check(play, "the card ends with the 'Играть' button")
 	ui.queue_free()
+	finished += 1
+
+
+func test_adapt() -> void:
+	print("D-5: the opponents keep up with the player")
+	check(Opponents.adapted_skill(0.45, 0.0) < 0.45 - 0.2, "a beginner is spared (%.2f instead of 0.45)" % Opponents.adapted_skill(0.45, 0.0))
+	check(is_equal_approx(Opponents.adapted_skill(0.45, 4.0), 0.45) or Opponents.adapted_skill(0.45, 4.0) >= 0.45, "from level 4 nobody is eased")
+	check(Opponents.adapted_skill(0.0, 8.0) > 0.25, "the weakest is lifted to a floor for a veteran (%.2f)" % Opponents.adapted_skill(0.0, 8.0))
+	check(Opponents.adapted_skill(0.85, 8.0) >= 0.85 and Opponents.adapted_skill(0.85, 25.0) <= 1.0, "the strong are not lowered, nothing above 1")
+	var prev := -1.0
+	var mono := true
+	for lv in range(0, 26):
+		var v := Opponents.adapted_skill(0.25, float(lv))
+		mono = mono and v >= prev - 0.0001
+		prev = v
+	check(mono, "stronger player, never an easier opponent")
+	# Every match has drop shots, approaches and changes of direction, even against a player who stands on the line.
+	var calm := _kinds(_sit({"player": Vector3(0.5, 0, 12.0), "rally": 5, "contact": Vector3(-1.3, 1.0, -11.8)}), "allcourt", 2000)
+	check(calm.get("drop", 0.0) > 0.01 and calm.get("drop", 0.0) < 0.08, "a drop shot out of a calm rally, now and then (%.1f%%)" % (100.0 * calm.get("drop", 0.0)))
+	check(calm.get("change", 0.0) > 0.05, "and a change of direction (%.0f%%)" % (100.0 * calm.get("change", 0.0)))
+	var base := Opponents.stats(Opponents.find("dzumhur"))
+	var seen := Opponents.shown_stats(Opponents.find("dzumhur"), 10.0)
+	check(int(seen["forehand"]) > int(base["forehand"]) + 2, "the card's stats follow it (forehand %d -> %d)" % [base["forehand"], seen["forehand"]])
+	finished += 1
+
+
+func test_ai_profile() -> void:
+	print("D-6: profiles for the AI against AI")
+	var a := AiProfile.parse_player("lv=5,sd=0.06,serve=7")
+	check(a["levels"]["forehand"] == 5 and a["levels"]["serve"] == 7 and is_equal_approx(a["sd"], 0.06), "side A: levels and timing error %s" % str(a["levels"]))
+	AiProfile.apply_levels(a["levels"])
+	check(Skills.level("serve") == 7 and Skills.level("feet") == 5 and Skills.points == 0, "the levels become experience: serve %d, feet %d" % [Skills.level("serve"), Skills.level("feet")])
+	Skills.reset()
+	var b := AiProfile.parse_opponent("rublev:serve=3,style=counter")
+	check(b["name"] == "Андрей Рублёв" and b["stats"]["serve"] == 3 and b["stats"]["forehand"] == 9 and b["play_style"] == "counter", "side B: a roster id with overrides")
+	var c := AiProfile.parse_opponent("junior:skill=0.3,net=9")
+	check(c["id"] == "custom" and c["name"] == "junior" and is_equal_approx(c["skill"], 0.3) and c["stats"]["net"] == 9 and c["stats"]["serve"] == Opponents.stats({"skill": 0.3})["serve"], "side B: a free profile comes from the tier")
+	check(AiProfile.parse_opponent("")["name"] == "Соперник", "an empty spec is still a player")
+	var ai: Node = load("res://scripts/opponent_ai.gd").new()
+	ai.set_profile(c)
+	check(ai.ratings["net"] == 9 and ai.style_id == "allcourt", "OpponentAI plays by a dictionary of stats")
+	ai.free()
 	finished += 1

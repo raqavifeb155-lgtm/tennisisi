@@ -38,6 +38,7 @@ func _initialize() -> void:
 	var tuning := root.get_node("Tuning")
 	tuning.slowmo_enabled = false
 	tuning.hitstop = false
+	tuning.ai_skill = 0.2  # D-5: a gentler CPU (stats make the default one hard) - long rallies for the swipes to land in
 	var scene: PackedScene = load("res://scenes/main.tscn")
 	main = scene.instantiate()
 	root.add_child(main)

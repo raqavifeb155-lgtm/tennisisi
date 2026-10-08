@@ -16,7 +16,7 @@ static func info(t: Tournament, i: int) -> Dictionary:
 	var mods: Array[String] = []
 	for m in lu.get("mods", []):
 		mods.append(mod_text(String(m)))
-	var st := Opponents.stats(o)
+	var st := Opponents.shown_stats(o)  # as he plays against this player (the roster's, kept up with his level)
 	return {
 		"name": String(o["name"]),
 		"style": String(Opponents.play_style(o)["name"]),

@@ -24,6 +24,8 @@ func _initialize() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--level="):
 			level = int(a.get_slice("=", 1))
+		elif a.begins_with("--ease="):
+			Opponents.ease_max = float(a.get_slice("=", 1))
 		elif a.begins_with("--xp="):
 			xp = float(a.get_slice("=", 1))
 		elif a.begins_with("--opp="):
@@ -60,7 +62,7 @@ func _initialize() -> void:
 		if o["id"] == opp_id:
 			opp = o
 	# Main's _ready runs once the tree starts: it reads this skill for the practice match.
-	root.get_node("Tuning").ai_skill = skill if skill >= 0.0 else float(opp.get("skill", 0.5))
+	root.get_node("Tuning").ai_skill = skill if skill >= 0.0 else Opponents.adapted_skill(float(opp.get("skill", 0.5)))  # D-5: like a tournament match
 
 
 func _process(_delta: float) -> bool:

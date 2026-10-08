@@ -12,7 +12,7 @@ const ROSTER := [
 	{
 		"id": "dzumhur", "name": "Дамир Джумхур", "short": "ДЖУМХУР", "short_en": "DZUMHUR", "title": "Уровень 1",
 		"lesson": "Мягкий темп, прощает ошибки. Обучение", "skill": 0.0, "play_style": "netrusher",
-		"stats": {"serve": 3, "forehand": 5, "backhand": 4, "net": 6, "speed": 5, "stamina": 4},
+		"stats": {"serve": 3, "forehand": 4, "backhand": 3, "net": 5, "speed": 4, "stamina": 4},
 		"shirt": Color(0.2, 0.45, 0.8),
 		"look": {"skin": 3, "hair": Looks.Hair.SHORT, "hair_color": 1, "beard": Looks.Beard.STUBBLE, "head": Looks.Head.NONE, "shirt": 5, "shorts": 3, "accent": 5},
 	},
@@ -113,6 +113,49 @@ static func stats(opp: Dictionary, skill := 0.5) -> Dictionary:
 		var v: float = given.get(k, roundf(2.0 + 7.0 * sk) + float(lean.get(k, 0)))
 		out[k] = clampi(roundi(v), 1, 10)
 	return out
+
+
+## The opponents keep up with the player (D-5): a veteran of level 8 is not a beginner, and
+## the first island's opponent must not be a punching bag for him. From ADAPT_FROM on, every
+## opponent is at least as strong as the FLOOR for the player's average skill level (the weak
+## ones are lifted to it, the strong ones stay), and everybody gains a little on top (ADD).
+## It moves the AI skill, and with it all six stats (OpponentAI.stat() follows
+## Tuning.ai_skill). A beginner is spared the other way round (EASE): the stats of the
+## roster are tuned for a player who has levelled, and D-1's numbers must stand for the new one.
+const ADAPT_FROM := 2.0
+const EASE_UNTIL := 4.0            # a beginner is spared up to this average level (D-1: he must be able to win points)
+const FLOOR_MAX := 0.6
+const ADD_MAX := 0.1
+static var floor_slope := 0.045    # floor of the AI skill per skill level above ADAPT_FROM
+static var add_slope := 0.008      # and the gain for all (--adapt-floor= / --adapt-add= for the bot)
+static var ease_max := 0.25        # what a level-0 player is spared: the AI skill below the roster's (--adapt-ease=)
+
+
+## The player's strength as the opponents see it: the average level of the skills.
+static func player_level() -> float:
+	var sum := 0.0
+	for id in Skills.LIST:
+		sum += float(Skills.level(id))
+	return sum / float(Skills.LIST.size())
+
+
+## The AI skill an opponent of this roster skill plays with against a player of this level
+## (-1: the current one). Modifiers and gear come on top (Tournament.modifier_value).
+static func adapted_skill(skill: float, level := -1.0) -> float:
+	var lv := player_level() if level < 0.0 else level
+	var over := maxf(lv - ADAPT_FROM, 0.0)
+	var spared := ease_max * clampf(1.0 - lv / EASE_UNTIL, 0.0, 1.0)
+	return clampf(maxf(skill, minf(over * floor_slope, FLOOR_MAX)) + minf(over * add_slope, ADD_MAX) - spared, 0.0, 1.0)
+
+
+## The stats as the opponent plays them against this player (what the card shows).
+static func shown_stats(opp: Dictionary, level := -1.0) -> Dictionary:
+	var st := stats(opp)
+	var sk := float(opp.get("skill", 0.5))
+	var shift := (adapted_skill(sk, level) - sk) * 9.0
+	for k in STAT_KEYS:
+		st[k] = clampi(roundi(float(st[k]) + shift), 1, 10)
+	return st
 
 
 ## "Слабая подача · Сильный форхенд": the weakest and the strongest points worth a word.
