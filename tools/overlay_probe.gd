@@ -287,7 +287,7 @@ func _run() -> void:
 	await _settings_round("Сетка → ⚙")
 	_chosen = ""
 	await _tap(await _find(main.ui.root, "НА КОРТ"))
-	await _expect("Сетка → ⚙ → ГОТОВО: «НА КОРТ» нажимается", func() -> bool: return _chosen == "play")
+	await _expect("Сетка → ⚙ → ГОТОВО: «НА КОРТ» нажимается (откроет карточку соперника)", func() -> bool: return _chosen == "opponent_card")
 
 	# --- A practice match and its pause ------------------------------------------------
 	main.tournament = null

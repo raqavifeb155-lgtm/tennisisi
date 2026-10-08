@@ -43,6 +43,7 @@ static var golden: Array = []          # golden opponents beaten (v0.2 A): roste
 static var locker := {}                # the locker: "items" kept, "next" bought for the next run, "shop" the shop's state
 static var titles_by_loc := {}         # titles won per location id (the islands open by them)
 static var lifetime_xp := 0.0          # every bit of skill experience ever earned (never reset)
+static var camera := "normal"          # the match camera (v0.2 D): "normal" | "tv" (section "view")
 static var source := "none"            # where the progress came from: local, old, cloud (telemetry)
 static var _cloud_checked := false
 static var _last_cloud := ""
@@ -105,6 +106,7 @@ static func _apply(cf: ConfigFile) -> void:
 	locker = cf.get_value("locker", "data", {})
 	titles_by_loc = cf.get_value("titles_by_loc", "data", {})
 	lifetime_xp = cf.get_value("lifetime", "xp", 0.0)
+	camera = cf.get_value("view", "camera", "normal")
 	active = null
 	Skills.xp = cf.get_value("skills", "xp", {})
 	Skills.perks = cf.get_value("skills", "perks", [])
@@ -203,6 +205,7 @@ static func _to_config() -> ConfigFile:
 	cf.set_value("settings", "graphics", graphics)
 	cf.set_value("settings", "gfx", gfx)
 	cf.set_value("player", "look", look)
+	cf.set_value("view", "camera", camera)
 	cf.set_value("club", "data", club)
 	if not style.is_empty():
 		cf.set_value("style", "data", style)

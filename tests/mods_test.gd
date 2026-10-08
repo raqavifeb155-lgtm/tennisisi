@@ -276,7 +276,12 @@ func _live() -> void:
 	await physics_frame
 	await physics_frame
 	check(h.active.is_empty() and not h.fog and not h._halo.visible, "leaving the match for the menu puts everything back")
-	check(_diff(base, _snap()).filter(func(k): return k != "opp" and k != "cpu" and k != "tuning").is_empty(), "...the court, the ball and the physics too")
+	# The menu is the club now (stream H): it tints the sky by the time of day, so "env" is its.
+	var left := _diff(base, _snap()).filter(func(k): return k != "opp" and k != "cpu" and k != "tuning" and not (k == "env" and main.club.active))
+	if not left.is_empty():
+		for k in left:
+			print("    differs: %s  was %s  now %s" % [k, base[k], _snap()[k]])
+	check(left.is_empty(), "...the court, the ball and the physics too")
 	await _run_screen()
 	_done()
 

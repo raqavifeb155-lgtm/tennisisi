@@ -329,7 +329,8 @@ func test_skills() -> void:
 	Skills.reset()
 	var b0 := Skills.stroke("forehand", 0)
 	var b25 := Skills.stroke("forehand", 25)
-	check(is_equal_approx(b0["pace"], 0.70) and is_equal_approx(b0["scatter"], 1.8) and is_equal_approx(b0["window"], 0.55), "beginner: pace 0.70, scatter 1.8, window 0.55")
+	# D-1 (HANDOFF 9.3): the beginner's handicap on top of the base curve (Skills.early).
+	check(is_equal_approx(b0["pace"], 0.70) and is_equal_approx(b0["scatter"], 1.8 * 1.35) and is_equal_approx(b0["window"], 0.55 * 0.70), "beginner: pace 0.70, scatter 2.43, window 0.385")
 	check(is_equal_approx(b25["pace"], 1.25) and is_equal_approx(b25["scatter"], 0.5) and is_equal_approx(b25["window"], 1.5), "pro: pace 1.25, scatter 0.5, window 1.5")
 	check(Skills.stroke("forehand", 1)["pace"] - b0["pace"] > 0.02, "one level is a step you feel (+%.0f%% pace)" % ((Skills.stroke("forehand", 1)["pace"] - b0["pace"]) * 100.0))
 	check(Skills.headline("forehand", 7).ends_with("км/ч") and Skills.headline("forehand", 8) != Skills.headline("forehand", 7), "level-up shows a number: %s -> %s" % [Skills.headline("forehand", 7), Skills.headline("forehand", 8)])

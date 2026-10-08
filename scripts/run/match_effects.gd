@@ -142,6 +142,8 @@ func _apply_mods() -> void:
 func _hurt(n: float, kind: String) -> void:
 	if n <= 0.05:
 		return
+	if main.ai.has_method("stamina_mult"):
+		n *= main.ai.stamina_mult()  # v0.2 D-5: the opponent's stamina stat (a bigger tank drains slower)
 	raw_damage += n
 	var d := opp.damage(n)
 	damage_dealt += d

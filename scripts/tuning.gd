@@ -26,6 +26,7 @@ var player_speed := 6.2
 var one_handed_bh := false     # backhand style: one-handed (Wawrinka) or two-handed
 var tap_controls := false      # true: tap / hold the court to run; false: thumb joystick under the player
 var assist := 0.6              # auto-positioning help, 0 = none (a tap overrides it for that ball)
+var tv_camera := false         # the broadcast camera: high behind the baseline, the whole court (GameCamera)
 
 # Opponent
 var ai_skill := 0.5

@@ -36,6 +36,7 @@ var ball: Ball
 var player: Athlete
 var cpu: Athlete
 var ai: OpponentAI
+var metrics: AiMetrics          # --autoplay only: rally, serve and tactics statistics
 var cam: GameCamera
 var hud: Hud
 var sfx: Sfx
@@ -140,6 +141,7 @@ var autoplay := false
 var autoplay_points := 40
 var _bot_armed := false
 var _bot_offset := 0.0
+var bot_serve_x := 2.0          # where across the box the bot aims its serve (tools/ai_bench.gd --serve=wide)
 var _stats := {"rallies": [], "reasons": {}, "labels": {}, "player_hits": 0, "cpu_hits": 0, "serve": {}}
 
 
@@ -175,8 +177,8 @@ var _drop_t := 0.0
 func _ready() -> void:
 	rng.randomize()
 	for a in OS.get_cmdline_user_args():
-		if a == "--autoplay":
-			autoplay = true
+		if a == "--autoplay" or a == "--ai-vs-ai":
+			autoplay = true  # --ai-vs-ai (AiVsAi, D-6): the bot against OpponentAI, no input
 		elif a.begins_with("--bonus-test"):
 			_bonus_rounds = int(a.get_slice("=", 1)) if "=" in a else 8
 		elif a == "--dive-test":
@@ -201,6 +203,12 @@ func _ready() -> void:
 			_bot_stage = int(a.get_slice("=", 1))
 		elif a.begins_with("--seed="):
 			_bot_seed = int(a.get_slice("=", 1))
+		elif a.begins_with("--adapt-floor="):
+			Opponents.floor_slope = float(a.get_slice("=", 1))  # D-5: how fast the opponents keep up with the player's level
+		elif a.begins_with("--adapt-ease="):
+			Opponents.ease_max = float(a.get_slice("=", 1))
+		elif a.begins_with("--adapt-add="):
+			Opponents.add_slope = float(a.get_slice("=", 1))
 		elif a.begins_with("--xp="):
 			_bot_xp = float(a.get_slice("=", 1))  # every skill starts with this much experience
 
@@ -229,6 +237,10 @@ func _ready() -> void:
 	ai = OpponentAI.new()
 	add_child(ai)
 	ai.setup(self, cpu, ball)
+	if autoplay:
+		metrics = AiMetrics.new()  # stream D: bot balancing statistics (scripts/ai)
+		add_child(metrics)
+		metrics.setup(self)
 
 	cam = GameCamera.new()
 	add_child(cam)
@@ -276,6 +288,7 @@ func _ready() -> void:
 	if SaveData.control_chosen:
 		Tuning.tap_controls = SaveData.tap_controls
 	Tuning.one_handed_bh = SaveData.one_handed_bh
+	Tuning.tv_camera = Tuning.tv_camera or SaveData.camera == "tv"  # D-4: the broadcast camera (--camera=tv too)
 	player.set_look(SaveData.look)
 	Tuning.ambience = SaveData.ambience
 	Tuning.music = SaveData.music
@@ -298,9 +311,11 @@ func _ready() -> void:
 			if Tuning.graphics == GraphicsQuality.CUSTOM:
 				for k in ["gfx_res", "gfx_aa", "gfx_shadows", "gfx_reach", "gfx_details"]:
 					gfx[k] = Tuning.get(k)
-			var now := [Tuning.tap_controls, Tuning.one_handed_bh, Tuning.ambience, Tuning.music, Tuning.graphics, gfx]
-			if now != [SaveData.tap_controls, SaveData.one_handed_bh, SaveData.ambience, SaveData.music, SaveData.graphics, SaveData.gfx]:
+			var cam := "tv" if Tuning.tv_camera else "normal"  # D-4: the broadcast camera, saved under "view"
+			var now := [Tuning.tap_controls, Tuning.one_handed_bh, Tuning.ambience, Tuning.music, Tuning.graphics, gfx, cam]
+			if now != [SaveData.tap_controls, SaveData.one_handed_bh, SaveData.ambience, SaveData.music, SaveData.graphics, SaveData.gfx, SaveData.camera]:
 				SaveData.gfx = gfx
+				SaveData.camera = cam
 				SaveData.tap_controls = Tuning.tap_controls
 				SaveData.one_handed_bh = Tuning.one_handed_bh
 				SaveData.ambience = Tuning.ambience
@@ -324,6 +339,10 @@ func _ready() -> void:
 				Skills.add_xp(id, _bot_xp)  # --xp: a player some tournaments in
 			Skills.pending = []
 		_start_tournament(_autoplay_format)
+	elif AiVsAi.requested():
+		var duel := AiVsAi.new()  # D-6: two AIs play tiebreaks to 7 (scripts/ai/ai_vs_ai.gd)
+		add_child(duel)
+		duel.start(self)
 	elif autoplay or _headless():
 		_start_practice()
 	else:
@@ -874,7 +893,7 @@ func serve_target(origin: Vector3, d: Vector3, pace_k: float) -> Vector3:
 	var zt := -(Court.SERVICE_LINE - lerpf(1.1, 0.6, pace_k))
 	var p := origin + d * ((zt - origin.z) / d.z)
 	var lo := 0.25
-	var hi := Court.half_width() - 0.2
+	var hi := Court.half_width() - Skills.serve_edge_margin()  # G: a narrow court; D-2: a beginner aims at the line itself
 	var bx := p.x * box_side
 	if bx < lo and bx > lo - 1.5:
 		p.x = box_side * lo
@@ -1184,6 +1203,7 @@ func _update_player_movement() -> void:
 		# Auto-positioning toward a comfortable contact point.
 		var ideal := _ideal_contact()
 		var side := 1 if player.lateral_of(ideal) >= 0.0 else -1
+		side = Footwork.auto_side(side, player.lateral_of(ideal), player.position.distance_to(player.stance_for(ideal, 1)), t_contact, player.max_speed)  # D-3: run around the backhand
 		var stance := player.stance_for(ideal, side)
 		var d := Vector2(stance.x - player.position.x, stance.z - player.position.z)
 		if d.length() > 0.05:
@@ -1235,6 +1255,8 @@ func movement_quality(speed: float, penalty := 1.0) -> float:
 ## easy ball, much more under a heavy ball or with a poor contact. Stronger players
 ## (CPU skill, the player's levels) miss less. PERFECT contact almost never misses.
 func error_chance(who: int, q: float, incoming_speed: float) -> float:
+	if who == Who.CPU:
+		return ai.error_chance(q, incoming_speed)  # D-3: the AI misses under pressure (OpponentAI)
 	var pressure := clampf((incoming_speed - 16.0) / 22.0, 0.0, 1.0)
 	var steady: float
 	if who == Who.CPU:
@@ -1711,7 +1733,6 @@ func _player_underarm_serve(dir: Vector3, pace_k: float) -> void:
 
 
 func _cpu_serve_hit() -> void:
-	var s := Tuning.ai_skill
 	var bp := ball.state.pos
 	var q: float = timing_quality(_cpu_toss_offset)[0]
 	var tx: float
@@ -1719,20 +1740,13 @@ func _cpu_serve_hit() -> void:
 	var pace: float
 	var top: float
 	var side_spin := 0.0
-	if serve_attempt == 1:
-		var wide := rng.randf() < 0.5
-		tx = box_side * (rng.randf_range(2.6, 3.6) if wide else rng.randf_range(0.4, 1.2))
-		tz = rng.randf_range(4.6, 5.9)
-		pace = lerpf(32.0, 46.0, s) * rng.randf_range(0.9, 1.05) * _cpu_serve_mult
-		top = 120.0
-		if wide and rng.randf() < 0.5:
-			pace *= 0.85
-			side_spin = 240.0 * -box_side  # slice curving out wide
-	else:
-		tx = box_side * rng.randf_range(0.9, 2.6)
-		tz = rng.randf_range(4.2, 5.4)
-		pace = lerpf(26.0, 34.0, s)
-		top = 320.0
+	# D-5: where and how hard by the opponent's serve stat (OpponentAI.plan_serve).
+	var sv: Dictionary = ai.plan_serve(box_side, serve_attempt, _cpu_serve_mult)
+	tx = sv["tx"]
+	tz = sv["tz"]
+	pace = sv["pace"]
+	top = sv["top"]
+	side_spin = sv["side_spin"]
 	cpu.swing(1, 0.02, bp, Athlete.Style.SERVE)
 	var r := execute_shot(Who.CPU, cpu, bp, Vector3(tx, BallPhysics.RADIUS, tz), pace, top, q, _cpu_toss_offset, 1, false, side_spin, false, 0.12)
 	last_serve_kmh = r.speed * 3.6
@@ -1821,7 +1835,7 @@ func _stop_match() -> void:
 	hud.announcer.set_hint("")
 
 
-func _start_practice() -> void:
+func _start_practice(board: MatchScore = null) -> void:  # board: AiVsAi plays tiebreaks
 	tournament = null
 	tournament_mode = false
 	set_location("club" if club.active else _next_location)  # from the club: its own court
@@ -1831,7 +1845,7 @@ func _start_practice() -> void:
 	Tuning.ai_skill = _practice_skill
 	cpu_label = "CPU"
 	cpu_call = "CPU"
-	scoreboard = MatchScore.new(1, 99, 0, Who.PLAYER, cpu_label)
+	scoreboard = board if board != null else MatchScore.new(1, 99, 0, Who.PLAYER, cpu_label)
 	ui.close()
 	_begin_match()
 
@@ -1959,7 +1973,7 @@ func _continue_tournament() -> void:
 func _play_match() -> void:
 	var opp := tournament.opponent()
 	Rewards.apply(tournament.perks)
-	Tuning.ai_skill = clampf(float(opp["skill"]) + tournament.modifier_value("skill"), 0.0, 1.0)
+	Tuning.ai_skill = clampf(Opponents.adapted_skill(float(opp["skill"]), -1.0, bool(opp.get("boss", false))) + tournament.modifier_value("skill"), 0.0, 1.0)  # D-5: keeps up with the player
 	cpu.set_look(opp.get("look", Looks.from_shirt(opp.get("shirt", Color(0.22, 0.28, 0.42)))))
 	_set_opponent_mods(tournament.modifier_value("speed"), tournament.modifier_value("serve"), tournament.current_lineup()["racket"])
 	cpu_label = opp["short"]
@@ -2082,6 +2096,10 @@ func _on_ui(action: String, arg: int) -> void:
 				ui.show_locker()
 		"menu":
 			_show_menu()
+		"opponent_card":
+			ui.show_opponent_card(tournament, arg)  # D-5: his stats before "Играть" (from the bracket)
+		"opp_back":
+			ui.show_bracket(tournament)
 		"play":
 			_play_match()
 		"give_up":
@@ -2566,7 +2584,7 @@ func _autoplay_tick() -> void:
 		if not toss_active:
 			_start_toss()
 		elif game_time >= toss_ideal + _bot_offset:
-			var to_box := Vector3(box_side * 2.0 - player.position.x, 0.0, -5.2 - player.position.z).normalized()
+			var to_box := Vector3(box_side * bot_serve_x - player.position.x, 0.0, -5.2 - player.position.z).normalized()
 			_curl_k = rng.randf_range(0.9, 1.3)
 			_player_serve(to_box.rotated(Vector3.UP, deg_to_rad(rng.randf_range(-6.0, 6.0))), rng.randf_range(0.3, 1.0), rng.randi_range(0, 2))
 		return
@@ -2604,3 +2622,5 @@ func _print_autoplay_summary() -> void:
 	print("point outcomes: %s" % str(_stats["reasons"]))
 	print("serve outcomes: %s" % str(_stats["serve"]))
 	print("dives: %d   stumbles: %d   errors: %d" % [_stats.get("dives", 0), _stats.get("stumbles", 0), _stats.get("errors", 0)])
+	if metrics:
+		print(metrics.report())
