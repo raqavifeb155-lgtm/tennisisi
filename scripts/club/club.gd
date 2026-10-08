@@ -24,6 +24,7 @@ var world: ClubWorld
 var cam: ClubCamera
 var hud: ClubHud
 var coach := ClubCoach.new()
+var npc_life: ClubNpcLife              # the students and the visitor (T-2)
 var quests: ClubQuests.Watch          # the coach's quests, counted from the match's events
 var active := false
 var _hero := START
@@ -83,6 +84,9 @@ func setup(m: Node) -> void:
 	main.hud.touch.tapped.connect(_on_tap)
 	main.hud.touch.held.connect(_on_hold)
 	coach.setup(self, main.cpu)
+	npc_life = ClubNpcLife.new()
+	add_child(npc_life)
+	npc_life.setup(self)
 	quests = ClubQuests.Watch.new()
 	add_child(quests)
 	quests.setup(main)
@@ -131,12 +135,17 @@ func open() -> bool:
 	world.set_props_visible(true)
 	_finish_builds()
 	_refresh()
+	npc_life.set_active(true)
 	hud.visible = true
 	_next_finished()
 	if not SaveData.club.get("met_coach", false):
 		SaveData.club["met_coach"] = true
 		SaveData.save()
 		coach.say("first", true)
+	elif Academy.free_ready() and not SaveData.club.get("hire_hint", false):
+		SaveData.club["hire_hint"] = true
+		SaveData.save()
+		coach.say("hire", true)
 	return true
 
 
@@ -146,6 +155,8 @@ func close() -> void:
 	if not active:
 		return
 	active = false
+	if npc_life != null:
+		npc_life.set_active(false)
 	if _foreman_on:
 		skip_build()
 		_foreman_on = false
@@ -195,6 +206,8 @@ func _refresh() -> void:
 	var travel: Array = []
 	world.sync_lots()        # a building of a lot stands once it is built (T-1)
 	_connect_roulette()
+	if npc_life != null and active:
+		npc_life.refresh()
 	for p in ClubPlaces.all():
 		var id: String = p["id"]
 		var lv := ClubPlaces.level(id)
@@ -354,6 +367,11 @@ func _update_place() -> void:
 	if id != "" and not _open_ids.has(id):
 		id = ""
 	world.highlight(id)
+	if id == "":
+		# Nobody's place: a person within reach gets his button (T-2, ClubNpc).
+		var who := ClubNpc.near(main.player.position)
+		if not who.is_empty():
+			id = "npc_" + String(who["id"])
 	if id == _place:
 		return
 	var left_court := _place == "court" and id == ""
@@ -390,6 +408,10 @@ func _update_place() -> void:
 
 func _show_place(id: String) -> void:
 	var b := place_buttons(id)
+	if b.is_empty():   # the person walked off or was let go
+		_place = ""
+		hud.hide_place()
+		return
 	hud.show_place(id, b["label"], b["action"], b["extra"], upgrade_price(id))
 
 
@@ -412,6 +434,8 @@ func place_buttons(id: String) -> Dictionary:
 		if not ClubLots.is_placed("coach") and Skills.points + Skills.pending.size() > 0:
 			(b["extra"] as Array).append(["Навыки", "character"])
 		return b
+	if id.begins_with("npc_"):
+		return ClubNpc.button(id.substr(4))
 	return _place_buttons(id)
 
 
@@ -482,7 +506,12 @@ func _on_choice(action: String, arg: int) -> void:
 ## ones that come from TournamentUI screens here too ("club_*").
 func ui_action(action: String, arg: int) -> void:
 	var id := _place if _place != "" else hud.current_place()
+	if action.begins_with("club_npc_"):
+		_npc_action(action)
+		return
 	match action:
+		"club_hire", "club_hire_pick", "club_hire_confirm", "club_hire_reroll":
+			_hire_action(action, arg)
 		"club_shop":
 			if not _hand_to("RunShop", action, arg):
 				ClubScreens.shop(main.ui, ClubPlaces.state("shop"))
@@ -1202,3 +1231,52 @@ func _end_lot_build(_lot: String, type: String) -> void:
 	_place = ""
 	_refresh()
 	_update_place()
+
+
+# --- People: talking, training, hiring (T-2) ----------------------------------------------------
+
+## «club_npc_talk:<id>», «club_npc_train:<student id>», «club_npc_hire:guest».
+func _npc_action(action: String) -> void:
+	var kind := action.get_slice(":", 0)
+	var who := action.get_slice(":", 1)
+	match kind:
+		"club_npc_talk":
+			if who == "coach":
+				var hire := not Academy.is_full() and not Academy.candidates().is_empty()
+				coach.say("Привёл новичков — выбирай, пока свободны" if hire else ("Твои ученики растут с каждым забегом" if not Academy.students().is_empty() else "Готов? Турнир ждёт"), true)
+			else:
+				npc_life.say(who, npc_life.line_for(who))
+		"club_npc_train":
+			var st := Academy.student(who)
+			if not st.is_empty():
+				AcademyStudent.show(main.ui, st, "card")
+		"club_npc_hire":
+			var g := Academy.guest_candidate()
+			if not g.is_empty():
+				AcademyHire.picked = "guest"
+				AcademyStudent.show(main.ui, g, "guest")
+
+
+## The hire screens: the list, a candidate's card, «Взять», a new set.
+func _hire_action(action: String, arg: int) -> void:
+	match action:
+		"club_hire":
+			AcademyHire.show(main.ui)
+		"club_hire_pick":
+			var list := Academy.candidates()
+			if arg >= 0 and arg < list.size():
+				AcademyHire.picked = String(list[arg]["id"])
+				AcademyStudent.show(main.ui, list[arg], "hire")
+		"club_hire_reroll":
+			if Academy.reroll():
+				hud.set_gold(SaveData.gold)
+			AcademyHire.show(main.ui)
+		"club_hire_confirm":
+			var st := Academy.hire(AcademyHire.picked)
+			if st.is_empty():
+				return
+			AcademyHire.picked = ""
+			hud.set_gold(SaveData.gold)
+			main._on_ui("menu", 0)   # back to the club, where the new student arrives
+			_refresh()
+			coach.say("%s теперь в клубе. Растить будем вместе" % String(st["name"]).get_slice(" ", 0), true)

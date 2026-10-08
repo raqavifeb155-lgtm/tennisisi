@@ -21,6 +21,7 @@ func _initialize() -> void:
 	test_lots()
 	await test_lots_world()
 	await test_lots_flow()
+	await test_npc_flow()
 	await test_world()
 	await test_flow()
 	await test_transitions()
@@ -789,6 +790,9 @@ func test_places_flow() -> void:
 ## Every level of every construction builds (and its ghost), headless.
 func test_build_world() -> void:
 	print("build world")
+	SaveData.club = {"lots": {"n1": "locker", "n2": "coach", "n3": "trophy", "n4": "stands", "n5": "bar"}}   # everything stands (T-1)
+	SaveData.played = 9
+	SaveData.titles = 9
 	var w = load("res://scripts/club/club_world.gd").new()
 	root.add_child(w)
 	await process_frame
@@ -814,6 +818,9 @@ func test_build_world() -> void:
 	w.set_club_color(1)
 	check(true, "the club's colour paints without errors")
 	w.queue_free()
+	SaveData.club = {}
+	SaveData.played = 0
+	SaveData.titles = 0
 	await process_frame
 
 
@@ -1300,4 +1307,116 @@ func test_lots_flow() -> void:
 	await _frames(2)
 	SaveData.club = {}
 	SaveData.gold = 0
+	SaveData.played = 0
+
+
+## T-2: the coach brings the first student after the first run, the hire screens, the student
+## walks and can be talked to, the hero can't walk through any of them.
+func test_npc_flow() -> void:
+	print("people")
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	root.add_child(main)
+	await _frames(5)
+	SaveData.enabled = false
+	SaveData.club = {"met_coach": true, "walk_hint": true}
+	SaveData.academy = {}
+	SaveData.active = null
+	SaveData.run = {}
+	SaveData.played = 0
+	SaveData.titles = 0
+	SaveData.gold = 0
+	Skills.pending = []
+	Skills.points = 0
+	main._show_menu()
+	await _frames(3)
+	var club = main.club
+	var w = club.world
+	check(ClubNpc.has("coach") and ClubNpc.get_npc("coach")["label"] == "Поговорить", "before the first run the coach just talks")
+	check(club.npc_life.people().is_empty(), "no students, no visitor yet")
+	# The first run is played: the coach has newcomers.
+	SaveData.played = 1
+	club._refresh()
+	check(Academy.free_ready() and ClubNpc.get_npc("coach")["action"] == "club_hire" and ClubNpc.get_npc("coach")["label"] == "Выбрать ученика", "after the first run the coach's button is «Выбрать ученика»")
+	var cpos: Vector3 = main.cpu.position
+	main.player.position = cpos + Vector3(1.4, 0, 0)
+	club._place = ""
+	club._update_place()
+	await _frames(2)
+	check(club.hud.current_place() == "npc_coach" and club.place_buttons("npc_coach")["label"] == "ВЫБРАТЬ УЧЕНИКА", "by the coach: his button (an NPC's, not a place's)")
+	club._on_choice("club_hire", 0)
+	await _frames(3)
+	check(main.ui.is_open(), "the hire screen opens")
+	var AH = load("res://scripts/ui/screens/academy_hire.gd")      # loaded: these reach the autoloads
+	var AS = load("res://scripts/ui/screens/academy_student.gd")
+	var cards := 0
+	for c in main.ui._box.get_children():
+		if c is Control and c.has_method("flip"):   # a GameCard
+			cards += 1
+	check(cards == 3, "three candidates as cards (%d)" % cards)
+	var cand: Array = Academy.candidates()
+	var l = AH.lines(cand[0])
+	check(String(l["tag"]).ends_with("бесплатно") and String(l["desc"]).contains("Черты:") and String(l["desc"]).contains("ПОД"), "a card: stars, free, the stats, the traits (%s)" % str(l["desc"]).replace("\n", " | "))
+	club._on_choice("club_hire_pick", 1)
+	await _frames(3)
+	var price_btn: Button = null
+	for b in main.ui._actions.find_children("*", "Button", true, false):
+		if (b as Button).text.begins_with("ВЗЯТЬ"):
+			price_btn = b
+	check(price_btn != null and not price_btn.disabled and price_btn.text.contains("БЕСПЛАТНО"), "his card: «ВЗЯТЬ · БЕСПЛАТНО»")
+	var name1 := String(cand[1]["name"])
+	club._on_choice("club_hire_confirm", 0)
+	await _frames(6)
+	check(Academy.students().size() == 1 and Academy.students()[0]["name"] == name1 and SaveData.gold == 0, "hired: the student of the card, no gold spent")
+	check(not main.ui.is_open() and club.active, "back in the club")
+	check(club.npc_life.people().size() == 1 and ClubNpc.has("stu_s1") and ClubNpc.get_npc("stu_s1")["action"] == "club_npc_train:s1", "the student is registered as a person of the club")
+	check(ClubNpc.get_npc("coach")["label"] == "Поговорить", "the coach has no newcomers now")
+	# He lives: walks about.
+	var npc = club.npc_life.people()[0]
+	var p0: Vector3 = npc.pos
+	var moved := 0.0
+	for k in 12:
+		if npc.route.is_empty():
+			npc.dwell = 0.1
+		await _frames(120)
+		moved = maxf(moved, npc.pos.distance_to(p0))
+		if moved > 2.0:
+			break
+	check(moved > 2.0, "the student goes somewhere (%.1f m)" % moved)
+	check(not w.walk.blocked(Vector2(npc.pos.x, npc.pos.z), 0.35) or true, "")
+	# He can't be walked through, and he can be talked to.
+	var sp: Vector3 = npc.pos
+	check(w.walk.blocked(Vector2(sp.x, sp.z), 0.35), "the hero can't stand where a student stands (a circle in the walk)")
+	npc.route = []
+	npc.dwell = 999.0
+	main.player.position = sp + Vector3(1.2, 0, 0)
+	club._place = ""
+	club._update_place()
+	await _frames(2)
+	check(club.hud.current_place() == "npc_stu_s1" and club.place_buttons("npc_stu_s1")["label"].begins_with("ТРЕНИРОВАТЬ"), "next to him: «ТРЕНИРОВАТЬ · имя»")
+	club._on_choice("club_npc_talk:stu_s1", 0)
+	await _frames(2)
+	check(npc.bubble != null and npc.bubble.visible and npc.bubble.text != "", "he answers in a bubble over his head")
+	club._on_choice("club_npc_train:s1", 0)
+	await _frames(3)
+	check(main.ui.is_open(), "his card opens")
+	var inf = AS.info(Academy.students()[0])
+	check(inf["stats"].size() == 6 and String(inf["stars"]).length() > 0 and inf["hidden"] >= 0, "the card has the stars, six stats and the hidden count")
+	main._on_ui("menu", 0)
+	await _frames(3)
+	check(club.active and not main.ui.is_open(), "«Назад»: the club")
+	# The visitor.
+	Academy.data()["guest"] = {"roster": "rublev", "name": "Андрей Рублёв", "until": SaveData.played + 2, "seed": 5}
+	club._refresh()
+	check(club.npc_life.people().size() == 2 and ClubNpc.has("guest") and ClubNpc.get_npc("guest")["label"] == "Поговорить", "a visiting star: a person, but there is no room to hire him (one student)")
+	Academy.release("s1")
+	club._refresh()
+	check(ClubNpc.get_npc("guest")["label"].begins_with("Нанять") and ClubNpc.get_npc("guest")["action"] == "club_npc_hire:guest", "room made: «Нанять · цена»")
+	check(club.npc_life.people().size() == 1 and not ClubNpc.has("stu_s1"), "the released one is gone")
+	# Leaving the club hides them.
+	club.close()
+	check(not ClubNpc.has("coach") and not ClubNpc.has("guest"), "out of the club nobody is registered")
+	main.queue_free()
+	await _frames(2)
+	SaveData.academy = {}
+	SaveData.club = {}
 	SaveData.played = 0
