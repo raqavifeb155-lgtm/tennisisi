@@ -593,8 +593,14 @@ func _run() -> void:
 	await _tap(_gear())
 	await _settings_round("Итог → ⚙")
 	_chosen = ""
-	await _tap(await _find(main.ui.root, "НАГРАДУ"))
-	await _expect("Итог → ⚙ → ГОТОВО: главное действие нажимается", func() -> bool: return _chosen == "to_reward")
+	# After a win: «ОТКРЫТЬ СУНДУК» / «ВЫБРАТЬ НАГРАДУ» / «ДАЛЬШЕ» (A-7: a chest or none)
+	var go: Button = _button(main.ui.root, "СУНДУК")
+	if go == null:
+		go = _button(main.ui.root, "НАГРАДУ")
+	if go == null:
+		go = await _find(main.ui.root, "ДАЛЬШЕ")
+	await _tap(go)
+	await _expect("Итог → ⚙ → ГОТОВО: главное действие нажимается", func() -> bool: return _chosen in ["to_reward", "to_bracket", "to_summary"])
 
 	# --- Gold: the bank on the chip, the run's gold apart until the summary (C-4) ---------
 	var bank0 := SaveData.gold

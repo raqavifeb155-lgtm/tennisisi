@@ -79,6 +79,8 @@ var _bot_measure := 0        # v0.2 G: --measure=N: the bot plays N points again
 var _bot_stage := 1
 var _bot_seed := 0
 var _bot_pts := [0, 0]
+var _bot_hard_assist := Modifiers.BOT_HARD_ASSIST   # --bot-hard-assist=
+var _bot_hardcore := false   # v0.2 G-6: --hardcore: the bot runs a hardcore tournament (less auto-positioning too)
 var _cpu_serve_mult := 1.0        # difficulty modifier "Бомбардир"
 var _run_dist := 0.0              # metres run this rally (experience for "Ноги")
 var shot_type := ShotType.TOPSPIN
@@ -200,6 +202,10 @@ func _ready() -> void:
 			_profile_t = 5.0  # print frame statistics every 5 s (a profiling run, not headless)
 		elif a.begins_with("--bot-sd="):
 			_bot_sd = float(a.get_slice("=", 1))  # bot timing error (s): ~0.035 sharp, ~0.07 a thumb on a phone
+		elif a.begins_with("--bot-hard-assist="):
+			_bot_hard_assist = float(a.get_slice("=", 1))
+		elif a == "--hardcore":
+			_bot_hardcore = true
 		elif a.begins_with("--measure="):
 			_bot_measure = int(a.get_slice("=", 1))
 		elif a.begins_with("--stage="):
@@ -1219,7 +1225,7 @@ func _update_player_movement() -> void:
 	var assist := Tuning.assist
 	if autoplay:
 		mv = Vector2.ZERO
-		assist = 0.25 if _bot_dive_test else 1.0
+		assist = 0.25 if _bot_dive_test else (_bot_hard_assist if tournament != null and tournament.hardcore else 1.0)
 	var free := mv == Vector2.ZERO and (autoplay or not _assist_suppressed) and not serving
 	if free and assist > 0.0 and _player_can_hit() and t_contact < 2.5:
 		# Auto-positioning toward a comfortable contact point.
@@ -1876,14 +1882,15 @@ func _start_practice(board: MatchScore = null) -> void:  # board: AiVsAi plays t
 	_begin_match()
 
 
-func _start_tournament(format_index: int, run_conditions: Array = []) -> void:
+func _start_tournament(format_index: int, run_conditions: Array = [], hardcore := false) -> void:
+	hardcore = hardcore or (autoplay and _bot_hardcore)
 	if not autoplay and not Locations.unlocked(_next_location):
 		_next_location = Locations.best_unlocked()  # v0.2 A-4: an old "last tournament" on a closed island
-	tournament = Tournament.new(format_index, _bot_seed)
+	tournament = Tournament.new(format_index, _bot_seed, hardcore)
 	if autoplay and _bot_measure > 0:
 		tournament.stage = clampi(_bot_stage, 0, tournament.rounds() - 1)
 		tournament.current_lineup()["mods"] = []  # the same opponent every time: only --mods differs
-	if not run_conditions.is_empty():
+	if hardcore or not run_conditions.is_empty():
 		Modifiers.set_run(tournament, run_conditions)  # v0.2 G: the run's conditions (RunMods screen)
 	tournament.location = _next_location
 	Locker.board(tournament)  # v0.2 A-2: what was bought in the shop comes along
@@ -2164,7 +2171,7 @@ func _on_ui(action: String, arg: int) -> void:
 			ui.show_character(false)
 		"bets", "wheel_chip", "spin", "bet_match", "bet_chip", "bet_win", "bet_sweep", "bet_back":
 			RunBets.ui_action(self, action, arg)  # v0.2 A: the betting desk
-		"mods_toggle", "mods_preset", "mods_go", "mods_back":
+		"mods_toggle", "mods_preset", "mods_mode", "mods_go", "mods_back":
 			RunMods.ui_action(self, action, arg)  # v0.2 G: the run's conditions
 		"bag", "bag_item", "bag_back", "equip", "sell":
 			RunBag.ui_action(self, action, arg)  # v0.2 A: the bag between matches

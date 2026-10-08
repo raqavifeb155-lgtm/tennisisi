@@ -358,7 +358,7 @@ func test_gear_and_loot() -> void:
 	check(Gear.glow(leg) > 1.0 and Gear.glow(Gear.roll(Gear.COMMON, rng)) == 0.0, "legendary glows, common does not")
 	check(Gear.AFFIXES.size() >= 20, "%d affixes in the pool" % Gear.AFFIXES.size())
 	var t := Tournament.new(0, 11)
-	check(t.lineup.size() == 5 and t.lineup[0]["mods"].is_empty(), "lineup rolled up front, the tutorial opponent has no modifiers")
+	check(t.lineup.size() == 5 and t.lineup[0]["mods"].all(func(id): return Traits.has(id)), "lineup rolled up front, the tutorial opponent has no modifiers but a trait (G-7)")
 	# v0.2: each of his items drops by chance (30/20/12/6/3%); drop_bonus 1 = a sure drop.
 	t.lineup[0]["gear"]["racket"] = leg
 	t.drop_bonus = 1.0

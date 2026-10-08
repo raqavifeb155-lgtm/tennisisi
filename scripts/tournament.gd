@@ -106,6 +106,7 @@ var new_items: Array = []         # what the last win put into the bag
 var auto_sold := 0                # gold from items sold because the bag was full (last win)
 var run_mods := {}                # mods that last the run (RunEffects run_mod, e.g. Корона)
 var run_modifiers: Array = []     # v0.2 G: the run's conditions picked before it (Modifiers ids)
+var hardcore := false             # v0.2 G-6: the hardcore run ("hardcore" is also first in run_modifiers)
 var mythic_rolled := false        # a mythic already showed up this run (one per run)
 var drop_bonus := 0.0             # added to the drop chances (1 = everything drops)
 var bet := {}                     # a bet on the coming match (Bets): stake, odds, sweep
@@ -140,7 +141,8 @@ func rounds() -> int:
 	return Opponents.ROSTER.size()
 
 
-func _init(format_index := 0, seed_value := 0) -> void:
+func _init(format_index := 0, seed_value := 0, hardcore_run := false) -> void:
+	hardcore = hardcore_run
 	format = clampi(format_index, 0, FORMATS.size() - 1)
 	if seed_value != 0:
 		rng.seed = seed_value
@@ -152,7 +154,7 @@ func _init(format_index := 0, seed_value := 0) -> void:
 const SAVED := ["format", "location", "lineup", "racket", "pending_loot", "missed_loot", "banked",
 	"state", "stage", "wildcards", "perks", "results", "gold", "champion", "offer",
 	"equip", "bag", "new_items", "auto_sold", "run_mods", "mythic_rolled", "drop_bonus", "bet",
-	"income", "locker_done", "run_modifiers", "chest", "dry"]
+	"income", "locker_done", "run_modifiers", "chest", "dry", "hardcore"]
 
 
 ## The run as plain data, for the save file: a phone that reloads the page (Telegram
@@ -194,6 +196,7 @@ func roll_lineup() -> void:
 				if not mods.has(id):
 					mods.append(id)
 		# v0.2 G: rare auras (scripts/mods), "???" ones named on the first point.
+		mods += Traits.roll(rng.seed, i, Opponents.ROSTER[i])  # v0.2 G-7: his traits (at least one)
 		var aur := Modifiers.roll_auras(rng.seed, i, Opponents.ROSTER[i].get("boss", false), 1.0, SaveData.played == 0)
 		mods += aur["mods"]
 		var bonus := 0.0
@@ -231,6 +234,9 @@ func _roll_rarity(shift: float) -> int:
 	c[Gear.EPIC] += float(ti["epic"])
 	c[Gear.LEGENDARY] += float(ti["legendary"])
 	c[0] -= float(ti["epic"]) + float(ti["legendary"])
+	if hardcore:  # G-6: a little more above epic
+		c[Gear.LEGENDARY] += Modifiers.HARD_RARITY
+		c[0] -= Modifiers.HARD_RARITY
 	var moved := minf(shift, c[0] - 0.1)
 	c[0] -= moved
 	for k in SHIFT_SPLIT.size():

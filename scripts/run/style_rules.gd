@@ -19,6 +19,7 @@ const TRICKS := [
 	{"id": "knockout", "name": "Нокаут", "x": 2.0, "hidden": true},
 	{"id": "dive", "name": "В прыжке", "x": 1.5, "hidden": true},
 	{"id": "comeback", "name": "Камбэк", "x": 1.3, "hidden": true},
+	{"id": "hole", "name": "Дыра слева", "x": 1.4, "hidden": false},
 	{"id": "perfect", "name": "Идеально", "x": 1.5, "hidden": false},
 	{"id": "masterpiece", "name": "Шедевр", "x": 2.0, "hidden": true},
 	{"id": "vented", "name": "Психанул", "x": 1.2, "hidden": true},   # the point after a smashed racket (R)
@@ -70,6 +71,8 @@ static func evaluate(ctx: Dictionary, boosts := {}) -> Dictionary:
 			ids.append("knife")
 		if clean and (type == "SMASH" or last.get("smash", false)):
 			ids.append("smash")
+		if reason == "WINNER" and ctx.get("hole", false):
+			ids.append("hole")  # G-7: the opponent's weak-backhand trait found out
 		if ctx.get("knocked", false):
 			ids.append("knockout")
 		if last.get("diving", false):

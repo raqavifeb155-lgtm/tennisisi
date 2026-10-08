@@ -31,6 +31,7 @@ func start_match() -> void:
 
 
 func start_point() -> void:
+	Traits.hole_hit = false
 	_last = {}
 	_labels = []
 	_serve_kmh = 0.0
@@ -80,6 +81,7 @@ func on_point(info: Dictionary, comeback: bool, boosts := {}) -> Dictionary:
 		"opp_net_dist": _opp_dist, "second_bounce_z": _second_bounce, "knocked": _knocked,
 		"comeback": comeback, "cannon_kmh": float(boosts.get("cannon_kmh", 200.0)),
 		"vented": vent_next,
+		"hole": Traits.hole_hit,  # G-7: «Дыра слева»
 	}
 	vent_next = false  # one point only
 	var r := StyleRules.evaluate(ctx, boosts)
