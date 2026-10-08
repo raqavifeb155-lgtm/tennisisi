@@ -122,14 +122,11 @@ var _tilt := 0.0               # trunk tipped sideways from the hips toward a wi
 
 # Visual nodes
 var look: Dictionary = Looks.DEFAULT.duplicate()
-var _racket_color := Color(0.15, 0.15, 0.2)
-var _racket_glow := 0.0
 var _shadow: MeshInstance3D
 var _model: Node3D
 var _bones := {}
 var _racket: Node3D
-var _racket_mat: StandardMaterial3D
-var _racket_light: OmniLight3D
+var _gear := AthleteGear.new()  # what is worn and how it looks (scripts/athlete_gear.gd)
 var _head: Node3D
 var _hand_r: MeshInstance3D
 var _hand_l: MeshInstance3D
@@ -168,7 +165,6 @@ func set_look(l: Dictionary) -> void:
 	_bones = {}
 	_build()
 	_lighten.call_deferred()
-	set_racket_look(_racket_color, _racket_glow)
 
 
 func right() -> Vector3:
@@ -1769,46 +1765,42 @@ func _build() -> void:
 	_head.add_child(nose)
 
 	# Racket: local +Y runs from the hand to the head; the face lies in the XY plane.
+	# Its meshes, the shoes' and wristbands' colours come from what is worn.
 	_racket = Node3D.new()
 	_model.add_child(_racket)
-	var handle := _mesh_capsule(0.016, 0.3, Color(0.1, 0.1, 0.1))
-	handle.position = Vector3(0, 0.13, 0)
-	_racket.add_child(handle)
-	var ring := MeshInstance3D.new()
-	var tm := TorusMesh.new()
-	tm.inner_radius = 0.105
-	tm.outer_radius = 0.128
-	tm.rings = 20
-	tm.ring_segments = 6
-	ring.mesh = tm
-	_racket_mat = _mat(Color(0.15, 0.15, 0.2))
-	ring.material_override = _racket_mat
-	ring.basis = Basis(Vector3.RIGHT, PI * 0.5) * Basis.from_scale(Vector3(1.0, 1.0, 1.3))
-	ring.position = Vector3(0, RACKET_REACH - 0.02, 0)
-	_racket.add_child(ring)
-	_racket_light = OmniLight3D.new()
-	_racket_light.position = ring.position
-	_racket_light.omni_range = 1.2
-	_racket_light.shadow_enabled = false
-	_racket_light.visible = false
-	_racket.add_child(_racket_light)
-	var strings := _mesh_cyl(0.105, 0.004, Color(0.95, 0.95, 0.9, 0.45), true)
-	strings.basis = ring.basis
-	strings.position = ring.position
-	_racket.add_child(strings)
+	_gear.dress(self)
 
 
-## Racket frame colour by rarity; epic and legendary rackets glow (see Gear).
+# --- Gear on the body (v0.2 F, scripts/athlete_gear.gd) ------------------------------
+
+## Dresses the player in these items (Gear / Items dictionaries, {} = nothing in that
+## slot; the slot comes from the item): the racket, the shoes and the wristbands look
+## like them. Only the gear is rebuilt, never the body; set_look keeps it.
+func set_gear(items: Array) -> void:
+	_gear.wear(items)
+	_gear.dress(self)
+
+
+## Only the racket (the trophy in hand, a knocked-out racket); shoes and band stay. A
+## trophy of another slot is a racket of its rarity in the hand.
+func set_racket(item: Dictionary) -> void:
+	var items := AthleteGear.items_of(_gear.worn)
+	if not item.is_empty() and AthleteGear.slot_of(item) != "racket":
+		item = {"slot": "racket", "rarity": item.get("rarity", 0)}
+	items[0] = item
+	set_gear(items)
+
+
+## What is worn, {slot: item}.
+func gear() -> Dictionary:
+	return _gear.worn.duplicate()
+
+
+## Older callers: the worn racket's frame in colour c, glowing like a rarity with this
+## glow (Gear.RARITIES "glow"), e.g. the golden opponent's.
 func set_racket_look(c: Color, glow: float) -> void:
-	_racket_color = c
-	_racket_glow = glow
-	_racket_mat.albedo_color = c
-	_racket_mat.emission_enabled = glow > 0.0
-	_racket_mat.emission = c
-	_racket_mat.emission_energy_multiplier = glow
-	_racket_light.visible = glow > 1.0
-	_racket_light.light_color = c
-	_racket_light.light_energy = glow * 0.8
+	_gear.tint = {"color": c, "glow": glow}
+	_gear.dress(self)
 
 
 # --- Hair, beard, headwear ---------------------------------------------------------
@@ -2134,8 +2126,10 @@ func _lathe_bone(bone: String, ref: float, prof: Array, flat := 1.0) -> void:
 	_bones[bone] = mi
 
 
-## The profile turned round +Y, centred on the origin, with vertex colours.
-static func _lathe(len: float, prof: Array, segs: int) -> ArrayMesh:
+## The profile turned round +Y, centred on the origin, with vertex colours. `colour`
+## (t, angle, row colour) -> Color paints per vertex instead (patterns, AthleteGear); the
+## UV's x is then t along the bone.
+static func _lathe(len: float, prof: Array, segs: int, colour := Callable()) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var n := prof.size()
@@ -2155,7 +2149,11 @@ static func _lathe(len: float, prof: Array, segs: int) -> ArrayMesh:
 				nrm = (rad - Vector3(0, dr / dy, 0)).normalized()
 			elif r > 0.0001:
 				nrm = (rad + nrm * 0.6).normalized()
-			st.set_color(prof[i][2])
+			if colour.is_valid():
+				st.set_color(colour.call(t, a, prof[i][2]))
+				st.set_uv(Vector2(t, 0.0))
+			else:
+				st.set_color(prof[i][2])
 			st.set_normal(nrm)
 			st.add_vertex(rad * r + Vector3(0, (t - 0.5) * len, 0))
 	for i in n - 1:
