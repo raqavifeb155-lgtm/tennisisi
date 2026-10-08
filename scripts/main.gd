@@ -1866,7 +1866,8 @@ func _start_tournament(format_index: int, run_conditions: Array = []) -> void:
 	Locker.board(tournament)  # v0.2 A-2: what was bought in the shop comes along
 	SaveData.active = tournament
 	SaveData.save()
-	set_location(_next_location)
+	if autoplay or not club.active:
+		set_location(_next_location)  # from the club the screens stay over the club: the island comes at "Играть"
 	tournament_mode = true
 	Rewards.restore()
 	if autoplay:
@@ -1960,7 +1961,8 @@ func _continue_tournament() -> void:
 	tournament = t
 	tournament_mode = true
 	_next_location = t.location
-	set_location(t.location)
+	if not club.active:
+		set_location(t.location)  # from the club the screens stay over the club (see _play_match)
 	Rewards.restore()
 	if not t.pending_loot.is_empty():
 		ui.show_loot(t)
@@ -1982,6 +1984,7 @@ func _play_match() -> void:
 	cpu_label = opp["short"]
 	cpu_call = opp.get("short_en", "CPU")
 	scoreboard = tournament.new_score(rng.randi_range(0, 1))
+	set_location(tournament.location)  # the way to the match ran over the club: now its island
 	ui.close()
 	_begin_match()
 	hud.announcer.intro(tournament.round_name().to_upper(), opp["name"])
@@ -2058,7 +2061,8 @@ func _on_ui(action: String, arg: int) -> void:
 			if not Locations.unlocked(Locations.LIST[arg]["id"]):
 				return  # v0.2 A-4: a closed island can't be picked
 			_next_location = Locations.LIST[arg]["id"]
-			set_location(_next_location)
+			if not club.active:
+				set_location(_next_location)
 			ui.show_formats()
 		"format":
 			club.remember(_next_location, arg)  # the club's "Турнир" goes straight to the bracket next time
