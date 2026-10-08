@@ -14,6 +14,11 @@ func _initialize() -> void:
 	test_prize_money()
 	test_income()
 	test_sell_extra()
+	test_locker()
+	test_locker_in_run()
+	test_goals()
+	test_shop()
+	test_strings()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -155,3 +160,163 @@ func test_sell_extra() -> void:
 	t.sell_extra()
 	var epics := t.bag.filter(func(it): return int(it["rarity"]) >= Gear.EPIC)
 	check(epics.size() == 1, "an epic is never sold by the one button")
+
+
+# --- A-2: the locker -----------------------------------------------------------------
+
+func _reset_save() -> void:
+	SaveData.gold = 0
+	SaveData.locker = {}
+	SaveData.club = {}
+	SaveData.titles = 0
+	SaveData.titles_by_loc = {}
+	SaveData.played = 0
+
+
+func test_locker() -> void:
+	print("locker")
+	_reset_save()
+	check(Locker.slots() == 1, "one slot before the changing room is built")
+	SaveData.club = {"levels": {"locker": 2}}
+	check(Locker.slots() == 3, "+1 a level of the changing room (%d)" % Locker.slots())
+	SaveData.club = {"levels": {"locker": 9}}
+	check(Locker.slots() == 4, "at most 4")
+	SaveData.club = {}
+	var caps := []
+	for r in 6:
+		caps.append(Locker.cap(r))
+	check(caps == [Gear.RARE, Gear.RARE, Gear.EPIC, Gear.EPIC, Gear.LEGENDARY, Gear.MYTHIC], "the ceiling by the round of exit %s" % [caps])
+	check(Locker.insurance(_item(Gear.LEGENDARY)) == 36 and Locker.insurance(_item(Gear.MYTHIC)) == 120, "insurance 36 / 120")
+	check(Locker.insurance(_item(Gear.LEGENDARY, 3)) == 47 and Locker.insurance(_item(Gear.EPIC)) == 0, "the level counts (360 x 1.3 x 10%% = 47), an epic needs none")
+	check(Locker.put(_item(Gear.EPIC), 1) != "", "an epic out in the second round: above the ceiling")
+	check(Locker.put(_item(Gear.LEGENDARY), 5) == "нужно ещё 36", "a legendary with no gold: «%s»" % Locker.put(_item(Gear.LEGENDARY), 5))
+	SaveData.gold = 50
+	check(Locker.put(_item(Gear.LEGENDARY), 5) == "" and SaveData.gold == 14 and Locker.items().size() == 1, "...with gold: kept, 36 paid")
+	check(Locker.put(_item(Gear.RARE), 0).begins_with("шкафчик полон"), "full: «%s»" % Locker.put(_item(Gear.RARE), 0))
+	var g := SaveData.gold
+	check(Locker.put(_item(Gear.RARE, 1, "band"), 0, 0) == "" and SaveData.gold == g + 120 and Locker.items()[0]["slot"] == "band", "replace: the old one is sold into the bank (+120)")
+	var it: Dictionary = Locker.take(0)
+	check(it["slot"] == "band" and Locker.items().is_empty(), "take: out of the locker")
+	SaveData.locker = {}
+	SaveData.gold = 0
+
+
+func test_locker_in_run() -> void:
+	print("locker in a run")
+	_reset_save()
+	SaveData.club = {"levels": {"locker": 1}}
+	SaveData.gold = 100
+	Locker.put(_item(Gear.RARE, 1, "shoes"), 0)
+	Locker.put(_item(Gear.RARE, 1, "racket"), 0)
+	SaveData.locker["next"] = [_item(Gear.COMMON, 1, "band")]
+	var t := Tournament.new(1, 3)
+	Locker.board(t)
+	check(t.equip["band"]["rarity"] == Gear.COMMON and Locker.next_items().is_empty(), "what was bought comes along by itself (put on)")
+	check(t.can_take_locker(), "before the first match the locker is open")
+	t.take_from_locker(0)
+	check(t.equip["shoes"]["slot"] == "shoes" and Locker.items().size() == 1, "taken into the run: worn, gone from the locker")
+	t.equip["racket"] = _item(Gear.COMMON)
+	t.take_from_locker(0)
+	check(t.bag.size() == 1 and t.bag[0]["rarity"] == Gear.RARE, "the slot is taken: into the bag")
+	t.record_match(false, "1:6", _rng(1))
+	check(not t.can_take_locker(), "after a match: no more")
+	check(Locker.exit_round(t) == 0, "out in the first round")
+	var cands := Locker.candidates(t)
+	check(cands.size() == 4, "the candidates: worn + bag (%d)" % cands.size())
+	check(Locker.save_from(t, 0) == "" and t.locker_done, "one item into the locker on the summary")
+	check(Locker.save_from(t, 1) != "", "only one per run")
+	var back := Tournament.from_dict(t.to_dict())
+	check(back.locker_done, "the choice survives a save")
+	_reset_save()
+
+
+func test_goals() -> void:
+	print("goals")
+	_reset_save()
+	SaveData.played = 1
+	SaveData.gold = 10
+	var g := Goals.next_goal()
+	check(not g.is_empty() and int(g["left"]) > 0 and int(g["left"]) == int(g["price"]) - 10, "a next goal and how far: %s" % [g])
+	SaveData.gold = 100000
+	check(not Goals.affordable().is_empty(), "rich: things within reach")
+	_reset_save()
+
+
+# --- A-3: the shop -------------------------------------------------------------------
+
+func test_shop() -> void:
+	print("shop")
+	_reset_save()
+	SaveData.played = 3
+	var s := Shop.stock()
+	check(s.size() == 2, "the stall: 2 items (%d)" % s.size())
+	var max_r := 0
+	for k in 40:
+		SaveData.played = 100 + k
+		for it in Shop.stock():
+			max_r = maxi(max_r, int(it["rarity"]))
+	check(max_r == Gear.RARE, "the stall sells up to rare")
+	SaveData.club = {"levels": {"shop": 2}}
+	max_r = 0
+	var mythic := false
+	for k in 300:
+		SaveData.played = 200 + k
+		for it in Shop.stock():
+			max_r = maxi(max_r, int(it["rarity"]))
+			mythic = mythic or int(it["rarity"]) == Gear.MYTHIC
+	check(Shop.stock().size() == 4 and max_r == Gear.LEGENDARY and not mythic, "the boutique: 4 items up to legendary, never a mythic")
+	SaveData.played = 7
+	var a := Shop.stock()
+	check(a == Shop.stock(), "the same run: the same showcase (a reload rerolls nothing)")
+	SaveData.played = 8
+	check(a != Shop.stock(), "a new run: a new showcase")
+	SaveData.gold = 100
+	var prices := []
+	for k in 3:
+		prices.append(Shop.reroll_price())
+		Shop.reroll()
+	check(prices == [20, 30, 45] and SaveData.gold == 5, "reroll 20 -> 30 -> 45 (%s), paid" % [prices])
+	SaveData.played = 9
+	check(Shop.reroll_price() == 20, "after a run the reroll is 20 again")
+	SaveData.gold = 0
+	check(Shop.buy(0).begins_with("ещё"), "no gold: «%s»" % Shop.buy(0))
+	SaveData.gold = 5000
+	var it0: Dictionary = Shop.stock()[0]
+	check(Shop.buy(0) == "" and SaveData.gold == 5000 - Items.price(it0) and Locker.next_items().size() == 1, "bought for its price, waits for the next run")
+	check(Shop.stock()[0].is_empty() and Shop.buy(0) == "продано", "its place is empty")
+	Shop.buy(1)
+	Shop.buy(2)
+	check(Shop.buy(3).begins_with("сумка на турнир полна"), "at most 3 bought items wait")
+	var g := SaveData.gold
+	var p := Items.sell_price(Locker.next_items()[0])
+	check(Shop.sell("next", 0) == p and SaveData.gold == g + p and Locker.next_items().size() == 2, "sell: a third back into the bank")
+	SaveData.played = 3
+	SaveData.titles_by_loc = {"park": 1, "clay": 1}
+	check(Shop.item_level() == 3, "items come at the level of the best open island (England: 3)")
+	_reset_save()
+
+
+func test_strings() -> void:
+	print("strings")
+	_reset_save()
+	SaveData.gold = 1000
+	SaveData.locker = {"items": [Items.instance(Items.find("cutter")), Gear._affix_item(Gear.RARE, _rng(4), "band")]}
+	check(not Shop.can_restring() and Shop.restring("items", 0) != "", "strings open with the «Лавка»")
+	SaveData.club = {"levels": {"shop": 1}}
+	var cutter: Dictionary = Locker.items()[0]
+	check(Shop.restring_price(cutter) == 90 and Shop.restring_price(_item(Gear.MYTHIC)) == 600, "25%% of the price, a mythic 50%%")
+	check(Shop.string_pool(cutter).size() == Gear.AFFIXES_BY_SLOT["racket"].size(), "the pool: the slot's affixes, e.g. «%s»" % Shop.string_pool(cutter)[0])
+	var spin0 := float(cutter["mods"].get("touch_spin", 0.0))
+	check(Shop.restring("items", 0, _rng(1)) == "" and SaveData.gold == 910, "paid 90")
+	cutter = Locker.items()[0]
+	check(cutter["strings"]["mods"].size() == 2 and cutter["id"] == "cutter" and int(cutter["rarity"]) == Gear.LEGENDARY, "a legendary gets 2 string lines, stays itself")
+	check(float(cutter["mods"].get("touch_spin", 0.0)) >= spin0 - 0.0001 and Gear.describe(cutter).contains("Струны: "), "its own stats stay, the card shows the strings")
+	var before: Dictionary = cutter["strings"]["mods"].duplicate()
+	Shop.restring("items", 0, _rng(1))
+	check(Locker.items()[0]["strings"]["mods"] != before, "a restring never gives the same back")
+	var band: Dictionary = Locker.items()[1]
+	var m0: Dictionary = band["mods"].duplicate()
+	var name0: String = band["name"]
+	Shop.restring("items", 1, _rng(2))
+	check(Locker.items()[1]["mods"] != m0 and Locker.items()[1]["name"] == name0 and Locker.items()[1]["mods"].size() == 2, "a generated rare: new affixes, the same name")
+	_reset_save()

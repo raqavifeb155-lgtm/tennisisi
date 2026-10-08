@@ -119,6 +119,13 @@ static func show_bag(ui: TournamentUI, t: Tournament) -> void:
 		ui._note("Пусто. Вещи падают с побеждённых соперников и приходят в наградах.")
 	for i in t.bag.size():
 		item_card(ui, t.bag[i], "", "", "bag_item", BAG_ARG + i)
+	var extra := t.extra_items()
+	if not extra.is_empty():
+		var sum := 0
+		for it in extra:
+			sum += Gear.price(it)
+		var b := ui._secondary("Продать всё лишнее (%d)  +%d" % [extra.size(), sum], "sell_extra")
+		b.add_theme_color_override("font_color", UiTheme.GOLD)
 	ui._primary("К СЕТКЕ", "bag_back")
 
 
@@ -167,5 +174,9 @@ static func ui_action(m: Node, action: String, arg: int) -> void:
 			show_bag(m.ui, t)
 		"sell":
 			t.sell_from_bag(arg)
+			SaveData.save()
+			show_bag(m.ui, t)
+		"sell_extra":
+			t.sell_extra()
 			SaveData.save()
 			show_bag(m.ui, t)

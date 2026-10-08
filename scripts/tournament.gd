@@ -87,6 +87,7 @@ var perks: Array = []             # ids of the run perks taken
 var results: Array = []           # per match: {"stage", "won", "score"}
 var gold := 0
 var income := {}                  # gold by kind (INCOME_KINDS): adds up to `gold`
+var locker_done := false          # the summary's one item went into the locker (Locker)
 var champion := false
 var offer: Array = []             # reward cards on the REWARD screen
 
@@ -115,7 +116,7 @@ func _init(format_index := 0, seed_value := 0) -> void:
 const SAVED := ["format", "location", "lineup", "racket", "pending_loot", "missed_loot", "banked",
 	"state", "stage", "wildcards", "perks", "results", "gold", "champion", "offer",
 	"equip", "bag", "new_items", "auto_sold", "run_mods", "mythic_rolled", "drop_bonus", "bet",
-	"income"]
+	"income", "locker_done"]
 
 
 ## The run as plain data, for the save file: a phone that reloads the page (Telegram
@@ -250,6 +251,27 @@ func add_to_bag(item: Dictionary) -> void:
 		bag.remove_at(worst)
 		earn("sell", p)
 		auto_sold += p
+
+
+## An item joining the run from outside (the locker, the shop): on if its slot is empty,
+## else into the bag.
+func join(item: Dictionary) -> void:
+	if item.is_empty():
+		return
+	if equip.get(String(item.get("slot", "racket")), {}).is_empty():
+		_wear(item)
+	else:
+		add_to_bag(item)
+
+
+## The locker is open until the first match is played.
+func can_take_locker() -> bool:
+	return results.is_empty() and stage == 0 and state == State.BRACKET
+
+
+func take_from_locker(i: int) -> void:
+	if can_take_locker():
+		join(Locker.take(i))
 
 
 func equip_from_bag(i: int) -> void:

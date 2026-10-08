@@ -95,6 +95,19 @@ static func roll(rarity: int, rng: RandomNumberGenerator, slot := "racket", leve
 
 static func _affix_item(rarity: int, rng: RandomNumberGenerator, slot: String) -> Dictionary:
 	var r: Dictionary = RARITIES[rarity]
+	var aff := affixes(slot, rarity, int(r["affixes"]), rng)
+	var names: Array = NAMES.get(r["id"], NAMES["rare"])
+	return {
+		"slot": slot, "rarity": rarity,
+		"name": "%s %s «%s»" % [FORMS[slot][rarity], NOUNS[slot], names[rng.randi_range(0, names.size() - 1)]],
+		"mods": aff["mods"], "lines": aff["lines"],
+	}
+
+
+## n random affixes of the slot at the rarity's power: {"mods": {...}, "lines": [...]}
+## (also the shop's strings, v0.2 A-3).
+static func affixes(slot: String, rarity: int, n: int, rng: RandomNumberGenerator) -> Dictionary:
+	var r: Dictionary = RARITIES[clampi(rarity, COMMON, MYTHIC)]
 	var pool: Array = AFFIXES_BY_SLOT[slot].duplicate()
 	for i in range(pool.size() - 1, 0, -1):
 		var j := rng.randi_range(0, i)
@@ -103,18 +116,24 @@ static func _affix_item(rarity: int, rng: RandomNumberGenerator, slot: String) -
 		pool[j] = t
 	var mods := {}
 	var lines: Array[String] = []
-	for a in pool.slice(0, mini(r["affixes"], pool.size())):
+	for a in pool.slice(0, mini(n, pool.size())):
 		var pct := maxi(1, roundi(rng.randf_range(a[2], a[3]) * float(r["power"])))
 		var key: String = a[0]
 		var shrink := key.ends_with("_scatter") or key == "move_penalty" or key == "stamina_drain"
 		mods[key] = (-1.0 if shrink else 1.0) * pct / 100.0
 		lines.append(String(a[1]) % pct)
-	var names: Array = NAMES.get(r["id"], NAMES["rare"])
-	return {
-		"slot": slot, "rarity": rarity,
-		"name": "%s %s «%s»" % [FORMS[slot][rarity], NOUNS[slot], names[rng.randi_range(0, names.size() - 1)]],
-		"mods": mods, "lines": lines,
-	}
+	return {"mods": mods, "lines": lines}
+
+
+## The slot's affixes as the shop shows the strings' pool: "+4–10% к силе форхенда".
+static func affix_pool(slot: String, rarity: int) -> Array[String]:
+	var k := float(RARITIES[clampi(rarity, COMMON, MYTHIC)]["power"])
+	var out: Array[String] = []
+	for a in AFFIXES_BY_SLOT.get(slot, []):
+		var lo := maxi(1, roundi(a[2] * k))
+		var hi := maxi(1, roundi(a[3] * k))
+		out.append(String(a[1]).replace("%d", "%d–%d" % [lo, hi]).replace("%%", "%"))
+	return out
 
 
 static func color(item: Dictionary) -> Color:
