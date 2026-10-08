@@ -15,7 +15,8 @@ class_name ClubPlaces
 ##   build   the construction (ClubBuilds, H2) whose level is this place's level
 ##   levels  what the place offers at level i: label, action ("" = no button: the sign
 ##           shows), note (what is here now), sign, and its own keys (bar: bet_limit,
-##           shop: offers). A level past the list repeats the last one.
+##           shop: offers). A level inherits the keys of the levels below it; a level
+##           past the list repeats the last one.
 
 const LIST := [
 	{
@@ -52,25 +53,32 @@ const LIST := [
 	},
 	{
 		"id": "locker", "name": "Раздевалка", "pos": Vector3(-14, 0, 26), "r": 1.8,
-		"unlock": "played", "sign": "Раздевалка · после первого забега",
+		"unlock": "played", "sign": "Раздевалка · после первого забега", "build": "locker",
 		"cam": {"pos": Vector3(-14, 10.5, 35.0), "look": Vector3(-14, 0.4, 25.6)},
 		"levels": [
-			{"label": "Раздевалка", "action": "locker", "note": "Скамейка и один шкафчик"},
+			# club_locker: stream A's locker screen (RunLocker.ui_action) when it exists,
+			# else the look / backhand / controls screen as before.
+			{"label": "Раздевалка", "action": "club_locker", "note": "Скамейка и один шкафчик"},
+			{"label": "Раздевалка", "action": "club_locker", "note": "Ряд шкафчиков и зеркало"},
+			{"label": "Раздевалка", "action": "club_locker", "note": "Стена ракеток"},
+			{"label": "Раздевалка", "action": "club_locker", "note": "Гардероб с подсветкой"},
 		],
 	},
 	{
 		# New in v0.2 (HANDOFF 9.1): buy, sell, change mods. The trade itself is stream
 		# A's; until then the rows say "скоро".
 		"id": "shop", "name": "Магазин вещей", "pos": Vector3(22, 0, 2), "r": 1.8,
-		"unlock": "played", "sign": "Магазин · после первого забега",
+		"unlock": "played", "sign": "Магазин · после первого забега", "build": "shop",
 		"cam": {"pos": Vector3(22, 10.5, 11.0), "look": Vector3(22, 0.4, 1.6)},
 		"levels": [
 			{"label": "Магазин", "action": "club_shop", "note": "Прилавок и стойка с ракетками",
 				"offers": [
 					{"id": "buy", "title": "Купить", "desc": "вещи на следующий забег", "action": ""},
 					{"id": "sell", "title": "Продать", "desc": "цена по редкости и уровню вещи", "action": ""},
-					{"id": "mods", "title": "Моды", "desc": "сменить свойство вещи", "action": ""},
+					{"id": "mods", "title": "Струны", "desc": "перебросить свойство вещи", "action": ""},
 				]},
+			{"label": "Магазин", "action": "club_shop", "note": "Лавка: 3 вещи до эпической, струны"},
+			{"label": "Магазин", "action": "club_shop", "note": "Бутик: 4 вещи до легендарной, витрина светится"},
 		],
 	},
 	{
@@ -96,6 +104,15 @@ const LIST := [
 		],
 	},
 	{
+		# Blackjack on the bar's terrace, right of the roulette (hub spec 6). The scene and
+		# the game are stream E's (ClubBlackjack.open(club)); until then a 'скоро' card.
+		"id": "blackjack", "name": "Блэкджек", "pos": Vector3(26.5, 0, -29.6), "r": 1.6,
+		"unlock": "title", "sign": "", "build": "bar",
+		"levels": [
+			{"label": "Блэкджек", "action": "club_blackjack", "note": "Стол на террасе бара: 6 колод, блэкджек 3:2, Perfect Pairs и 21+3", "soon": true},
+		],
+	},
+	{
 		"id": "arena", "name": "Площадка арены", "pos": Vector3(-22, 0, 0), "r": 2.0,
 		"unlock": "", "sign": "Арена · скоро",
 		"levels": [
@@ -104,6 +121,20 @@ const LIST := [
 			{"label": "Арена", "action": "club_place", "note": "Зал, трибуна на одну сторону, грунт"},
 			{"label": "Арена", "action": "club_place", "note": "Арена: трибуны по кругу, табло, трава"},
 		],
+	},
+	{
+		# Reserved for the next patch (docs/ACADEMY_LEGACY_TZ.md 4.1): the academy on the
+		# east lawn, 18 x 14 m around (32, 14). A sign only.
+		"id": "academy", "name": "Академия", "pos": Vector3(32, 0, 14), "r": 2.0,
+		"unlock": "never", "sign": "Академия · скоро", "travel": false,
+		"levels": [{"label": "Академия", "action": "", "note": "Лужайка под академию"}],
+	},
+	{
+		# Reserved (ACADEMY_LEGACY_TZ 6): the coach's booth behind the near baseline, at the
+		# court's corner, for the juniors' matches. A sign only.
+		"id": "booth", "name": "Будка тренера", "pos": Vector3(-6.8, 0, 15.6), "r": 1.4,
+		"unlock": "never", "sign": "Будка тренера · скоро", "travel": false,
+		"levels": [{"label": "Будка", "action": "", "note": "Место под будку тренера"}],
 	},
 	{
 		"id": "board", "name": "Доска-табло", "pos": Vector3(22, 0, -14), "r": 1.8,
@@ -141,9 +172,10 @@ static func state(id: String, lv := -1) -> Dictionary:
 	for k in p:
 		if k != "levels":
 			out[k] = p[k]
+	# A level inherits the ones below it and overrides what it names.
 	var levels: Array = p.get("levels", [])
-	if not levels.is_empty():
-		var l: Dictionary = levels[clampi(lv, 0, levels.size() - 1)]
+	for i in range(0, clampi(lv, 0, levels.size() - 1) + 1 if not levels.is_empty() else 0):
+		var l: Dictionary = levels[i]
 		for k in l:
 			out[k] = l[k]
 	out["level"] = lv
