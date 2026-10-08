@@ -2463,10 +2463,10 @@ func _update_timing_ring() -> void:
 		hud.touch.stick_zone_top = INF  # tap mode: no joystick, the whole screen is court
 	else:
 		hud.touch.stick_zone_top = clampf(cam.unproject_position(player.global_position).y + 28.0, vh * 0.66, vh * 0.9)
-	if autoplay:
+	if autoplay or mods_hub.no_ring:  # v0.2 G: «Без кольца»
 		ring.hide_ring()
 		return
-	if ((phase == Phase.SERVE and server == Who.PLAYER) or phase == Phase.BONUS) and toss_active:
+	if ((phase == Phase.SERVE and server == Who.PLAYER) or phase == Phase.BONUS) and toss_active and toss_ideal - game_time < mods_hub.ring_late:
 		var ss := Skills.stroke("serve")
 		ring.show_ring(anchor, toss_ideal - game_time - lag, Tuning.perfect_window * float(ss["window"]), Tuning.good_window * float(ss["good"]), ss["ring_speed"])
 		return
@@ -2480,7 +2480,7 @@ func _update_timing_ring() -> void:
 		if late_until > 0.0:
 			ring.show_ring(anchor + Vector2(lean, 0.0), late_cross_time - game_time - lag, pw, gw, sk["ring_speed"])
 			return
-		if t_contact < float(sk["ring"]) and absf(player.lateral_of(contact_pred)) < 3.0 and contact_pred.y < MAX_CONTACT_H:
+		if t_contact < minf(float(sk["ring"]), mods_hub.ring_late) and absf(player.lateral_of(contact_pred)) < 3.0 and contact_pred.y < MAX_CONTACT_H:
 			ring.show_ring(anchor + Vector2(lean, 0.0), t_contact - lag, pw, gw, sk["ring_speed"])
 			return
 	ring.hide_ring()
