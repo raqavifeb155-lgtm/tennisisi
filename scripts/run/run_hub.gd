@@ -129,16 +129,30 @@ func _on_damaged(amount: float, kind: String) -> void:
 		view.hit(amount, kind, match_fx.opp.value)
 
 
-## The bar over the opponent's head follows him on screen.
+## The bar follows him on screen (its look: Tuning.opp_bar_style), keeps off the ball and
+## off the score plate's own cells.
 func _process_view() -> void:
 	if not view.shown:
 		return
+	view.style = Tuning.opp_bar_style
 	var cam: Camera3D = main.cam
+	var bug = main.hud._bug
+	if bug != null and bug.visible:
+		view.board_rect = bug.get_global_rect()
+		var rows: Array = bug._rows
+		view.name_rect = (rows[1]["name"] as Control).get_global_rect() if rows.size() > 1 else Rect2()
+	if cam == null:
+		return
+	var ball: Node3D = main.ball
+	if ball != null and ball.visible and not cam.is_position_behind(ball.global_position):
+		view.ball_px = cam.unproject_position(ball.global_position)
+	else:
+		view.ball_px = Vector2(-1e4, -1e4)
 	var head: Vector3 = main.cpu.global_position + Vector3(0, 2.25, 0)
-	if cam == null or cam.is_position_behind(head):
+	if cam.is_position_behind(head):
 		return
 	view.anchor = cam.unproject_position(head)
-	view.chest = view.anchor - Vector2(0, OppStaminaView.BAR.y + 26.0)  # a far figure is tiny: out over the bar
+	view.unit_px = (cam.unproject_position(head + cam.global_transform.basis.x) - view.anchor).length()
 
 
 # --- Recording the rallies -----------------------------------------------------

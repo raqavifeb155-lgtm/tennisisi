@@ -43,6 +43,7 @@ var gfx_shadows := 2            # 0 off, 1 hard, 2 soft, 3 the softest
 var gfx_reach := 1.0            # how far shadows are drawn, x the scenery's own
 var gfx_details := true         # scenery extras
 var show_fps := false           # the frame rate in a corner
+var opp_bar_style := 1          # the opponent's stamina bar (OppStaminaView): 1 thin over his head, 2 half ring under the score, 3 line in the score plate
 var show_path := false
 var show_landing := true
 var hawkeye_range := 0.15      # show the line-call replay when the mark is this close to a line (m)
