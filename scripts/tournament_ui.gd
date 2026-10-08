@@ -425,7 +425,8 @@ func show_result(t: Tournament, won: bool, score_text: String, stats: Dictionary
 	_box.add_child(_text("ПОБЕДА" if won else "ПОРАЖЕНИЕ", UiTheme.display(), UiTheme.T_HERO, UiTheme.WIN if won else UiTheme.LOSE))
 	_sub("против: %s" % opp["name"])
 	_box.add_child(_text(score_text, UiTheme.display(), 64, UiTheme.INK))
-	_sub("PERFECT: %d   ·   эйсы: %d   ·   лучший розыгрыш: %d" % [stats.get("perfect", 0), stats.get("aces", 0), stats.get("best_rally", 0)])
+	if not MatchStats.block(self, stats, String(opp.get("short", "соперник"))):  # C-5: the match's numbers
+		_sub("PERFECT: %d   ·   эйсы: %d   ·   лучший розыгрыш: %d" % [stats.get("perfect", 0), stats.get("aces", 0), stats.get("best_rally", 0)])
 	if won:
 		var gain := t.gold_for_win(t.stage - 1) + (roundi(Tournament.CHAMPION_BONUS * float(t.format_info()["reward"])) if t.champion else 0) + RunResult.style_gold(self)
 		var gl := _text("+%d золота в забег" % gain, UiTheme.display(), UiTheme.T_HEAD, UiTheme.GOLD)

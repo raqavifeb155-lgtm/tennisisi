@@ -36,6 +36,7 @@ var confirm_sheet: ConfirmSheet
 var in_match := false         # a match is on (Main): the button is the pause
 var _tournament_match := false  # leaving it asks first (GameEvents.match_started)
 var _board: MatchScore        # the score shown, for the pause's header
+var tally := MatchTally.new() # the match's numbers for the result screen (MatchStats, C-5)
 
 
 func _ready() -> void:
@@ -172,7 +173,12 @@ func _build_modals() -> void:
 	for c in [pause_sheet, settings_sheet, confirm_sheet, _tutorial]:
 		touch.blocked_controls.append(c)
 	GameEvents.match_started.connect(func(info: Dictionary) -> void:
-		_tournament_match = bool(info.get("tournament", false)))
+		_tournament_match = bool(info.get("tournament", false))
+		tally.start())
+	GameEvents.shot.connect(tally.shot)
+	GameEvents.fault.connect(tally.fault)
+	GameEvents.point.connect(tally.point)
+	GameEvents.match_finished.connect(func(_info: Dictionary) -> void: tally.finish())
 
 
 ## The frame rate next to the graphics preset, so a phone can be checked by eye:

@@ -55,6 +55,19 @@ func _run() -> void:
 	rng.seed = 7
 	t.lineup[0]["racket"] = Gear.roll(Gear.EPIC, rng)
 	t.record_match(true, "6:3", rng)
+	var tl: MatchTally = main.hud.tally  # the match stats table (C-5): typical numbers
+	tl.start()
+	tl.aces = [3, 1]
+	tl.doubles = [1, 2]
+	tl.winners = [9, 5]
+	tl.unforced = [7, 12]
+	tl.serve_points = [30, 28]
+	tl.first_faults = [10, 12]
+	tl.forehands = [41, 38]
+	tl.backhands = [22, 30]
+	tl.best_rally = 14
+	tl.points = 58
+	tl.finish()
 	main.ui.show_result(t, true, "6:3", {"perfect": 12, "aces": 3, "best_rally": 14})
 	await _shot("08_result")
 	main.ui.show_loot(t)

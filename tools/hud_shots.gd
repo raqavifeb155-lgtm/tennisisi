@@ -180,6 +180,19 @@ func _run() -> void:
 	lost.wildcards = 1
 	lost.record_match(false, "3:6", rng)
 	main.tournament = lost
+	var tl: MatchTally = main.hud.tally  # the match stats table (C-5): typical numbers
+	tl.start()
+	tl.aces = [3, 1]
+	tl.doubles = [1, 2]
+	tl.winners = [9, 5]
+	tl.unforced = [7, 12]
+	tl.serve_points = [30, 28]
+	tl.first_faults = [10, 12]
+	tl.forehands = [41, 38]
+	tl.backhands = [22, 30]
+	tl.best_rally = 14
+	tl.points = 58
+	tl.finish()
 	main.ui.show_result(lost, false, "3:6", {"perfect": 2, "aces": 0, "best_rally": 6})
 	await _shot("18_result_lost", 0.7)
 	var champ := Tournament.new(1)

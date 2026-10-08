@@ -37,9 +37,30 @@ func _tap_at(p: Vector2) -> void:
 ## A tap at the middle of a control.
 func _tap(c: Control) -> void:
 	if c == null:
-		_check("кнопка для нажатия найдена", false)
+		await _expect("кнопка для нажатия найдена", func() -> bool: return false)
 		return
 	await _tap_at(c.get_global_rect().get_center())
+
+
+## A check that may need a moment (a tap's dip, a sheet's fade, a slow frame when other
+## Godot windows share the machine): `cond` is asked again for up to 2 s before it fails.
+func _expect(what: String, cond: Callable) -> void:
+	var t := 0.0
+	while not cond.call() and t < 2.0:
+		await _wait(0.05)
+		t += 0.05
+	_check(what, cond.call())
+
+
+## The visible button with `text` under `from`, waiting up to 2 s for it to appear.
+func _find(from: Node, text: String) -> Button:
+	var t := 0.0
+	var b := _button(from, text)
+	while b == null and t < 2.0:
+		await _wait(0.05)
+		t += 0.05
+		b = _button(from, text)
+	return b
 
 
 func _check(what: String, ok: bool) -> void:
@@ -80,45 +101,45 @@ func _gear() -> Button:
 
 ## Opens "Как играть", turns a page with ДАЛЬШЕ and leaves with Закрыть.
 func _tutorial_round(ctx: String) -> void:
-	_check("%s: «Как играть» открылось" % ctx, _tut().visible)
+	await _expect("%s: «Как играть» открылось" % ctx, func() -> bool: return _tut().visible)
 	var page: int = _tut()._page
-	var next := _button(_tut(), "ДАЛЬШЕ")
-	_check("%s: «ДАЛЬШЕ» есть" % ctx, next != null)
+	var next := await _find(_tut(), "ДАЛЬШЕ")
+	await _expect("%s: «ДАЛЬШЕ» есть" % ctx, func() -> bool: return next != null)
 	if next:
 		await _tap(next)
-		_check("%s: «ДАЛЬШЕ» листает" % ctx, _tut()._page == page + 1)
-	var close := _button(_tut(), "Закрыть")
-	_check("%s: «Закрыть» есть на странице" % ctx, close != null)
+		await _expect("%s: «ДАЛЬШЕ» листает" % ctx, func() -> bool: return _tut()._page == page + 1)
+	var close := await _find(_tut(), "Закрыть")
+	await _expect("%s: «Закрыть» есть на странице" % ctx, func() -> bool: return close != null)
 	if close:
 		await _tap(close)
-	_check("%s: обучение закрылось" % ctx, not _tut().visible)
+	await _expect("%s: обучение закрылось" % ctx, func() -> bool: return not _tut().visible)
 
 
 ## The settings sheet opened from a place that is not a match: no exit, no pause, and
 ## "ГОТОВО" closes it.
 func _settings_round(ctx: String) -> void:
-	_check("%s: настройки открылись" % ctx, _sheet().visible)
-	_check("%s: игра не на паузе" % ctx, not paused)
-	_check("%s: «Выйти» не показывается вне матча" % ctx, _button(_sheet(), "Выйти") == null)
-	var done := _button(_sheet(), "ГОТОВО")
-	_check("%s: «ГОТОВО» есть и внизу" % ctx, done != null and done.get_global_rect().position.y > root.size.y * 0.8)
+	await _expect("%s: настройки открылись" % ctx, func() -> bool: return _sheet().visible)
+	await _expect("%s: игра не на паузе" % ctx, func() -> bool: return not paused)
+	await _expect("%s: «Выйти» не показывается вне матча" % ctx, func() -> bool: return _button(_sheet(), "Выйти") == null)
+	var done := await _find(_sheet(), "ГОТОВО")
+	await _expect("%s: «ГОТОВО» есть и внизу" % ctx, func() -> bool: return done != null and done.get_global_rect().position.y > root.size.y * 0.8)
 	if done:
 		await _tap(done)
-	_check("%s: настройки закрылись" % ctx, not _sheet().visible)
+	await _expect("%s: настройки закрылись" % ctx, func() -> bool: return not _sheet().visible)
 
 
 ## The pause's shape: the game stands, every button is a thumb's size, ПРОДОЛЖИТЬ is in
 ## the bottom third.
 func _pause_shape(ctx: String) -> void:
-	_check("%s: пауза открылась" % ctx, _pause().visible)
-	_check("%s: игра стоит" % ctx, paused)
-	var go := _button(_pause(), "ПРОДОЛЖИТЬ")
-	_check("%s: «ПРОДОЛЖИТЬ» в нижней трети" % ctx, go != null and go.get_global_rect().position.y > root.size.y * 0.66)
+	await _expect("%s: пауза открылась" % ctx, func() -> bool: return _pause().visible)
+	await _expect("%s: игра стоит" % ctx, func() -> bool: return paused)
+	var go := await _find(_pause(), "ПРОДОЛЖИТЬ")
+	await _expect("%s: «ПРОДОЛЖИТЬ» в нижней трети" % ctx, func() -> bool: return go != null and go.get_global_rect().position.y > root.size.y * 0.66)
 	var small := 0
 	for c in _pause().find_children("*", "Button", true, false):
 		if (c as Button).is_visible_in_tree() and (c as Button).size.y < 84.0:
 			small += 1
-	_check("%s: кнопки не меньше 84 px" % ctx, small == 0)
+	await _expect("%s: кнопки не меньше 84 px" % ctx, func() -> bool: return small == 0)
 
 
 func _run() -> void:
@@ -130,50 +151,50 @@ func _run() -> void:
 	SaveData.enabled = false  # look, don't touch the player's progress
 	Skills.pending = []       # no perk screen in the way of the menu
 	main.ui.chosen.connect(func(a: String, _arg: int) -> void: _chosen = a)
-	_check("кнопка ⚙/❚❚ — 84 px", _gear().size.y >= 84.0 and _gear().size.x >= 84.0)
+	await _expect("кнопка ⚙/❚❚ — 84 px", func() -> bool: return _gear().size.y >= 84.0 and _gear().size.x >= 84.0)
 
 	# --- The old 2D Club (-- --old-menu) -----------------------------------------------
 	main.ui.show_menu()
 	await _wait(0.6)
-	await _tap(_button(main.ui.root, "Как играть"))
+	await _tap(await _find(main.ui.root, "Как играть"))
 	await _tutorial_round("Клуб 2D → ?")
-	_check("Клуб 2D → ?: игра не на паузе после", not paused)
+	await _expect("Клуб 2D → ?: игра не на паузе после", func() -> bool: return not paused)
 	_chosen = ""
-	await _tap(_button(main.ui.root, "ТУРНИР"))
-	_check("Клуб 2D → ?: после закрытия «ТУРНИР» нажимается", _chosen == "start_tournament")
+	await _tap(await _find(main.ui.root, "ТУРНИР"))
+	await _expect("Клуб 2D → ?: после закрытия «ТУРНИР» нажимается", func() -> bool: return _chosen == "start_tournament")
 
 	main.ui.show_menu()
 	await _wait(0.6)
-	_check("Клуб 2D: кнопка — шестерёнка", _gear().kind == IconButton.GEAR)
+	await _expect("Клуб 2D: кнопка — шестерёнка", func() -> bool: return _gear().kind == IconButton.GEAR)
 	await _tap(_gear())
 	await _settings_round("Клуб 2D → ⚙")
 	_chosen = ""
-	await _tap(_button(main.ui.root, "ТУРНИР"))
-	_check("Клуб 2D → ⚙ → ГОТОВО: Клуб нажимается", _chosen == "start_tournament")
+	await _tap(await _find(main.ui.root, "ТУРНИР"))
+	await _expect("Клуб 2D → ⚙ → ГОТОВО: Клуб нажимается", func() -> bool: return _chosen == "start_tournament")
 
 	# --- The walkable 3D club (the main screen since v0.2 B) ----------------------------
 	main._show_menu()
 	await _wait(1.5)
 	var club = main.get("club")
 	var in_3d: bool = club != null and club.active
-	_check("Клуб 3D открылся", in_3d)
+	await _expect("Клуб 3D открылся", func() -> bool: return in_3d)
 	if in_3d:
 		await _tap(club.hud.gear)
 		await _settings_round("Клуб 3D → ⚙")
-		_check("Клуб 3D → ⚙ → ГОТОВО: клуб на месте", club.active and club.hud.visible)
+		await _expect("Клуб 3D → ⚙ → ГОТОВО: клуб на месте", func() -> bool: return club.active and club.hud.visible)
 		await _tap(club.hud._travel_btn)
-		await _tap(_button(club.hud.root, "Как играть"))
+		await _tap(await _find(club.hud.root, "Как играть"))
 		await _tutorial_round("Клуб 3D → ? (быстрый переход)")
-		_check("Клуб 3D → ?: клуб живёт, не на паузе", club.active and not paused)
+		await _expect("Клуб 3D → ?: клуб живёт, не на паузе", func() -> bool: return club.active and not paused)
 		# A place's screen over the club (Раздевалка), as the place's button opens it.
 		main._on_ui("locker", 0)
 		await _wait(0.8)
-		_check("Клуб 3D → Раздевалка: ⚙ видна над экраном", _gear().is_visible_in_tree())
+		await _expect("Клуб 3D → Раздевалка: ⚙ видна над экраном", func() -> bool: return _gear().is_visible_in_tree())
 		await _tap(_gear())
 		await _settings_round("Клуб 3D → Раздевалка → ⚙")
 		_chosen = ""
-		await _tap(_button(main.ui.root, "Назад"))
-		_check("Клуб 3D → Раздевалка → ⚙ → ГОТОВО: «Назад» нажимается", _chosen == "menu")
+		await _tap(await _find(main.ui.root, "Назад"))
+		await _expect("Клуб 3D → Раздевалка → ⚙ → ГОТОВО: «Назад» нажимается", func() -> bool: return _chosen == "menu")
 		await _wait(0.8)
 
 	# --- The bracket ---------------------------------------------------------------
@@ -185,8 +206,8 @@ func _run() -> void:
 	await _tap(_gear())
 	await _settings_round("Сетка → ⚙")
 	_chosen = ""
-	await _tap(_button(main.ui.root, "НА КОРТ"))
-	_check("Сетка → ⚙ → ГОТОВО: «НА КОРТ» нажимается", _chosen == "play")
+	await _tap(await _find(main.ui.root, "НА КОРТ"))
+	await _expect("Сетка → ⚙ → ГОТОВО: «НА КОРТ» нажимается", func() -> bool: return _chosen == "play")
 
 	# --- A practice match and its pause ------------------------------------------------
 	main.tournament = null
@@ -195,38 +216,37 @@ func _run() -> void:
 	await _wait(1.0)
 	if _tut().visible:  # the first match opens the tutorial once
 		await _tutorial_round("Первый матч")
-		_check("Первый матч: после обучения игра идёт", not paused)
+		await _expect("Первый матч: после обучения игра идёт", func() -> bool: return not paused)
 	await _wait(0.3)
-	_check("Матч: кнопка — пауза ❚❚", _gear().kind == IconButton.PAUSE)
+	await _expect("Матч: кнопка — пауза ❚❚", func() -> bool: return _gear().kind == IconButton.PAUSE)
 	await _tap(_gear())
 	await _pause_shape("Тренировка → пауза")
-	_check("Тренировка → пауза: «Выйти в клуб» есть", _button(_pause(), "Выйти в клуб") != null)
-	await _tap(_button(_pause(), "ПРОДОЛЖИТЬ"))
-	_check("Пауза → ПРОДОЛЖИТЬ: закрылась и игра идёт", not _pause().visible and not paused)
+	await _expect("Тренировка → пауза: «Выйти в клуб» есть", func() -> bool: return _button(_pause(), "Выйти в клуб") != null)
+	await _tap(await _find(_pause(), "ПРОДОЛЖИТЬ"))
+	await _expect("Пауза → ПРОДОЛЖИТЬ: закрылась и игра идёт", func() -> bool: return not _pause().visible and not paused)
 
 	await _tap(_gear())
 	await _tap_at(Vector2(360, 300))  # the dimmed court above the sheet
-	_check("Пауза → тап по затемнению: продолжить", not _pause().visible and not paused)
+	await _expect("Пауза → тап по затемнению: продолжить", func() -> bool: return not _pause().visible and not paused)
 
 	await _tap(_gear())
-	await _tap(_button(_pause(), "Настройки"))
-	_check("Пауза → Настройки: лист открылся, игра стоит", _sheet().visible and paused)
-	_check("Пауза → Настройки: «Выйти» в листе нет", _button(_sheet(), "Выйти") == null)
-	await _tap(_button(_sheet(), "ГОТОВО"))
-	_check("Пауза → Настройки → ГОТОВО: снова пауза", _pause().visible and not _sheet().visible and paused)
+	await _tap(await _find(_pause(), "Настройки"))
+	await _expect("Пауза → Настройки: лист открылся, игра стоит", func() -> bool: return _sheet().visible and paused)
+	await _expect("Пауза → Настройки: «Выйти» в листе нет", func() -> bool: return _button(_sheet(), "Выйти") == null)
+	await _tap(await _find(_sheet(), "ГОТОВО"))
+	await _expect("Пауза → Настройки → ГОТОВО: снова пауза", func() -> bool: return _pause().visible and not _sheet().visible and paused)
 
-	await _tap(_button(_pause(), "Как играть"))
+	await _tap(await _find(_pause(), "Как играть"))
 	await _tutorial_round("Пауза → Как играть")
-	_check("Пауза → Как играть → Закрыть: возврат в паузу", _pause().visible and paused)
-	await _tap(_button(_pause(), "ПРОДОЛЖИТЬ"))
-	_check("Пауза → ПРОДОЛЖИТЬ после справочника: игра идёт", not paused)
+	await _expect("Пауза → Как играть → Закрыть: возврат в паузу", func() -> bool: return _pause().visible and paused)
+	await _tap(await _find(_pause(), "ПРОДОЛЖИТЬ"))
+	await _expect("Пауза → ПРОДОЛЖИТЬ после справочника: игра идёт", func() -> bool: return not paused)
 
 	await _tap(_gear())
-	await _tap(_button(_pause(), "Выйти в клуб"))
-	_check("Тренировка → Выйти в клуб: без подтверждения", not _confirm().visible)
+	await _tap(await _find(_pause(), "Выйти в клуб"))
+	await _expect("Тренировка → Выйти в клуб: без подтверждения", func() -> bool: return not _confirm().visible)
 	await _wait(0.8)
-	var in_club: bool = main.ui.is_open() or (club != null and club.active)
-	_check("Тренировка → Выйти в клуб: Клуб и не на паузе", in_club and not paused)
+	await _expect("Тренировка → Выйти в клуб: Клуб и не на паузе", func() -> bool: return (main.ui.is_open() or (club != null and club.active)) and not paused)
 
 	# --- A tournament match: leaving it asks first ---------------------------------------
 	var tm := Tournament.new(1)
@@ -237,20 +257,19 @@ func _run() -> void:
 	await _wait(1.0)
 	await _tap(_gear())
 	await _pause_shape("Турнир → пауза")
-	await _tap(_button(_pause(), "Выйти в клуб"))
-	_check("Турнир → Выйти: спрашивает подтверждение, игра стоит", _confirm().visible and paused)
-	_check("Турнир → Выйти: объясняет, что пропадёт", _confirm().find_children("*", "Label", true, false).any(func(l): return "заново" in (l as Label).text))
-	await _tap(_button(_confirm(), "Остаться"))
-	_check("Турнир → Выйти → Остаться: снова пауза", not _confirm().visible and _pause().visible and paused)
-	await _tap(_button(_pause(), "Выйти в клуб"))
+	await _tap(await _find(_pause(), "Выйти в клуб"))
+	await _expect("Турнир → Выйти: спрашивает подтверждение, игра стоит", func() -> bool: return _confirm().visible and paused)
+	await _expect("Турнир → Выйти: объясняет, что пропадёт", func() -> bool: return _confirm().find_children("*", "Label", true, false).any(func(l): return "заново" in (l as Label).text))
+	await _tap(await _find(_confirm(), "Остаться"))
+	await _expect("Турнир → Выйти → Остаться: снова пауза", func() -> bool: return not _confirm().visible and _pause().visible and paused)
+	await _tap(await _find(_pause(), "Выйти в клуб"))
 	await _tap_at(Vector2(360, 300))
-	_check("Турнир → Выйти → тап по затемнению: остаться", not _confirm().visible and _pause().visible)
-	await _tap(_button(_pause(), "Выйти в клуб"))
-	await _tap(_button(_confirm(), "Выйти"))
+	await _expect("Турнир → Выйти → тап по затемнению: остаться", func() -> bool: return not _confirm().visible and _pause().visible)
+	await _tap(await _find(_pause(), "Выйти в клуб"))
+	await _tap(await _find(_confirm(), "Выйти"))
 	await _wait(0.8)
-	in_club = main.ui.is_open() or (club != null and club.active)
-	_check("Турнир → Выйти → Выйти: Клуб и не на паузе", in_club and not paused and not _pause().visible)
-	_check("Турнир → Выйти: турнир сохранился", SaveData.resumable() == tm)
+	await _expect("Турнир → Выйти → Выйти: Клуб и не на паузе", func() -> bool: return (main.ui.is_open() or (club != null and club.active)) and not paused and not _pause().visible)
+	await _expect("Турнир → Выйти: турнир сохранился", func() -> bool: return SaveData.resumable() == tm)
 
 	# --- A result screen -------------------------------------------------------------
 	var rng := RandomNumberGenerator.new()
@@ -260,13 +279,28 @@ func _run() -> void:
 	r.pending_loot = {}
 	main.tournament = r
 	main.tournament_mode = true
+	var tl: MatchTally = main.hud.tally  # the match stats table (C-5): typical numbers
+	tl.start()
+	tl.aces = [3, 1]
+	tl.doubles = [1, 2]
+	tl.winners = [9, 5]
+	tl.unforced = [7, 12]
+	tl.serve_points = [30, 28]
+	tl.first_faults = [10, 12]
+	tl.forehands = [41, 38]
+	tl.backhands = [22, 30]
+	tl.best_rally = 14
+	tl.points = 58
+	tl.finish()
 	main.ui.show_result(r, true, "6:3", {"perfect": 3, "aces": 1, "best_rally": 9})
 	await _wait(1.2)
+	var labels: Array = main.ui.root.find_children("*", "Label", true, false)
+	await _expect("Итог: статистика матча — ты слева, соперник справа", func() -> bool: return labels.any(func(l): return (l as Label).is_visible_in_tree() and (l as Label).text == "Первая подача") and labels.any(func(l): return (l as Label).is_visible_in_tree() and (l as Label).text == "67%"))
 	await _tap(_gear())
 	await _settings_round("Итог → ⚙")
 	_chosen = ""
-	await _tap(_button(main.ui.root, "НАГРАДУ"))
-	_check("Итог → ⚙ → ГОТОВО: главное действие нажимается", _chosen == "to_reward")
+	await _tap(await _find(main.ui.root, "НАГРАДУ"))
+	await _expect("Итог → ⚙ → ГОТОВО: главное действие нажимается", func() -> bool: return _chosen == "to_reward")
 
 	# --- Gold: the bank on the chip, the run's gold apart until the summary (C-4) ---------
 	var bank0 := SaveData.gold
@@ -274,19 +308,19 @@ func _run() -> void:
 	g.gold = 75
 	main.ui.show_bracket(g)
 	await _wait(0.4)
-	_check("Золото: чип — банк, без золота забега", main.ui.chip_values().x == bank0)
-	_check("Золото: забег отдельно «+75»", main.ui.chip_values().y == 75 and main.ui.run_chip_shown())
-	_check("Золото: на сетке сказано, когда забег уйдёт в банк", main.ui.root.find_children("*", "Label", true, false).any(func(l): return (l as Label).is_visible_in_tree() and "в банк" in (l as Label).text))
+	await _expect("Золото: чип — банк, без золота забега", func() -> bool: return main.ui.chip_values().x == bank0)
+	await _expect("Золото: забег отдельно «+75»", func() -> bool: return main.ui.chip_values().y == 75 and main.ui.run_chip_shown())
+	await _expect("Золото: на сетке сказано, когда забег уйдёт в банк", func() -> bool: return main.ui.root.find_children("*", "Label", true, false).any(func(l): return (l as Label).is_visible_in_tree() and "в банк" in (l as Label).text))
 	main.ui.show_menu()
 	await _wait(0.4)
-	_check("Золото: в Клубе чип забега не показывается", not main.ui.run_chip_shown() and main.ui.chip_values().x == bank0)
+	await _expect("Золото: в Клубе чип забега не показывается", func() -> bool: return not main.ui.run_chip_shown() and main.ui.chip_values().x == bank0)
 	g.state = Tournament.State.OVER
 	SaveData.record_run(g)
 	main.ui.show_summary(g)
 	await _wait(0.2)
-	_check("Золото: итоги начинаются с банка до забега", main.ui.chip_values().x == bank0 and main.ui.run_chip_shown())
+	await _expect("Золото: итоги начинаются с банка до забега", func() -> bool: return main.ui.chip_values().x == bank0 and main.ui.run_chip_shown())
 	await _wait(2.0)
-	_check("Золото: на итогах забег ушёл в банк", main.ui.chip_values().x == bank0 + 75 and not main.ui.run_chip_shown())
+	await _expect("Золото: на итогах забег ушёл в банк", func() -> bool: return main.ui.chip_values().x == bank0 + 75 and not main.ui.run_chip_shown())
 
 	# --- The trophy mini-game ------------------------------------------------------
 	main.ui.close()
@@ -294,10 +328,10 @@ func _run() -> void:
 	main._start_bonus()
 	await _wait(0.5)
 	await _tap(_gear())
-	_check("Трофей → пауза: открылась и игра стоит", _pause().visible and paused)
-	_check("Трофей → пауза: выхода нет (трофей не достаётся даром)", _button(_pause(), "Выйти") == null)
-	await _tap(_button(_pause(), "ПРОДОЛЖИТЬ"))
-	_check("Трофей → пауза → ПРОДОЛЖИТЬ: игра идёт", not paused and not _pause().visible)
+	await _expect("Трофей → пауза: открылась и игра стоит", func() -> bool: return _pause().visible and paused)
+	await _expect("Трофей → пауза: выхода нет (трофей не достаётся даром)", func() -> bool: return _button(_pause(), "Выйти") == null)
+	await _tap(await _find(_pause(), "ПРОДОЛЖИТЬ"))
+	await _expect("Трофей → пауза → ПРОДОЛЖИТЬ: игра идёт", func() -> bool: return not paused and not _pause().visible)
 
 	print("\nOVERLAYS: %d checks, %d failed" % [checks, fails])
 	quit(1 if fails > 0 else 0)
