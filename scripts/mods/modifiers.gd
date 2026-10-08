@@ -35,6 +35,7 @@ const BOT_HARD_ASSIST := 0.5
 const HARD_HAS := ["tier_up", "short_ring", "no_slowmo", "blind", "late_flash"]
 const MAX_RUN := 3                # conditions a run may take
 const RUN_LOOT := 0.02            # each run condition adds this to the drop chances
+const TRAIT_LOOT := 0.02          # a trait moves his gear rarity up by this x (rarity + 1)
 const AURA_LOOT := 0.04           # each aura moves his gear rarity up by this x (rarity + 1)
 
 ## Presets of the run screen: a set picked at once, each one can be taken off alone.
@@ -186,7 +187,17 @@ static func find(id: String) -> Dictionary:
 	for e in LIST:
 		if e["id"] == id:
 			return e
-	return {}
+	return Traits.find(id)  # G-7: the opponents' traits are entries of the same kind
+
+
+## A rare aura (not an old modifier, not a trait): what the "≤ 10% of opponents" is about.
+static func is_aura(id: String) -> bool:
+	var e := find(id)
+	return not e.is_empty() and not e.get("legacy", false) and not e.get("trait", false)
+
+
+static func is_trait(id: String) -> bool:
+	return Traits.has(id)
 
 
 static func ids() -> Array:
@@ -195,6 +206,8 @@ static func ids() -> Array:
 
 ## Entries of a pool ("aura", "run", "boss").
 static func pool(name: String) -> Array:
+	if name == "trait":
+		return Traits.all()
 	return LIST.filter(func(e): return e["pools"].has(name))
 
 
@@ -270,6 +283,7 @@ static func add_auras(t: Tournament) -> void:
 	for i in t.lineup.size():
 		var lu: Dictionary = t.lineup[i]
 		var keep: Array = lu["mods"].filter(func(id): return find(id).get("legacy", false) or find(id).is_empty())
+		keep += Traits.roll(t.rng.seed, i, Opponents.ROSTER[i])  # G-7: his traits first, then the rare auras
 		var a := roll_auras(t.rng.seed, i, Opponents.ROSTER[i].get("boss", false), elite, newbie)
 		lu["mods"] = keep + a["mods"]
 		lu["hidden"] = a["hidden"]
@@ -280,6 +294,8 @@ static func loot_bonus(id: String) -> float:
 	if Tournament.MODIFIERS.has(id):
 		return float(Tournament.MODIFIERS[id]["loot"])
 	var e := find(id)
+	if Traits.has(id):
+		return TRAIT_LOOT * (int(e["rarity"]) + 1)  # G-7: everyone has them, so only a little
 	return 0.0 if e.is_empty() else AURA_LOOT * (int(e["rarity"]) + 1)
 
 
@@ -372,7 +388,7 @@ static func card(lu: Dictionary) -> Array:
 		var hid: bool = lu.get("hidden", []).has(id)
 		out.append({"id": id, "name": "???" if hid else e["name"], "desc": "Раскроется на первом очке" if hid else e["desc"],
 			"color": e["color"], "icon": "?" if hid else e["icon"], "rarity": int(e["rarity"]), "hidden": hid,
-			"reward": float(e["reward"]), "aura": not e.get("legacy", false)})
+			"reward": float(e["reward"]), "aura": not e.get("legacy", false), "trait": e.get("trait", false)})
 	return out
 
 

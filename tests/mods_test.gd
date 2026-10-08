@@ -20,6 +20,7 @@ func _initialize() -> void:
 	test_run()
 	test_card()
 	test_hardcore()
+	test_traits()
 	_live.call_deferred()
 
 
@@ -87,7 +88,7 @@ func test_auras() -> void:
 	for k in 600:
 		var t := Tournament.new(1, k + 1)
 		for i in t.rounds():
-			var a: Array = t.lineup[i]["mods"].filter(func(id): return not Modifiers.find(id).get("legacy", false))
+			var a: Array = t.lineup[i]["mods"].filter(func(id): return Modifiers.is_aura(id))
 			if i == 0:
 				first += a.size()
 				continue
@@ -108,7 +109,7 @@ func test_auras() -> void:
 	var second := 0
 	for k in 300:
 		var t := Tournament.new(1, k + 1)
-		second += t.lineup[1]["mods"].filter(func(id): return not Modifiers.find(id).get("legacy", false)).size()
+		second += t.lineup[1]["mods"].filter(func(id): return Modifiers.is_aura(id)).size()
 	check(second == 0, "a new player meets no aura in his first two matches")
 	SaveData.played = 5
 	var t1 := Tournament.new(1, 77)
@@ -170,10 +171,10 @@ func test_run() -> void:
 	for k in 200:
 		var e := Tournament.new(1, k + 1)
 		for i in range(1, 5):
-			a0 += e.lineup[i]["mods"].filter(func(id): return not Modifiers.find(id).get("legacy", false)).size()
+			a0 += e.lineup[i]["mods"].filter(func(id): return Modifiers.is_aura(id)).size()
 		Modifiers.set_run(e, ["elite"])
 		for i in range(1, 5):
-			a1 += e.lineup[i]["mods"].filter(func(id): return not Modifiers.find(id).get("legacy", false)).size()
+			a1 += e.lineup[i]["mods"].filter(func(id): return Modifiers.is_aura(id)).size()
 	check(a1 > a0 * 2, "«Элитные чаще»: auras %d -> %d" % [a0, a1])
 
 
@@ -204,6 +205,63 @@ func test_hardcore() -> void:
 	check(b > a, "more legendary gear on hardcore opponents (%d -> %d of %d)" % [a, b, 300 * 4 * Gear.SLOTS.size()])
 
 
+func test_traits() -> void:
+	print("traits")
+	SaveData.played = 5
+	check(Traits.all().size() >= 15 and Traits.all().all(func(e): return e["trait"] and e.has("growth") and e.has("hidden") and e["reward"] >= 1.05 and e["reward"] <= 1.15),
+		"%d traits, each with growth / hidden, a prize x1.05..1.15" % Traits.all().size())
+	check(Traits.name("hole_left") == "Дыра слева" and Modifiers.name("serve_cannon") == "Пушка подачи" and Modifiers.desc("serve_cannon") != "" and Traits.entry("nope").is_empty(), "name / desc through Traits and Modifiers")
+	var no_trait := 0
+	var boss_ok := true
+	var second := [0, 0, 0, 0, 0]
+	var fit := true
+	var same := true
+	var gain := 0.0
+	var base := 0.0
+	var runs := 300
+	for k in runs:
+		var t := Tournament.new(1, k + 1)
+		var u := Tournament.new(1, k + 1)
+		same = same and t.lineup.map(func(l): return l["mods"]) == u.lineup.map(func(l): return l["mods"])
+		for i in t.lineup.size():
+			var o: Dictionary = Opponents.ROSTER[i]
+			var tr: Array = t.lineup[i]["mods"].filter(func(id): return Traits.has(id))
+			if tr.is_empty():
+				no_trait += 1
+			if o.get("boss", false):
+				boss_ok = boss_ok and tr.has("king_court")
+			elif tr.has("king_court"):
+				boss_ok = false
+			if tr.size() > 1 or (o.get("boss", false) and tr.size() > 1):
+				second[i] += 1
+			var st := Opponents.stats(o)
+			for id in tr:
+				var e := Traits.find(id)
+				fit = fit and Traits.fits(e, st) and (not e.has("style") or e["style"] == String(o.get("play_style", "")))
+			if i > 0:
+				gain += Modifiers.reward(t.lineup[i]["mods"])
+				base += Modifiers.reward(t.lineup[i]["mods"].filter(func(id): return not Traits.has(id)))
+	check(no_trait == 0, "every opponent of %d runs has at least one trait" % runs)
+	check(boss_ok, "the boss always has his own (Король Корта), nobody else does")
+	check(same, "the same seed gives the same traits")
+	check(fit, "traits fit his stats and play style")
+	check(second[0] == 0 and second[1] > 0 and second[3] > second[1] - 40, "a second trait from round 2 on: %s" % [second])
+	var ratio := gain / base
+	print("       average prize x with traits / without: %.3f" % ratio)
+	check(ratio <= 1.10 and ratio > 1.0, "traits raise the average prize by %.1f%% (<= 10)" % ((ratio - 1.0) * 100.0))
+	# Rare auras are still at most 10% of opponents.
+	var rare := 0
+	for k in runs:
+		var t2 := Tournament.new(1, k + 1000)
+		for i in range(1, 5):
+			rare += 1 if t2.lineup[i]["mods"].any(func(id): return Modifiers.is_aura(id)) else 0
+	check(float(rare) / float(runs * 4) <= 0.12, "rare auras: %d of %d opponents" % [rare, runs * 4])
+	# «Дыра слева»: a winner into his backhand is a trick.
+	var tricks: Array = StyleRules.evaluate({"won": true, "reason": "WINNER", "rally": 5, "hole": true, "last": {"type": "FLAT"}, "labels": []})["tricks"]
+	check(tricks.any(func(x): return x["id"] == "hole"), "the style rules know «Дыра слева»")
+	check(StyleRules.evaluate({"won": true, "reason": "WINNER", "rally": 5, "hole": false, "last": {"type": "FLAT"}, "labels": []})["tricks"].is_empty(), "...and only with the trait")
+
+
 func test_card() -> void:
 	print("card data")
 	var lu := {"mods": ["fast", "fog", "moon"], "hidden": ["moon"]}
@@ -231,7 +289,7 @@ func _snap() -> Dictionary:
 		"env": [env.fog_density, env.tonemap_exposure, env.ambient_light_energy] if env else [],
 		"cpu": [main.cpu.scale, main.ai.speed_mult, main._cpu_serve_mult],
 		"hub": [h.start_stamina, h.no_ring, h.ring_late, h.mirror, h.pace.duplicate(), h.serve_pace.duplicate(), h.echo_every,
-			h.reaction_add, h.drain_on_loss, h.heal_on_win, h.fog, h.night],
+			h.reaction_add, h.drain_on_loss, h.heal_on_win, h.fog, h.night, h.hole, h.traits],
 		"opp": main.run_hub.match_fx.opp if main.run_hub.match_fx else null,
 	}
 	return s
@@ -274,6 +332,25 @@ func _live() -> void:
 		h.revert()
 		var back := _diff(base, _snap())
 		check(back.is_empty(), "%s is put back cleanly%s" % [id, "" if back.is_empty() else " — left: %s" % [back]])
+	for e in Traits.all():
+		h.apply([e["id"]])
+		var tc := _diff(base, _snap())
+		if not e["fx"].all(func(f): return f[0] == "opp"):  # "opp" is read by Main when the match starts
+			check(not tc.is_empty(), "trait %s changes something: %s" % [e["id"], tc])
+		h.revert()
+		var tb := _diff(base, _snap())
+		check(tb.is_empty(), "trait %s is put back cleanly%s" % [e["id"], "" if tb.is_empty() else " — left: %s" % [tb]])
+	# «Дыра слева»: the stroke's target against his right().
+	h.apply(["hole_left"])
+	var rx: float = (main.cpu as Athlete).right().x
+	main.last_shot = {"target": Vector2(-rx * 2.5, -10.0)}
+	root.get_node("GameEvents").player_stroke.emit({"type": "FLAT", "label": "GOOD", "serve": false})
+	check(Traits.hole_hit, "a ball to his backhand side counts")
+	main.last_shot = {"target": Vector2(rx * 2.5, -10.0)}
+	root.get_node("GameEvents").player_stroke.emit({"type": "FLAT", "label": "GOOD", "serve": false})
+	check(not Traits.hole_hit, "a ball to his forehand does not")
+	h.revert()
+	check(not Traits.hole_hit and not h.hole, "put back")
 	# Everything at once (the run's three + the boss's two), then back.
 	h.apply(["fog", "night", "moon", "narrow", "ice", "crystal", "echo", "half_tank"])
 	h.revert()

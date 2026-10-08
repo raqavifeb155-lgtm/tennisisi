@@ -184,6 +184,7 @@ func roll_lineup() -> void:
 				if not mods.has(id):
 					mods.append(id)
 		# v0.2 G: rare auras (scripts/mods), "???" ones named on the first point.
+		mods += Traits.roll(rng.seed, i, Opponents.ROSTER[i])  # v0.2 G-7: his traits (at least one)
 		var aur := Modifiers.roll_auras(rng.seed, i, Opponents.ROSTER[i].get("boss", false), 1.0, SaveData.played == 0)
 		mods += aur["mods"]
 		var bonus := 0.0

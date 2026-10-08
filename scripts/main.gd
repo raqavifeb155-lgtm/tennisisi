@@ -77,6 +77,7 @@ var _bot_measure := 0        # v0.2 G: --measure=N: the bot plays N points again
 var _bot_stage := 1
 var _bot_seed := 0
 var _bot_pts := [0, 0]
+var _bot_hard_assist := Modifiers.BOT_HARD_ASSIST   # --bot-hard-assist=
 var _bot_hardcore := false   # v0.2 G-6: --hardcore: the bot runs a hardcore tournament (less auto-positioning too)
 var _cpu_serve_mult := 1.0        # difficulty modifier "Бомбардир"
 var _run_dist := 0.0              # metres run this rally (experience for "Ноги")
@@ -199,6 +200,8 @@ func _ready() -> void:
 			_profile_t = 5.0  # print frame statistics every 5 s (a profiling run, not headless)
 		elif a.begins_with("--bot-sd="):
 			_bot_sd = float(a.get_slice("=", 1))  # bot timing error (s): ~0.035 sharp, ~0.07 a thumb on a phone
+		elif a.begins_with("--bot-hard-assist="):
+			_bot_hard_assist = float(a.get_slice("=", 1))
 		elif a == "--hardcore":
 			_bot_hardcore = true
 		elif a.begins_with("--measure="):
@@ -1203,7 +1206,7 @@ func _update_player_movement() -> void:
 	var assist := Tuning.assist
 	if autoplay:
 		mv = Vector2.ZERO
-		assist = 0.25 if _bot_dive_test else (Modifiers.BOT_HARD_ASSIST if tournament != null and tournament.hardcore else 1.0)
+		assist = 0.25 if _bot_dive_test else (_bot_hard_assist if tournament != null and tournament.hardcore else 1.0)
 	var free := mv == Vector2.ZERO and (autoplay or not _assist_suppressed) and not serving
 	if free and assist > 0.0 and _player_can_hit() and t_contact < 2.5:
 		# Auto-positioning toward a comfortable contact point.
