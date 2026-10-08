@@ -204,7 +204,8 @@ func _refresh(first: bool) -> void:
 func _update_boards() -> void:
 	for id in ["locker", "shop"]:
 		var place := ClubPlaces.find(id)
-		var shut := not ClubPlaces.is_open(place, SaveData.played, SaveData.titles)
+		# T-1: a room that is not built has no door to board up (its lot shows stakes instead).
+		var shut := ClubLots.is_placed(id) and not ClubPlaces.is_open(place, SaveData.played, SaveData.titles)
 		var node: MeshInstance3D = _boards.get(id)
 		var c: Vector3 = place["pos"]
 		if shut and node == null:

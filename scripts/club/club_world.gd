@@ -23,6 +23,7 @@ const RESERVED := [                      # no trees here: places, the arena site
 	Rect2(14, -38, 13, 14),               # the bar's terrace
 	Rect2(26, -36, 5, 10),                # the blackjack table beside it
 	Rect2(28, 10, 8, 8),                  # the academy's sign (ACADEMY_LEGACY_TZ 4.1)
+	Rect2(20, -15, 16, 12), Rect2(24, 8, 16, 12),      # lots n4 and n7 (T-1, ClubLots): the others sit on the squares above
 ]
 
 var walk := ClubWalk.new()
@@ -50,6 +51,9 @@ var _focus_room := ""
 var _props_on := true
 var _blackjack: Node3D
 var _scaffolds := {}                   # construction id -> Node3D (scaffolding while its level is built)
+var _lots_view: ClubLotsView           # the empty lots: stakes, tape, a sign (T-1)
+var _raised := {}                      # lot types standing in the world (T-1)
+var _bar_table: Node3D
 
 ## Where the scaffolding stands while a level takes runs (hub spec 13): centre and size x, z.
 const SCAFFOLD_AT := {
@@ -149,14 +153,14 @@ func highlight(id: String) -> void:
 func set_open(ids: Array) -> void:
 	_ring_ids = []
 	var xf: Array[Transform3D] = []
-	for p in ClubPlaces.LIST:
+	for p in ClubPlaces.all():
 		var open: bool = ids.has(p["id"])
 		var sign := _place_nodes.get(p["id"] + "_sign") as Node3D
 		if sign:
 			var text: String = ClubPlaces.state(p["id"], int(_levels.get(p["id"], 0))).get("sign", "")
 			if not ClubPlaces.is_open(p, SaveData.played, SaveData.titles):
 				text = p["sign"]
-			sign.visible = not open and text != ""
+			sign.visible = (not open or bool(p.get("keep_sign", false))) and text != ""   # an empty lot keeps its sign when open: it tells the price
 			(sign.get_meta("label") as Label3D).text = text
 		if not open:
 			continue
@@ -174,6 +178,8 @@ func set_open(ids: Array) -> void:
 ## level node (a function _level_<id>(root, level) per place). Safe to call again.
 func set_level(id: String, lv: int) -> void:
 	_levels[id] = lv
+	if not ClubLots.is_placed(id):
+		return   # a building of a lot that is not built: nothing of it stands (T-1)
 	if _pavilions.has(id):
 		var inside: Node3D = _pavilions[id]["inside"]
 		for c in inside.get_children():
@@ -216,6 +222,49 @@ func show_ghost(id: String, lv: int) -> void:
 		_chalk = chalk
 	else:
 		ClubLevels.build(self, id, _ghost, lv, true)
+	_ghostify()
+	_ghost_id = id
+
+
+## A building as it will stand on a lot that is empty now (the lot sheet, T-1): the first
+## level of the type, see-through gold, with the floor of its footprint.
+func show_lot_ghost(lot_id: String, type: String) -> void:
+	show_ghost("", 0)
+	if lot_id == "" or type == "" or ClubLots.lot(lot_id).is_empty():
+		return
+	var at: Vector3 = ClubLots.lot(lot_id)["pos"]
+	_ghost = Node3D.new()
+	_ghost.name = "ghost"
+	add_child(_ghost)
+	if type in ["locker", "coach"]:
+		_ghost.position = at + Vector3(0, 0.01, 0)
+		var chalk := _chalk
+		_fill_room(type, _ghost, 1)
+		_chalk = chalk
+		_ghost.add_child(_mesh_box(Vector3(PAVILION.x + 0.4, 0.15, PAVILION.y + 0.4), Vector3(0, 0.075, 0), ClubMaterial.pal(ClubMaterial.WOOD, false)))
+		_ghost.add_child(_mesh_box(Vector3(PAVILION.x, WALL_H, 0.2), Vector3(0, WALL_H * 0.5, -PAVILION.y * 0.5), ClubMaterial.pal(ClubMaterial.PLASTER)))
+		_ghost.add_child(_mesh_box(Vector3(0.2, WALL_H, PAVILION.y), Vector3(-PAVILION.x * 0.5, WALL_H * 0.5, 0), ClubMaterial.pal(ClubMaterial.PLASTER)))
+		_ghost.add_child(_mesh_box(Vector3(0.2, WALL_H, PAVILION.y), Vector3(PAVILION.x * 0.5, WALL_H * 0.5, 0), ClubMaterial.pal(ClubMaterial.PLASTER)))
+	elif ClubLevels.has(type):
+		ClubLevels.build(self, type, _ghost, 1, true, lot_id)
+	else:
+		# The academy and the arena (not built yet): a hall in outline, "скоро".
+		_ghost.position = at
+		_ghost.add_child(_mesh_box(Vector3(12.0, 4.0, 8.0), Vector3(0, 2.0, 0), ClubMaterial.pal(ClubMaterial.PLASTER)))
+		var l := Label3D.new()
+		l.text = "СКОРО"
+		l.font = UiTheme.display()
+		l.font_size = 72
+		l.pixel_size = 0.012
+		l.shaded = false
+		l.double_sided = false
+		l.position = Vector3(0, 2.2, 4.1)
+		_ghost.add_child(l)
+	_ghostify()
+	_ghost_id = type
+
+
+func _ghostify() -> void:
 	var mat := ClubMaterial.ghost()
 	for n in _ghost.find_children("*", "GeometryInstance3D", true, false):
 		var g := n as GeometryInstance3D
@@ -225,7 +274,6 @@ func show_ghost(id: String, lv: int) -> void:
 			(g as Label3D).outline_size = 0
 		else:
 			g.material_override = mat
-	_ghost_id = id
 
 
 ## Scaffolding at a construction whose next level is being built (it takes runs): poles,
@@ -253,8 +301,18 @@ func scaffold_visible(id: String) -> bool:
 func _make_scaffold(id: String) -> Node3D:
 	var at: Vector3 = SCAFFOLD_AT[id][0]
 	var sz: Vector2 = SCAFFOLD_AT[id][1]
+	var t := ClubLots.xf(id)         # a building of a lot: its scaffolding goes with it
+	at = t * at
+	if absf(t.basis.x.x) < 0.5:
+		sz = Vector2(sz.y, sz.x)
+	return make_scaffold_at("scaffold_" + id, at, sz)
+
+
+## Scaffolding of poles, planks and a striped tape around a footprint (also for the build
+## moment of a lot, ClubLotBuild).
+func make_scaffold_at(node_name: String, at: Vector3, sz: Vector2, decks := true) -> Node3D:
 	var n := Node3D.new()
-	n.name = "scaffold_" + id
+	n.name = node_name
 	n.position = at
 	add_child(n)
 	_keep.append(n)
@@ -273,8 +331,9 @@ func _make_scaffold(id: String) -> Node3D:
 			n.add_child(_mesh_box(Vector3(0.07, 0.07, sz.y), Vector3(x, y, 0), metal))
 		for z in [-hz, hz]:
 			n.add_child(_mesh_box(Vector3(sz.x, 0.07, 0.07), Vector3(0, y, z), metal))
-	for y in [1.1, 2.2]:
-		n.add_child(_mesh_box(Vector3(sz.x * 0.9, 0.06, sz.y * 0.9), Vector3(0, y + 0.06, 0), wood))
+	if decks:   # a lot's scaffolding is open (the camera looks down into it)
+		for y in [1.1, 2.2]:
+			n.add_child(_mesh_box(Vector3(sz.x * 0.9, 0.06, sz.y * 0.9), Vector3(0, y + 0.06, 0), wood))
 	# A cross brace and a striped tape around the foot of it.
 	var brace := _mesh_box(Vector3(0.05, h * 1.1, 0.05), Vector3(hx, h * 0.5, 0), metal)
 	brace.rotation.x = atan2(sz.y, h) * (1.0 if sz.y > 0 else 0.0)
@@ -329,6 +388,24 @@ func level_root(id: String) -> Node3D:
 	return _level_roots.get(id)
 
 
+## Everything that grows when a lot's building is raised (the build moment, ClubLotBuild).
+func lot_roots(type: String) -> Array[Node3D]:
+	var out: Array[Node3D] = []
+	if _pavilions.has(type):
+		out.append(_pavilions[type]["root"])
+	if _level_roots.has(type):
+		out.append(_level_roots[type])
+	if type == "bar":
+		if _bar_table:
+			out.append(_bar_table)
+		out.append(_blackjack)
+	return out
+
+
+func lots_view() -> ClubLotsView:
+	return _lots_view
+
+
 ## The club's colour (main court level 3): repaint what wears it.
 func set_club_color(i: int) -> void:
 	SaveData.club["color"] = clampi(i, 0, ClubMaterial.CLUB_COLORS.size() - 1)
@@ -377,7 +454,8 @@ func roulette() -> ClubRoulette:
 
 ## Looking down at the wheel: the umbrella's canopy steps out of the way.
 func set_roulette_view(on: bool) -> void:
-	_umbrella.visible = not on
+	if _umbrella:
+		_umbrella.visible = not on
 
 
 func sun() -> DirectionalLight3D:
@@ -566,22 +644,59 @@ func _build_places() -> void:
 		n.position = p["pos"]
 		add_child(n)
 		_place_nodes[p["id"]] = n
-		if p["sign"] != "":
+		# The buildings of lots have no sign of their own: the lot's (ClubLotsView).
+		if p["sign"] != "" and ClubLots.owner_type(p["id"]) == "":
 			var s := _sign(p["pos"] + Vector3(1.6, 0, -1.2), p["sign"])
 			_place_nodes[p["id"] + "_sign"] = s
 			_keep.append(s)
-	_pavilion("locker", ClubPlaces.find("locker")["pos"])
-	_pavilion("coach", ClubPlaces.find("coach")["pos"])
 	_pavilion("shop", ClubPlaces.find("shop")["pos"])
-	_build_bar_table()
-	_build_blackjack_table()
+	# The bar's table and the blackjack table come when the bar is built (_raise); the node
+	# stream E's scene goes into is always there.
+	_blackjack = Node3D.new()
+	_blackjack.name = "blackjack_table"
+	add_child(_blackjack)
+	_keep.append(_blackjack)
 	_stands_sign = _sign(Vector3((ClubLevels.STANDS_X0 + ClubLevels.STANDS_X1) * 0.5, 0, -2.6), "Здесь будут трибуны")
+	_stands_sign.visible = false
 	_keep.append(_stands_sign)
-	for p in ClubPlaces.LIST:
-		set_level(p["id"], ClubPlaces.level(p["id"]))
-	set_level("stands", ClubBuilds.level("stands"))
+	set_level("shop", ClubPlaces.level("shop"))
+	set_level("court", ClubPlaces.level("court"))
+	set_level("gate", ClubPlaces.level("gate"))
 	_build_gate()
 	_build_arena_site()
+	_lots_view = ClubLotsView.new(self)
+	sync_lots()
+
+
+## The lots now: markers on the empty ones, and what was built on a lot standing there. Safe
+## to call again (Club does after every build).
+func sync_lots() -> void:
+	_lots_view.sync()
+	for l in ClubLots.LOTS:
+		var t := ClubLots.type_at(String(l["id"]))
+		if t != "" and not _raised.has(t):
+			_raise(t)
+
+
+func is_raised(type: String) -> bool:
+	return _raised.has(type)
+
+
+## A building appears on its lot: its places move there, its room or its level is built.
+func _raise(t: String) -> void:
+	_raised[t] = true
+	for p in ClubPlaces.all():
+		if ClubLots.owner_type(p["id"]) == t and _place_nodes.has(p["id"]):
+			(_place_nodes[p["id"]] as Node3D).position = p["pos"]
+	match t:
+		"locker", "coach":
+			_pavilion(t, ClubPlaces.find(t)["pos"])
+		"bar":
+			_build_bar_table()
+			_build_blackjack_table()
+		"stands":
+			_stands_sign.position = ClubLots.xf("stands") * Vector3((ClubLevels.STANDS_X0 + ClubLevels.STANDS_X1) * 0.5, 0, -2.6)
+	set_level(t, ClubBuilds.level(t))
 
 
 ## A board on a post with a line of text: what will stand here and when.
@@ -793,11 +908,7 @@ func blackjack_root() -> Node3D:
 ## the dealer's chip tray and three stools on the player's side.
 func _build_blackjack_table() -> void:
 	var c: Vector3 = ClubPlaces.find("blackjack")["pos"]
-	_blackjack = Node3D.new()
-	_blackjack.name = "blackjack_table"
 	_blackjack.position = Vector3(c.x, 0.0, c.z - 2.4)
-	add_child(_blackjack)
-	_keep.append(_blackjack)
 	var ph := Node3D.new()
 	ph.name = "placeholder"
 	_blackjack.add_child(ph)
@@ -877,6 +988,7 @@ func _build_bar_table() -> void:
 	root.position = at
 	add_child(root)
 	_keep.append(root)
+	_bar_table = root
 	var top := MeshInstance3D.new()
 	var cyl := CylinderMesh.new()
 	cyl.top_radius = 1.3
@@ -1045,6 +1157,9 @@ func _build_waypoints() -> void:
 		Vector2(23.5, -30.0), Vector2(26.5, -29.6),
 	]:
 		walk.waypoints.append(p)
+	for l in ClubLots.LOTS:   # the way to a lot: in front of it, toward the camera
+		var c: Vector3 = l["pos"]
+		walk.waypoints.append(Vector2(c.x, c.z + 4.5))
 
 
 ## The gold circles on the ground (one MultiMesh, per-instance colour for the pulse).

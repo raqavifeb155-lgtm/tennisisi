@@ -90,6 +90,7 @@ func setup(m: Node) -> void:
 
 ## Into the club (from the start, a match, a run) or back to it (from a room's screen).
 func open() -> bool:
+	ClubLots.ensure()  # the first visit after the lots update writes the layout
 	var fresh: bool = not active or main.location_id != "club"
 	if fresh:
 		main.set_location("club")
@@ -97,8 +98,7 @@ func open() -> bool:
 		if world == null:
 			return false  # the club's scenery failed to load: Main keeps its old menu
 		world.set_props_visible(true)
-		if not world.roulette().finished.is_connected(_on_spun):
-			world.roulette().finished.connect(_on_spun)
+		_connect_roulette()
 		_roulette_on = false
 		main.ui.close()
 		active = true
@@ -149,6 +149,7 @@ func close() -> void:
 	if _foreman_on:
 		skip_build()
 		_foreman_on = false
+		_lot_on = false
 		hud.hide_foreman()
 		if is_instance_valid(world):
 			world.show_ghost("", 0)
@@ -192,7 +193,9 @@ func _refresh() -> void:
 	world.set_board(ClubQuests.board_text())
 	_open_ids = []
 	var travel: Array = []
-	for p in ClubPlaces.LIST:
+	world.sync_lots()        # a building of a lot stands once it is built (T-1)
+	_connect_roulette()
+	for p in ClubPlaces.all():
 		var id: String = p["id"]
 		var lv := ClubPlaces.level(id)
 		if world.level_built(id) != lv:
@@ -212,6 +215,13 @@ func _refresh() -> void:
 	hud.set_gold(SaveData.gold)
 	if _place != "":
 		_show_place(_place)
+
+
+## The bar's wheel is there once the bar is built: its end of a spin comes here.
+func _connect_roulette() -> void:
+	var r := world.roulette()
+	if r != null and not r.finished.is_connected(_on_spun):
+		r.finished.connect(_on_spun)
 
 
 ## Scaffolding stands at every construction whose level is being built over runs.
@@ -337,8 +347,8 @@ func _physics_process(delta: float) -> void:
 
 ## The hero stepped into a place's circle (or out of it).
 func _update_place() -> void:
-	if _auto != "":
-		return  # running past: the circles of the places on the way stay quiet
+	if _auto != "" or _lot_anim != null and _building:
+		return  # running past, or a lot's build moment: the circles stay quiet
 	var here := ClubPlaces.at(main.player.position)
 	var id: String = here.get("id", "")
 	if id != "" and not _open_ids.has(id):
@@ -359,6 +369,8 @@ func _update_place() -> void:
 	else:
 		_show_place(id)
 	var p := ClubPlaces.find(id)
+	if id.begins_with("lot_"):
+		coach.say("lot")
 	if p.has("cam"):
 		cam.frame(p["cam"]["pos"], p["cam"]["look"])
 		world.set_inside(id)
@@ -395,20 +407,32 @@ func upgrade_price(place_id: String) -> int:
 ## The court's circle is the main screen (HANDOFF 10): «Новая игра» / «Продолжить».
 func place_buttons(id: String) -> Dictionary:
 	if id == "court":
-		var run := SaveData.resumable()
-		if run != null:
-			return {"label": "ПРОДОЛЖИТЬ  ·  %s" % run.round_name().to_lower(), "action": "continue",
-				"extra": [["Новая игра", "club_tournament_new"]]}
-		if SaveData.club.has("last_location"):
-			var loc := Locations.find(SaveData.club["last_location"])
-			var extra := [["Другое место", "club_locations"]]
-			if SaveData.played >= 1 and Modifiers.enabled:
-				# The quick start skips the conditions screen: a quiet link to it (v0.2 G).
-				var k := snappedf(Modifiers.reward(RunMods.preset()["mods"]), 0.01)
-				extra.append(["Условия · ×%s" % str(k).trim_suffix(".0"), "club_mods"])
-			return {"label": "НОВАЯ ИГРА  ·  %s" % String(loc["name"]).to_upper(), "action": "club_tournament",
-				"extra": extra}
-		return {"label": "НОВАЯ ИГРА", "action": "club_tournament", "extra": []}
+		var b := _court_buttons()
+		# Until the coach's room is built, the skill points are spent from here.
+		if not ClubLots.is_placed("coach") and Skills.points + Skills.pending.size() > 0:
+			(b["extra"] as Array).append(["Навыки", "character"])
+		return b
+	return _place_buttons(id)
+
+
+func _court_buttons() -> Dictionary:
+	var run := SaveData.resumable()
+	if run != null:
+		return {"label": "ПРОДОЛЖИТЬ  ·  %s" % run.round_name().to_lower(), "action": "continue",
+			"extra": [["Новая игра", "club_tournament_new"]]}
+	if SaveData.club.has("last_location"):
+		var loc := Locations.find(SaveData.club["last_location"])
+		var extra := [["Другое место", "club_locations"]]
+		if SaveData.played >= 1 and Modifiers.enabled:
+			# The quick start skips the conditions screen: a quiet link to it (v0.2 G).
+			var k := snappedf(Modifiers.reward(RunMods.preset()["mods"]), 0.01)
+			extra.append(["Условия · ×%s" % str(k).trim_suffix(".0"), "club_mods"])
+		return {"label": "НОВАЯ ИГРА  ·  %s" % String(loc["name"]).to_upper(), "action": "club_tournament",
+			"extra": extra}
+	return {"label": "НОВАЯ ИГРА", "action": "club_tournament", "extra": []}
+
+
+func _place_buttons(id: String) -> Dictionary:
 	if id == "coach":
 		if ClubQuests.claimable_count() > 0:
 			return {"label": "ЗАБРАТЬ  ·  +%d ●" % ClubQuests.claimable_gold(), "action": "club_claim",
@@ -421,11 +445,15 @@ func place_buttons(id: String) -> Dictionary:
 ## Red counts over places: skill points and quests to collect at the coach's, what's
 ## affordable at the foreman's.
 func badge_counts() -> Dictionary:
-	return {"coach": Skills.points + Skills.pending.size() + ClubQuests.claimable_count(), "gate": ClubBuilds.affordable_count()}
+	var out := {"gate": ClubBuilds.affordable_count()}
+	if ClubLots.is_placed("coach"):
+		out["coach"] = Skills.points + Skills.pending.size() + ClubQuests.claimable_count()
+	out.merge(ClubLots.lot_badges())   # a red count over the lots where something can be bought
+	return out
 
 
 func _update_badges() -> void:
-	var counts := badge_counts()
+	var counts := badge_counts() if not _building else {}
 	var screen := {}
 	for id in counts:
 		var pos: Vector3 = ClubPlaces.find(id)["pos"] + Vector3(0, 3.6, 0)
@@ -467,6 +495,9 @@ func ui_action(action: String, arg: int) -> void:
 			roulette_open()
 		"club_foreman":
 			foreman_open()
+		"club_lot":
+			if id.begins_with("lot_"):
+				lot_open(id.substr(4))
 		"club_claim":
 			_claim()
 		"club_blackjack":
@@ -792,12 +823,13 @@ func building() -> bool:
 ## The foreman's strip, on a construction (or the first affordable one).
 func foreman_open(start := "") -> void:
 	_foreman_on = true
+	_lot_on = false
 	main.player.move_input = Vector2.ZERO
 	_move_target = Vector3.INF
 	hud.hide_place()
 	if start == "":
 		start = ClubBuilds.ORDER[0]
-		for id in ClubBuilds.ORDER:
+		for id in ClubLots.foreman_ids():
 			if ClubBuilds.can_afford(id):
 				start = id
 				break
@@ -812,7 +844,7 @@ func foreman_open(start := "") -> void:
 func _cheapest_gap() -> String:
 	var best := ""
 	var gap := 1 << 30
-	for id in ClubBuilds.ORDER:
+	for id in ClubLots.foreman_ids():
 		if ClubBuilds.is_open(id) and not ClubBuilds.is_building(id) and not ClubBuilds.next(id).is_empty():
 			var g := ClubBuilds.next_price(id) - SaveData.gold
 			if g > 0 and g < gap:
@@ -824,7 +856,7 @@ func _cheapest_gap() -> String:
 
 
 func foreman_show(id: String) -> void:
-	if not ClubBuilds.TABLE.has(id):
+	if not ClubBuilds.TABLE.has(id) or not ClubLots.is_placed(id):
 		return
 	if id != _foreman_id:
 		_color_pick = -1
@@ -869,12 +901,13 @@ func foreman_show(id: String) -> void:
 			build = {"text": "Нужно ещё %d" % (price - SaveData.gold), "can": false}
 		if id == "court" and lv == 2:
 			colors = ClubMaterial.CLUB_COLORS.size()
-	var i := ClubBuilds.ORDER.find(id)
+	var ids := ClubLots.foreman_ids()
+	var i := ids.find(id)
 	if _color_pick < 0:
 		_color_pick = ClubBuilds.color_index()
-	hud.show_foreman(card, build, i > 0, i < ClubBuilds.ORDER.size() - 1, colors, _color_pick)
+	hud.show_foreman(card, build, i > 0, i < ids.size() - 1, colors, _color_pick)
 	hud.set_gold(SaveData.gold)
-	var view: Array = BUILD_VIEW[id]
+	var view := build_view(id)
 	cam.frame(view[0], view[1])
 	world.focus_room(id)
 	if lv < mx and ClubBuilds.is_open(id) and not ClubBuilds.is_building(id):
@@ -886,8 +919,12 @@ func foreman_show(id: String) -> void:
 func _foreman_step(d: int) -> void:
 	if _building:
 		return
-	var i := clampi(ClubBuilds.ORDER.find(_foreman_id) + d, 0, ClubBuilds.ORDER.size() - 1)
-	foreman_show(ClubBuilds.ORDER[i])
+	if _lot_on:
+		_lot_step(d)
+		return
+	var ids := ClubLots.foreman_ids()
+	var i := clampi(ids.find(_foreman_id) + d, 0, ids.size() - 1)
+	foreman_show(ids[i])
 
 
 ## Buys the next level of the card in the middle and plays the build moment. The gold is
@@ -895,6 +932,8 @@ func _foreman_step(d: int) -> void:
 func foreman_build() -> bool:
 	if not _foreman_on or _building:
 		return false
+	if _lot_on:
+		return lot_build()
 	var id := _foreman_id
 	if not ClubBuilds.can_afford(id):
 		hud.shake_gold()
@@ -911,7 +950,7 @@ func foreman_build() -> bool:
 		# A level that takes runs: the scaffolding goes up now, the level comes later.
 		_refresh()
 		hud.set_gold(SaveData.gold)
-		var view: Array = BUILD_VIEW[id]
+		var view := build_view(id)
 		hud.fly_coins(cam.unproject_position(view[1]))
 		main.sfx.play("club_build" if main.sfx.has("club_build") else "bounce", -2.0, 0.8)
 		TelegramApp.haptic("heavy")
@@ -930,7 +969,7 @@ func _play_build(id: String, lv: int) -> void:
 	_build_id = id
 	hud.set_building(true)
 	hud.set_gold(SaveData.gold)
-	var view: Array = BUILD_VIEW[id]
+	var view := build_view(id)
 	var focus: Vector3 = view[1]
 	hud.fly_coins(cam.unproject_position(focus))
 	# The camera comes closer.
@@ -992,6 +1031,9 @@ func _play_build(id: String, lv: int) -> void:
 func skip_build() -> void:
 	if not _building:
 		return
+	if _lot_anim != null and is_instance_valid(_lot_anim) and _lot_anim.running:
+		_lot_anim.skip()
+		return
 	if _build_tw:
 		_build_tw.kill()
 	_end_build(_build_id, ClubBuilds.level(_build_id))
@@ -1029,9 +1071,133 @@ func foreman_close() -> void:
 		return
 	skip_build()
 	_foreman_on = false
+	_lot_on = false
 	hud.hide_foreman()
 	world.show_ghost("", 0)
 	world.focus_room("")
+	cam.release()
+	_place = ""
+	_refresh()
+	_update_place()
+
+
+## Where the camera looks at a construction from, with the building's lot in it.
+func build_view(id: String) -> Array:
+	var v: Array = BUILD_VIEW[id]
+	var t := ClubLots.xf(id)
+	return [t * (v[0] as Vector3), t * (v[1] as Vector3)]
+
+
+# --- Lots: choosing what to build and building it (T-1) ------------------------------------
+
+var _lot_on := false
+var _lot_id := ""
+var _lot_type := ""
+var _lot_anim: ClubLotBuild
+
+
+func lot_on() -> bool:
+	return _lot_on
+
+
+## Where the camera looks at a lot from. The phone's frame is narrow: the wide buildings (the
+## bar, the trophy room, the stands) need the camera twice as far as a room does.
+func lot_view(lot_id: String, type: String, building: bool) -> Array:
+	var at: Vector3 = ClubLots.lot(lot_id)["pos"]
+	var wide := type in ["bar", "trophy", "stands", "academy", "arena"]
+	var d := (24.0 if wide else 13.0) + (2.0 if building else 0.0)
+	return [at + Vector3(0, d * 0.78, d * 0.78), at + Vector3(0, 0, 1.0)]
+
+
+func lot_type() -> String:
+	return _lot_type
+
+
+## The lot's sheet: the foreman's strip with a card for each type, a ghost of it on the lot.
+func lot_open(lot_id: String) -> void:
+	if ClubLots.lot(lot_id).is_empty() or ClubLots.type_at(lot_id) != "":
+		return
+	_lot_on = true
+	_foreman_on = true
+	_lot_id = lot_id
+	main.player.move_input = Vector2.ZERO
+	_move_target = Vector3.INF
+	hud.hide_place()
+	var types := ClubLots.sheet_types()
+	var first: String = types[0]
+	for pass_ in 2:
+		var found := false
+		for t in types:
+			if (pass_ == 0 and ClubLots.can_build(lot_id, t)) or (pass_ == 1 and ClubLots.why_not(lot_id, t) == ""):
+				first = t
+				found = true
+				break
+		if found:
+			break
+	lot_show(first)
+
+
+func lot_show(type: String) -> void:
+	_lot_type = type
+	var types := ClubLots.sheet_types()
+	var i := types.find(type)
+	var sh := ClubLots.sheet(_lot_id, type)
+	var dots := ""
+	for k in types.size():
+		dots += "●" if k == i else "○"
+	var card: Dictionary = sh["card"]
+	card["tag"] = "%s   %s" % [card["tag"], dots]
+	hud.show_foreman(card, sh["build"], i > 0, i < types.size() - 1)
+	hud.set_gold(SaveData.gold)
+	var v := lot_view(_lot_id, type, false)
+	cam.frame(v[0], v[1])
+	world.show_lot_ghost(_lot_id, type)
+
+
+func _lot_step(d: int) -> void:
+	var types := ClubLots.sheet_types()
+	lot_show(types[clampi(types.find(_lot_type) + d, 0, types.size() - 1)])
+
+
+## «Построить»: the gold goes and is saved, then the show (a tap or leaving changes nothing).
+func lot_build() -> bool:
+	if not _lot_on or _building:
+		return false
+	var lot := _lot_id
+	var type := _lot_type
+	if not ClubLots.can_build(lot, type):
+		hud.shake_gold()
+		return false
+	if not ClubLots.build(lot, type):
+		return false
+	_lot_on = false
+	_foreman_on = false
+	world.show_lot_ghost("", "")
+	_building = true
+	_build_id = type
+	hud.hide_foreman()    # the strip and its «← Назад» step aside (it also brings the place's button back: hidden next)
+	hud.hide_place()
+	hud._bottom.visible = false
+	hud.set_building(true)
+	hud.set_gold(SaveData.gold)
+	_refresh()   # the lot becomes the building's place; the world raises it (hidden at once by the show)
+	_lot_anim = ClubLotBuild.new()
+	add_child(_lot_anim)
+	_lot_anim.finished.connect(_end_lot_build.bind(lot, type))
+	_lot_anim.play(self, lot, type)
+	return true
+
+
+func _end_lot_build(_lot: String, type: String) -> void:
+	_building = false
+	if _lot_anim != null and is_instance_valid(_lot_anim):
+		_lot_anim.queue_free()
+	_lot_anim = null
+	hud.set_building(false)
+	hud.hide_foreman()
+	if ClubLots.is_placed("stands") and ClubBuilds.level("stands") >= 1 and main.sfx.has("applause"):
+		main.sfx.play("applause", -10.0)
+	coach.say(ClubBuilds.line(type, ClubBuilds.level(type)), true)
 	cam.release()
 	_place = ""
 	_refresh()

@@ -16,6 +16,7 @@ var stats := false
 var views := false
 var nopack := false     # --nopack: the club as it stands before the model pack arrives (simple forms)
 var census := false
+var lots := false       # --lots: T-1, the empty lots, the sheet, the build moment
 var hour := 11.0   # shots are of the morning unless --hour= says otherwise (else they depend on the clock)
 var tag := ""          # --tag=X: club_X_<h>_*.png (other worktrees shoot into the same folder)
 
@@ -34,6 +35,8 @@ func _initialize() -> void:
 			views = true
 		elif a == "--census":
 			census = true
+		elif a == "--lots":
+			lots = true
 		elif a == "--nopack":
 			nopack = true
 			ClubPack.state = ClubPack.FAILED
@@ -185,6 +188,10 @@ func _run() -> void:
 		return
 	if census:
 		await _census()
+		quit()
+		return
+	if lots:
+		await _lots()
 		quit()
 		return
 	if builds:
@@ -560,3 +567,77 @@ func _keep_visible() -> void:
 	rng.randomize()
 	DisplayServer.window_set_position(Vector2i(rng.randi_range(0, 900), rng.randi_range(0, 120)))
 	DisplayServer.window_move_to_foreground()
+
+
+## T-1: a new club (the court and the shop, empty lots), a lot with its sign, the sheet with
+## the ghost, the build moment, the building up, and the club with a few lots built.
+func _lots() -> void:
+	var club = main.club
+	SaveData.played = 0
+	SaveData.titles = 0
+	SaveData.gold = 0
+	SaveData.club = {"met_coach": true, "walk_hint": true}
+	# The world was built from whatever save the game started with: build the club afresh.
+	club.close()
+	main.set_location(Locations.LIST[0]["id"])
+	main._show_menu()
+	await create_timer(0.8).timeout
+	club = main.club
+	club.hud.say("", 0.0)
+	club.hud._bubble.visible = false
+	ClubDaytime.force_hour = 10.0
+	await _shot("01_start", 1.6)
+	_go("lot_n1")
+	await _shot("02_lot_circle", 1.0)
+	club.cam.frame(Vector3(-13, 8.5, 37.0), Vector3(-12.5, 0.0, 26.0), 0.0)
+	await _shot("02b_lot_sign", 0.8)
+	club.cam.release(0.0)
+	club._on_choice("club_lot", 0)
+	await _shot("03_sheet_no_gold", 1.0)
+	SaveData.gold = 200
+	club.lot_show("coach")
+	await _shot("04_sheet_coach", 0.8)
+	club.lot_show("stands")
+	await _shot("05_sheet_stands", 0.8)
+	club.lot_show("bar")
+	await _shot("06_sheet_locked_bar", 0.8)
+	club.lot_show("academy")
+	await _shot("07_sheet_soon", 0.8)
+	club.lot_show("coach")
+	await create_timer(0.3).timeout
+	club.foreman_build()
+	await _shot("08_build_start", 0.6)
+	await _shot("09_build_hammer", 0.7)
+	await _shot("10_build_rise", 0.75)
+	await _shot("11_build_dust", 0.2)
+	club.skip_build()
+	await _shot("12_built_coach", 0.9)
+	# The other lot: the stands, turned toward the court.
+	_go("lot_n2")
+	SaveData.gold = 300
+	await create_timer(0.5).timeout
+	club._on_choice("club_lot", 0)
+	club.lot_show("stands")
+	await _shot("13_sheet_stands_n2", 0.9)
+	club.foreman_build()
+	club.skip_build()
+	await _shot("14_built_stands", 1.0)
+	# Later: more lots open, a few buildings of different sizes on lots that were not theirs.
+	SaveData.played = 8
+	SaveData.titles = 2
+	SaveData.gold = 5000
+	SaveData.club["lots"] = {"n1": "bar", "n2": "locker", "n3": "stands", "n4": "coach", "n5": "trophy"}
+	var lv: Dictionary = {"bar": 3, "locker": 2, "stands": 3, "coach": 2, "trophy": 3}
+	SaveData.club["levels"] = lv
+	club._refresh()
+	club.hud.visible = false
+	main.player.position = Vector3(0, 0, 14)
+	club._place = ""
+	club._update_place()
+	await create_timer(0.3).timeout
+	for spec in [["15_overview_south", Vector3(0, 40, 62), Vector3(0, 0, 18)], ["16_overview_west", Vector3(-48, 28, 16), Vector3(-18, 0, 0)], ["17_overview_east", Vector3(50, 28, 10), Vector3(24, 0, -8)], ["17b_overview_north", Vector3(0, 30, -2), Vector3(0, 0, -30)]]:
+		club.cam.frame(spec[1], spec[2], 0.0)
+		await _shot(spec[0], 1.0)
+	club.hud.visible = true
+	_go("lot_n6")
+	await _shot("18_open_lot_north", 1.0)
