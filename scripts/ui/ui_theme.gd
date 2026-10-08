@@ -28,6 +28,18 @@ const RARITY := [
 ]
 const RARITY_NAMES := ["Обычная", "Редкая", "Эпическая", "Легендарная", "Мифическая"]
 
+## The layer map (UI_FLOW_TZ 5.5): CanvasLayer numbers live here and nowhere else. A modal
+## window is the topmost thing and takes every tap (a full-screen STOP veil).
+const LAYER_HUD := 1             # score, ring, joystick, the announcer: never modal
+const LAYER_STYLE := 5           # the style plate and the replay (v0.2 A)
+const LAYER_CLUB := 9            # the walkable club's HUD (v0.2 B), under the screens
+const LAYER_SCREENS := 10        # TournamentUI: the Club list, bracket, result, rooms
+const LAYER_SHEETS := 15         # confirmations over a screen
+const LAYER_PAUSE := 20          # the pause and the settings sheet, the ⚙ / ❚❚ button
+const LAYER_CONFIRM := 25        # "leave the match?" over the pause
+const LAYER_HELP := 30           # "Как играть"
+const LAYER_LOADING := 100       # the boot loader
+
 const RADIUS := 22
 const TAP := 84.0                # minimum height of anything tappable (~51 pt)
 const GUTTER := 28               # screen side margin

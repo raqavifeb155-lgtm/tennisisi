@@ -1287,7 +1287,7 @@ func execute_shot(who: int, hitter: Athlete, contact: Vector3, target: Vector3, 
 		_assist_suppressed = false
 		_stats["cpu_hits"] += 1
 	rally += 1
-	GameEvents.shot.emit(who, {"contact": contact, "speed": r.speed, "top": top, "q": q, "lob": lob, "drop": drop})
+	GameEvents.shot.emit(who, {"contact": contact, "speed": r.speed, "top": top, "q": q, "lob": lob, "drop": drop, "side": side, "incoming": incoming, "serve": rally == 1})
 	var vol := lerpf(-9.0, 0.0, clampf(r.speed / 35.0, 0.0, 1.0))
 	sfx.play("hit_perfect" if q > 0.9 else "hit", vol, rng.randf_range(0.96, 1.04) * lerpf(0.92, 1.06, q))
 	return r
@@ -1443,6 +1443,7 @@ func _end_point(winner: int, reason: String) -> void:
 
 func _fault(kind: String) -> void:
 	var by := server
+	GameEvents.fault.emit({"server": by, "kind": kind, "second": serve_attempt == 2})
 	if serve_attempt == 1:
 		serve_attempt = 2
 		_replay_serve = true

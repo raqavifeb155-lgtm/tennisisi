@@ -9,13 +9,16 @@ extends SceneTree
 var main: Node
 var h := 1564
 var out := ""
+var tag := ""  # --tag=X: X_ in the file names (other worktrees shoot into the same folder)
 
 
 func _initialize() -> void:
 	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--tag="):
+			tag = a.get_slice("=", 1) + "_"
 		if a.begins_with("--size="):
 			h = int(a.get_slice("=", 1))
-	out = ProjectSettings.globalize_path("user://menu_%d_" % h)
+	out = ProjectSettings.globalize_path("user://menu_%s%d_" % [tag, h])
 	_run.call_deferred()
 
 
@@ -55,6 +58,19 @@ func _run() -> void:
 	rng.seed = 7
 	t.lineup[0]["racket"] = Gear.roll(Gear.EPIC, rng)
 	t.record_match(true, "6:3", rng)
+	var tl: MatchTally = main.hud.tally  # the match stats table (C-5): typical numbers
+	tl.start()
+	tl.aces = [3, 1]
+	tl.doubles = [1, 2]
+	tl.winners = [9, 5]
+	tl.unforced = [7, 12]
+	tl.serve_points = [30, 28]
+	tl.first_faults = [10, 12]
+	tl.forehands = [41, 38]
+	tl.backhands = [22, 30]
+	tl.best_rally = 14
+	tl.points = 58
+	tl.finish()
 	main.ui.show_result(t, true, "6:3", {"perfect": 12, "aces": 3, "best_rally": 14})
 	await _shot("08_result")
 	main.ui.show_loot(t)

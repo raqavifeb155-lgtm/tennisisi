@@ -22,7 +22,7 @@ var _done := false
 
 
 func _ready() -> void:
-	layer = 100
+	layer = UiTheme.LAYER_LOADING
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	var bg := ColorRect.new()
 	bg.color = Color(0.04, 0.05, 0.07)
