@@ -97,6 +97,8 @@ func open() -> bool:
 		p.position = _hero
 		p.velocity = Vector3.ZERO
 		p.relax()
+		var run: Tournament = main.tournament if main.tournament != null else SaveData.resumable()
+		p.set_gear(AthleteGear.items_of(run.equip) if run != null else [])  # dressed as in the current run
 		p.look_target = Vector3.INF
 		main.cpu.look_target = Vector3.INF
 		coach.enter()
