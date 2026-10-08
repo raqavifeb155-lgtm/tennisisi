@@ -111,6 +111,16 @@ func _markings(s: ClubShapes) -> void:
 	while x < 100.0:
 		s.box(Vector3(2.4, 0.01, 0.16), Vector3(x, 0.03, 54.2), LINE)
 		x += 6.0
+	# patched and cracked asphalt: darker patches, thin cracks
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	for k in 9:
+		s.flat(Vector2(rng.randf_range(0.8, 2.4), rng.randf_range(0.5, 1.0)), Vector3(rng.randf_range(-60.0, 60.0), 0.032 + k * 0.0003, 54.2 + rng.randf_range(-2.8, 2.8)), Color("2e3035"), 6, rng.randf_range(0, PI))
+	for k in 16:
+		var at := Vector3(rng.randf_range(-70.0, 70.0), 0.034, 54.2 + rng.randf_range(-3.4, 3.4))
+		var a := rng.randf_range(-0.5, 0.5)
+		for j in 3:
+			s.box(Vector3(0.9, 0.006, 0.05), at + Vector3(cos(a) * 0.8 * j, 0, sin(a) * 0.8 * j), Color("26282c"), a + rng.randf_range(-0.4, 0.4))
 	# a zebra crossing in front of the gate
 	for k in 7:
 		s.box(Vector3(0.5, 0.01, 7.4), Vector3(-2.1 + k * 0.7, 0.031, 54.2), LINE)

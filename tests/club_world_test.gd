@@ -265,6 +265,16 @@ func test_in_the_club() -> void:
 	await _frames(2)
 	club.travel_run("court")
 	check(club.running_to() == "", "a place the hero already stands at is not run to")
+	# the fence: the world is shut all round; the gate and the wicket are the ways out
+	check(w.walk.route(Vector2(0, 14), Vector2(30, 43.5)).is_empty(), "no way over the south fence beside the gate")
+	check(w.walk.blocked(Vector2(20, ClubFence.SOUTH), 0.35) and w.walk.blocked(Vector2(-20, ClubFence.NORTH), 0.35) and w.walk.blocked(Vector2(54.8, 0), 0.35) and w.walk.blocked(Vector2(-54.8, 0), 0.35), "a wall on every side")
+	check(not w.walk.route(Vector2(0, 14), Vector2(0, 44.0)).is_empty(), "the gate leads out to the street")
+	check(not w.walk.route(Vector2(0, 14), Vector2(-3.0, -42.0)).is_empty(), "the wicket leads to the embankment")
+	var fence_draws := 0
+	for c in scenery.fence.get_children():
+		if c is MultiMeshInstance3D:
+			fence_draws += 1
+	check(fence_draws == 4, "the fence costs four draws (%d)" % fence_draws)
 	# the routes between the places are still there with all the props
 	var from := Vector2(0, 14)
 	for id in ["coach", "gate", "locker", "shop", "trophy", "bar", "arena"]:
@@ -286,13 +296,30 @@ func test_in_the_club() -> void:
 		var cam_at := Vector2(cam.global_position.x, cam.global_position.z)
 		var to := Vector2(hero.position.x, hero.position.z)
 		var gate_z: float = ClubLevels.GATE_Z
-		var through_gate: bool = (cam_at.y - gate_z) * (to.y - gate_z) < 0.0 and absf(cam_at.x) < 7.0 and cam.global_position.y < 5.0
-		var n := int(cam_at.distance_to(to) / 0.25)
-		var bad := through_gate
-		for k in range(0, n):
-			var q := cam_at.lerp(to, float(k) / n)
-			if q.distance_to(to) > 1.0 and w.walk.blocked(q, 0.0):
-				bad = true
+		var bad: bool = (cam_at.y - gate_z) * (to.y - gate_z) < 0.0 and absf(cam_at.x) < 7.0 and cam.global_position.y < 5.0
+		var cam3 := cam.global_position
+		var head := Vector3(to.x, 1.5, to.y)
+		# walls and boxes are as tall as the camera; props as tall as their models
+		var steps := int(cam_at.distance_to(to) / 0.25)
+		for k in range(0, steps):
+			var t := float(k) / steps
+			var q := cam_at.lerp(to, t)
+			if q.distance_to(to) > 1.0:
+				for b2 in w.walk.boxes:
+					if (b2 as Rect2).grow(0.1).has_point(q):
+						bad = true
+		for pr in scenery.props.visible(scenery.level_of, true):
+			if pr.solid <= 0.0:
+				continue
+			var pc := Vector2(pr.xf.origin.x, pr.xf.origin.z)
+			var mesh_top := ClubPack.mesh(pr.id).get_aabb().end.y * pr.xf.basis.get_scale().y + pr.xf.origin.y
+			for k in range(0, steps):
+				var t := float(k) / steps
+				var q := cam_at.lerp(to, t)
+				if q.distance_to(to) > 1.0 and q.distance_to(pc) < pr.solid + 0.1:
+					var y := lerpf(cam3.y, head.y, t)
+					if y < mesh_top + 0.2:
+						bad = true
 		if bad:
 			hits.append("%d@%s" % [i, str(views[i])])
 	check(hits.is_empty(), "nothing stands between the camera and the hero in any view (%s)" % ", ".join(hits))

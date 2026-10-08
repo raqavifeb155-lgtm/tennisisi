@@ -67,11 +67,24 @@ func _clear_back(p: Vector3) -> float:
 	var t := 1.5
 	while t <= _back_max():
 		var q := from + Vector2(back_dir.x, back_dir.z) * t
-		if walk.blocked(q, 0.15):
+		if walk.blocked(q, 0.15) or _in_crown(q):
 			d = minf(d, maxf(t - 0.8, MIN_BACK))
 			break
 		t += step
 	return d
+
+
+func _in_crown(q: Vector2) -> bool:
+	var club := get_parent()
+	if club == null or club.get("world") == null:
+		return false
+	var sc := (club.get("world") as Node).get_node_or_null("ClubScenery")
+	if sc == null:
+		return false
+	for c in sc.get("crowns"):
+		if q.distance_to(Vector2(c.x, c.y)) < float(c.z):
+			return true
+	return false
 
 
 func _walk() -> ClubWalk:

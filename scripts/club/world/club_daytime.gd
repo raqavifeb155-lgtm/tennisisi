@@ -123,6 +123,7 @@ func _lamps_lit(e: float, d: float) -> void:
 	var lit := smoothstep(0.35, 0.8, e)
 	_glows.visible = lit > 0.01 and _lamp_count > 0
 	_pools.visible = _glows.visible
+	get_parent().window_glow(lit)
 	if _glows.visible:
 		_glow_mat.albedo_color = Color(1.0, 0.82, 0.5).lerp(Color(1.0, 0.9, 0.62), d) * lerpf(0.5, 2.2, lit)
 		_pool_mat.albedo_color = Color(1.0, 0.72, 0.38, 0.5 * lit)

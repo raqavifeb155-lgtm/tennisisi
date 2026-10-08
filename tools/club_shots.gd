@@ -16,7 +16,7 @@ var stats := false
 var views := false
 var nopack := false     # --nopack: the club as it stands before the model pack arrives (simple forms)
 var census := false
-var hour := -1.0
+var hour := 11.0   # shots are of the morning unless --hour= says otherwise (else they depend on the clock)
 var tag := ""          # --tag=X: club_X_<h>_*.png (other worktrees shoot into the same folder)
 
 
@@ -322,6 +322,10 @@ func _views() -> void:
 		["v15_court_gate", Vector3(0, 0, 21), 0.0, 0],
 		["v16_fans", Vector3(-14, 0, 3), -PI * 0.5, 1],
 		["v17_built", Vector3(0, 0, 30), 0.0, 1],
+		["v18_corner_nw", Vector3(-49, 0, -36), PI * 0.25, 0],
+		["v19_corner_ne", Vector3(49, 0, -36), -PI * 0.25, 0],
+		["v20_corner_se", Vector3(49, 0, 37), -PI * 0.75, 0],
+		["v21_corner_sw", Vector3(-49, 0, 37), PI * 0.75, 0],
 	]
 	for v in list:
 		var p: Athlete = main.player
