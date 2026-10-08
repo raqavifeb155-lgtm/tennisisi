@@ -638,8 +638,12 @@ func test_places_flow() -> void:
 	check(club.hud.current_place() == "blackjack", "quick travel to the blackjack table")
 	club._on_choice("club_blackjack", 0)
 	await _frames(2)
-	check(main.ui.is_open() or club.get("blackjack_on") == true, "Блэкджек: stream E's scene, or a 'скоро' card until it comes")
-	main._on_ui("menu", 0)
+	var bjt3 = club.world.blackjack_root().get_node_or_null("blackjack")
+	check(main.ui.is_open() or (bjt3 != null and bjt3.is_open()), "Блэкджек: stream E's scene, or a 'скоро' card until it comes")
+	if bjt3 != null and bjt3.is_open():
+		bjt3.close()
+	else:
+		main._on_ui("menu", 0)
 	await _frames(2)
 	main.queue_free()
 	await _frames(2)
