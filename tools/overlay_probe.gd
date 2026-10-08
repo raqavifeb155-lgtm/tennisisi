@@ -142,6 +142,43 @@ func _pause_shape(ctx: String) -> void:
 	await _expect("%s: кнопки не меньше 84 px" % ctx, func() -> bool: return small == 0)
 
 
+## Every visible button of the club's screen is a thumb's size and inside the phone's frame
+## (a card that slid under the edge or a row too thin to hit shows up here).
+func _screen_shape(ctx: String) -> void:
+	var small := 0
+	var outside := 0
+	var frame := Rect2(Vector2.ZERO, Vector2(root.size))
+	for c in main.ui.root.find_children("*", "Button", true, false):
+		var b := c as Button
+		if not b.is_visible_in_tree():
+			continue
+		if b.size.y < 84.0:
+			small += 1
+		if not frame.grow(2.0).encloses(b.get_global_rect()):
+			outside += 1
+	await _expect("%s: кнопки не меньше 84 px" % ctx, func() -> bool: return small == 0)
+	await _expect("%s: кнопки целиком на экране" % ctx, func() -> bool: return outside == 0)
+
+
+## A club screen on TournamentUI's frame (the coach's board, the islands, a shop, a place's
+## card): opens with its title, is shaped for a thumb, has the gear over it that opens the
+## settings (no exit outside a match), and "Назад" comes back to the walkable club.
+func _club_screen(ctx: String, action: String, title: String) -> void:
+	var club = main.get("club")
+	club.ui_action(action, 0)
+	await _wait(0.8)
+	await _expect("%s: экран открылся" % ctx, func() -> bool: return main.ui.is_open() and main.ui.root.find_children("*", "Label", true, false).any(func(l): return (l as Label).is_visible_in_tree() and title in (l as Label).text))
+	await _screen_shape(ctx)
+	await _expect("%s: ⚙ видна над экраном" % ctx, func() -> bool: return _gear().is_visible_in_tree())
+	await _tap(_gear())
+	await _settings_round("%s → ⚙" % ctx)
+	_chosen = ""
+	await _tap(await _find(main.ui.root, "Назад"))
+	await _expect("%s: «Назад» нажимается" % ctx, func() -> bool: return _chosen == "menu")
+	await _wait(0.8)
+	await _expect("%s: назад в клуб" % ctx, func() -> bool: return club.active and club.hud.visible and not main.ui.is_open())
+
+
 func _run() -> void:
 	root.size = Vector2i(720, 1564)
 	main = load("res://scenes/main.tscn").instantiate()
@@ -196,6 +233,49 @@ func _run() -> void:
 		await _tap(await _find(main.ui.root, "Назад"))
 		await _expect("Клуб 3D → Раздевалка → ⚙ → ГОТОВО: «Назад» нажимается", func() -> bool: return _chosen == "menu")
 		await _wait(0.8)
+
+		# The club's screens added by the hub (coach's board, islands, shop, place cards).
+		load("res://scripts/club/club_quests.gd").start_run("probe", 0)  # by path: the class names need the autoloads, which a -s script compiles before
+		await _club_screen("Клуб 3D → Задания тренера", "club_quests", "Задания тренера")
+		await _club_screen("Клуб 3D → Куда едем?", "club_locations", "Куда едем?")
+		await _club_screen("Клуб 3D → Магазин", "club_shop", "Магазин")
+		for pl in [["trophy", "Трофейная"], ["blackjack", "Блэкджек"]]:
+			club._place = pl[0]
+			await _club_screen("Клуб 3D → место: %s" % pl[1], "club_place", pl[1])
+		club._place = ""
+		# The locked island: a row that can't be pressed, with a hint.
+		load("res://scripts/club/club_screens.gd").locations(main.ui, func(id: String) -> bool: return id == "newyork", func(_id: String) -> String: return "за титул в Нью-Йорке")
+		await _wait(0.6)
+		var lock_rows := 0
+		for c in main.ui.root.find_children("*", "Button", true, false):
+			var b := c as Button
+			if b.is_visible_in_tree() and b.find_children("*", "Label", true, false).any(func(l): return "🔒" in (l as Label).text):
+				lock_rows += 1
+				_check("Куда едем?: закрытый остров не нажимается", b.disabled)
+		await _expect("Куда едем?: закрытые острова есть, с замком", func() -> bool: return lock_rows > 0)
+		await _screen_shape("Куда едем? (замки)")
+		_chosen = ""
+		await _tap(await _find(main.ui.root, "Назад"))
+		await _wait(0.8)
+		# The foreman: his strip stands over the 3D club, the gear is above it and works.
+		club.foreman_open("court")
+		await _wait(1.0)
+		await _expect("Прораб: полоса открыта", func() -> bool: return club.hud.foreman_visible())
+		var fo: Control = club.hud._foreman
+		var frame := Rect2(Vector2.ZERO, Vector2(root.size))
+		await _expect("Прораб: полоса целиком на экране", func() -> bool: return frame.grow(2.0).encloses(fo.get_global_rect()))
+		await _expect("Прораб: «Построить» не меньше 84 px", func() -> bool: return club.hud._foreman_build.size.y >= 84.0)
+		await _expect("Прораб: ⚙ не закрыта полосой", func() -> bool: return not fo.get_global_rect().intersects(club.hud.gear.get_global_rect()))
+		await _tap(club.hud.gear)
+		await _settings_round("Прораб → ⚙")
+		await _expect("Прораб → ⚙ → ГОТОВО: прораб на месте", func() -> bool: return club.foreman_on() and club.hud.foreman_visible())
+		for id in ["court", "stands", "gate", "shop", "locker", "trophy", "bar"]:
+			club.foreman_show(id)
+			await _wait(0.1)
+			_check("Прораб · %s: карточка в экране, ниже ⚙" % id, frame.grow(2.0).encloses(fo.get_global_rect()) and fo.get_global_rect().position.y > club.hud.gear.get_global_rect().end.y)
+		club.foreman_close()
+		await _wait(0.6)
+		await _expect("Прораб: закрылся, клуб на месте", func() -> bool: return not club.foreman_on() and club.active)
 
 	# --- The bracket ---------------------------------------------------------------
 	var t := Tournament.new(1)
