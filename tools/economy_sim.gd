@@ -16,12 +16,12 @@ extends SceneTree
 const Model := preload("res://tools/bot_model.gd")
 
 ## Win-chance edge (bot_model log-odds units, 0.1 = ten points against an even opponent) of
-## one worn item by rarity - calibrated on tools/power_bot.sh (3 epics = +3.4 points of
-## the points won at level 12, ~ edge 0.17 for the match).
-var gear_edge := [0.01, 0.025, 0.055, 0.09, 0.13]
+## one worn item by rarity - calibrated on tools/power_bot.sh (3 epics = +2 points of
+## the points won at level 12, 3 legendaries +3.6; x5 from points to a match, /4 to the edge).
+var gear_edge := [0.005, 0.015, 0.035, 0.06, 0.09]
 ## The island's edge: opponents are stronger by Locations.TIERS (power) - measured with
 ## tools/power_bot.sh --loc: points won at level 12 against the quarter-final opponent.
-var island_edge := [0.0, -0.08, -0.17, -0.28]
+var island_edge := [0.0, -0.31, -0.35, -0.60]
 
 var trials := 40
 var runs_print := 30

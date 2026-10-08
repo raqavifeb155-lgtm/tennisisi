@@ -261,7 +261,7 @@ func test_shop() -> void:
 		for it in Shop.stock():
 			max_r = maxi(max_r, int(it["rarity"]))
 	check(max_r == Gear.RARE, "the stall sells up to rare")
-	SaveData.club = {"levels": {"shop": 2}}
+	SaveData.club = {"levels": {"shop": ClubBuilds.max_level("shop")}}
 	max_r = 0
 	var mythic := false
 	for k in 300:
@@ -269,7 +269,7 @@ func test_shop() -> void:
 		for it in Shop.stock():
 			max_r = maxi(max_r, int(it["rarity"]))
 			mythic = mythic or int(it["rarity"]) == Gear.MYTHIC
-	check(Shop.stock().size() == 4 and max_r == Gear.LEGENDARY and not mythic, "the boutique: 4 items up to legendary, never a mythic")
+	check(Shop.stock().size() == 4 and max_r == Gear.LEGENDARY and not mythic, "the top shop: 4 items up to legendary, never a mythic")
 	SaveData.played = 7
 	var a := Shop.stock()
 	check(a == Shop.stock(), "the same run: the same showcase (a reload rerolls nothing)")

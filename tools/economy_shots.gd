@@ -88,7 +88,7 @@ func _run() -> void:
 	await _shot("sum_replace", 0.5)
 
 	# The shop: stall, shop, boutique.
-	for lv in 3:
+	for lv in [0, 1, ClubBuilds.max_level("shop")]:
 		_reset(500)
 		SaveData.club = {"levels": {"shop": lv, "locker": 1}}
 		SaveData.played = 20 + lv
@@ -97,7 +97,7 @@ func _run() -> void:
 		Locker.put(Items.set_level(Items.instance(Items.find("cutter")), 2), 5)
 		main._on_ui("club_shop", 0)
 		await _shot("shop%d" % lv, 0.7)
-		if lv == 2:
+		if lv == ClubBuilds.max_level("shop"):
 			main._on_ui("shop_pick", 1)
 			await _shot("shop_picked", 0.5)
 			main._on_ui("shop_buy", 1)
@@ -157,7 +157,7 @@ func _flow() -> void:
 	_reset(0)
 	SaveData.played = 5
 	SaveData.gold = 1000
-	SaveData.club = {"levels": {"shop": 2, "locker": 1}}
+	SaveData.club = {"levels": {"shop": ClubBuilds.max_level("shop"), "locker": 1}}
 	main._on_ui("club_shop", 0)
 	check(_cards() > 4, "club_shop opens the showcase (%d blocks)" % _cards())
 	check(not RunShop.route(main, "bag_back_x", 0), "the router leaves other actions to Main")
@@ -182,7 +182,7 @@ func _flow() -> void:
 	check(Locker.next_items().is_empty() and SaveData.gold > g, "sold into the bank")
 	main._on_ui("club_locker", 0)
 	check(_cards() > 2, "the locker room opens")
-	SaveData.club = {"levels": {"shop": 2}}  # one cell
+	SaveData.club = {"levels": {"shop": ClubBuilds.max_level("shop")}}  # one cell
 	SaveData.locker["items"] = [Gear._affix_item(Gear.RARE, rng, "shoes")]
 	main._on_ui("club_locker", 0)
 	# the summary
