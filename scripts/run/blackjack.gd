@@ -17,7 +17,10 @@ enum Phase { BETTING, PLAYER, DEALER, DONE }
 
 const DECKS := 6
 const CUT := 78                        # fewer cards left than this: shuffle before the deal
+## The chips by default (the table asks the bar for its own set: ClubBuilds.bar_chips()),
+## and every chip there is a face for.
 const CHIPS := [5, 25, 50, 100]
+const ALL_CHIPS := [5, 10, 25, 50, 100, 250, 500, 1000]
 const DEALER_STANDS := 17              # soft 17 too
 ## "N:1": the stake comes back plus N stakes.
 const PERFECT_PAIRS := {"perfect": 25, "colored": 12, "mixed": 6}
@@ -255,9 +258,9 @@ static func max_bet(gold: int, limit: int) -> int:
 	return mini(limit, Bets.max_stake(gold))
 
 
-static func chips_for(gold: int, limit: int) -> Array:
+static func chips_for(gold: int, limit: int, set: Array = CHIPS) -> Array:
 	var m := max_bet(gold, limit)
-	return CHIPS.filter(func(c): return c <= m)
+	return set.filter(func(c): return c <= m)
 
 
 # --- A round -------------------------------------------------------------------------

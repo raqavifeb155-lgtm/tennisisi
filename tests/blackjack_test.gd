@@ -263,6 +263,10 @@ func test_limits_and_save() -> void:
 	check(not g.deal(10, 0, 0) or g.phase == Blackjack.Phase.PLAYER, "no new deal in the middle of a hand")
 	check(Blackjack.max_bet(400, 150) == 100 and Blackjack.max_bet(4000, 150) == 150 and Blackjack.max_bet(10, 25) == 2, "main bet: the bar's limit and a quarter of the gold")
 	check(Blackjack.chips_for(400, 150) == [5, 25, 50, 100] and Blackjack.chips_for(60, 25) == [5], "chips that still fit")
+	check(Blackjack.chips_for(100000, 1000, [10, 25, 50, 100, 250, 500, 1000]) == [10, 25, 50, 100, 250, 500, 1000] and Blackjack.chips_for(1000, 1000, [10, 25, 50, 100, 250, 500, 1000]) == [10, 25, 50, 100, 250], "the bar's own set of chips: all the way to 1000, a quarter of the gold")
+	for v in [10, 250, 500, 1000]:
+		check(ClubBlackjack.CHIP_CELL.has(v) and ClubBlackjack.CHIP_COLORS.has(v) and Blackjack.ALL_CHIPS.has(v), "a chip face for %d" % v)
+	check(ClubBlackjack.breakdown(1000) == [1000] and ClubBlackjack.breakdown(785) == [500, 250, 25, 10], "stacks of the big chips: 1000 is one chip, 785 is four")
 	# A round saved mid-hand comes back and is finished by standing.
 	g = stacked([C("10", "s"), C("6", "h"), C("8", "d"), C("10", "c"), C("9", "s")])
 	g.deal(10, 5, 0)
@@ -456,6 +460,11 @@ func test_table() -> void:
 	check(t.is_open() and not main.ui.is_open(), "the table is a 3D scene, not a screen")
 	check(not main.player.visible and not (club.hud.get("_bottom") as Control).visible, "the hero steps aside, the club's bottom bar too")
 	check(main.hud.touch.blocked_controls.has(t._ui.catcher), "the joystick leaves the table alone")
+	var tc: Array = t.table_chips()
+	var tc_ok: bool = not tc.is_empty() and tc.size() == t._ui.chips.size()
+	for v in tc:
+		tc_ok = tc_ok and Blackjack.ALL_CHIPS.has(v) and v <= t.limit()
+	check(tc_ok, "the chip row is the bar's set at its level: %s" % str(tc))
 	# Bets: the bar's limit (25 at level 0), a quarter of the gold, side bets <= main.
 	t.clear_bets()
 	check(t.max_main() == 25, "level 0 bar: the main bet up to 25")
@@ -518,11 +527,12 @@ func test_table() -> void:
 	SaveData.gold = 30
 	t.clear_bets()
 	t._refresh()
-	check(t.max_main() == 7 and t.add_chip(5, "main") and not t.add_chip(5, "main"), "30 gold: one chip of 5")
+	var u: int = t.unit()
+	check(t.max_main() == 7 and t.add_chip(u, "main") == (u <= 7) and not t.add_chip(u, "main"), "30 gold: one smallest chip (%d) if it fits, never two" % u)
 	SaveData.gold = 12
 	t.clear_bets()
 	t._refresh()
-	check(not t.add_chip(5, "main") and t._ui.deal_btn.disabled, "12 gold: no bet at all")
+	check(not t.add_chip(u, "main") and t._ui.deal_btn.disabled, "12 gold: no bet at all")
 	t.close()
 	await _frames(2)
 	main.queue_free()

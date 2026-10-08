@@ -38,16 +38,19 @@ const PLAYER_CARDS := Vector3(0.0, TOP + 0.003, 0.3)
 const SPOTS := {"pp": Vector3(-0.3, TOP, 0.62), "main": Vector3(0.0, TOP, 0.58), "t3": Vector3(0.3, TOP, 0.62)}
 const SPOT_NAMES := {"pp": "Пары", "main": "Ставка", "t3": "21+3"}
 ## The camera from the player's seat: betting (the circles) and playing (the dealer).
-const CAM_BET := [Vector3(0, 2.05, 2.25), Vector3(0, 0.62, -0.05)]
+const CAM_BET := [Vector3(0, 2.2, 2.7), Vector3(0, 0.85, -0.1)]
 const CAM_PLAY := [Vector3(0, 2.15, 2.15), Vector3(0, 0.8, -0.35)]
-const CHIP_COLORS := {5: Color(0.95, 0.95, 0.92), 25: Color(0.15, 0.6, 0.32), 50: Color(0.2, 0.42, 0.92), 100: Color(0.13, 0.13, 0.16)}
+const CHIP_COLORS := {
+	5: Color(0.95, 0.95, 0.92), 10: Color(0.85, 0.2, 0.2), 25: Color(0.15, 0.6, 0.32), 50: Color(0.2, 0.42, 0.92),
+	100: Color(0.13, 0.13, 0.16), 250: Color(0.55, 0.25, 0.75), 500: Color(0.95, 0.55, 0.15), 1000: Color(0.95, 0.8, 0.2),
+}
 const BALL := Color(0.86, 0.95, 0.3)
 const FELT := Color(0.09, 0.42, 0.3)
 const DEALER_LOOK := {"skin": 3, "hair": 3, "hair_color": 1, "beard": 2, "head": 0, "shirt": 0, "shorts": 3, "accent": 13}
 const ATLAS_COLS := 8
 const CELL := Vector2i(128, 180)
 const BACK := 52
-const CHIP_CELL := {5: 53, 25: 54, 50: 55, 100: 56}
+const CHIP_CELL := {5: 53, 10: 54, 25: 55, 50: 56, 100: 57, 250: 58, 500: 59, 1000: 60}
 const MAX_CARDS := 24
 const MAX_CHIPS := 180
 const OUTCOME := {"blackjack": "Блэкджек!", "win": "Выигрыш", "push": "Ничья", "lose": "Проигрыш", "bust": "Перебор"}
@@ -64,6 +67,8 @@ var club: Club
 var game := Blackjack.new()
 var bets := {"pp": 0, "main": 0, "t3": 0}
 var chip := 25
+var chips_override: Array = []          # for tests and shots: a bigger bar than the build has
+var limit_override := 0
 var spot := "main"
 var _open := false
 var _hero := Vector3.ZERO
@@ -234,7 +239,29 @@ func _physics_process(_delta: float) -> void:
 # --- Bets -------------------------------------------------------------------------------
 
 func limit() -> int:
-	return ClubBuilds.bet_limit()
+	return limit_override if limit_override > 0 else ClubBuilds.bet_limit()
+
+
+## The chips on this bar's desk at its level (stream B: ClubBuilds.bar_chips(), up to 1000
+## at the top). Until that is in the build: 5 / 25 / 50 / 100 up to the limit.
+func table_chips() -> Array:
+	var from_bar: Array = chips_override.duplicate()
+	var scr: GDScript = ClubBuilds
+	for m in scr.get_script_method_list():
+		if m["name"] == "bar_chips" and from_bar.is_empty():
+			from_bar = scr.call("bar_chips")
+	var out: Array = []
+	for v in (from_bar if not from_bar.is_empty() else Blackjack.CHIPS):
+		if Blackjack.ALL_CHIPS.has(int(v)) and int(v) <= limit():
+			out.append(int(v))
+	if out.is_empty():
+		out.append(int(Blackjack.CHIPS[0]))
+	return out
+
+
+## The smallest chip: every stake is a whole number of them.
+func unit() -> int:
+	return int(table_chips()[0])
 
 
 ## The biggest main bet now: the bar's limit and a quarter of the gold.
@@ -261,7 +288,7 @@ func can_bet() -> bool:
 func add_chip(value: int, id := "") -> bool:
 	if id == "":
 		id = spot
-	if not can_bet() or not Blackjack.CHIPS.has(value) or value > room(id):
+	if not can_bet() or not table_chips().has(value) or value > room(id):
 		return false
 	_clear_shown_round()
 	bets[id] = int(bets[id]) + value
@@ -282,7 +309,7 @@ func clear_bets() -> void:
 ## The last round's bets again, as far as the gold and the limit allow.
 func _fit_bets() -> void:
 	var m := mini(int(bets["main"]), max_main())
-	m -= m % 5
+	m -= m % unit()
 	bets["main"] = maxi(m, 0)
 	for k in ["pp", "t3"]:
 		bets[k] = mini(int(bets[k]), int(bets["main"]))
@@ -290,7 +317,7 @@ func _fit_bets() -> void:
 	if over > 0:
 		bets["pp"] = 0
 		bets["t3"] = 0
-	var allowed := Blackjack.chips_for(SaveData.gold, limit())
+	var allowed := Blackjack.chips_for(SaveData.gold, limit(), table_chips())
 	if not allowed.is_empty() and not allowed.has(chip):
 		chip = allowed.back()
 	_bet_stacks()
@@ -616,7 +643,7 @@ func _update_cards(delta: float) -> void:
 static func breakdown(amount: int) -> Array:
 	var out := []
 	var left := amount
-	for v in [100, 50, 25, 5]:
+	for v in [1000, 500, 250, 100, 50, 25, 10, 5]:
 		while left >= v and out.size() < 12:
 			out.append(v)
 			left -= v
@@ -789,6 +816,17 @@ func _dress_dealer() -> void:
 	var bones = _dealer.get("_bones")
 	if not (bones is Dictionary) or not bones.has("chest"):
 		return
+	# Draw-call budget: below the felt nobody sees him (the legs go), and only the torso and
+	# the head throw a shadow (every mesh costs a main, an outline and a shadow draw).
+	for part in ["thigh0", "shin0", "shoe0", "thigh1", "shin1", "shoe1"]:
+		if bones.has(part):
+			(bones[part] as MeshInstance3D).visible = false
+	for part in bones:
+		if not ["chest", "waist", "neck"].has(part):
+			(bones[part] as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			for k in (bones[part] as Node).get_children():
+				if k is MeshInstance3D:
+					(k as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var chest := bones["chest"] as MeshInstance3D
 	var vest := MeshInstance3D.new()
 	vest.name = "vest"
@@ -1044,9 +1082,13 @@ void vertex() {
 }
 vec3 chip_color(float cell) {
 	if (cell < 53.5) return vec3(0.95, 0.95, 0.92);
-	if (cell < 54.5) return vec3(0.15, 0.6, 0.32);
-	if (cell < 55.5) return vec3(0.2, 0.42, 0.92);
-	return vec3(0.13, 0.13, 0.16);
+	if (cell < 54.5) return vec3(0.85, 0.2, 0.2);
+	if (cell < 55.5) return vec3(0.15, 0.6, 0.32);
+	if (cell < 56.5) return vec3(0.2, 0.42, 0.92);
+	if (cell < 57.5) return vec3(0.13, 0.13, 0.16);
+	if (cell < 58.5) return vec3(0.55, 0.25, 0.75);
+	if (cell < 59.5) return vec3(0.95, 0.55, 0.15);
+	return vec3(0.95, 0.8, 0.2);
 }
 void fragment() {
 	float kind = UV2.x;
@@ -1269,7 +1311,7 @@ class CardAtlas extends Control:
 		draw_arc(c + Vector2(rad * 0.95, 0), rad * 0.6, PI - 0.75, PI + 0.75, 14, Color(1, 1, 1, 0.95), 4.0)
 		var f := UiTheme.display()
 		var s := str(v)
-		var fs := 40 if v < 100 else 34
+		var fs := 40 if v < 100 else (34 if v < 1000 else 28)
 		var w := f.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		draw_string(f, c + Vector2(-w * 0.5, fs * 0.36), s, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0.1, 0.1, 0.12))
 
@@ -1330,9 +1372,9 @@ class FeltPrint extends Control:
 			var fs := 15
 			var w := f.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 			draw_string(f, p + Vector2(-w * 0.5, r + 20), t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, white)
-		# The side bets' pay tables, beside their circles.
-		_table(ClubBlackjack.SPOTS["pp"] + Vector3(-0.2, 0, -0.1), "ПАРЫ", [["одна масть", "25:1"], ["один цвет", "12:1"], ["разные", "6:1"]])
-		_table(ClubBlackjack.SPOTS["t3"] + Vector3(0.2, 0, -0.13), "21+3", [["3 одной масти", "100:1"], ["стрит-флеш", "40:1"], ["тройка", "25:1"], ["стрит", "10:1"], ["флеш", "5:1"]])
+		# The side bets' pay tables, out of the hands' way, by the dealer (the phone sees only x -0.55..0.55).
+		_table(Vector3(-0.36, 0, 0.1), "ПАРЫ", [["одна масть", "25:1"], ["один цвет", "12:1"], ["разные", "6:1"]])
+		_table(Vector3(0.36, 0, 0.1), "21+3", [["тройка масти", "100:1"], ["стрит-флеш", "40:1"], ["тройка", "25:1"], ["стрит", "10:1"], ["флеш", "5:1"]])
 
 	func _px(p: Vector3) -> Vector2:
 		return Vector2((p.x + ClubBlackjack.FELT_W * 0.5) / ClubBlackjack.FELT_W * size.x, (p.z - ClubBlackjack.EDGE_Z) / ClubBlackjack.FELT_D * size.y)
@@ -1388,6 +1430,7 @@ class BlackjackHud extends CanvasLayer:
 	var note: Label
 	var spots := {}
 	var chips: Array = []
+	var chip_row: HBoxContainer
 	var clear_btn: Button
 	var deal_btn: Button
 	var actions: HBoxContainer
@@ -1448,6 +1491,33 @@ class BlackjackHud extends CanvasLayer:
 	func show_table() -> void:
 		visible = true
 		rules.visible = false
+		fill_chips()
+
+	## The row of chips the bar has at its level (they grow with the bar), before «Сброс».
+	func fill_chips() -> void:
+		var want: Array = table.table_chips()
+		var have: Array = []
+		for c in chips:
+			have.append((c as ChipButton).value)
+		if want == have:
+			return
+		for c in chips:
+			chip_row.remove_child(c)
+			c.queue_free()
+		chips.clear()
+		for value in want:
+			var c := ChipButton.new()
+			c.value = value
+			c.custom_minimum_size = Vector2(0, 84)
+			c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			c.focus_mode = Control.FOCUS_NONE
+			var cv: int = value
+			c.pressed.connect(func() -> void:
+				table.select_chip(cv)
+				table.add_chip(cv))
+			chip_row.add_child(c)
+			chip_row.move_child(c, chips.size())
+			chips.append(c)
 
 	func hide_table() -> void:
 		visible = false
@@ -1563,28 +1633,16 @@ class BlackjackHud extends CanvasLayer:
 					table.select_spot(sid))
 			srow.add_child(b)
 			spots[id] = b
-		var crow := HBoxContainer.new()
-		crow.add_theme_constant_override("separation", 10)
-		v.add_child(crow)
-		for value in Blackjack.CHIPS:
-			var c := ChipButton.new()
-			c.value = value
-			c.custom_minimum_size = Vector2(0, 84)
-			c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			c.focus_mode = Control.FOCUS_NONE
-			var cv: int = value
-			c.pressed.connect(func() -> void:
-				table.select_chip(cv)
-				table.add_chip(cv))
-			crow.add_child(c)
-			chips.append(c)
+		chip_row = HBoxContainer.new()
+		chip_row.add_theme_constant_override("separation", 8)
+		v.add_child(chip_row)
 		clear_btn = Button.new()
 		clear_btn.text = "Сброс"
 		clear_btn.custom_minimum_size = Vector2(118, 84)
 		clear_btn.focus_mode = Control.FOCUS_NONE
 		clear_btn.add_theme_font_size_override("font_size", UiTheme.T_SMALL + 2)
 		clear_btn.pressed.connect(func() -> void: table.clear_bets())
-		crow.add_child(clear_btn)
+		chip_row.add_child(clear_btn)
 		deal_btn = Button.new()
 		deal_btn.theme_type_variation = "Primary"
 		deal_btn.custom_minimum_size = Vector2(0, 90)
@@ -1656,8 +1714,8 @@ class BlackjackHud extends CanvasLayer:
 		# Betting: the spots, the chips, the deal.
 		var limit := t.limit()
 		var mx := t.max_main()
-		if mx < Blackjack.CHIPS[0]:
-			note.text = "Ставка — до четверти золота: нужно хотя бы %d" % ceili(Blackjack.CHIPS[0] / Bets.MAX_SHARE)
+		if mx < t.unit():
+			note.text = "Ставка — до четверти золота: нужно хотя бы %d" % ceili(t.unit() / Bets.MAX_SHARE)
 		else:
 			note.text = "Стол до %d  ·  сайд-бет не больше ставки" % mini(limit, mx)
 		for id in spots:
@@ -1773,7 +1831,7 @@ class ChipButton extends Button:
 
 	func _draw() -> void:
 		var c := size * 0.5
-		var r := minf(size.y * 0.5 - 2.0, 40.0)
+		var r := minf(minf(size.y * 0.5, size.x * 0.5) - 7.0, 40.0)
 		var a := 0.35 if disabled else 1.0
 		if picked:
 			draw_circle(c, r + 5.0, Color(UiTheme.GOLD, a))
@@ -1787,6 +1845,6 @@ class ChipButton extends Button:
 		draw_arc(c + Vector2(r * 0.95, 0), r * 0.6, PI - 0.75, PI + 0.75, 12, Color(1, 1, 1, 0.9 * a), 2.5)
 		var f := UiTheme.display()
 		var s := str(value)
-		var fs := 26 if value < 100 else 22
+		var fs := 26 if value < 100 else (22 if value < 1000 else 18)
 		var w := f.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		draw_string(f, c + Vector2(-w * 0.5, fs * 0.36), s, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0.1, 0.1, 0.12, a))
