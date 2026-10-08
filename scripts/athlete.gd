@@ -704,6 +704,36 @@ func _key(style: int, phase: String, side: int) -> Array:
 	return [hand, dir.normalized()]
 
 
+## HAND_R_MIN: a hand's centre keeps at least this far from the spine while it travels.
+const HAND_R_MIN := 0.3
+## The hand keys are absolute in model space, but the chest turns under them; a straight
+## model-space blend from one stance to the other (forehand takeback behind the right
+## side -> backhand takeback behind the left) cuts through the back while the chest comes
+## round. This moves the hand in the chest's own frame instead: its angle round the spine
+## goes the way that stays in front of the back (an arc, never across it), its distance
+## from the spine and its height blend linearly, never closer than HAND_R_MIN (or than
+## either end). `tw_from` / `tw_to` are the chest yaws before and after this step,
+## `tw_target` the yaw the target key was made for. Returns the hand in model space.
+func _carry_hand(cur: Vector3, target: Vector3, tw_from: float, tw_to: float, tw_target: float, k: float) -> Vector3:
+	var lc := Basis(Vector3.UP, tw_from).inverse() * cur
+	var lt := Basis(Vector3.UP, tw_target).inverse() * target
+	var rc := Vector2(lc.x, lc.z).length()
+	var rt := Vector2(lt.x, lt.z).length()
+	if rc < 0.05 or rt < 0.05:
+		return (Basis(Vector3.UP, tw_to) * lc).lerp(Basis(Vector3.UP, tw_to) * lt, k)
+	# Angle round the spine, 0 = in front of the chest, + toward its right side.
+	var pc := atan2(lc.x, -lc.z)
+	var pt := atan2(lt.x, -lt.z)
+	var d := wrapf(pt - pc, -PI, PI)
+	if absf(wrapf(pc + d * 0.5, -PI, PI)) > 2.1:
+		d -= signf(d) * TAU     # the short way is across the back: go round the front
+	var p := pc + d * k
+	var r := lerpf(rc, rt, k)
+	r = maxf(r, minf(HAND_R_MIN, minf(rc, rt)))
+	var l := Vector3(sin(p) * r, lerpf(lc.y, lt.y, k), -cos(p) * r)
+	return Basis(Vector3.UP, tw_to) * l
+
+
 ## Just after contact the hand keeps going out toward the target (extension) before the
 ## racket wraps around; without this the hand would cut from the contact point straight
 ## to the shoulder, through the face. Returns [] for strokes without it.
@@ -753,9 +783,10 @@ func _process(delta: float) -> void:
 		var fol: Array = _key(_style, "follow", _side)
 		var turn := _turn_amount() * _side
 		if _clock < start:
-			_hand = _hand.lerp(prep[0], k)
-			_rdir = _rdir.lerp(prep[1], k).normalized()
+			var tw_before := _twist
 			_twist = lerpf(_twist, -turn, k)
+			_hand = _carry_hand(_hand, prep[0], tw_before, _twist, -turn, k)
+			_rdir = _rdir.lerp(prep[1], k).normalized()
 			_hip_twist = lerpf(_hip_twist, -turn * HIP_RATIO, k)
 		elif _clock < _contact_at:
 			var u := clampf((_clock - start) / swing_t, 0.0, 1.0)
@@ -867,8 +898,12 @@ func _process(delta: float) -> void:
 				var away := clampf((-lv.x * _side - 1.0) / 1.5, 0.0, 1.0)
 				g *= 1.0 - away
 				var ready := [Vector3(0.1, 1.02, -0.38), Vector3(-0.35, 0.5, -0.78).normalized()]
-				target = [(ready[0] as Vector3).lerp(target[0], g), (ready[1] as Vector3).slerp(target[1], g).normalized()]
-				t_twist = -_turn_amount() * _side * g
+				# The blend runs in the chest's frame (an arc round the spine), so that
+				# halfway through the unit turn the hand is in front of the chest and
+				# not straight through it.
+				var full_turn := -_turn_amount() * _side
+				target = [_carry_hand(ready[0], target[0], 0.0, full_turn * g, full_turn, g), (ready[1] as Vector3).slerp(target[1], g).normalized()]
+				t_twist = full_turn * g
 				t_hips = t_twist * HIP_RATIO
 			3:
 				# Toss: the racket arm hangs down by the right hip while the tossing arm
@@ -910,9 +945,15 @@ func _process(delta: float) -> void:
 					var reach: Array = [Vector3(0.62, 1.0, -0.1), Vector3(0.75, 0.45, -0.45).normalized()] if ss > 0.0 else [Vector3(-0.5, 1.0, -0.18), Vector3(-0.7, 0.5, -0.5).normalized()]
 					target = [(target[0] as Vector3).lerp(reach[0], sk), (target[1] as Vector3).slerp(reach[1], sk)]
 		var kk := 1.0 - exp(-9.0 * delta)
-		_hand = _hand.lerp(target[0], kk)
-		_rdir = _rdir.lerp(target[1], kk).normalized()
+		var tw_before := _twist
 		_twist = lerpf(_twist, t_twist, kk)
+		if _mode == 1:
+			# Changing the stance (forehand <-> backhand) turns the chest half a circle: the
+			# hands go with it, round in front of the chest, not straight across the back.
+			_hand = _carry_hand(_hand, target[0], tw_before, _twist, t_twist, kk)
+		else:
+			_hand = _hand.lerp(target[0], kk)
+		_rdir = _rdir.lerp(target[1], kk).normalized()
 		_hip_twist = lerpf(_hip_twist, t_hips, kk)
 
 	# --- Left hand ---
@@ -1410,6 +1451,9 @@ func _pose(local_v: Vector3, amt: float, near_contact: float) -> void:
 		lt = hand + rdir * 0.11
 	elif _attach > 0.001:
 		lt = lt.lerp(hand + rdir * 0.22 + tw * Vector3(-0.03, 0, 0), _attach)
+		# Half way between the free hand and the throat the hand must not cut through
+		# the chest: the nearer to free, the more it is kept out of the trunk.
+		lt = lt.lerp(_keep_out(lt, chest, pelvis, head, tw), 1.0 - _attach)
 	else:
 		lt = _human_hand(l_sh, _keep_out(_human_hand(l_sh, lt, tw), chest, pelvis, head, tw), tw)
 	if _attach < 1.5:
