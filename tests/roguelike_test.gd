@@ -7,6 +7,8 @@ var failures := 0
 
 ## _initialize, not _init: the autoloads (Tuning, GameEvents) are in the tree by now.
 func _initialize() -> void:
+	Items.PRICE_SCALE = 1.0  # these tests count in base prices; the shipped scale is checked in economy_test
+	ClubBuilds.CLUB_PRICE_SCALE = 1.0
 	SaveData.enabled = false
 	test_style_rules()
 	test_style_meter()
@@ -282,7 +284,8 @@ func test_run_effects() -> void:
 	fx.end_point()
 	check(is_equal_approx(fx.point_style(), 1.0), "the point's style bonus ends with the point")
 	fx = RunEffects.new(_wear(["cold_pack"]))
-	check(not fx.mods({"tiebreak": false}).has("serve_window") and is_equal_approx(float(fx.mods({"tiebreak": true})["serve_window"]), 0.25), "cold pack only in a tiebreak")
+	var pk := float(Items.package("band", 2)["mods"]["serve_window"])  # v0.2 A-6: every epic+ wristband has a package
+	check(is_equal_approx(float(fx.mods({"tiebreak": false})["serve_window"]), pk) and is_equal_approx(float(fx.mods({"tiebreak": true})["serve_window"]), pk + 0.25), "cold pack: the package always, +25% only in a tiebreak")
 	fx = RunEffects.new(_wear(["berserk", "heavy_frame"]))
 	var base := float(fx.mods()["forehand_pace"])
 	_hit(fx, 1)
@@ -478,7 +481,7 @@ func test_match_effects() -> void:
 	me.on_point({"winner": 0, "reason": "WINNER"}, {}, "FLAT")
 	check(is_equal_approx(float(t.run_mods.get("forehand_pace", 0.0)), 0.02), "a break feeds the crown (run mods %s)" % [t.run_mods])
 	check(is_equal_approx(me.opp.value, before + OppStamina.REST["point"] + OppStamina.REST["change"]), "game 1:0 -> he rests for the point and the change of ends")
-	check(is_equal_approx(float(Skills.gear.get("forehand_pace", 0.0)), 0.02), "run mods reach the stroke model")
+	check(is_equal_approx(float(Skills.gear.get("forehand_pace", 0.0)), 0.02 + float(Items.package("racket", 2)["mods"]["forehand_pace"])), "run mods reach the stroke model (on top of the racket's package)")
 	me.finish()
 	m.queue_free()
 

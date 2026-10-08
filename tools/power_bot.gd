@@ -30,6 +30,7 @@ func _run() -> void:
 	var stage := int(_arg("p-stage", "2"))
 	var seed_value := int(_arg("p-seed", "1"))
 	var loc := _arg("p-loc", "park")
+	Items.PACKAGE_SCALE = float(_arg("p-pkg", "1"))  # tuning: the epic+ stat package
 	main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(main)
 	await process_frame
@@ -47,11 +48,11 @@ func _run() -> void:
 		Skills.pending = []
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value * 977 + 5
-	var rarity := {"none": -1, "rare3": Gear.RARE, "epic3": Gear.EPIC, "epic1": Gear.EPIC, "legend3": Gear.LEGENDARY}.get(gear, -1) as int
+	var rarity := {"none": -1, "rare3": Gear.RARE, "epic3": Gear.EPIC, "epic1": Gear.EPIC, "legend3": Gear.LEGENDARY, "mythic3": Gear.MYTHIC, "legend2m1": Gear.LEGENDARY}.get(gear, -1) as int
 	var worn: Array = []
 	if rarity >= 0:
 		for slot in (["racket"] if gear == "epic1" else Gear.SLOTS):
-			worn.append(Gear.roll(rarity, rng, slot, 1))
+			worn.append(Gear.roll(Gear.MYTHIC if gear == "legend2m1" and slot == "racket" else rarity, rng, slot, 1))
 	var t := Tournament.new(1, seed_value)
 	t.location = loc
 	t.stage = stage

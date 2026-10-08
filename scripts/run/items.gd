@@ -21,7 +21,7 @@ class_name Items
 ## are the item's own stats and "strings" the extra line the shop's restringing rolls.
 
 const BUY := [15, 45, 120, 360, 1200]   # buy price by rarity, level 1 (mythic: only for selling and insurance)
-const PRICE_SCALE := 1.0                # one knob to rebalance every price
+static var PRICE_SCALE := 2.4                # one knob to rebalance every price (items, strings, insurance, rerolls); 2.4 with income x0.5
 const LEVEL_PRICE := 0.15               # +15% price a level
 const LEVEL_POWER := 0.10               # +10% stats a level
 const SELL_SHARE := 1.0 / 3.0
@@ -155,10 +155,50 @@ static func roll(slot: String, rarity: int, rng: RandomNumberGenerator) -> Dicti
 	return instance(p[rng.randi_range(0, p.size() - 1)])
 
 
-## The item as the run keeps it (and saves it).
+## The item as the run keeps it (and saves it). An epic or better also carries its slot's
+## plain stat package (PACKAGE) next to its own effect.
 static func instance(e: Dictionary) -> Dictionary:
+	var mods := expand(e.get("mods", {}))
+	var lines: Array = [String(e["desc"])]
+	var pk := package(String(e["slot"]), int(e["rarity"]))
+	for k in pk["mods"]:
+		mods[k] = float(mods.get(k, 0.0)) + float(pk["mods"][k])
+	if pk["line"] != "":
+		lines.append(pk["line"])
 	return {"id": e["id"], "slot": e["slot"], "rarity": int(e["rarity"]), "name": e["name"],
-		"mods": expand(e.get("mods", {})), "lines": [String(e["desc"])]}
+		"mods": mods, "lines": lines}
+
+
+## v0.2 A-6: the direct stats every epic+ item has (the unique effect stays on top): a
+## racket hits harder and truer, shoes run faster and spare breath, a wristband widens the
+## PERFECT windows. Base values of an epic; a legendary and a mythic get PACKAGE_RARITY x.
+## PACKAGE_SCALE is the tuning knob (tools/power_bot.sh measures what it does).
+const PACKAGE := {
+	"racket": {"all_pace": 0.06, "serve_pace": 0.05, "all_scatter": -0.12},
+	"shoes": {"run_speed": 0.04, "stamina_drain": -0.10, "move_penalty": -0.15},
+	"band": {"all_window": 0.12},
+}
+const PACKAGE_RARITY := [0.0, 0.0, 1.0, 1.7, 2.3]
+static var PACKAGE_SCALE := 1.45
+
+
+static func package(slot: String, rarity: int) -> Dictionary:
+	var k: float = float(PACKAGE_RARITY[clampi(rarity, 0, 4)]) * PACKAGE_SCALE
+	if k <= 0.0 or not PACKAGE.has(slot):
+		return {"mods": {}, "line": ""}
+	var raw: Dictionary = PACKAGE[slot]
+	var scaled := {}
+	for key in raw:
+		scaled[key] = snappedf(float(raw[key]) * k, 0.01)
+	var text := ""
+	match slot:
+		"racket":
+			text = "Класс: +%d%% силы, −%d%% разброса" % [roundi(float(scaled["all_pace"]) * 100.0), roundi(-float(scaled["all_scatter"]) * 100.0)]
+		"shoes":
+			text = "Класс: +%d%% бега, −%d%% расхода выносливости" % [roundi(float(scaled["run_speed"]) * 100.0), roundi(-float(scaled["stamina_drain"]) * 100.0)]
+		"band":
+			text = "Класс: +%d%% к окну PERFECT" % roundi(float(scaled["all_window"]) * 100.0)
+	return {"mods": expand(scaled), "line": text}
 
 
 ## "all_window" / "all_pace" / "all" -> the keys of every stroke (and running for "all").
@@ -171,6 +211,8 @@ static func expand(mods: Dictionary) -> Dictionary:
 				keys = STROKES.map(func(s): return s + "_window")
 			"all_pace":
 				keys = STROKES.filter(func(s): return s != "serve").map(func(s): return s + "_pace")
+			"all_scatter":
+				keys = STROKES.map(func(s): return s + "_scatter")
 			"all":
 				keys = STROKES.map(func(s): return s + "_window") + STROKES.map(func(s): return s + "_pace") + ["run_speed"]
 		for key in keys:

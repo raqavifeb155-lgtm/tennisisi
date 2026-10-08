@@ -9,8 +9,8 @@ class_name Goals
 static func all() -> Array:
 	var out: Array = []
 	for id in ClubBuilds.ORDER:
-		if not ClubBuilds.is_open(id):
-			continue
+		if not ClubBuilds.is_open(id) or ClubBuilds.is_building(id):
+			continue  # closed, or already paid and on scaffolding
 		var n := ClubBuilds.next(id)
 		if n.is_empty():
 			continue
@@ -38,13 +38,15 @@ static func next_goal() -> Dictionary:
 	return {}
 
 
-## One line for a screen: "По карману: Трибуны (50)" or "До «Трибуны» ещё 12".
+## One line for a screen: "По карману: Трибуны (50) · дальше «Бар» — ещё 12" (what the bank
+## buys now, and how far the nearest thing it can't buy yet is).
 static func line() -> String:
+	var parts: Array[String] = []
 	var a := affordable()
 	if not a.is_empty():
 		var g: Dictionary = a.back()  # the dearest one within reach: the most exciting
-		return "По карману: %s · %d" % [g["title"], int(g["price"])]
+		parts.append("По карману: %s · %d" % [g["title"], int(g["price"])])
 	var n := next_goal()
-	if n.is_empty():
-		return ""
-	return "До «%s» ещё %d" % [n["title"], int(n["left"])]
+	if not n.is_empty():
+		parts.append(("дальше «%s» — ещё %d" if not a.is_empty() else "До «%s» ещё %d") % [n["title"], int(n["left"])])
+	return "  ·  ".join(parts)
