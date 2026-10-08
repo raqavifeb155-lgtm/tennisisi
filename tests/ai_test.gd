@@ -444,6 +444,7 @@ func test_opponent_stats() -> void:
 	var strong := {"skill": 0.4, "stats": {"serve": 10, "forehand": 9, "backhand": 9, "net": 10, "speed": 10, "stamina": 10}}
 	var serve_of := func(prof: Dictionary) -> Array:
 		ai.set_profile(prof)
+		ai.spared = 0.0  # the test player is a beginner: no easing here
 		var pace := 0.0
 		var corner := 0
 		for i in 200:
@@ -458,6 +459,7 @@ func test_opponent_stats() -> void:
 	check(ss[0] > sw[0] * 1.35, "a strong serve is much faster (%.0f vs %.0f km/h)" % [ss[0] * 3.6, sw[0] * 3.6])
 	check(ss[1] > 140 and sw[1] < 60, "a strong server hits the corners and the T (%d of 200), a weak one the middle (%d)" % [ss[1], sw[1]])
 	ai.set_profile(weak)
+	ai.spared = 0.0
 	var slow: float = ai.run_speed()
 	var tired: float = ai.stamina_mult()
 	ai._wing_t = ai.stat("backhand")
@@ -466,6 +468,7 @@ func test_opponent_stats() -> void:
 	var fh_err: float = ai.error_chance(0.7, 26.0, 0.2)
 	check(bh_err > fh_err * 1.3, "a weak wing misses more (backhand %.3f vs forehand %.3f)" % [bh_err, fh_err])
 	ai.set_profile(strong)
+	ai.spared = 0.0
 	check(ai.run_speed() > slow + 1.5, "speed: %.1f vs %.1f m/s" % [ai.run_speed(), slow])
 	check(ai.stamina_mult() < tired * 0.5, "stamina: the stamina health drains x%.2f vs x%.2f" % [ai.stamina_mult(), tired])
 	var rng := RandomNumberGenerator.new()
@@ -479,6 +482,7 @@ func test_opponent_stats() -> void:
 	check(come[1] > come[0] * 2, "the net stat: comes in %d vs %d times of 400" % [come[1], come[0]])
 	tuning.ai_skill = 0.52
 	ai.set_profile(strong)
+	ai.spared = 0.0
 	var boosted: float = ai.stat("forehand")
 	tuning.ai_skill = 0.4
 	check(boosted > ai.stat("forehand"), "a modifier on the AI skill still lifts the stats")
@@ -539,8 +543,8 @@ func test_opponent_card() -> void:
 
 func test_adapt() -> void:
 	print("D-5: the opponents keep up with the player")
-	check(Opponents.adapted_skill(0.45, 0.0) < 0.45 - 0.2, "a beginner is spared (%.2f instead of 0.45)" % Opponents.adapted_skill(0.45, 0.0))
-	check(is_equal_approx(Opponents.adapted_skill(0.45, 4.0), 0.45) or Opponents.adapted_skill(0.45, 4.0) >= 0.45, "from level 4 nobody is eased")
+	check(Opponents.spared(0.0) > 0.2 and Opponents.spared(4.0) == 0.0 and Opponents.spared(10.0) == 0.0, "a beginner is spared (%.2f), from level 4 nobody is" % Opponents.spared(0.0))
+	check(int(Opponents.shown_stats(Opponents.find("rublev"), 0.0)["forehand"]) <= 7, "his stats are lower on the card (forehand 9 -> %d)" % Opponents.shown_stats(Opponents.find("rublev"), 0.0)["forehand"])
 	check(Opponents.adapted_skill(0.0, 8.0) > 0.25, "the weakest is lifted to a floor for a veteran (%.2f)" % Opponents.adapted_skill(0.0, 8.0))
 	check(Opponents.adapted_skill(0.85, 8.0) >= 0.85 and Opponents.adapted_skill(0.85, 25.0) <= 1.0, "the strong are not lowered, nothing above 1")
 	var prev := -1.0
@@ -554,6 +558,13 @@ func test_adapt() -> void:
 	var calm := _kinds(_sit({"player": Vector3(0.5, 0, 12.0), "rally": 5, "contact": Vector3(-1.3, 1.0, -11.8)}), "allcourt", 2000)
 	check(calm.get("drop", 0.0) > 0.01 and calm.get("drop", 0.0) < 0.08, "a drop shot out of a calm rally, now and then (%.1f%%)" % (100.0 * calm.get("drop", 0.0)))
 	check(calm.get("change", 0.0) > 0.05, "and a change of direction (%.0f%%)" % (100.0 * calm.get("change", 0.0)))
+	var ai: Node = load("res://scripts/opponent_ai.gd").new()
+	ai.set_profile(Opponents.find("rublev"))
+	ai.spared = 0.0
+	var full: float = ai.stat("forehand")
+	ai.spared = 0.25
+	check(ai.stat("forehand") < full - 0.2, "the easing takes %.2f off a stat of 1" % (full - ai.stat("forehand")))
+	ai.free()
 	var base := Opponents.stats(Opponents.find("dzumhur"))
 	var seen := Opponents.shown_stats(Opponents.find("dzumhur"), 10.0)
 	check(int(seen["forehand"]) > int(base["forehand"]) + 2, "the card's stats follow it (forehand %d -> %d)" % [base["forehand"], seen["forehand"]])

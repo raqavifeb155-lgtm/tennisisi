@@ -39,6 +39,7 @@ var style_id := Opponents.DEFAULT_STYLE
 
 ## The opponent's stats 1..10 (Opponents.stats; D-5): every stroke, the serve, the legs.
 var ratings: Dictionary = Opponents.stats({}, 0.5)
+var spared := 0.0                 # what a beginner is spared (Opponents.spared), set with the profile
 var _base_skill := 0.5            # the profile's skill: Tuning.ai_skill above / below it
                                   # (modifiers, tiredness) shifts every stat a little
 
@@ -90,12 +91,13 @@ func set_profile(opp: Dictionary) -> void:
 	style = Opponents.PLAY_STYLES[style_id]
 	_base_skill = float(opp.get("skill", skill()))
 	ratings = Opponents.stats(opp, _base_skill)
+	spared = Opponents.spared()
 
 
 ## A stat as 0..1 (1 -> 0, 10 -> 1), moved by how far Tuning.ai_skill is from the
 ## profile's skill (a "Железный" modifier, tiredness from the stamina "health").
 func stat(key: String) -> float:
-	return clampf((float(ratings.get(key, 5)) - 1.0) / 9.0 + (skill() - _base_skill), 0.0, 1.0)
+	return clampf((float(ratings.get(key, 5)) - 1.0) / 9.0 + (skill() - _base_skill) - spared, 0.0, 1.0)
 
 
 ## The stamina stat as a multiplier of the stamina "health" a ball takes (MatchEffects):

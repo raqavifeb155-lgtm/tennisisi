@@ -144,15 +144,21 @@ static func player_level() -> float:
 static func adapted_skill(skill: float, level := -1.0) -> float:
 	var lv := player_level() if level < 0.0 else level
 	var over := maxf(lv - ADAPT_FROM, 0.0)
-	var spared := ease_max * clampf(1.0 - lv / EASE_UNTIL, 0.0, 1.0)
-	return clampf(maxf(skill, minf(over * floor_slope, FLOOR_MAX)) + minf(over * add_slope, ADD_MAX) - spared, 0.0, 1.0)
+	return clampf(maxf(skill, minf(over * floor_slope, FLOOR_MAX)) + minf(over * add_slope, ADD_MAX), 0.0, 1.0)
+
+
+## What a beginner is spared: stats points x 1/9 taken off every stat of the opponent (OpponentAI
+## keeps it apart from the skill: the weakest opponent's skill is already 0, his stats can still drop).
+static func spared(level := -1.0) -> float:
+	var lv := player_level() if level < 0.0 else level
+	return ease_max * clampf(1.0 - lv / EASE_UNTIL, 0.0, 1.0)
 
 
 ## The stats as the opponent plays them against this player (what the card shows).
 static func shown_stats(opp: Dictionary, level := -1.0) -> Dictionary:
 	var st := stats(opp)
 	var sk := float(opp.get("skill", 0.5))
-	var shift := (adapted_skill(sk, level) - sk) * 9.0
+	var shift := (adapted_skill(sk, level) - sk - spared(level)) * 9.0
 	for k in STAT_KEYS:
 		st[k] = clampi(roundi(float(st[k]) + shift), 1, 10)
 	return st

@@ -20,7 +20,7 @@ const WIDE_X := 2.2               # the player is pulled wide past this ..
 const WIDE_HIT_X := 3.0           # .. or had to hit their last ball from out here
 const WEAK_Q := 0.5               # their last ball was weak below this contact quality
 const WIDTH := 3.7                # how close to the sideline a target may go
-const VARIETY_DROP := 0.08        # a calm rally ball becomes a drop shot with style.drop x this
+const VARIETY_DROP := 0.04        # a calm rally ball becomes a drop shot with style.drop x this
 const KINDS := ["defend", "volley", "lob", "pass", "drop", "approach", "attack", "neutral", "change"]
 
 

@@ -69,6 +69,7 @@ func _process(_delta: float) -> void:
 
 func _on_match_started(_info: Dictionary) -> void:
 	main.ai.set_profile(profile_b)
+	main.ai.spared = 0.0  # a duel is not eased for a beginner
 	Tuning.ai_skill = float(profile_b["skill"])
 
 
