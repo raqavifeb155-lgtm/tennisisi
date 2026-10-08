@@ -43,7 +43,8 @@ const DUCK_SPEED := 4.0       # dB per second, slow enough not to be noticed
 ## Accents of each location: where the sound comes from (world position, the camera
 ## looks toward -Z), when it first plays (s after arriving) and how often it returns.
 ## Volumes are relative to files levelled by tools/prep_audio.py (-20 LUFS one-shots).
-## Rare and far is the rule: an accent you notice every minute stops being alive.
+## Rare and far is the rule: an accent you notice every minute stops being alive. The bells
+## (owner, 09.10: too frequent) ring first after 2..4 minutes and then every 7..12, 3 dB softer.
 const ACCENTS := {
 	"park": [
 		# East River Park: the city across the water, boats, a playground somewhere behind.
@@ -56,13 +57,13 @@ const ACCENTS := {
 	"clay": [
 		# A club on the seafront: gulls over the water, the beach below, the village behind.
 		{"sound": "amb_clay_gull", "pos": Vector3(-30.0, 15.0, -70.0), "first": [8.0, 20.0], "every": [25.0, 60.0], "db": -10.0},
-		{"sound": "amb_clay_bell", "pos": Vector3(60.0, 20.0, -120.0), "first": [30.0, 60.0], "every": [150.0, 260.0], "db": -11.0},
+		{"sound": "amb_clay_bell", "pos": Vector3(60.0, 20.0, -120.0), "first": [120.0, 240.0], "every": [420.0, 720.0], "db": -14.0},
 		{"sound": "amb_clay_kids", "pos": Vector3(-25.0, -2.0, -60.0), "first": [20.0, 40.0], "every": [90.0, 170.0], "db": -15.0},
 		{"sound": "amb_clay_chimes", "pos": Vector3(22.0, 3.0, -30.0), "first": [12.0, 30.0], "every": [60.0, 120.0], "db": -12.0},
 	],
 	"grass": [
 		# The clock tower of the town across the street (scenery_grass.gd).
-		{"sound": "amb_grass_bell", "pos": Vector3(-32.0, 24.0, -104.0), "first": [6.0, 14.0], "every": [150.0, 240.0], "db": -6.0},
+		{"sound": "amb_grass_bell", "pos": Vector3(-32.0, 24.0, -104.0), "first": [120.0, 240.0], "every": [420.0, 720.0], "db": -9.0},
 		{"sound": "amb_grass_crow", "pos": Vector3(20.0, 12.0, -20.0), "first": [15.0, 35.0], "every": [50.0, 110.0], "db": -11.0},
 		{"sound": "amb_pigeons", "pos": Vector3(-14.0, 4.0, -28.0), "first": [40.0, 80.0], "every": [90.0, 170.0], "db": -6.0},
 		{"sound": "amb_grass_bus", "pos": Vector3(25.0, 2.0, -30.0), "first": [25.0, 50.0], "every": [60.0, 120.0], "db": -11.0},

@@ -51,10 +51,10 @@ func _run() -> void:
 			bell = a
 	_check(not bell.is_empty(), "the clock tower bell is an accent")
 	if not bell.is_empty():
-		_check(float(bell["timer"]) < 14.0, "first bell within 14 s (%.1f s left)" % bell["timer"])
+		_check(float(bell["timer"]) >= 120.0 and float(bell["timer"]) <= 240.0, "the first bell comes after 2..4 minutes (%.0f s left)" % bell["timer"])
 		bell["timer"] = 0.05
 		await _wait(0.3)
-		_check(float(bell["timer"]) >= 150.0, "after ringing, the next bell is 150+ s away (%.0f s)" % bell["timer"])
+		_check(float(bell["timer"]) >= 420.0, "after ringing, the next bell is 7+ minutes away (%.0f s)" % bell["timer"])
 
 	print("ducking")
 	await _wait(2.5)
