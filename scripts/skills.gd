@@ -259,6 +259,13 @@ static func stroke(id: String, lv := -1) -> Dictionary:
 	}
 
 
+## How far inside the sideline a serve aimed wide is pulled (Main.serve_target): a
+## beginner aims at the line itself, so the scatter puts many wide serves out (HANDOFF
+## 9.4); from level 10 the old 0.2 m. lv: -1 = the current serve level.
+static func serve_edge_margin(lv := -1) -> float:
+	return 0.2 * (1.0 - early(level("serve") if lv < 0 else lv))
+
+
 static func run_speed_mult(lv := -1) -> float:
 	var n := level("feet") if lv < 0 else lv
 	return lerpf(0.75, 1.15, k(n)) * (1.0 - 0.10 * early(n)) * (1.0 + mod("run_speed"))

@@ -26,12 +26,35 @@ var _serve_speeds: Array[float] = []
 var speed_mult := 1.0
 var _drop_memory := 0.0
 
+## The player's habits this match (scripts/ai/player_model.gd).
+var model := PlayerModel.new()
+
 
 func setup(g: Node, athlete: Athlete, b: Ball) -> void:
 	game = g
 	me = athlete
 	ball = b
 	rng.randomize()
+	var ge := get_tree().root.get_node_or_null("GameEvents") if is_inside_tree() else null
+	if ge:
+		ge.bounce.connect(_on_bounce)
+		ge.match_started.connect(func(_i: Dictionary) -> void: new_match())
+
+
+## A new opponent / match: forget what was learned about the player.
+func new_match() -> void:
+	model.reset()
+	_serve_speeds.clear()
+	_drop_memory = 0.0
+
+
+## The player's serve landed in the box: remember which way it went.
+func _on_bounce(info: Dictionary) -> void:
+	if not game.serve_flight or int(info.get("last_hitter", -1)) != 0:
+		return
+	var pos: Vector3 = info.get("pos", Vector3.ZERO)
+	if Court.in_service_box(pos, -1, game.box_side, BallPhysics.RADIUS):
+		model.note_serve(game.box_side, pos.x * game.box_side)
 
 
 func skill() -> float:
@@ -58,7 +81,15 @@ func on_player_serve(kmh: float, underarm: bool) -> void:
 
 
 ## Where to stand to return: deeper against big servers, closer after being caught
-## by an underarm serve (that memory fades), with a little variety.
+## by an underarm serve (that memory fades), with a little variety. Across: on the
+## bisector of the server's widest and T serves (read from where the server stands),
+## shaded toward the side they have been serving to this match (HANDOFF 9.4).
+const RETURN_WIDE_X := 3.9        # the widest serve's bounce, across the box
+const RETURN_T_X := 0.3           # the T serve's bounce
+const RETURN_LEAN := 0.5          # 0 = on the T line .. 1 = on the wide line; 0.5 = the bisector
+const RETURN_READ := 0.22         # how far the read habit shifts that (x wide_bias)
+
+
 func receive_position(box_side: float) -> Vector3:
 	var avg := 150.0
 	if not _serve_speeds.is_empty():
@@ -69,7 +100,21 @@ func receive_position(box_side: float) -> Vector3:
 	var depth := lerpf(12.1, 13.9, clampf((avg - 120.0) / 80.0, 0.0, 1.0))
 	depth -= _drop_memory * 1.8
 	depth += rng.randf_range(-0.35, 0.35)
-	return Vector3(box_side * rng.randf_range(2.1, 2.7), 0.0, -depth)
+	var srv: Vector3 = game.player.position
+	# Where a serve along each line crosses our contact depth (it keeps its line after
+	# the bounce, near enough).
+	var land_z := -(Court.SERVICE_LINE - 0.8)
+	var f := (-depth - srv.z) / (land_z - srv.z)
+	var at_wide := srv.x + (box_side * RETURN_WIDE_X - srv.x) * f
+	var at_t := srv.x + (box_side * RETURN_T_X - srv.x) * f
+	var lean := clampf(RETURN_LEAN + RETURN_READ * model.wide_bias(box_side), 0.2, 0.8)
+	var x := lerpf(at_t, at_wide, lean) + rng.randf_range(-0.2, 0.2)
+	return Vector3(x, 0.0, -depth)
+
+
+## How far the returner can stretch for a serve (a full lunge is the rally's REACH).
+func return_reach() -> float:
+	return lerpf(1.35, 1.55, skill())
 
 
 ## Called when the CPU itself hits (or feeds): plan the recovery position.
@@ -185,9 +230,9 @@ func _check_hit() -> void:
 		var flat_d := Vector2(bp.x - me.position.x, bp.z - me.position.z).length()
 		if game.autoplay and game.rally == 1:
 			print("    AI at serve cross: ball=(%.1f,%.2f,%.1f) me=(%.1f,%.1f) d=%.2f" % [bp.x, bp.y, bp.z, me.position.x, me.position.z, flat_d])
-		# Returning serve there's no time to lunge fully: a smaller reach, so wide or
-		# fast serves can be aces.
-		var reach := lerpf(1.15, 1.35, skill()) if game.rally == 1 else Athlete.REACH
+		# Returning serve there's no time to lunge fully: a little less reach, so wide or
+		# fast serves can still be aces.
+		var reach := return_reach() if game.rally == 1 else Athlete.REACH
 		if flat_d <= reach and bp.y > 0.05 and bp.y < 2.5:
 			_hit(bp)
 	_prev_rel = rel

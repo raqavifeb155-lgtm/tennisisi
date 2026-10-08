@@ -16,6 +16,7 @@ func _run() -> void:
 		test_metrics_endings,
 		test_metrics_serve,
 		test_early_difficulty,
+		test_serve_reading,
 	]
 	expected = tests.size()
 	for t in tests:
@@ -42,6 +43,7 @@ class FakeGame:
 	var bounces := 0
 	var autoplay := false
 	var last_serve_kmh := 150.0
+
 
 
 func _shot(who: int, contact: Vector3, speed: float, pos_p := Vector3(0, 0, 12), pos_c := Vector3(0, 0, -12), drop := false, lob := false) -> Dictionary:
@@ -145,4 +147,61 @@ func test_early_difficulty() -> void:
 			mono = false
 	check(mono, "every level is a step up: window, scatter, ring and feet only improve")
 	check(Skills.stroke("forehand", 8)["window"] > b0["window"] * 1.8, "level 8 feels much easier than level 0 (window x%.1f)" % (Skills.stroke("forehand", 8)["window"] / b0["window"]))
+	finished += 1
+
+
+func _receiver_x(ai: Node, server_x: float, box_side: float) -> float:
+	ai.game.player.position = Vector3(server_x, 0.0, 12.3)
+	var sum := 0.0
+	for i in 20:
+		sum += ai.receive_position(box_side).x
+	return sum / 20.0
+
+
+func test_serve_reading() -> void:
+	print("D-2: the receiver reads the wide serve")
+	var m := PlayerModel.new()
+	check(absf(m.wide_bias(-1.0)) < 0.01, "no serves seen: no lean")
+	for i in 3:
+		m.note_serve(-1.0, 3.6)
+	check(m.wide_bias(-1.0) > 0.3, "three wide serves to the left box: expects wide there (%.2f)" % m.wide_bias(-1.0))
+	check(absf(m.wide_bias(1.0)) < 0.01, "the other box is read separately")
+	for i in 6:
+		m.note_serve(-1.0, 0.4)
+	check(m.wide_bias(-1.0) < 0.0, "then six to the T: expects the T (%.2f)" % m.wide_bias(-1.0))
+	m.reset()
+	check(absf(m.wide_bias(-1.0)) < 0.01, "a new match forgets")
+
+	var g := FakeGame.new()
+	# Loaded at run time: OpponentAI uses the Tuning autoload, which a -s script can't
+	# see while it is being compiled.
+	var ai: Node = load("res://scripts/opponent_ai.gd").new()
+	ai.game = g
+	ai.rng.seed = 3
+	var neutral := _receiver_x(ai, 0.9, -1.0)
+	check(neutral < -2.75 and neutral > -3.8, "neutral: stands on the bisector of wide and T, wider than before (x %.2f)" % neutral)
+	var from_wide := _receiver_x(ai, 3.6, -1.0)
+	var from_mid := _receiver_x(ai, 0.3, -1.0)
+	check(from_wide < from_mid - 0.6, "the server standing wide pulls the receiver wider (%.2f vs %.2f)" % [from_wide, from_mid])
+	for i in 4:
+		ai.model.note_serve(-1.0, 3.7)
+	var read_wide := _receiver_x(ai, 0.9, -1.0)
+	ai.model.reset()
+	for i in 4:
+		ai.model.note_serve(-1.0, 0.3)
+	var read_t := _receiver_x(ai, 0.9, -1.0)
+	check(read_wide < read_t - 0.4, "after wide serves it shades wide, after T serves to the T (%.2f vs %.2f)" % [read_wide, read_t])
+	var right := _receiver_x(ai, -0.9, 1.0)
+	check(right > 2.75, "the mirror box works too (x %.2f)" % right)
+	var tuning := root.get_node("Tuning")
+	var s0: float = tuning.ai_skill
+	tuning.ai_skill = 0.0
+	check(ai.return_reach() >= 1.35, "returning: the weakest AI reaches %.2f m (was 1.15)" % ai.return_reach())
+	tuning.ai_skill = s0
+	Skills.reset()
+	check(Skills.serve_edge_margin(0) < 0.05 and is_equal_approx(Skills.serve_edge_margin(12), 0.2), "a beginner's wide serve is aimed at the line itself (%.2f), a trained one 0.2 m inside" % Skills.serve_edge_margin(0))
+	ai.free()
+	g.player.free()
+	g.cpu.free()
+	g.free()
 	finished += 1
