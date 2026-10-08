@@ -850,7 +850,7 @@ func serve_target(origin: Vector3, d: Vector3, pace_k: float) -> Vector3:
 	var zt := -(Court.SERVICE_LINE - lerpf(1.1, 0.6, pace_k))
 	var p := origin + d * ((zt - origin.z) / d.z)
 	var lo := 0.25
-	var hi := Court.SINGLES_HALF_WIDTH - 0.2
+	var hi := Court.SINGLES_HALF_WIDTH - Skills.serve_edge_margin()  # a beginner aims at the line itself (D-2)
 	var bx := p.x * box_side
 	if bx < lo and bx > lo - 1.5:
 		p.x = box_side * lo
