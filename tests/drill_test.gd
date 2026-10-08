@@ -370,10 +370,11 @@ func test_first_run() -> void:
 	check(drill._first_timer < 0.0, "headless / no save: the coach does not lead on his own")
 	drill.on_club_opened(true)
 	check(drill._first_timer > 0.0, "first visit: the coach leads to the machine after a moment")
+	# The coach says his line, then leads: the drill starts by itself after a few seconds.
+	await _frames(60 * 9)
+	check(drill.active and drill._onboarding, "after his line the coach leads to the machine by himself")
+	check(drill.hud.buttons()[0].text == "Позже" and drill._need == 1, "led to the machine: «Позже» is there, one of each")
 	# «Позже» in the first lesson: remembered, the coach does not lead again.
-	drill.start(true)
-	await _frames(3)
-	check(drill.active and drill.hud.buttons()[0].text == "Позже", "led to the machine: «Позже» is there")
 	drill.hud.exit_pressed.emit()
 	await _frames(4)
 	check(not drill.active and club.active and BallMachine.data()["later"], "«Позже»: back in the club, not led again")
