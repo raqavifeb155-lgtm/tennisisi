@@ -407,7 +407,7 @@ func test_tv_camera() -> void:
 			var far := cam.unproject_position(Vector3(-4.1, 0, -11.9)).distance_to(cam.unproject_position(Vector3(4.1, 0, -11.9)))
 			check(far > vp.x * 0.2, "TV: the far baseline is still %.0f px wide (a fifth of the screen at least)" % far)
 		check(err < 0.02, "%s: a screen point maps back to the same court point (%.3f m)" % ["TV" if tv else "normal", err])
-	check(cam.global_position.y > 15.0, "TV: hangs high (%.1f m)" % cam.global_position.y)
+	check(cam.global_position.y > 5.0 and cam.global_position.y < 12.0, "TV: closer and lower (D-9) (%.1f m)" % cam.global_position.y)
 	tuning.tv_camera = false
 	cam.free()
 	target.free()

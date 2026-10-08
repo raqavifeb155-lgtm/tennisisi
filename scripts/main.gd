@@ -2523,7 +2523,11 @@ func _update_timing_ring() -> void:
 	var lag := Engine.get_physics_interpolation_fraction() / Engine.physics_ticks_per_second
 	# The ring hangs above the player (never over the body or the ball's path) and
 	# leans toward the side of the stroke: right for forehands, left for backhands.
-	var anchor := cam.unproject_position(player.global_position + Vector3(0.0, 2.35, 0.0)) + Vector2(0.0, -70.0)
+	# D-9: the ring follows the player's size on screen (the TV view puts him far): never wider than
+	# his shoulders (0.55 m), never smaller than 0.55 of the normal size, and its distance above him scales too.
+	var shoulders := absf(cam.unproject_position(player.global_position + Vector3(0.275, 0.0, 0.0)).x - cam.unproject_position(player.global_position - Vector3(0.275, 0.0, 0.0)).x)
+	ring.scale_k = clampf(shoulders / (2.0 * TimingRing.INNER), 0.55, 1.0)
+	var anchor := cam.unproject_position(player.global_position + Vector3(0.0, 2.35, 0.0)) + Vector2(0.0, -70.0 * ring.scale_k)
 	ring.anchor = anchor
 	hud.set_stamina(stamina if phase != Phase.IDLE else 1.0)
 	# Everything below the player's feet is the joystick zone for the left thumb.
