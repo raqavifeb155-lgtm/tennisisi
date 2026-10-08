@@ -31,6 +31,7 @@ static func show_locker(ui: TournamentUI) -> void:
 	RunShop.back_to = "menu"
 	ui._open(null, true, "menu")
 	var li := Locker.items()
+	ui.show_stash(RunShop.stash_count())  # v0.2 L-3
 	ui._title("Шкафчик")
 	ui._sub("Ячеек: %d из %d  ·  одну вещь с каждого забега, потолок редкости зависит от круга" % [li.size(), Locker.slots()])
 	RunShop.show_msg(ui)

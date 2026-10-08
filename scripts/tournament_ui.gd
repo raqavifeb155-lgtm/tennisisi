@@ -24,6 +24,8 @@ const DIM := UiTheme.MUTED
 
 const VEIL_CLUB := 0.38            # the Club: the court shows through
 const VEIL_SCREEN := 0.8           # other screens: content first
+const REVEAL_WAIT := 0.8           # the reward's backs wait this long, then turn over...
+const REVEAL_GAP := 0.15           # ...one after another, this far apart
 const HUD_BUTTON_W := 132.0        # room kept free at the top right for НАСТР / ПАУЗА
 
 var root: Control
@@ -40,6 +42,7 @@ var _chip: PanelContainer          # gold balance, top right
 var _chip_label: Label
 var _chip_icon: Control
 var _gold_shown := 0
+var bag_chip: BagChip              # v0.2 L-3: how many things you carry; things fly into it
 var _run_chip: PanelContainer      # the run's gold, not banked yet (left of the bank)
 var _run_label: Label
 var _run_icon: Control
@@ -122,6 +125,9 @@ func _ready() -> void:
 	_back_slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_back_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_top.add_child(_back_slot)
+	bag_chip = BagChip.new()
+	bag_chip.visible = false
+	_top.add_child(bag_chip)
 	_build_run_chip()
 	_build_chip()
 	var hud_gap := Control.new()
@@ -457,17 +463,26 @@ func show_skill_perk(skill: String, offer: Array) -> void:
 	_sub("Новый перк навыка: выбери один, это навсегда")
 	for i in offer.size():
 		var p: Dictionary = offer[i]
-		_card({"tag": "Перк навыка", "title": p["title"], "desc": p["desc"]}, "perk", i, UiTheme.GOLD)
+		# Everything is known before the choice: no turning over, the cards ride in with a bounce (L-1).
+		_card({"tag": "Перк навыка", "title": p["title"], "desc": p["desc"]}, "perk", i, UiTheme.GOLD).enter(0.09 * i)
 
 
-## The racket the beaten opponent dropped: take it or keep your own.
+## The racket the beaten opponent dropped: take it or keep your own. The thing was already
+## seen on court and in the result («Трофей: ...»), so it does not lie face down: its
+## picture pops up big over its card (rays from epic up), the win's effect plays, and the
+## buttons carry it into the bag's chip (L-1, L-3, L-4).
 func show_loot(t: Tournament) -> void:
 	_open(t)
 	var item: Dictionary = t.pending_loot
+	show_stash(RunBag.carried(t))
 	_title("Трофей", Gear.color(item))
 	_sub("Вещь соперника теперь твоя")
 	var slot := String(item.get("slot", "racket"))  # v0.2 A: three slots
-	var shown := RunBag.item_card(self, item, "Выпало", slot)
+	var hero := ItemThumb.view(item, slot, 250.0)
+	hero.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	hero.pivot_offset = Vector2(125.0, 125.0)
+	_box.add_child(hero)
+	var shown := RunBag.item_card(self, item, "Выпало", slot, "", 0, false)
 	RunBag.item_card(self, t.equip.get(slot, {}), "Сейчас надето", slot)
 	if not item.is_empty() and int(item["rarity"]) >= Gear.EPIC:
 		_rays = Rays.new()
@@ -476,9 +491,25 @@ func show_loot(t: Tournament) -> void:
 		_rays.color = Gear.color(item)
 		root.add_child(_rays)
 		root.move_child(_rays, 1)  # behind the cards, over the dark veil
-		_place_rays.call_deferred(shown)
-	_primary("НАДЕТЬ", "loot", 1)
-	_secondary("В сумку", "loot", 0)
+		_place_rays.call_deferred(hero)
+	var take := _primary("НАДЕТЬ", "loot", 1)
+	var keep := _secondary("В сумку", "loot", 0)
+	for b in [take, keep]:
+		carry(b, item, hero, RunBag.carried(t) + 1, slot)
+	if item.is_empty():
+		return
+	shown.enter(0.12)
+	var pop := hero.create_tween()
+	pop.set_ignore_time_scale(true)
+	pop.tween_property(hero, "scale", Vector2.ONE, 0.5).from(Vector2(0.15, 0.15)).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_win_later(hero, int(item["rarity"]), 0.4, [hero, shown])
+
+
+## The win's effect a moment after the screen has come up (the card has landed).
+func _win_later(card: Control, rarity: int, delay: float, lit: Array = []) -> void:
+	await get_tree().create_timer(delay, true, false, true).timeout
+	if is_instance_valid(card) and card.is_inside_tree() and root.visible:
+		RevealFx.play(self, card, rarity, lit)
 
 
 func _place_rays(target: Control) -> void:
@@ -491,15 +522,17 @@ func _place_rays(target: Control) -> void:
 ## A racket as a card: the frame is its rarity. Empty = the standard racket.
 func _item_card(item: Dictionary, what: String, action := "") -> GameCard:
 	if item.is_empty():
-		return _card({"tag": what, "title": "Стандартная ракетка", "desc": "без бонусов"}, action, -1, Color(0, 0, 0, 0))
+		return _card({"tag": what, "title": "Стандартная ракетка", "desc": "без бонусов", "slot": "racket"}, action, -1, Color(0, 0, 0, 0))
 	var r := int(item["rarity"])
-	return _card({"tag": "%s  ·  %s" % [what, UiTheme.RARITY_NAMES[r]], "title": item["name"], "desc": Gear.describe(item)}, action, -1, Color(0, 0, 0, 0), r)
+	return _card({"tag": "%s  ·  %s" % [what, UiTheme.RARITY_NAMES[r]], "title": item["name"], "desc": Gear.describe(item), "item": item}, action, -1, Color(0, 0, 0, 0), r)
 
 
-## Pick one of three. The cards come face down and turn over one after another; a tap
-## on a card still face down turns it, a tap on an open card takes it.
+## Pick one of three. The cards ride in face down (a back in the rarity's colour, nothing to
+## read), wait a moment, then turn over one after another, 0.15 s apart, each with its win
+## effect; a tap on a back turns the whole row at once, a tap on an open card takes it.
 func show_reward(t: Tournament) -> void:
 	_open(t)
+	show_stash(RunBag.carried(t))
 	_title("Награда")
 	_sub("Выбери одну")
 	var cards: Array[GameCard] = []
@@ -508,18 +541,22 @@ func show_reward(t: Tournament) -> void:
 		var card: GameCard
 		match c["kind"]:
 			"wildcard":
-				card = _card({"tag": "Вайлд-кард", "title": c["title"], "desc": c["desc"]}, "reward", i, Color(0.55, 0.8, 1.0))
+				card = _card({"tag": "Вайлд-кард", "title": c["title"], "desc": c["desc"], "face_down": true}, "reward", i, Color(0.55, 0.8, 1.0))
 			"item":
 				var item: Dictionary = c["item"]
 				var tag := RunBag.reward_tag(t, item)  # v0.2 A: any slot, worn or into the bag
-				card = _card({"tag": tag, "title": c["title"], "desc": c["desc"]}, "reward", i, Color(0, 0, 0, 0), int(item["rarity"]))
+				card = _card({"tag": tag, "title": c["title"], "desc": c["desc"], "item": item, "face_down": true}, "reward", i, Color(0, 0, 0, 0), int(item["rarity"]))
+				carry(card, item, card, RunBag.carried(t) + 1, String(item.get("slot", "racket")))
 			_:
-				card = _card({"tag": "Перк турнира", "title": c["title"], "desc": c["desc"]}, "reward", i, UiTheme.GOLD)
-		card.face_down = true
+				card = _card({"tag": "Перк турнира", "title": c["title"], "desc": c["desc"], "face_down": true}, "reward", i, UiTheme.GOLD)
 		cards.append(card)
 	for i in cards.size():
-		cards[i].flip(0.35 + 0.2 * i)
-		cards[i].flipped.connect(func() -> void: sfx_request.emit("hit", -14.0, 1.3 + 0.15 * i))
+		var card := cards[i]
+		card.enter(0.08 * i)
+		card.flip(REVEAL_WAIT + REVEAL_GAP * i)
+		card.flipped.connect(func() -> void:
+			sfx_request.emit("hit", -14.0, 1.3 + 0.15 * i)
+			RevealFx.play(self, card, card.rarity))
 
 
 func show_summary(t: Tournament) -> void:
@@ -542,6 +579,7 @@ func _open(t: Tournament = null, animate := true, back := "", veil := VEIL_SCREE
 		_rays.queue_free()
 		_rays = null
 	_veil.color = Color(UiTheme.BASE, veil)
+	bag_chip.visible = false  # a screen that takes things shows it (show_stash)
 	_scroll.scroll_vertical = 0
 	root.visible = true
 	_busy = false
@@ -598,13 +636,18 @@ func _press(b: Control, action: String, arg: int, card := false) -> void:
 		tw.tween_interval(0.16)
 	tw.tween_property(b, "scale", Vector2.ONE, 0.08)
 	await tw.finished
+	if b.has_meta("fly"):  # the thing flies into the bag's chip (coins into the gold chip), then the screen changes
+		await ItemFx.run(self, b.get_meta("fly"))
 	_busy = false
 	chosen.emit(action, arg)
 
 
 ## Coins burst out of `from` and fly into the bank chip (or the run's chip, `into_run`),
 ## which counts up to `to_value`. `drain_run`: the run's chip counts down to 0 as they land.
-func _fly_coins(from: Control, gain: int, to_value: int, into_run := false, drain_run := false) -> void:
+## `wait`: returns only when the last one has landed (a sale, before the screen changes).
+func _fly_coins(from: Control, gain: int, to_value: int, into_run := false, drain_run := false, wait := false) -> void:
+	if into_run and gain > 0:
+		_run_chip.visible = true  # a sale into a run with no gold yet: the chip is there to land in
 	await get_tree().process_frame
 	await get_tree().process_frame
 	var set_value := func(v: int) -> void:
@@ -645,6 +688,8 @@ func _fly_coins(from: Control, gain: int, to_value: int, into_run := false, drai
 			p.tween_property(chip, "scale", Vector2(1.12, 1.12), 0.05)
 			p.tween_property(chip, "scale", Vector2.ONE, 0.1)
 			sfx_request.emit("bounce", -12.0, 1.7 + 0.02 * landed[0]))
+	if wait:
+		await get_tree().create_timer(0.25 + 0.03 * n + 0.45, true, false, true).timeout
 
 
 ## The summary: the run's gold leaves its chip and lands in the bank.
@@ -800,16 +845,43 @@ func _card(c: Dictionary, action: String, i: int, accent: Color, rarity := -1, s
 	card.accent = accent
 	card.rarity = rarity
 	card.selected = selected
+	card.item = c.get("item", {})        # v0.2 L: a thing's card wears its picture...
+	card.item_slot = String(c.get("slot", ""))  # ...an empty slot's card the stock one
+	card.face_down = bool(c.get("face_down", false))
 	if action == "":
 		card.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	else:
 		card.pressed.connect(func() -> void:
 			if card.face_down:
-				card.flip()
-			else:
+				_reveal_all()  # a tap on a back turns the whole row at once
+			elif card.is_open():
 				_press(card, action, i, true))
 	_box.add_child(card)
 	return card
+
+
+## Every card still face down turns over now, quickly (a tap on a back).
+func _reveal_all() -> void:
+	for c in _box.get_children():
+		if c is GameCard and (c as GameCard).face_down:
+			(c as GameCard).flip(0.0, true)
+
+
+## The bag's chip (or, in the shop, the locker's) on this screen with the number of things.
+func show_stash(count: int) -> void:
+	bag_chip.set_count(count)
+	bag_chip.visible = true
+
+
+## `b` (a button or a card) carries `item` into the bag's chip when pressed: the picture
+## lifts off `from`, flies, the chip hops to `count_after`; `spend`: the price paid.
+func carry(b: Control, item: Dictionary, from: Control, count_after: int, slot := "", spend := 0) -> void:
+	b.set_meta("fly", ItemFx.item_plan(item, from, count_after, slot, spend))
+
+
+## `b` pours `gain` coins from `from` into the run's chip (or the bank's) when pressed.
+func carry_coins(b: Control, from: Control, gain: int, to_value: int, into_run := true) -> void:
+	b.set_meta("fly", ItemFx.coin_plan(from, gain, to_value, into_run))
 
 
 func _scroll_to_current() -> void:

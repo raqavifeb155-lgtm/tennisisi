@@ -53,6 +53,11 @@ static func where_name(where: int) -> String:
 	return "items" if where == 0 else "next"
 
 
+## The shop's and the locker's chip: the things kept in the locker and those riding to the next run.
+static func stash_count() -> int:
+	return Locker.items().size() + Locker.next_items().size()
+
+
 static func level_name() -> String:
 	var lv := Shop.level()
 	return "Ларёк" if lv <= 0 else String(ClubBuilds.TABLE["shop"]["levels"][lv - 1]["title"])
@@ -75,13 +80,14 @@ static func item_card(ui: TournamentUI, item: Dictionary, what: String, extra: S
 	var desc := Gear.describe(item)
 	if extra != "":
 		desc += "\n" + extra
-	return ui._card({"tag": item_tag(item, what), "title": item["name"], "desc": desc}, action, arg, Color(0, 0, 0, 0), int(item["rarity"]), selected)
+	return ui._card({"tag": item_tag(item, what), "title": item["name"], "desc": desc, "item": item}, action, arg, Color(0, 0, 0, 0), int(item["rarity"]), selected)
 
 
 # --- The showcase -------------------------------------------------------------------
 
 static func show_shop(ui: TournamentUI) -> void:
 	ui._open(null, true, back_to)
+	ui.show_stash(stash_count())  # v0.2 L-3: a purchase flies into it
 	ui._title("Магазин · %s" % level_name())
 	var stock := Shop.stock()
 	ui._sub("Витрина новая после каждого забега  ·  вещи уровня %d" % Shop.item_level())
@@ -89,6 +95,7 @@ static func show_shop(ui: TournamentUI) -> void:
 	var goal := Goals.line()
 	if goal != "":
 		ui._note(goal)
+	var picked_card: GameCard = null
 	for i in stock.size():
 		var it: Dictionary = stock[i]
 		if it.is_empty():
@@ -100,13 +107,16 @@ static func show_shop(ui: TournamentUI) -> void:
 		var c := item_card(ui, it, "", line, "shop_pick", i, i == picked)
 		if left > 0:
 			c.modulate = Color(1, 1, 1, 0.62)
+		if i == picked:
+			picked_card = c
 	_teaser(ui)
 	_owned_list(ui, "Твои вещи", "shop_owned")
 	if picked >= 0 and picked < stock.size() and not (stock[picked] as Dictionary).is_empty():
 		var it2: Dictionary = stock[picked]
 		var why := Shop.why_not(picked)
 		if why == "":
-			ui._primary("КУПИТЬ ЗА %d" % Items.price(it2), "shop_buy", picked)
+			var buy := ui._primary("КУПИТЬ ЗА %d" % Items.price(it2), "shop_buy", picked)
+			ui.carry(buy, it2, picked_card, stash_count() + 1, "", Items.price(it2))  # v0.2 L-3: the thing flies, the gold counts down
 		else:
 			var b := ui._primary("НЕЛЬЗЯ: %s" % why.to_upper(), "shop_pick", picked)
 			b.disabled = true
@@ -161,15 +171,18 @@ static func show_owned(ui: TournamentUI, a: int) -> void:
 		return
 	var it: Dictionary = list[i]
 	ui._open(null, true, "shop_back")
+	ui.show_stash(stash_count())  # v0.2 L-3
 	ui._title(Gear.slot_name(String(it["slot"])), UiTheme.rarity_color(int(it["rarity"])))
 	ui._sub("В шкафчике" if d[0] == 0 else "Едет в следующий турнир (наденется само)")
 	show_msg(ui)
-	item_card(ui, it, "", "")
+	var card := item_card(ui, it, "", "")
 	var p := Items.sell_price(it)
 	var sure := _confirm == a
 	var label := "Точно продать?  +%d" % p if sure else "Продать  +%d" % p
 	var sell := ui._secondary(label, "shop_sell", a)
 	sell.add_theme_color_override("font_color", UiTheme.GOLD)
+	if sure or int(it["rarity"]) < Gear.EPIC:  # v0.2 L-3: the sale goes through: coins pour into the bank chip
+		ui.carry_coins(sell, card, p, SaveData.gold + p, false)
 	if Shop.can_restring():
 		var sp := Shop.restring_price(it)
 		var b := ui._primary("СТРУНЫ  %d" % sp, "shop_strings", a)
