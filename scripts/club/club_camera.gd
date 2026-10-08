@@ -50,13 +50,18 @@ func _clear_back(p: Vector3) -> float:
 		return BACK
 	var back_dir := -forward_of(yaw)
 	var d := BACK
+	# The gate's arch, beam and sign hang over the way in: the camera never goes through
+	# them to the street while the hero is inside (it stays a metre short, close above him).
+	if p.z < ClubLevels.GATE_Z - 0.3 and back_dir.z > 0.05 and absf(p.x + back_dir.x * (ClubLevels.GATE_Z - p.z) / back_dir.z) < 7.0:
+		var reach := (ClubLevels.GATE_Z - 1.3 - p.z) / back_dir.z
+		d = minf(d, maxf(reach, 0.3))
 	var from := Vector2(p.x, p.z)
 	var step := 0.5
 	var t := 1.5
 	while t <= BACK:
 		var q := from + Vector2(back_dir.x, back_dir.z) * t
 		if walk.blocked(q, 0.15):
-			d = maxf(t - 0.8, MIN_BACK)
+			d = minf(d, maxf(t - 0.8, MIN_BACK))
 			break
 		t += step
 	return d
@@ -73,12 +78,13 @@ func _walk() -> ClubWalk:
 
 func _follow_pos() -> Vector3:
 	var p := target.global_position
-	return p - forward_of(yaw) * _back + Vector3(0.0, HEIGHT, 0.0)
+	# pulled in by a wall or the gate, the camera rises: it looks down on him, he doesn't fill the frame
+	return p - forward_of(yaw) * _back + Vector3(0.0, HEIGHT + clampf(BACK - _back, 0.0, 6.0) * 0.5, 0.0)
 
 
 func _follow_look() -> Vector3:
 	var p := target.global_position
-	return p + forward_of(yaw) * AHEAD + Vector3(0.0, LOOK_Y, 0.0)
+	return p + forward_of(yaw) * AHEAD * clampf(_back / BACK, 0.12, 1.0) + Vector3(0.0, LOOK_Y, 0.0)
 
 
 ## Straight to where the camera should be (entering the club, after quick travel). On a
