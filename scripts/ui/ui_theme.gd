@@ -79,10 +79,25 @@ static func text_bold() -> Font:
 	return _text_bold
 
 
+## Symbols the two faces lack (●, ○, ★, ✓, ▸, arrows, card suits, the minus sign): a
+## subset of DejaVu Sans (free licence, CREDITS.md). The web build has no system fonts
+## to fall back on, so without it those glyphs come out as boxes on phones.
+const SYMBOLS := "res://assets/fonts/Symbols.ttf"
+static var _symbols: Font
+
+
+static func symbols() -> Font:
+	if _symbols == null and ResourceLoader.exists(SYMBOLS):
+		_symbols = load(SYMBOLS)
+	return _symbols
+
+
 static func _load(path: String, weight: int) -> Font:
 	if not ResourceLoader.exists(path):
 		return ThemeDB.fallback_font
 	var base: Font = load(path)
+	if base is FontFile and symbols() != null and (base as FontFile).fallbacks.is_empty():
+		(base as FontFile).fallbacks = [symbols()]
 	if weight <= 0:
 		return base
 	var v := FontVariation.new()

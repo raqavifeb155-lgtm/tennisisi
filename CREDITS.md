@@ -43,3 +43,9 @@ it as `models/club_props.<version>.glb` and the game downloads it after the star
   pot, sign, planks fence, broken column), Car Kit (cone, tyre, bumper), City Kit Commercial 2.1
   (parasol, awning, five low-detail shop fronts), City Kit Suburban 2.0 (two fences).
 - Quaternius is not used (kept in reserve).
+
+## Шрифт символов
+
+- `assets/fonts/Symbols.ttf` — подмножество DejaVu Sans (●, ○, ★, ✓, стрелки, масти, минус), лицензия
+  Bitstream Vera / DejaVu Fonts License (свободная, с сохранением уведомления). Запасной шрифт
+  для Russo One и Golos Text в веб-сборке, где системных шрифтов нет.

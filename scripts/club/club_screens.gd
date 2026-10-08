@@ -106,6 +106,6 @@ static func locations(ui: TournamentUI, unlocked := Callable(), hint := Callable
 			b.pressed.connect(func() -> void: ui._press(b, "location", i))
 		else:
 			var h: String = hint.call(id)
-			var b := ui._row("🔒  %s" % l["name"], h if h != "" else "закрыто", "location")
+			var b := ui._row("✕  %s" % l["name"], h if h != "" else "закрыто", "location")
 			b.disabled = true
 			b.modulate.a = 0.6
