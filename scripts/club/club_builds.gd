@@ -6,7 +6,7 @@ class_name ClubBuilds
 ##
 ## Saved in SaveData.club: "levels" {id: level}, "color" 0..3, "name", "spent".
 
-const CLUB_PRICE_SCALE := 1.0
+static var CLUB_PRICE_SCALE := 2.2   # A-6: with Items.PRICE_SCALE, set by the economy sim (income x0.5, the club ~65-75 h)
 
 ## Hub spec 13 (the long build): every construction has 5 levels and its price row is
 ## base x 1 / 2.2 / 5 / 11.5 / 26 (rounded to 5), the base 30-60 gold; the whole club costs
