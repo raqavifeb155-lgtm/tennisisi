@@ -13,6 +13,8 @@ var gfx := -1
 var out := ""
 var builds := false
 var stats := false
+var views := false
+var hour := -1.0
 var tag := ""          # --tag=X: club_X_<h>_*.png (other worktrees shoot into the same folder)
 
 
@@ -26,9 +28,14 @@ func _initialize() -> void:
 			builds = true
 		elif a == "--stats":
 			stats = true
+		elif a == "--views":
+			views = true
+		elif a.begins_with("--hour="):
+			hour = float(a.get_slice("=", 1))
 		elif a.begins_with("--tag="):
 			tag = a.get_slice("=", 1) + "_"
 	out = ProjectSettings.globalize_path("user://club_%s%d_" % [tag, h])
+	_keep_visible()
 	_run.call_deferred()
 
 
@@ -49,14 +56,23 @@ func _shot(name: String, settle := 0.8) -> void:
 	var wt := Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME) / 1000.0
 	main.player.visible = pv
 	main.cpu.visible = cv
-	print("saved %s%s.png   draws %d  tris %.1fk   world: draws %d  tris %.1fk" % [out, name, d, t, wd, wt])
+	print("saved %s%s.png   draws %d  tris %.1fk   world: draws %d  tris %.1fk  (frame %d)" % [out, name, d, t, wd, wt, Engine.get_frames_drawn()])
 
 
 ## Triangles and draw calls the club's nodes would cost if all were in view: by top-level
 ## child of the scenery, the biggest first (--stats).
 func _tri_report() -> void:
 	var rows: Array = []
+	var kids: Array = []
 	for c in main.scenery.get_children():
+		if c.name == "ClubScenery":
+			kids.append_array(c.get_children())
+			for g in c.get_children():
+				for gg in g.get_children():
+					kids.append(gg)
+		else:
+			kids.append(c)
+	for c in kids:
 		var t := [0, 0]
 		_count(c, t)
 		if t[1] > 0:
@@ -137,6 +153,12 @@ func _run() -> void:
 		quit()
 		return
 	print("club active=%s location=%s scenery=%s" % [main.club.active, main.location_id, main.scenery.get_script().resource_path])
+	if hour >= 0.0:
+		ClubDaytime.force_hour = hour
+	if views:
+		await _views()
+		quit()
+		return
 	if builds:
 		await _builds()
 		quit()
@@ -230,6 +252,37 @@ func _run() -> void:
 	quit()
 
 
+## The club from where a walker would see it: the hero put somewhere, looking some way,
+## the camera right behind him (--views).
+func _views() -> void:
+	SaveData.played = 1
+	SaveData.titles = 1
+	SaveData.club = {"met_coach": true, "walk_hint": true}
+	main.club._refresh()
+	main.club.hud.say("", 0.0)
+	var list := [
+		["v01_gate_south", Vector3(0, 0, 25), PI],
+		["v02_court_east", Vector3(-9.5, 0, 22), -PI * 0.5],
+		["v03_promenade", Vector3(-6, 0, -36), 0.0],
+		["v04_west_arena", Vector3(-8, 0, 3), PI * 0.5],
+		["v05_east_bar", Vector3(10, 0, -24), -PI * 0.5],
+		["v06_gate_path", Vector3(0, 0, 38), 0.0],
+		["v07_trophy", Vector3(-14, 0, -12), 0.0],
+		["v08_east_lawn", Vector3(24, 0, 12), -PI * 0.5],
+		["v09_west_south", Vector3(-26, 0, 30), PI],
+		["v10_shop", Vector3(16, 0, 8), -PI * 0.5],
+	]
+	for v in list:
+		var p: Athlete = main.player
+		p.position = v[1]
+		p.rotation.y = v[2]
+		p.velocity = Vector3.ZERO
+		main.club.cam.release(0.0)
+		main.club.cam.snap(false)
+		main.club._update_place()
+		await _shot(v[0], 0.9)
+
+
 func _builds() -> void:
 	var club = main.club
 	SaveData.played = 3
@@ -281,3 +334,13 @@ func _builds() -> void:
 	main.player.position = Vector3(14.6, 0, 6.0)
 	club._update_place()
 	await _shot("b99_all_max_east", 1.2)
+
+
+## Several streams shoot at once and every Godot window opens in the same place: a window
+## fully covered by another is not drawn on macOS, and the shots come out frozen. Open
+## this one somewhere of its own and bring it forward.
+func _keep_visible() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	DisplayServer.window_set_position(Vector2i(rng.randi_range(0, 900), rng.randi_range(0, 120)))
+	DisplayServer.window_move_to_foreground()

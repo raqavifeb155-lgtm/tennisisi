@@ -51,6 +51,25 @@ func ball(r: float, pos: Vector3, col: Color, squash := Vector3.ONE, segs := 6, 
 	return _add(_ball, Transform3D(Basis.from_scale(squash * r), pos), col)
 
 
+## A flat patch lying on the ground: a fan of `segs` triangles, facing up (y = pos.y).
+func flat(r: Vector2, pos: Vector3, col: Color, segs := 7, yaw := 0.0) -> ClubShapes:
+	var base := _v.size()
+	var b := Basis(Vector3.UP, yaw)
+	_v.append(pos)
+	_n.append(Vector3.UP)
+	_c.append(col)
+	for i in segs:
+		var a := TAU * float(i) / segs
+		_v.append(pos + b * Vector3(cos(a) * r.x, 0.0, sin(a) * r.y))
+		_n.append(Vector3.UP)
+		_c.append(col)
+	for i in segs:
+		_i.append(base)
+		_i.append(base + 1 + i)
+		_i.append(base + 1 + (i + 1) % segs)
+	return self
+
+
 func _add(mesh: PrimitiveMesh, xf: Transform3D, col: Color) -> ClubShapes:
 	var a := mesh.get_mesh_arrays()
 	var verts: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
@@ -170,8 +189,8 @@ static func make(id: String) -> ArrayMesh:
 			var col: Color = {"flowers_red": Color("d9473b"), "flowers_yellow": Color("ffd642"), "flowers_purple": Color("9a5cf0")}[id]
 			s.cyl(0.01, 0.02, 0.22, Vector3(0, 0.11, 0), LEAF[1], 4)
 			s.ball(0.07, Vector3(0, 0.26, 0), col, Vector3.ONE, 5, 3)
-		"rock", "rock_big", "stone_tall":
-			var h: float = {"rock": 0.35, "rock_big": 1.1, "stone_tall": 1.6}[id]
+		"rock", "stone_tall":
+			var h: float = {"rock": 0.35, "stone_tall": 1.6}[id]
 			if id == "stone_tall":
 				s.box(Vector3(0.6, h, 0.45), Vector3(0, h * 0.5, 0), STONE, 0.3)
 			else:
@@ -214,6 +233,25 @@ static func make(id: String) -> ArrayMesh:
 			s.box(Vector3(2.0, 0.06, 0.05), Vector3(0, h * 0.4, 0), WOOD)
 			for x in [-0.95, 0.95]:
 				s.box(Vector3(0.08, h, 0.08), Vector3(x, h * 0.5, 0), TRUNK)
+		"dirt":
+			s.flat(Vector2(1.0, 0.8), Vector3(0, 0.03, 0), Color("8a6a46"), 9)
+			s.flat(Vector2(0.62, 0.5), Vector3(0.1, 0.04, 0.05), Color("7a5a3c"), 7, 0.5)
+		"tuft", "tuft_dry":
+			# weeds: five thin blades leaning out of one spot (three-sided cones)
+			var col: Color = LEAF[1].lightened(0.1) if id == "tuft" else Color("a99a55")
+			for k in 5:
+				var a := k * TAU / 5.0 + 0.4
+				var h := 0.32 + 0.1 * float(k % 3)
+				s.cyl(0.0, 0.035, h, Vector3(cos(a) * 0.05, h * 0.5, sin(a) * 0.05), col.darkened(0.06 * float(k % 2)), 3, Vector3(sin(a) * 0.35, 0.0, -cos(a) * 0.35))
+		"flower_patch":
+			# a little bed: a mound of soil and a handful of blooms
+			s.cyl(0.55, 0.62, 0.1, Vector3(0, 0.05, 0), Color("6b4a32"), 7)
+			var blooms := [Color("d9473b"), Color("ffd642"), Color("f5f5f5"), Color("9a5cf0"), Color("ff8fb0"), Color("ffd642")]
+			for k in 6:
+				var a := k * TAU / 6.0
+				var r := 0.3 if k % 2 == 0 else 0.12
+				s.cyl(0.0, 0.015, 0.2, Vector3(cos(a) * r, 0.2, sin(a) * r), LEAF[1], 3)
+				s.ball(0.085, Vector3(cos(a) * r, 0.31, sin(a) * r), blooms[k], Vector3(1, 0.8, 1), 4, 2)
 		_:
 			return null
 	return s.build()

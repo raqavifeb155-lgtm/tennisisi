@@ -41,7 +41,7 @@ NN = "kenney_nature-kit/Models/GLTF format/"
 NM = "kenney_city-kit-commercial_2.1/Models/GLB format/"
 NS = "kenney_city-kit-suburban_20/Models/GLB format/"
 
-# id -> (source file, height in metres, palette pull 0..1). The id is what the game asks for
+# id -> (source file, height in metres, palette pull 0..1[, palette indices it may also land on]). The id is what the game asks for
 # (scripts/club/world/club_props.gd); the height sets the scale (the hero is 1.85 m).
 PICKS = {
     # the street and the paths (KayKit City Builder Bits)
@@ -70,20 +70,19 @@ PICKS = {
     "crate": (KR + "crate.gltf", 0.5, 0.5),
     "menu_board": (KR + "menu.gltf", 0.6, 0.4),
     # trees, bushes, flowers, rocks, wood (Kenney Nature Kit)
-    "tree_oak": (NN + "tree_oak.glb", 6.5, 0.7),
-    "tree_round": (NN + "tree_default.glb", 6.0, 0.7),
-    "tree_tall": (NN + "tree_detailed.glb", 7.5, 0.7),
-    "tree_fat": (NN + "tree_fat.glb", 5.5, 0.7),
-    "tree_small": (NN + "tree_small.glb", 4.0, 0.7),
-    "tree_pine": (NN + "tree_pineTallA.glb", 8.0, 0.7),
-    "tree_pine_small": (NN + "tree_pineSmallA.glb", 3.5, 0.7),
-    "bush": (NN + "plant_bush.glb", 0.8, 0.7),
-    "bush_large": (NN + "plant_bushLarge.glb", 1.2, 0.7),
+    "tree_oak": (NN + "tree_oak.glb", 6.5, 0.88),
+    "tree_round": (NN + "tree_default.glb", 6.0, 0.88),
+    "tree_tall": (NN + "tree_detailed.glb", 7.5, 0.88),
+    "tree_fat": (NN + "tree_fat.glb", 5.5, 0.88),
+    "tree_small": (NN + "tree_small.glb", 4.0, 0.88),
+    "tree_pine": (NN + "tree_pineTallA.glb", 8.0, 0.88),
+    "tree_pine_small": (NN + "tree_pineSmallA.glb", 3.5, 0.88),
+    "bush": (NN + "plant_bush.glb", 0.8, 0.88),
+    "bush_large": (NN + "plant_bushLarge.glb", 1.2, 0.88),
     "flowers_red": (NN + "flower_redA.glb", 0.35, 0.3),
     "flowers_yellow": (NN + "flower_yellowA.glb", 0.35, 0.3),
     "flowers_purple": (NN + "flower_purpleA.glb", 0.35, 0.3),
     "rock": (NN + "rock_smallA.glb", 0.35, 0.5),
-    "rock_big": (NN + "rock_largeA.glb", 1.1, 0.5),
     "stone_tall": (NN + "stone_tallA.glb", 1.6, 0.5),
     "column_broken": (NN + "statue_columnDamaged.glb", 1.7, 0.5),
     "stump": (NN + "stump_round.glb", 0.45, 0.5),
@@ -93,7 +92,7 @@ PICKS = {
     "sign": (NN + "sign.glb", 1.3, 0.5),
     "fence_planks": (NN + "fence_planks.glb", 0.9, 0.5),
     # parking, the street front (Kenney Car Kit, City Kit)
-    "cone": (NC + "cone.glb", 0.7, 0.3),
+    "cone": (NC + "cone.glb", 0.7, 0.3, (30,)),
     "tyre": (NC + "debris-tire.glb", 0.3, 0.4),
     "bumper": (NC + "debris-bumper.glb", 0.3, 0.4),
     "parasol": (NM + "detail-parasol-a.glb", 2.6, 0.4),
@@ -282,16 +281,31 @@ def to_lab(c):
 PAL_LAB = [to_lab(p) for p in PALETTE]
 
 
-def club_colour(c, pull):
+# Colours the nearest-palette search never lands on unless a pick asks for them: they
+# would turn a green leaf teal and a plank orange (gold, neon, soda teal, orange, the
+# court's out-of-bounds green).
+EXCLUDE = {1, 16, 17, 29, 30}
+
+
+# Kenney's Nature Kit paints its leaves a minty teal (0.16, 0.79, 0.67) and its wood salmon:
+# its colours may only land on greens, woods, stones and whites.
+NATURE = {2, 3, 4, 6, 13, 14, 15, 20, 24, 25, 26, 32, 33, 34, 35}
+
+
+def club_colour(c, pull, allow=()):
     """Pulls a colour toward the nearest palette colour (pull 1 = exactly it); the sets'
     colours keep a little of themselves, so a model doesn't go flat."""
     lab = to_lab(c)
-    best = min(range(len(PALETTE)), key=lambda i: sum((lab[k] - PAL_LAB[i][k]) ** 2 for k in range(3)))
+    if allow == "nature":
+        ok = sorted(NATURE)
+    else:
+        ok = [i for i in range(len(PALETTE)) if i not in EXCLUDE or i in allow]
+    best = min(ok, key=lambda i: sum((lab[k] - PAL_LAB[i][k]) ** 2 for k in range(3)))
     p = PALETTE[best]
     return [c[k] + (p[k] - c[k]) * pull for k in range(3)]
 
 
-def bake(path, height, pull):
+def bake(path, height, pull, allow=()):
     g = Gltf(path)
     tris = flatten(g)
     lo = [min(t[0][k] for t in tris) for k in range(3)]
@@ -306,7 +320,7 @@ def bake(path, height, pull):
     for p, n, c in tris:
         key_c = tuple(round(x, 3) for x in c)
         if key_c not in colour_cache:
-            colour_cache[key_c] = club_colour(c, pull)
+            colour_cache[key_c] = club_colour(c, pull, allow)
         cc = colour_cache[key_c]
         q = ((p[0] - cx) * s, (p[1] - lo[1]) * s, (p[2] - cz) * s)
         ln = math.sqrt(n[0] ** 2 + n[1] ** 2 + n[2] ** 2) or 1.0
@@ -386,12 +400,16 @@ def main():
     info = "--info" in sys.argv
     models = {}
     total_tris = 0
-    for name, (rel, height, pull) in PICKS.items():
+    for name, pick in PICKS.items():
+        rel, height, pull = pick[:3]
+        allow = pick[3] if len(pick) > 3 else ()
+        if rel.startswith(NN) and not allow and not name.startswith("flowers"):
+            allow = "nature"
         path = os.path.join(src, rel)
         if not os.path.exists(path):
             print("MISSING %s: %s" % (name, rel))
             continue
-        verts, idx = bake(path, height, pull)
+        verts, idx = bake(path, height, pull, allow)
         models[name] = (verts, idx)
         total_tris += len(idx) // 3
         if info:

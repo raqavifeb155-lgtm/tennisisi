@@ -8,6 +8,7 @@ var main: Node
 
 
 func _initialize() -> void:
+	_keep_visible()
 	_run.call_deferred()
 
 
@@ -55,3 +56,13 @@ func _run() -> void:
 		if p.position.x > 40.0:
 			pass
 	quit()
+
+
+## Several streams shoot at once and every Godot window opens in the same place: a window
+## fully covered by another is not drawn on macOS, and the shots come out frozen. Open
+## this one somewhere of its own and bring it forward.
+func _keep_visible() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	DisplayServer.window_set_position(Vector2i(rng.randi_range(0, 900), rng.randi_range(0, 120)))
+	DisplayServer.window_move_to_foreground()
