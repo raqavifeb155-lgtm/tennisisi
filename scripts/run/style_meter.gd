@@ -18,6 +18,7 @@ var _opp_dist := 99.0             # |z| of the opponent when the player last hit
 var _second_bounce := -1.0        # |z| where the player's ball bounced twice, -1 = it didn't
 var _knocked := false
 var _frame := -1                  # PointRecorder frame of the player's last stroke
+var vent_next := false            # a racket was smashed: the next point is «Психанул» (R)
 
 
 func start_match() -> void:
@@ -25,6 +26,7 @@ func start_match() -> void:
 	best = {}
 	best_index = -1
 	_points = 0
+	vent_next = false
 	start_point()
 
 
@@ -77,7 +79,9 @@ func on_point(info: Dictionary, comeback: bool, boosts := {}) -> Dictionary:
 		"line_margin": float(cc.get("margin", -1.0)) if int(cc.get("rally", -1)) == rally else -1.0,
 		"opp_net_dist": _opp_dist, "second_bounce_z": _second_bounce, "knocked": _knocked,
 		"comeback": comeback, "cannon_kmh": float(boosts.get("cannon_kmh", 200.0)),
+		"vented": vent_next,
 	}
+	vent_next = false  # one point only
 	var r := StyleRules.evaluate(ctx, boosts)
 	r["rally"] = rally
 	r["skill"] = String(_last.get("skill", ""))

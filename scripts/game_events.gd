@@ -40,3 +40,12 @@ signal match_finished(info: Dictionary)
 ## A coach's quest is done (the club, docs/superpowers/specs/2026-10-08-v02-hub-economy.md 5):
 ##   index (in ClubQuests.current()), text, gold, item (bool). For a toast (stream C later).
 signal quest_done(info: Dictionary)
+
+## The "Разбить ракетку" offer was shown after a point lost to the player's own error
+## (docs/superpowers/specs/2026-10-09-racket-smash.md): reason, rally, window (s)
+signal racket_smash_offered(info: Dictionary)
+
+## The player smashed his racket (the third swipe): strength 0..1, swipes, tournament (bool).
+## RunHub takes the racket's effects off for the rest of the match and arms the
+## «Психанул» trick; SmashHub gives «Выпустил пар». For style and the coach's quests.
+signal racket_smashed(info: Dictionary)
