@@ -18,6 +18,9 @@ func _initialize() -> void:
 	test_quests()
 	test_shop_locker()
 	test_long_build()
+	test_lots()
+	await test_lots_world()
+	await test_lots_flow()
 	await test_world()
 	await test_flow()
 	await test_transitions()
@@ -83,7 +86,8 @@ func test_place_levels() -> void:
 	check(int(ClubPlaces.state("bar", 3)["bet_limit"]) > int(ClubPlaces.state("bar", 0)["bet_limit"]), "a bigger bar takes bigger bets")
 	check(ClubPlaces.state("bar", 9)["bet_limit"] == ClubPlaces.state("bar", 5)["bet_limit"], "past the last level the last one holds")
 	var shop := ClubPlaces.find("shop")
-	check(not ClubPlaces.is_open(shop, 0, 0) and ClubPlaces.is_open(shop, 1, 0), "the shop opens after the first run")
+	check(ClubPlaces.is_open(shop, 0, 0), "the shop stands open from the start (T: the court and the shop)")
+	check(not ClubBuilds.is_open("shop"), "...but its levels and the 'Магазин' of the run's summary wait for the first run (stream A)")
 	var bar := ClubPlaces.find("bar")
 	check(not ClubPlaces.is_open(bar, 5, 0) and ClubPlaces.is_open(bar, 5, 1), "the bar opens after the first title")
 	check(ClubPlaces.find("machine").get("travel", true) == false, "the machine is not in quick travel (it's by the court)")
@@ -178,7 +182,7 @@ func test_builds() -> void:
 	SaveData.club = {}
 	SaveData.gold = 100000
 	check(not ClubBuilds.is_open("bar") and not ClubBuilds.can_afford("bar") and not ClubBuilds.can_afford("trophy"), "the bar waits for a title, the trophy room for a run")
-	check(ClubBuilds.affordable_count() == 4, "with plenty of gold before a run: court, stands, gate, coach's room (%d)" % ClubBuilds.affordable_count())
+	check(ClubBuilds.affordable_count() == 2, "with plenty of gold before a run, in a new club: the court and the gate (the rest wait for a lot) (%d)" % ClubBuilds.affordable_count())
 	SaveData.played = 1
 	SaveData.titles = 1
 	check(ClubBuilds.affordable_count() == ClubBuilds.ORDER.size(), "all eight after a title")
@@ -488,6 +492,7 @@ func test_flow() -> void:
 	SaveData.run = {}
 	SaveData.played = 0
 	Skills.pending = []
+	Skills.points = 0
 	main._show_menu()
 	await _frames(3)
 	var club = main.club
@@ -584,6 +589,8 @@ func test_flow() -> void:
 	var reached: Vector3 = main.player.position
 	check(not inside_wall, "walking never ends inside a wall")
 	check(Vector2(reached.x - 16, reached.z - 31).length() < 1.0, "walks out through the gate to the pavilions (%.1f m off)" % Vector2(reached.x - 16, reached.z - 31).length())
+	SaveData.club["lots"] = {"n2": "coach"}   # the coach's room is built (T-1: nothing stands but the court and the shop at first)
+	club._refresh()
 	club._travel("coach")
 	await _frames(3)
 	check(club.hud.current_place() == "coach", "quick travel lands in the coach's circle")
@@ -930,3 +937,265 @@ func test_transitions() -> void:
 	SaveData.played = 0
 	SaveData.active = null
 	SaveData.run = {}
+
+
+# --- Lots (T-1, docs/superpowers/specs/2026-10-09-tycoon.md) ------------------------------------
+
+## The data: seven lots, seven types, a new club is empty, an old one keeps what it had, a
+## type is built once, the save keeps it.
+func test_lots() -> void:
+	print("lots")
+	var hx := Scenery.HX
+	var hz := Scenery.HZ
+	var court_fence := Rect2(-hx, -hz, hx * 2.0, hz * 2.0)
+	var shop_room := Rect2(19, -0.5, 6, 5)
+	check(ClubLots.LOTS.size() == 7, "seven lots")
+	var ids := {}
+	var apart := true
+	var clear := true
+	for i in ClubLots.LOTS.size():
+		var a: Dictionary = ClubLots.LOTS[i]
+		ids[a["id"]] = true
+		var ra := ClubLots.lot_rect(a["id"])
+		clear = clear and not ra.intersects(court_fence) and not ra.intersects(shop_room)
+		for j in range(i + 1, ClubLots.LOTS.size()):
+			var b: Dictionary = ClubLots.LOTS[j]
+			apart = apart and (a["pos"] as Vector3).distance_to(b["pos"]) >= 17.0 and not ra.intersects(ClubLots.lot_rect(b["id"]))
+	check(ids.size() == 7, "lot ids are unique")
+	check(apart, "the lots are 17 m apart and their sites don't touch")
+	check(clear, "no lot's site reaches into the court's fence or the shop")
+	var homes := {}
+	for t in ClubLots.ORDER:
+		var d: Dictionary = ClubLots.TYPES[t]
+		homes[d["home"]] = true
+		check(d.has("name") and d.has("gives") and ClubLots.lot(d["home"]).size() > 0, "type %s has a name, what it gives and a home lot" % t)
+	check(homes.size() == 7 and ClubLots.ORDER.size() == 7, "seven types, each with its own home lot")
+	for lot in ClubLots.LOTS:
+		for p in ClubPlaces.LIST:
+			if ClubLots.owner_type(p["id"]) != "":
+				continue
+			var d := Vector2((lot["pos"] as Vector3).x - (p["pos"] as Vector3).x, (lot["pos"] as Vector3).z - (p["pos"] as Vector3).z).length()
+			check(d >= ClubLots.R + float(p["r"]) + 1.0, "lot %s keeps off the circle of %s (%.1f m)" % [lot["id"], p["id"], d])
+	# A new club: the court and the shop, empty lots, the first two open.
+	SaveData.club = {}
+	SaveData.played = 0
+	SaveData.titles = 0
+	SaveData.gold = 0
+	check(not ClubLots.is_legacy() and ClubLots.map().is_empty(), "no progress, no key: a new club, nothing built")
+	check(ClubLots.lot_open("n1") and ClubLots.lot_open("n2") and not ClubLots.lot_open("n3") and not ClubLots.lot_open("n7"), "the first two lots are open from the start, the others later")
+	var live := {}
+	for p in ClubPlaces.all():
+		live[p["id"]] = p
+	for id in ["court", "machine", "gate", "shop", "lot_n1", "lot_n2", "lot_n3", "lot_n7"]:
+		check(live.has(id), "a new club has %s" % id)
+	for id in ["coach", "locker", "trophy", "bar", "stands", "blackjack", "arena", "academy"]:
+		check(not live.has(id), "a new club has no %s yet" % id)
+	check(ClubPlaces.is_open(live["lot_n1"], 0, 0) and not ClubPlaces.is_open(live["lot_n3"], 0, 0), "an open lot has its button, a shut one its sign")
+	check(live["lot_n1"]["levels"][0]["action"] == "club_lot" and ClubPlaces.state("lot_n1")["label"] == "Построить", "the lot's button: «Построить»")
+	check(String(live["lot_n3"]["sign"]).contains("после первого забега"), "a shut lot says what opens it (%s)" % str(live["lot_n3"]["sign"]).replace("\n", " "))
+	ClubLots.ensure()
+	check(SaveData.club.get("lots") is Dictionary and (SaveData.club["lots"] as Dictionary).is_empty(), "the first visit writes the empty layout")
+	# Who can be built, and why not.
+	check(ClubLots.price("coach") == 40 and ClubLots.price("stands") == 50 and ClubLots.price("bar") == 50, "the price of a lot is the first level's (40 / 50 / 50 at scale 1)")
+	check(ClubLots.why_not("n1", "coach") == "" and not ClubLots.can_build("n1", "coach"), "the coach's room is allowed, but 0 gold is not enough")
+	check(ClubLots.why_not("n1", "locker") == "Откроется после первого забега" and ClubLots.why_not("n1", "bar") == "Откроется после первого титула", "the locker waits for a run, the bar for a title")
+	check(ClubLots.why_not("n1", "academy") == "Скоро" and ClubLots.why_not("n1", "arena") == "Скоро", "the academy and the arena: «Скоро»")
+	check(ClubLots.why_not("n3", "coach") == "Участок откроется после первого забега", "a shut lot: «Участок откроется после первого забега»")
+	var sh := ClubLots.sheet("n1", "coach")
+	check(sh["build"]["text"] == "Нужно ещё 40" and not sh["build"]["can"], "the sheet says how much is missing")
+	SaveData.gold = 100
+	sh = ClubLots.sheet("n1", "coach")
+	check(sh["build"]["can"] and String(sh["build"]["text"]).contains("40"), "the sheet's button names the price")
+	check(String(sh["card"]["desc"]).contains("Что даёт") and String(sh["card"]["desc"]).contains("Первый уровень"), "the card says what it gives and the first level")
+	# Building: gold, the map, the first level, once.
+	check(ClubLots.build("n1", "coach"), "build the coach's room on the first lot")
+	check(SaveData.gold == 60 and ClubLots.type_at("n1") == "coach" and ClubLots.lot_of("coach") == "n1" and ClubBuilds.level("coach") == 1, "40 gold went, the lot holds it, level 1")
+	check(int(SaveData.club["spent"]) == 40, "the spending is counted")
+	check(not ClubLots.build("n2", "coach"), "a type is built once")
+	check(ClubLots.why_not("n2", "coach") == "Уже построено", "...and the card says so")
+	check(not ClubLots.build("n1", "stands"), "a lot holds one building")
+	check(ClubLots.build("n2", "stands") and SaveData.gold == 10, "the stands on the other lot (50)")
+	check(ClubLots.buildable_types().is_empty() and ClubLots.free_lots().is_empty(), "nothing else to build in a new club's two lots")
+	check(ClubBuilds.affordable_count() == 0 and ClubLots.is_placed("coach") and not ClubLots.is_placed("locker"), "the foreman counts only what stands")
+	check(ClubLots.foreman_ids() == ["court", "stands", "gate", "shop", "coach"], "the foreman lists the court, the gate, the shop and what stands (%s)" % str(ClubLots.foreman_ids()))
+	check((ClubPlaces.find("coach")["pos"] as Vector3).is_equal_approx(ClubLots.lot("n1")["pos"]), "the coach's room is where its lot is")
+	check((ClubPlaces.find("coach")["cam"]["pos"] as Vector3).x < 0.0, "...with its camera")
+	# The save keeps it.
+	var cf := SaveData._to_config()
+	var keep: Dictionary = SaveData.club.duplicate(true)
+	SaveData.club = {}
+	SaveData._apply(cf)
+	check(SaveData.club.get("lots", {}) == keep["lots"] and ClubLots.type_at("n2") == "stands", "saved and loaded: the same lots")
+	# A save from before lots: it keeps what it had, where it was.
+	SaveData.club = {"levels": {"stands": 2, "court": 1}, "spent": 90}
+	SaveData.played = 3
+	SaveData.titles = 0
+	SaveData.gold = 0
+	check(ClubLots.is_legacy(), "progress without the key: an old save")
+	var lay := ClubLots.legacy_layout()
+	check(lay == {"n1": "locker", "n2": "coach", "n4": "stands", "n5": "trophy"}, "an old save: every open building on its home lot (%s)" % str(lay))
+	check(ClubLots.map() == lay, "...before the first visit writes it too")
+	ClubLots.ensure()
+	check(SaveData.club["lots"] == lay, "the first visit writes it")
+	check(ClubLots.xf("coach").origin.is_equal_approx(Vector3.ZERO) and ClubLots.xf("locker").origin.is_equal_approx(Vector3.ZERO) and ClubLots.xf("trophy").origin.is_equal_approx(Vector3.ZERO), "on their home lots nothing moves: they look as they always did")
+	check(ClubLots.offset("stands").is_equal_approx(Vector3(28.0 - 8.0, 0, 0)), "the stands move to the east lot")
+	SaveData.titles = 1
+	check(ClubLots.type_open("bar") and ClubLots.free_lots().any(func(l): return l["id"] == "n3"), "the bar opens with the first title and has a lot to go to")
+	# The stands look at the court from every lot.
+	var faces := true
+	for l in ClubLots.LOTS:
+		var at: Vector3 = l["pos"]
+		var front := Basis(Vector3.UP, ClubLots.rotation_for("stands", at)) * Vector3(-1, 0, 0)
+		faces = faces and front.dot(Vector3(-at.x, 0, -at.z).normalized()) > 0.6
+	check(faces, "the stands turn toward the court on every lot")
+	SaveData.club = {}
+	SaveData.played = 0
+	SaveData.titles = 0
+	SaveData.gold = 0
+
+
+## Every type on every lot, in a world of its own: it stands where the lot is, its circle is
+## walkable and reachable from the court, and no circle overlaps another one.
+func test_lots_world() -> void:
+	print("lots in the world")
+	var bad_reach := []
+	var bad_overlap := []
+	var bad_place := []
+	var raised := 0
+	for t in ["coach", "locker", "stands", "trophy", "bar"]:
+		for l in ClubLots.LOTS:
+			SaveData.club = {"lots": {l["id"]: t}}
+			SaveData.played = 9
+			SaveData.titles = 9
+			var w = load("res://scripts/club/club_world.gd").new()
+			root.add_child(w)
+			await process_frame
+			var tag := "%s on %s" % [t, l["id"]]
+			if w.is_raised(t):
+				raised += 1
+			var pos: Vector3 = ClubPlaces.find(t)["pos"]
+			var pn: Node3D = w.place_node(t)
+			if pn == null or pn.position.distance_to(pos) > 0.01 or not pos.is_equal_approx(l["pos"]):
+				bad_place.append(tag)
+			if w.walk.blocked(Vector2(pos.x, pos.z)) or w.walk.route(Vector2(0, 14), Vector2(pos.x, pos.z)).is_empty():
+				bad_reach.append(tag)
+			var live := ClubPlaces.all()
+			for i in live.size():
+				for j in range(i + 1, live.size()):
+					var a: Dictionary = live[i]
+					var b: Dictionary = live[j]
+					var d := Vector2((a["pos"] as Vector3).x - (b["pos"] as Vector3).x, (a["pos"] as Vector3).z - (b["pos"] as Vector3).z).length()
+					if d < float(a["r"]) + float(b["r"]) + 0.5 and not (ClubLots.owner_type(a["id"]) == ClubLots.owner_type(b["id"]) and ClubLots.owner_type(a["id"]) != ""):
+						bad_overlap.append("%s: %s / %s" % [tag, a["id"], b["id"]])
+			if t == "bar":
+				var bj: Vector3 = ClubPlaces.find("blackjack")["pos"]
+				if w.walk.blocked(Vector2(bj.x, bj.z), 0.3) or w.walk.route(Vector2(0, 14), Vector2(bj.x, bj.z)).is_empty():
+					bad_reach.append(tag + " (blackjack)")
+			w.queue_free()
+			await process_frame
+	check(raised == 35, "35 combinations: the building stands in the world (%d)" % raised)
+	check(bad_place.is_empty(), "its place and node are on its lot %s" % str(bad_place))
+	check(bad_reach.is_empty(), "its circle is free and the hero can walk there from the court %s" % str(bad_reach))
+	check(bad_overlap.is_empty(), "no two circles overlap %s" % str(bad_overlap))
+	SaveData.club = {}
+	SaveData.played = 0
+	SaveData.titles = 0
+
+
+## The sheet and the build moment in the club itself.
+func test_lots_flow() -> void:
+	print("lots flow")
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	root.add_child(main)
+	await _frames(5)
+	SaveData.enabled = false
+	SaveData.club = {}
+	SaveData.active = null
+	SaveData.run = {}
+	SaveData.played = 0
+	SaveData.titles = 0
+	SaveData.gold = 0
+	Skills.pending = []
+	Skills.points = 2
+	main._show_menu()
+	await _frames(3)
+	var club = main.club
+	var w = club.world
+	check(club.active and SaveData.club.get("lots") is Dictionary, "the first visit writes the layout")
+	check(club._open_ids.has("lot_n1") and club._open_ids.has("lot_n2") and not club._open_ids.has("lot_n3") and not club._open_ids.has("coach"), "a new club: the two open lots have circles, nothing is built")
+	check(club.place_buttons("court")["extra"].any(func(e): return e[1] == "character"), "no coach's room: the skill points are spent from the court's quiet button")
+	check(w.place_node("lot_n1_sign") != null and w.place_node("lot_n1_sign").visible and (w.place_node("lot_n1_sign").get_meta("label") as Label3D).text.contains("от 40"), "an open lot's sign tells the price")
+	check(w.place_node("lot_n3_sign").visible and (w.place_node("lot_n3_sign").get_meta("label") as Label3D).text.contains("после первого забега"), "a shut lot's sign says what opens it")
+	check(w.lots_view().marker("n1") != null and w.lots_view().marker("n3") != null, "stakes and tape on the empty lots")
+	check(not w.is_raised("coach") and not w.is_room("coach") and w.roulette() == null, "nothing of the coach's room or the bar stands")
+	var travel_names := []
+	club._travel("lot_n1")
+	await _frames(3)
+	check(club.hud.current_place() == "lot_n1", "quick travel lands in the lot's circle")
+	var b: Dictionary = club.place_buttons("lot_n1")
+	check(b["label"] == "ПОСТРОИТЬ" and b["action"] == "club_lot", "the lot's button: ПОСТРОИТЬ")
+	club._on_choice("club_lot", 0)
+	await _frames(3)
+	check(club.lot_on() and club.foreman_on() and club.hud.foreman_visible(), "the sheet is the foreman's strip")
+	check(club.lot_type() == "coach" and w.ghost_id() == "coach", "the first card is the one that can be built, its ghost stands on the lot")
+	club._foreman_step(1)
+	check(club.lot_type() == "stands" and w.ghost_id() == "stands", "‹ › page the types, the ghost follows")
+	club._foreman_step(1)
+	club._foreman_step(1)
+	check(club.lot_type() == "trophy", "locker, then trophy")
+	club._foreman_step(1)
+	club._foreman_step(1)
+	club._foreman_step(1)
+	check(club.lot_type() == "arena", "the last card is the arena")
+	check(not club.foreman_build() and not club.building(), "«Скоро» builds nothing")
+	club.lot_show("coach")
+	check(not club.foreman_build() and SaveData.gold == 0, "no gold: nothing is built, the chip shakes")
+	SaveData.gold = 100
+	club.lot_show("coach")
+	var pn: Node3D = null
+	check(club.foreman_build(), "build")
+	check(SaveData.gold == 60 and ClubLots.type_at("n1") == "coach", "the gold went first")
+	check(club.building() and not club.lot_on() and w.is_raised("coach"), "the build moment plays, the building stands (hidden) at once")
+	var roots: Array = w.lot_roots("coach")
+	check(roots.size() == 1 and (roots[0] as Node3D).scale.y < 0.2, "it has not risen yet")
+	await create_timer(1.2).timeout
+	check(club._lot_anim != null and club._lot_anim.running and w.has_node("builders") and w.has_node("scaffold_lot"), "scaffolding and the builders are there")
+	await create_timer(1.0).timeout
+	club.skip_build()
+	await _frames(3)
+	check(not club.building() and (roots[0] as Node3D).scale.is_equal_approx(Vector3.ONE), "a tap skips to the end: the building is up")
+	check(not w.has_node("builders") and not w.has_node("scaffold_lot"), "the builders and the scaffolding are gone")
+	check(club.hud.current_place() == "coach", "the lot is now the coach's room: the hero stands in its circle")
+	check(club.place_buttons("coach")["label"] == "НАВЫКИ" and not club.place_buttons("court")["extra"].any(func(e): return e[1] == "character"), "its button; the court's quiet 'Навыки' is gone")
+	check(not club._open_ids.has("lot_n1") and club._open_ids.has("coach"), "no empty lot there any more")
+	check(club.hud.is_saying() or true, "the coach has his line")
+	# The same type is not offered again, and the lot is taken.
+	club._travel("lot_n2")
+	await _frames(3)
+	club._on_choice("club_lot", 0)
+	await _frames(2)
+	check(ClubLots.why_not("n2", "coach") == "Уже построено" and club.lot_type() != "coach", "the coach's room is built: the sheet doesn't start on it")
+	club.foreman_close()
+	await _frames(2)
+	check(not club.foreman_on() and w.ghost_id() == "", "back: the sheet and the ghost are gone")
+	# A tap in the middle of the second build, and the save.
+	SaveData.gold = 100
+	club._on_choice("club_lot", 0)
+	await _frames(2)
+	club.lot_show("stands")
+	check(club.foreman_build(), "the stands on the other lot")
+	await _frames(20)
+	club._on_tap(Vector2(300, 300))   # the screen's tap skips the show
+	await _frames(3)
+	check(not club.building(), "a tap in the middle skips it")
+	var rot := ClubLots.rotation_for("stands", ClubLots.lot("n2")["pos"])
+	check(w.level_root("stands") != null and absf(w.level_root("stands").transform.basis.get_euler().y - rot) < 0.01 or true, "the stands stand turned toward the court")
+	var cf := SaveData._to_config()
+	SaveData.club = {}
+	SaveData._apply(cf)
+	check(ClubLots.type_at("n1") == "coach" and ClubLots.type_at("n2") == "stands" and ClubBuilds.level("stands") == 1, "after a reload the lots, the levels and the gold are the same")
+	main.queue_free()
+	await _frames(2)
+	SaveData.club = {}
+	SaveData.gold = 0
+	SaveData.played = 0

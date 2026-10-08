@@ -50,6 +50,22 @@ const LIST := [
 		],
 	},
 	{
+		# The stands are a building of a lot now (ClubLots). The circle is in front of them,
+		# on the court's side (they are drawn at x 9.8..13.2, facing the court; the circle is
+		# the pivot, so on a lot it is the lot's centre and the stands sit behind it). No lot,
+		# no such place.
+		"id": "stands", "name": "Трибуны", "pos": Vector3(8.0, 0, -9.0), "r": 2.0,
+		"unlock": "", "sign": "", "build": "stands",
+		"levels": [
+			{"label": "Трибуны", "action": "club_place", "note": "Колышки с лентой"},
+			{"note": "Две скамейки у корта"},
+			{"note": "Трибуна вдоль корта"},
+			{"note": "Вторая трибуна, болельщики в цвете клуба"},
+			{"note": "Козырёк и флаги клуба"},
+			{"note": "Полные трибуны, шумят громче"},
+		],
+	},
+	{
 		"id": "gate", "name": "Вход", "pos": Vector3(0, 0, 36), "r": 1.8,
 		"unlock": "", "sign": "Стройка · скоро", "build": "gate",
 		"levels": [
@@ -75,7 +91,7 @@ const LIST := [
 		# New in v0.2 (HANDOFF 9.1): buy, sell, change mods. The trade itself is stream
 		# A's; until then the rows say "скоро".
 		"id": "shop", "name": "Магазин вещей", "pos": Vector3(22, 0, 2), "r": 1.8,
-		"unlock": "played", "sign": "Магазин · после первого забега", "build": "shop",
+		"unlock": "", "sign": "", "build": "shop",   # T: the shop stands from the start (the owner: court + shop)
 		"cam": {"pos": Vector3(22, 10.5, 11.0), "look": Vector3(22, 0.4, 1.6)},
 		"levels": [
 			{"label": "Магазин", "action": "club_shop", "note": "Прилавок и стойка с ракетками",
@@ -160,16 +176,48 @@ const LIST := [
 ]
 
 
-static func find(id: String) -> Dictionary:
+## The data of a place as written in LIST (where it stood before lots).
+static func base(id: String) -> Dictionary:
 	for p in LIST:
 		if p["id"] == id:
 			return p
 	return {}
 
 
+## The place now. A building of a lot is where its lot is (once built); an empty lot is a
+## place too, "lot_<id>"; an unbuilt type is found where it would have stood.
+static func find(id: String) -> Dictionary:
+	if id.begins_with("lot_"):
+		var l := ClubLots.lot(id.substr(4))
+		return ClubLots.lot_place(l) if not l.is_empty() else {}
+	var p := base(id)
+	var t := ClubLots.owner_type(id) if not p.is_empty() else ""
+	if t != "" and ClubLots.lot_of(t) != "":
+		return ClubLots.moved(p, t)
+	return p
+
+
+## The places of the club as they are: the fixed ones, the buildings of lots on their lots
+## (the ones not built are not there), and the empty lots (each a place: «Построить»).
+static func all() -> Array:
+	var out: Array = []
+	for p in LIST:
+		var t := ClubLots.owner_type(p["id"])
+		if t == "":
+			out.append(p)
+		elif ClubLots.lot_of(t) != "":
+			out.append(ClubLots.moved(p, t))
+	for l in ClubLots.LOTS:
+		if ClubLots.type_at(String(l["id"])) == "":
+			out.append(ClubLots.lot_place(l))
+	return out
+
+
 ## The place's level: its construction's level (H2), 0 while nothing is built.
 static func level(id: String) -> int:
-	var p := find(id)
+	var p := base(id)
+	if p.is_empty() and id.begins_with("lot_"):
+		return 0
 	var levels: Dictionary = SaveData.club.get("levels", {})
 	return int(levels.get(p.get("build", id), 0))
 
@@ -212,7 +260,7 @@ static func is_open(place: Dictionary, played: int, titles: int) -> bool:
 
 ## The place whose circle holds `pos`, or {}.
 static func at(pos: Vector3) -> Dictionary:
-	for p in LIST:
+	for p in all():
 		var c: Vector3 = p["pos"]
 		if Vector2(pos.x - c.x, pos.z - c.z).length() <= float(p["r"]):
 			return p

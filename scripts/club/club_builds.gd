@@ -203,7 +203,7 @@ static func can_afford(id: String) -> bool:
 static func affordable_count() -> int:
 	var n := 0
 	for id in ORDER:
-		if can_afford(id):
+		if ClubLots.is_placed(id) and can_afford(id):   # a building of a lot is bought on its lot first (ClubLots.build)
 			n += 1
 	return n
 

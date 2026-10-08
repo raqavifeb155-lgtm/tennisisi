@@ -18,7 +18,15 @@ static func has(id: String) -> bool:
 	return id in ["court", "stands", "gate", "trophy", "bar"]
 
 
-static func build(w: ClubWorld, id: String, root: Node3D, lv: int, ghost := false) -> void:
+## Where the building being built stands in the world (T-1: a building of a lot is drawn
+## around its home and moved to the lot by this transform, which the root carries; the
+## obstacles it adds are moved the same way). Identity for the court and the gate.
+static var _xf := Transform3D.IDENTITY
+
+
+static func build(w: ClubWorld, id: String, root: Node3D, lv: int, ghost := false, at_lot := "") -> void:
+	_xf = ClubLots.xf_for(id, at_lot) if at_lot != "" else ClubLots.xf(id)  # at_lot: a ghost on a lot not built yet
+	root.transform = _xf
 	match id:
 		"court":
 			_court(w, root, lv, ghost)
@@ -82,12 +90,13 @@ static func _label(root: Node3D, text: String, pos: Vector3, px: float, col: Col
 
 static func _obstacle_box(w: ClubWorld, ghost: bool, tag: String, r: Rect2) -> void:
 	if not ghost:
-		w.walk.add_box(r, tag)
+		w.walk.add_box(ClubLots.rect_in_world(_xf, r) if _xf != Transform3D.IDENTITY else r, tag)
 
 
 static func _obstacle_circle(w: ClubWorld, ghost: bool, tag: String, c: Vector2, r: float) -> void:
 	if not ghost:
-		w.walk.add_circle(c, r, tag)
+		var q := _xf * Vector3(c.x, 0, c.y)
+		w.walk.add_circle(Vector2(q.x, q.z), r, tag)
 
 
 static func _car(root: Node3D, at: Vector3, col: Color, sport: bool) -> void:
