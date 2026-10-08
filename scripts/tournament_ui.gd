@@ -412,6 +412,7 @@ func show_bracket(t: Tournament) -> void:
 	RunBag.bracket_extra(self, t)  # v0.2 A: the bag
 	RunBets.bracket_extra(self, t)  # v0.2 A: a bet on the coming match
 	RunMods.bracket_extra(self, t)  # v0.2 G: the run's conditions
+	RunMods.badge(self, t)  # G-6: «ХАРДКОР»
 	for i in t.rounds():
 		_bracket_row(t, i)
 	var opp := t.opponent()
@@ -430,6 +431,7 @@ func show_result(t: Tournament, won: bool, score_text: String, stats: Dictionary
 	var opp: Dictionary = Opponents.ROSTER[t.results.back()["stage"]]
 	_box.add_child(_text("ПОБЕДА" if won else "ПОРАЖЕНИЕ", UiTheme.display(), UiTheme.T_HERO, UiTheme.WIN if won else UiTheme.LOSE))
 	_sub("против: %s" % opp["name"])
+	RunMods.badge(self, t)  # G-6: «ХАРДКОР»
 	_box.add_child(_text(score_text, UiTheme.display(), 64, UiTheme.INK))
 	if not MatchStats.block(self, stats, String(opp.get("short", "соперник"))):  # C-5: the match's numbers
 		_sub("PERFECT: %d   ·   эйсы: %d   ·   лучший розыгрыш: %d" % [stats.get("perfect", 0), stats.get("aces", 0), stats.get("best_rally", 0)])
@@ -561,6 +563,7 @@ func show_reward(t: Tournament) -> void:
 
 func show_summary(t: Tournament) -> void:
 	RunResult.show_summary(self, t)  # v0.2 A-2: income by lines, the locker, the next goal
+	RunMods.badge(self, t, 1)  # G-6: «ХАРДКОР» under the title
 	if t.gold > 0 and t.banked:  # C-4: the run's gold flies into the bank chip
 		_set_run(t.gold, true)
 		_bank_run(t.gold)
