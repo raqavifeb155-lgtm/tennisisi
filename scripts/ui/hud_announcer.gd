@@ -27,6 +27,7 @@ var _strip: PanelContainer
 var _box: VBoxContainer
 var _hint: PanelContainer
 var _hint_label: Label
+var _hint_relaid := false
 var _safe_top := 0.0
 var _safe_bottom := 0.0
 var _queue: Array[Dictionary] = []   # items waiting: {kind, main, tail, color, frame, key, hold, rarity}
@@ -240,12 +241,27 @@ func _place_strip() -> void:
 
 func _place_hint() -> void:
 	var inner := WIDTH - 40.0
-	var w := minf(inner, UiTheme.text_bold().get_string_size(_hint_label.text.get_slice("\n", 0), HORIZONTAL_ALIGNMENT_LEFT, -1, HINT).x + 8.0)
-	for line in _hint_label.text.split("\n"):
-		w = maxf(w, minf(inner, UiTheme.text_bold().get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, HINT).x + 8.0))
-	_hint_label.custom_minimum_size.x = w
+	var font := UiTheme.text_bold()
+	var text := _hint_label.text
+	# Lines that fit stay unwrapped (the plate is exactly as wide as the text). A wrapping
+	# label measures its height from its last layout, so a narrow first layout made the
+	# plate a screen tall (it showed as a dark box behind the serve hint): wrap only when a
+	# line is too long, and lay out once more next frame when it does.
+	var fits := UiText.fits(font, text, inner - 8.0, HINT)
+	_hint_label.autowrap_mode = TextServer.AUTOWRAP_OFF if fits else TextServer.AUTOWRAP_WORD_SMART
+	_hint_label.custom_minimum_size.x = 0.0 if fits else inner
+	_hint_label.size = Vector2(inner if not fits else 0.0, 0.0)
+	_hint.size = Vector2.ZERO
 	_hint.reset_size()
 	_hint.position = Vector2((size.x - _hint.size.x) * 0.5, size.y * HINT_Y - _safe_bottom - _hint.size.y * 0.5)
+	if not fits and not _hint_relaid:
+		_hint_relaid = true
+		_relay_hint.call_deferred()
+
+
+func _relay_hint() -> void:
+	_place_hint()
+	_hint_relaid = false
 
 
 func _label(text: String, font: Font, fs: int, color: Color) -> Label:
