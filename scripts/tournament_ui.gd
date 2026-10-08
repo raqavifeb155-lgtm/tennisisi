@@ -428,7 +428,7 @@ func show_opponent_card(t: Tournament, i: int) -> void:
 
 func show_result(t: Tournament, won: bool, score_text: String, stats: Dictionary) -> void:
 	_open(t)
-	var opp: Dictionary = Opponents.ROSTER[t.results.back()["stage"]]
+	var opp: Dictionary = t.opp(t.results.back()["stage"])
 	_box.add_child(_text("ПОБЕДА" if won else "ПОРАЖЕНИЕ", UiTheme.display(), UiTheme.T_HERO, UiTheme.WIN if won else UiTheme.LOSE))
 	_sub("против: %s" % opp["name"])
 	RunMods.badge(self, t)  # G-6: «ХАРДКОР»
@@ -905,7 +905,7 @@ func _scroll_to_current() -> void:
 
 
 func _bracket_row(t: Tournament, i: int) -> void:
-	var o: Dictionary = Opponents.ROSTER[i]
+	var o: Dictionary = t.opp(i)
 	var current := i == t.stage
 	var done := i < t.stage
 	var panel := PanelContainer.new()

@@ -92,7 +92,13 @@ var location := "park":
 			return
 		location = v
 		mythic_rolled = false
+		roll_field()  # D-8: every island has its own tiers of opponents
 		roll_lineup()
+var field: Array = []:            # the draw: a spec per round (Opponents.draw), saved with the run
+	set(v):
+		field = v
+		_opps = []
+var _opps: Array = []             # the specs resolved to profiles
 var lineup: Array = []            # per opponent: {"mods": [ids], "gear": {slot: item}, "racket": gear.racket}
 var equip := {"racket": {}, "shoes": {}, "band": {}}   # what the player wears ({} = the stock one)
 ## The player's racket: equip["racket"] (older code and old saves use this name).
@@ -130,7 +136,21 @@ var offer: Array = []             # reward cards on the REWARD screen
 
 
 func opponent() -> Dictionary:
-	return Opponents.ROSTER[mini(stage, Opponents.ROSTER.size() - 1)]
+	return opp(mini(stage, rounds() - 1))
+
+
+## The opponent of round i (a profile as in Opponents.ROSTER: the fixed ones, the top-100, random).
+func opp(i: int) -> Dictionary:
+	if _opps.size() != field.size():
+		_opps = []
+		for sp in field:
+			_opps.append(Opponents.resolve(sp))
+	return _opps[clampi(i, 0, _opps.size() - 1)]
+
+
+## D-8: the draw of this island, by the run's seed (the same run, the same field).
+func roll_field() -> void:
+	field = Opponents.draw(location, ("%d:%s" % [rng.seed, location]).hash(), SaveData.played == 0)
 
 
 func round_name(i := -1) -> String:
@@ -138,7 +158,7 @@ func round_name(i := -1) -> String:
 
 
 func rounds() -> int:
-	return Opponents.ROSTER.size()
+	return Opponents.ROUND_NAMES.size()
 
 
 func _init(format_index := 0, seed_value := 0, hardcore_run := false) -> void:
@@ -148,10 +168,11 @@ func _init(format_index := 0, seed_value := 0, hardcore_run := false) -> void:
 		rng.seed = seed_value
 	else:
 		rng.randomize()
+	roll_field()
 	roll_lineup()
 
 
-const SAVED := ["format", "location", "lineup", "racket", "pending_loot", "missed_loot", "banked",
+const SAVED := ["format", "location", "field", "lineup", "racket", "pending_loot", "missed_loot", "banked",
 	"state", "stage", "wildcards", "perks", "results", "gold", "champion", "offer",
 	"equip", "bag", "new_items", "auto_sold", "run_mods", "mythic_rolled", "drop_bonus", "bet",
 	"income", "locker_done", "run_modifiers", "chest", "dry", "hardcore"]
@@ -171,6 +192,11 @@ static func from_dict(d: Dictionary) -> Tournament:
 	for k in SAVED:
 		if d.has(k):
 			t.set(k, d[k])
+	if not d.has("field"):  # a run saved before D-8: the old five
+		var legacy: Array = []
+		for o in Opponents.ROSTER:
+			legacy.append({"id": o["id"]})
+		t.field = legacy
 	t.rng.seed = int(d.get("rng_seed", 1))
 	t.rng.state = int(d.get("rng_state", 0))
 	return t
@@ -196,13 +222,13 @@ func roll_lineup() -> void:
 				if not mods.has(id):
 					mods.append(id)
 		# v0.2 G: rare auras (scripts/mods), "???" ones named on the first point.
-		mods += Traits.roll(rng.seed, i, Opponents.ROSTER[i])  # v0.2 G-7: his traits (at least one)
-		var aur := Modifiers.roll_auras(rng.seed, i, Opponents.ROSTER[i].get("boss", false), 1.0, SaveData.played == 0)
+		mods += Traits.roll(rng.seed, i, opp(i))  # v0.2 G-7: his traits (at least one)
+		var aur := Modifiers.roll_auras(rng.seed, i, opp(i).get("boss", false), 1.0, SaveData.played == 0)
 		mods += aur["mods"]
 		var bonus := 0.0
 		for id in mods:
 			bonus += Modifiers.loot_bonus(id)
-		if Opponents.ROSTER[i].get("boss", false):
+		if opp(i).get("boss", false):
 			bonus += BOSS_LOOT_BONUS
 		var gear := {}
 		for slot in Gear.SLOTS:

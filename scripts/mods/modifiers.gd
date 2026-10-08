@@ -283,8 +283,8 @@ static func add_auras(t: Tournament) -> void:
 	for i in t.lineup.size():
 		var lu: Dictionary = t.lineup[i]
 		var keep: Array = lu["mods"].filter(func(id): return find(id).get("legacy", false) or find(id).is_empty())
-		keep += Traits.roll(t.rng.seed, i, Opponents.ROSTER[i])  # G-7: his traits first, then the rare auras
-		var a := roll_auras(t.rng.seed, i, Opponents.ROSTER[i].get("boss", false), elite, newbie)
+		keep += Traits.roll(t.rng.seed, i, t.opp(i))  # G-7: his traits first, then the rare auras
+		var a := roll_auras(t.rng.seed, i, t.opp(i).get("boss", false), elite, newbie)
 		lu["mods"] = keep + a["mods"]
 		lu["hidden"] = a["hidden"]
 

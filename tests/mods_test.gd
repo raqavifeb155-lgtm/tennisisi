@@ -94,7 +94,7 @@ func test_auras() -> void:
 				continue
 			opp += 1
 			with += 1 if not a.is_empty() else 0
-			if Opponents.ROSTER[i].get("boss", false):
+			if t.opp(i).get("boss", false):
 				boss_max = maxi(boss_max, a.size())
 			for id in a:
 				aura_ids[id] = true

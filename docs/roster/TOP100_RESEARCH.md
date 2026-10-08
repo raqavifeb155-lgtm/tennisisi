@@ -222,3 +222,17 @@
 | 98 | E | Toby Samuel | Тоби Самуэль | GBR | П | 191 | 1 | medium_wavy/ginger | none | cap_back:white | white cap backwards, wavy ginger-brown hair, tall | есть |
 | 99 | E | Terence Atmane | Теранс Атман | FRA | Л | 193 | 1 | short_neat/brown | moustache | cap_back:blue | lefty, blue cap backwards, light moustache, tall | есть |
 | 100 | E | Coleman Wong | Колман Ванг | HKG | П | 191 | 3 | curls_big/black | none | none | curly dark messy hair, black Nike kit, tall | есть |
+
+## 8. Ростер в игре (D-8, 08.10.2026)
+
+- `tools/gen_roster_data.py` читает `top100_players.json` и пишет `scripts/roster_data.gd`: **только игровые
+  имена** (`game_name`), страна, тир, рука (метка: риг праворукий), бэкхенд, класс роста и внешность уже в
+  индексах `Looks`. Реальные имена в игру не попадают. Правишь JSON, запускаешь скрипт.
+- `Opponents.roster()` — пятеро именных (Джумхур, Басилашвили, Рублёв, Зверев, Джокович: обучение и босс) и
+  100 игроков `p001…p100`. Навык (`skill`) идёт по полосам тиров из раздела 4 (лучшее место тира сильнее
+  всех в нём), статы 1–10 и стиль придуманы по рангу один раз и всегда те же. Двойники именных (места 2, 11,
+  24: «Зверов», «Джокорич», «Ребилёв») помечены `alias_of` и в жеребьёвку не попадают.
+- `Opponents.random(seed, tier, opts)` — случайный теннисист (имя из пулов стран, статы по тиру с разбросом,
+  стиль, внешность); 3 % «монстров»; `opts.weakness` — явная слабина для карточки.
+- `Opponents.draw(остров, seed)` — сетка: Нью-Йорк E/D, Испания D/C, Англия C/B/A, Париж B/A/S, финал —
+  именной Джокович; около 30 % мест у случайных.

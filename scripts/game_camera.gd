@@ -26,8 +26,8 @@ var _last_us := 0
 
 ## The TV framing: where the camera hangs (behind and above the near baseline) and where
 ## it looks (just past the net), per screen shape.
-const TV_PORTRAIT := {"height": 17.0, "z": 23.0, "look_z": -0.5, "fov": 50.0, "follow": 0.12}
-const TV_LANDSCAPE := {"height": 13.0, "z": 23.0, "look_z": -0.8, "fov": 44.0, "follow": 0.18}
+const TV_PORTRAIT := {"height": 7.0, "z": 22.0, "look_z": -2.0, "fov": 40.0, "follow": 0.12}  # D-9: closer and lower: the player ~1/10 of the screen, the singles court still in the frame
+const TV_LANDSCAPE := {"height": 7.0, "z": 22.0, "look_z": -2.0, "fov": 32.0, "follow": 0.18}
 
 ## The coach's booth: behind the near baseline, at the corner, low; looks at the far court.
 const BOOTH_POS := Vector3(5.2, 2.4, 17.2)
