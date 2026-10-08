@@ -1,3 +1,5 @@
+## Run with a fixed step, the offer window counts real frames:
+##   godot --headless --path . --fixed-fps 60 -s tests/smash_test.gd
 extends SceneTree
 ## «Разбить ракетку» in a tournament match, in the live scene (the button, the mini-game, what it
 ## gives and what it costs; docs/superpowers/specs/2026-10-09-racket-smash.md):

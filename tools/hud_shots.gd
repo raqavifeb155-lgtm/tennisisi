@@ -33,7 +33,7 @@ func _shot(name: String, wait := 0.25) -> void:
 	await create_timer(wait, true, false, true).timeout  # also while the tree is paused
 	await process_frame
 	root.get_texture().get_image().save_png(out + name + ".png")
-	print("saved ", out + name + ".png")
+	print("saved ", out + name + ".png", " frame ", Engine.get_frames_drawn(), " scale ", Engine.time_scale)
 
 
 ## A player-side point verdict exactly as Main builds it (see Main._end_point).
@@ -144,6 +144,8 @@ func _run() -> void:
 
 	if only == "smash":
 		await _smash_shots()
+	if only == "drill":
+		await _drill_shots()
 		quit()
 		return
 
@@ -314,4 +316,67 @@ func _run() -> void:
 	await _shot("21_tutorial_3_spin")
 	main.hud._tutorial._advance()
 	await _shot("22_tutorial_4_serve")
+	main.hud.resume()
+	await _drill_shots()
 	quit()
+
+
+## The ball machine's drill (v0.2 P): the task and the gesture hint, a ball in the air, the
+## verdict, the waiting note, the serve, the lap's summary. The real code runs: the club's
+## button starts it, the machine feeds, the verdicts come from the bounce events.
+func _drill_shots() -> void:
+	SaveData.club = {}
+	SaveData.active = null
+	SaveData.run = {}
+	SaveData.gold = 120
+	SaveData.enabled = false
+	main._show_menu()
+	await create_timer(0.8).timeout
+	main.club._travel("machine")
+	await create_timer(0.8).timeout
+	await _shot("p00_club_machine_button", 0.2)
+	var drill: BallMachine = main.drill
+	main.club._on_choice("drill", 0)
+	await create_timer(0.6).timeout
+	await _shot("p01_drill_flat_hint", 0.3)
+	while drill._state != BallMachine.St.FLIGHT:
+		await process_frame
+	await create_timer(0.35).timeout
+	await _shot("p02_drill_ball_in_air", 0.0)
+	# A counted ball (the verdict as the bounce events deliver it).
+	drill._hit = {"type": "FLAT", "label": "PERFECT", "skill": "forehand", "volley": false, "smash": false, "serve": false}
+	drill._hit_ok = true
+	drill._resolve("ok")
+	await _shot("p03_verdict_ok", 0.15)
+	drill._ok[0] = 1
+	drill._step = 1
+	drill._enter_step(true)
+	await _shot("p04_topspin_hint", 0.7)
+	drill._hit = {"type": "SLICE"}
+	drill._state = BallMachine.St.FLIGHT
+	drill._resolve("wrong", "слайс")
+	await _shot("p05_verdict_wrong", 0.15)
+	drill._step = 4
+	drill._enter_step(true)
+	await _shot("p06_lob_hint", 1.2)
+	drill._step = 5
+	drill._enter_step(true)
+	main.player.position = Vector3(0.0, 0.0, 12.6)
+	await create_timer(0.4).timeout
+	drill._ready_to_fire()
+	await _shot("p07_volley_note", 0.1)
+	drill._step = 7
+	drill._enter_step(true)
+	await _shot("p08_serve_hint", 0.7)
+	drill._ok = [1, 1, 1, 1, 1, 1, 1, 1]
+	drill._perfect = [1, 0, 1, 0, 0, 0, 1, 0]
+	drill._tries = [2, 1, 3, 1, 2, 2, 1, 1]
+	drill._need = 1
+	drill._finish_lap()
+	await _shot("p09_lap_summary", 0.4)
+	BallMachine.data()["today"] = 3
+	drill._on_again()
+	await create_timer(0.4).timeout
+	drill._refresh_hud()
+	await _shot("p10_capped_note", 0.2)
+	main._show_menu()

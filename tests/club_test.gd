@@ -66,7 +66,7 @@ func test_places() -> void:
 	check(ClubPlaces.at(court["pos"] + Vector3(0.5, 0, 0)).get("id", "") == "court", "a point in the court's circle is at the court")
 	check(ClubPlaces.at(Vector3(5, 0, 2)).is_empty(), "a point on the court itself is at no place")
 	var machine := ClubPlaces.find("machine")
-	check(ClubPlaces.is_open(machine, 0, 0) and ClubPlaces.state("machine")["action"] == "practice", "practice is at the ball machine, open from the start")
+	check(ClubPlaces.is_open(machine, 0, 0) and ClubPlaces.state("machine")["action"] == "drill", "the ball machine's drill is at the machine, open from the start (the free game is its quiet link)")
 	check((machine["pos"] as Vector3).z > 0.5 and (machine["pos"] as Vector3).z < Court.HALF_LENGTH, "the machine's circle is on the near half of the main court")
 
 

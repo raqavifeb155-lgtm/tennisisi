@@ -283,6 +283,71 @@ func _smash_probe() -> void:
 	root.size = Vector2i(720, 1564)
 
 
+## The ball machine's drill: the card, the hint and the pill stay in the top band - clear of
+## the timing ring above the player and the joystick under his feet, of the pause button and
+## the frame - for every exercise, with a verdict flashing and the lap's summary; every
+## button is a thumb's size; the pause and the summary lead back to the club.
+func _drill_round(club) -> void:
+	var drill = main.get("drill")
+	SaveData.club = {}
+	main._show_menu()
+	await _wait(0.8)
+	main._on_ui("drill", 0)
+	await _wait(1.0)
+	await _expect("Пушка: упражнение началось, клуб отошёл", func() -> bool: return drill.active and not club.active)
+	var frame := Rect2(Vector2.ZERO, Vector2(root.size))
+	var hud: DrillHud = drill.hud
+	for i in drill.TYPES.size():
+		drill._step = i
+		drill._enter_step(true)
+		if i == 2:
+			hud.flash("НЕ ТОТ УДАР", Color.WHITE)  # the verdict shares the card
+		await _wait(0.35)
+		var ring_at: Vector2 = main.hud.ring.anchor
+		var ring_zone := Rect2(ring_at - Vector2(140, 140), Vector2(280, 280))
+		var stick_top: float = main.hud.touch.stick_zone_top
+		var gear := _gear().get_global_rect()
+		var bad := ""
+		for r in hud.rects():
+			if r.intersects(ring_zone):
+				bad = "кольцо"
+			elif r.end.y > stick_top:
+				bad = "джойстик"
+			elif r.intersects(gear):
+				bad = "кнопка паузы"
+			elif not frame.grow(2.0).encloses(r):
+				bad = "рамка экрана"
+		_check("Пушка · %s: карточки не перекрывают кольцо, джойстик, паузу (%s)" % [drill.TYPES[i]["id"], bad if bad != "" else "чисто"], bad == "")
+	var pill: Button = hud.buttons()[0]
+	_check("Пушка: «%s» не меньше 84 px и на виду" % pill.text, pill.size.y >= 84.0 and pill.is_visible_in_tree() and frame.encloses(pill.get_global_rect()))
+	# The pause's exit.
+	await _tap(_gear())
+	await _pause_shape("Пушка → пауза")
+	await _tap(await _find(_pause(), "Выйти в клуб"))
+	await _wait(0.8)
+	await _expect("Пушка → пауза → Выйти в клуб: клуб, упражнение закончено, не на паузе", func() -> bool: return club.active and not drill.active and not paused)
+	# The lap's summary: buttons of a thumb's size, «В КЛУБ» leads back.
+	main._on_ui("drill", 0)
+	await _wait(0.8)
+	drill._ok = [1, 1, 1, 1, 1, 1, 1, 1]
+	drill._need = 1
+	drill._finish_lap()
+	await _wait(0.5)
+	var small := 0
+	for b in hud.buttons():
+		if b.is_visible_in_tree() and b.size.y < 84.0:
+			small += 1
+	_check("Пушка · итог круга: кнопки не меньше 84 px, панель на экране", small == 0 and hud.summary_shown() and frame.encloses(hud.rects().back()))
+	await _tap(await _find(hud, "Ещё круг"))
+	await _expect("Пушка · итог → «Ещё круг»: новый круг, итог закрылся", func() -> bool: return drill.active and not hud.summary_shown() and drill.step_id() == "flat")
+	drill._ok = [3, 3, 3, 3, 3, 3, 3, 3]
+	drill._finish_lap()
+	await _wait(0.4)
+	await _tap(await _find(hud, "В КЛУБ"))
+	await _wait(0.8)
+	await _expect("Пушка · итог → «В КЛУБ»: клуб, герой у пушки", func() -> bool: return club.active and not drill.active and club.hud.current_place() == "machine")
+
+
 func _run() -> void:
 	root.size = Vector2i(720, 1564)
 	main = load("res://scenes/main.tscn").instantiate()
@@ -417,6 +482,10 @@ func _run() -> void:
 		club.foreman_close()
 		await _wait(0.6)
 		await _expect("Прораб: закрылся, клуб на месте", func() -> bool: return not club.foreman_on() and club.active)
+
+	# --- The ball machine's drill (v0.2 P): its HUD stays clear of the ring and the stick ------
+	if in_3d:
+		await _drill_round(club)
 
 	# --- The bracket ---------------------------------------------------------------
 	var t := Tournament.new(1)

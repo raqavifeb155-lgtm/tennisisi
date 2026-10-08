@@ -34,6 +34,7 @@ const TEMPLATES := [
 	{"id": "streak", "text": "%d очков подряд", "event": "streak", "kind": "max", "scope": "run", "n": [5, 6, 8], "gold": 35},
 	{"id": "wins", "text": "Выиграй %d матча в забеге", "event": "wins", "kind": "count", "scope": "run", "n": [2, 3, 3], "gold": 50},
 	{"id": "dive", "text": "Достань %d мяча в прыжке", "event": "dive", "kind": "count", "scope": "run", "n": [2, 3, 4], "gold": 20},
+	{"id": "drill", "text": "Пройди круг на пушке: %d", "event": "drill_circle", "kind": "count", "scope": "run", "n": [1, 1, 2], "gold": 20},
 ]
 
 

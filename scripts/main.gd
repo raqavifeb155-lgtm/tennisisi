@@ -15,7 +15,7 @@ extends Node3D
 ## position errors are what make balls miss.
 
 enum Who { NONE = -1, PLAYER = 0, CPU = 1 }
-enum Phase { WAIT, SERVE, RALLY, OVER, IDLE, BONUS, SMASH }  # IDLE: menus open; BONUS: trophy mini-game; SMASH: «Разбить ракетку»
+enum Phase { WAIT, SERVE, RALLY, OVER, IDLE, BONUS, SMASH, DRILL }  # IDLE: menus open; BONUS: trophy mini-game; SMASH: «Разбить ракетку»; DRILL: between the ball machine's balls
 enum ShotType { TOPSPIN, FLAT, SLICE, DROP, LOB }
 
 const PLAYER_HOME := Vector3(0.0, 0.0, 12.6)
@@ -59,6 +59,7 @@ var run_hub: RunHub
 var mods_hub: ModsHub             # v0.2 G: modifiers of the match (scripts/mods)
 var smash_hub: SmashHub           # v0.2 R: «Разбить ракетку» after a point lost to an error (scripts/run)
 var club: Club                    # v0.2 B: the club as the main screen (scripts/club)
+var drill: BallMachine            # v0.2 P: the ball machine's drill (scripts/run/ball_machine.gd)
 var tournament: Tournament
 var tournament_mode := false
 var autoplay_tournament := false
@@ -280,6 +281,9 @@ func _ready() -> void:
 	club = Club.new()  # v0.2 B: the walkable club replaces the menu list (scripts/club)
 	add_child(club)
 	club.setup(self)
+	drill = BallMachine.new()  # v0.2 P: the lesson with the ball machine (listens to GameEvents)
+	add_child(drill)
+	drill.setup(self)
 	# UI sounds: a dropped-in coin/reward/click sound if there is one, else a built-in.
 	ui.sfx_request.connect(func(sound: String, db: float, pitch: float) -> void:
 		var alt: String = {"bounce": "coin", "hit": "click"}.get(sound, "")
@@ -561,6 +565,8 @@ func _physics_process(delta: float) -> void:
 	if club.active:
 		return  # the club walks the hero itself
 	game_time += delta
+	if drill.active:
+		drill.tick(delta)
 	match phase:
 		Phase.WAIT:
 			phase_timer -= delta
@@ -590,7 +596,7 @@ func _physics_process(delta: float) -> void:
 	_update_player_hitting()
 	if phase == Phase.BONUS:
 		pass  # the runner is steered by _update_bonus
-	elif phase == Phase.SERVE:
+	elif phase == Phase.SERVE or drill.active:  # the drill's coach stands by the machine
 		cpu.move_input = Vector2.ZERO
 	else:
 		ai.tick(delta, phase == Phase.RALLY and last_hitter == Who.PLAYER and ball.active)
@@ -1796,6 +1802,8 @@ func stroke_skill(side: int, type: int, smash: bool, volley: bool) -> String:
 
 ## Experience multiplier: tougher opponents and longer formats pay more; practice pays little.
 func _xp_mult() -> float:
+	if drill.active:
+		return drill.xp_mult()  # the drill pays half a match's, a tenth after the daily laps
 	if not tournament_mode or tournament == null:
 		return 0.3
 	return (1.0 + 0.25 * tournament.stage) * float(tournament.format_info()["reward"])
@@ -1803,7 +1811,7 @@ func _xp_mult() -> float:
 
 ## Experience for a hit (by timing label) or a raw amount (running).
 func _gain_xp(skill: String, label: String, raw := -1.0) -> void:
-	if phase == Phase.IDLE:
+	if phase == Phase.IDLE or drill.holds_xp():  # in the drill only counted balls pay (BallMachine)
 		return
 	var amount := raw if raw >= 0.0 else Skills.BASE_XP * float(Skills.TIMING_XP.get(label, 1.0))
 	var lv := Skills.add_xp(skill, amount * _xp_mult())
@@ -1838,6 +1846,7 @@ func _show_menu() -> void:
 
 
 func _stop_match() -> void:
+	drill.stop()
 	if not BallPhysics.net_enabled:
 		court.set_net_up(true)
 	cpu.recover()
@@ -2079,6 +2088,8 @@ func _on_ui(action: String, arg: int) -> void:
 			RunMods.open(self, arg)  # v0.2 G: the run's conditions screen, then _start_tournament
 		"practice":
 			_start_practice()
+		"drill":
+			drill.start()  # v0.2 P: the ball machine
 		"character":
 			ui.show_character()
 		"locker":
@@ -2190,6 +2201,7 @@ func _next_screen(target: String) -> void:
 ## the club can't be built.
 func _open_menu() -> void:
 	if Club.enabled() and not autoplay and club.open():
+		drill.on_club_opened()  # the first visit: the coach leads to the machine
 		return
 	ui.show_menu()
 

@@ -182,6 +182,12 @@ func close() -> void:
 	_move_target = Vector3.INF
 
 
+## Where the hero stands when the club opens next (the ball machine's drill leaves him by
+## the machine, whatever place he left from).
+func stand_at(pos: Vector3) -> void:
+	_hero = pos
+
+
 ## The tournament format just chosen: next time "Турнир" goes straight to the bracket.
 func remember(location: String, format: int) -> void:
 	SaveData.club["last_location"] = location
@@ -379,7 +385,9 @@ func _update_place() -> void:
 		world.set_inside("")
 	match id:
 		"court":
-			if ClubQuests.claimable_count() > 0:
+			if bool(SaveData.club.get("drills", {}).get("hint", false)):
+				coach.say("drilled")  # the first lesson is done: «Новая игра» is next
+			elif ClubQuests.claimable_count() > 0:
 				coach.say("reward")
 			else:
 				coach.say("court_run" if SaveData.resumable() != null else "court")
@@ -391,6 +399,8 @@ func _update_place() -> void:
 func _show_place(id: String) -> void:
 	var b := place_buttons(id)
 	hud.show_place(id, b["label"], b["action"], b["extra"], upgrade_price(id))
+	# After the first lesson with the ball machine «Новая игра» pulses until a run starts.
+	hud.pulse_primary(id == "court" and bool(SaveData.club.get("drills", {}).get("hint", false)))
 
 
 ## "↑ 340" by a place whose construction's next level is affordable. Not at the gate (its
@@ -412,6 +422,8 @@ func place_buttons(id: String) -> Dictionary:
 		if not ClubLots.is_placed("coach") and Skills.points + Skills.pending.size() > 0:
 			(b["extra"] as Array).append(["Навыки", "character"])
 		return b
+	if id == "machine":
+		return {"label": "ПУШКА", "action": "drill", "extra": [["Свободная игра", "practice"]]}
 	return _place_buttons(id)
 
 
