@@ -103,8 +103,8 @@ func test_drop_chances() -> void:
 			got[int(it["rarity"])] += 1
 		slots += 3
 	var per := got.map(func(c): return float(c) / slots)
-	check(absf(per[0] - 0.33) < 0.04 and absf(per[1] - 0.18) < 0.03, "common ~35%%, rare ~18%% a slot %s" % [per.map(func(x): return snappedf(x, 0.001))])
-	check(per[2] > 0.06 and per[2] < 0.10 and per[3] < 0.03 and per[3] > 0.005 and per[4] < 0.008, "epic ~7-9%%, legendary ~2%%, mythic ~0.4%% a slot (golden ones add legendaries)")
+	check(absf(per[0] - 0.30) < 0.04 and absf(per[1] - 0.18) < 0.03, "common ~30%%, rare ~18%% a slot %s" % [per.map(func(x): return snappedf(x, 0.001))])
+	check(per[2] > 0.06 and per[2] < 0.10 and per[3] < 0.03 and per[3] > 0.005 and per[4] < 0.02 and per[4] > 0.006, "epic ~7-9%%, legendary ~2%%, mythic ~1%% a slot (golden ones add legendaries)")
 	check(Tournament.DROP_CHANCE[Gear.EPIC] > Tournament.DROP_CHANCE[Gear.LEGENDARY], "a legendary drops less often than an epic")
 
 
@@ -506,10 +506,10 @@ func test_chest() -> void:
 			levels_ok = levels_ok and Items.level(c["item"]) == 4
 			items_n += 1
 			epics += 1 if int(c["item"]["rarity"]) >= Gear.EPIC else 0
-	check(kinds["gold"] > 330 and kinds["item"] > 230 and kinds["both"] > 140 and kinds["other"] > 60 and kinds["other"] < 140, "contents %s" % [kinds])
+	check(kinds["gold"] > 100 and kinds["gold"] < 220 and kinds["item"] > 330 and kinds["both"] > 280 and kinds["other"] > 60 and kinds["other"] < 140, "contents %s" % [kinds])
 	check(perks_seen == 0, "1000 chests: no temporary perks")
 	check(levels_ok, "every chest item in Paris is level 4")
-	check(float(epics) / items_n > 0.28 and float(epics) / items_n < 0.45, "quarter-final chests: epic+ in %d of %d items" % [epics, items_n])
+	check(float(epics) / items_n > 0.45 and float(epics) / items_n < 0.65, "quarter-final chests: epic+ in %d of %d items" % [epics, items_n])
 	# taking it: gold into the run's lines, the item worn or in the bag, state goes on
 	var t2 := Tournament.new(1, 12)
 	t2.state = Tournament.State.REWARD

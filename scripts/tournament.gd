@@ -60,7 +60,7 @@ const BOSS_LOOT_BONUS := 0.12
 ## v0.2 gear (ROGUELIKE_DESIGN 6.7): every opponent wears a racket, shoes and a wristband,
 ## each with its own rarity (common .. mythic), rolled up front and not shown in the
 ## bracket. Later rounds, modifiers and the boss move the odds up (ROUND_SHIFT + loot).
-const GEAR_CHANCE := [0.62, 0.27, 0.08, 0.025, 0.005]
+const GEAR_CHANCE := [0.60, 0.27, 0.08, 0.025, 0.018]
 const SHIFT_SPLIT := [0.5, 0.3, 0.15, 0.05]   # where the shifted share goes: rare .. mythic
 const ROUND_SHIFT := 0.04
 ## Beaten, each of his items drops on its own with this chance by its rarity. v0.2 A
@@ -79,7 +79,7 @@ const CHEST_CHANCE := [0.35, 0.35, 0.55, 0.55, 1.0]
 const CHEST_PITY := 2
 const CHEST_GOLD := [15, 22, 32, 48, 80]                # x the prize multiplier, 0.7..1.3
 ## Item rarity by the round: common, rare, epic, legendary (no mythics from a chest).
-const CHEST_RARITY := [[45.0, 40.0, 13.0, 2.0], [35.0, 42.0, 19.0, 4.0], [22.0, 42.0, 28.0, 8.0], [12.0, 38.0, 36.0, 14.0], [4.0, 30.0, 44.0, 22.0]]
+const CHEST_RARITY := [[20.0, 36.0, 32.0, 12.0], [16.0, 34.0, 36.0, 14.0], [12.0, 32.0, 40.0, 16.0], [7.0, 28.0, 45.0, 20.0], [3.0, 20.0, 48.0, 29.0]]
 const BAG_SIZE := 6
 const SKILL_PER_RARITY := 0.01    # his gear makes him a little stronger
 
@@ -466,17 +466,17 @@ func _roll_chest(round_i: int) -> Dictionary:
 	return c
 
 
-## {"round", "gold", "item", "perk", "wildcard", "opened"}: gold only 40%, an item 30%, both
-## 20%, and 10% a wildcard with a little gold. No run perks (temporary +X%): the owner wants
+## {"round", "gold", "item", "perk", "wildcard", "opened"}: gold only 15%, an item 40%, both
+## 35%, and 10% a wildcard with a little gold. No run perks (temporary +X%): the owner wants
 ## strength to grow only with the skills' levels; the `perk` field stays for old saves.
 func make_chest(round_i: int, cr: RandomNumberGenerator) -> Dictionary:
 	var ri := clampi(round_i, 0, CHEST_GOLD.size() - 1)
 	var c := {"round": round_i, "gold": 0, "item": {}, "perk": "", "wildcard": false, "opened": false}
 	var gold := maxi(1, roundi(CHEST_GOLD[ri] * prize_mult() * cr.randf_range(0.7, 1.3)))
 	var x := cr.randf()
-	if x < 0.40:
+	if x < 0.15:
 		c["gold"] = gold
-	elif x < 0.70:
+	elif x < 0.55:
 		c["item"] = _chest_item(ri, cr)
 	elif x < 0.90:
 		c["gold"] = gold
