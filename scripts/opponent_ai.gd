@@ -2,8 +2,12 @@ class_name OpponentAI
 extends Node
 ## CPU opponent: BALL PREDICTION -> POSITIONING -> SHOT/TARGET SELECTION -> EXECUTION.
 ## Uses the same flight model as the real ball to find a reachable contact point,
-## the same quality model as the player, and simple tactics (hit away from the
-## player, play safe when stretched). Skill changes behaviour, not just speed.
+## the same quality model as the player, and tactics chosen once per hit by ShotPlanner
+## from the situation and the opponent's play style (Opponents.PLAY_STYLES): approach a
+## short ball and volley at the net, drop shot a player camped deep, lob or pass a net
+## rusher, go for the open court, play safe when stretched. It reads the player's habits
+## (PlayerModel: serve directions, the weaker wing) and misses under pressure (stretched,
+## a heavy ball) more than on easy balls. Skill changes behaviour, not just speed.
 
 const CPU := 1  # matches Main.Who.CPU
 
@@ -29,6 +33,25 @@ var _drop_memory := 0.0
 ## The player's habits this match (scripts/ai/player_model.gd).
 var model := PlayerModel.new()
 
+## The play style (Opponents.PLAY_STYLES) and its id.
+var style: Dictionary = Opponents.PLAY_STYLES[Opponents.DEFAULT_STYLE]
+var style_id := Opponents.DEFAULT_STYLE
+
+## Decisions this session, for the bot metrics (AiMetrics prints report()).
+var stats := {}
+
+const NET_POS_FAR := 4.8          # how close to the net it closes in after an approach
+const NET_POS_NEAR := 3.8         # (weak .. strong)
+const FORECOURT_Z := 8.0          # in front of this it looks to volley before the bounce
+
+var _at_net := false              # came in after the last shot: volleys the next ball
+var _pos_at_player_hit := Vector3(0, 0, -12.6)
+var _stretch := 0.0               # this shot: how far it had to run (0..1)
+var _risk := 0.0                  # this shot: the planner's extra risk
+var _last_player_side := 0        # the wing of the player's last rally ball
+var _player_contact := Vector3(0, 0, 12.6)  # where the player hit their last ball from
+var _player_q := 0.7              # and how well
+
 
 func setup(g: Node, athlete: Athlete, b: Ball) -> void:
 	game = g
@@ -38,7 +61,11 @@ func setup(g: Node, athlete: Athlete, b: Ball) -> void:
 	var ge := get_tree().root.get_node_or_null("GameEvents") if is_inside_tree() else null
 	if ge:
 		ge.bounce.connect(_on_bounce)
-		ge.match_started.connect(func(_i: Dictionary) -> void: new_match())
+		ge.match_started.connect(func(i: Dictionary) -> void:
+			new_match()
+			set_profile(Opponents.find(String(i.get("opponent", "")))))
+		ge.player_stroke.connect(_on_player_stroke)
+		ge.point.connect(_on_point)
 
 
 ## A new opponent / match: forget what was learned about the player.
@@ -46,6 +73,38 @@ func new_match() -> void:
 	model.reset()
 	_serve_speeds.clear()
 	_drop_memory = 0.0
+	_at_net = false
+
+
+## The opponent's profile (an Opponents.ROSTER entry; {} = the practice all-rounder).
+func set_profile(opp: Dictionary) -> void:
+	style_id = String(opp.get("play_style", Opponents.DEFAULT_STYLE))
+	if not Opponents.PLAY_STYLES.has(style_id):
+		style_id = Opponents.DEFAULT_STYLE
+	style = Opponents.PLAY_STYLES[style_id]
+
+
+## First serve pace multiplier of the play style (the "bomber" serves bigger).
+func serve_mult() -> float:
+	return float(style.get("serve", 1.0))
+
+
+## The player's rally strokes and errors: which wing is weaker (PlayerModel).
+func _on_player_stroke(info: Dictionary) -> void:
+	if info.get("serve", false):
+		_last_player_side = 0
+		return
+	_last_player_side = int(info.get("side", 1))
+	_player_q = float(info.get("q", 0.7))
+	_player_contact = game.player.position
+	model.note_stroke(_last_player_side, _player_q)
+
+
+func _on_point(info: Dictionary) -> void:
+	var reason := String(info.get("reason", ""))
+	if int(info.get("winner", 0)) == CPU and (reason == "OUT" or reason == "NET") and _last_player_side != 0 and int(info.get("rally", 0)) >= 2:
+		model.note_error(_last_player_side)
+	_last_player_side = 0
 
 
 ## The player's serve landed in the box: remember which way it went.
@@ -63,6 +122,7 @@ func skill() -> float:
 
 ## Called when the player hits: reaction delay + split step.
 func on_player_hit() -> void:
+	_pos_at_player_hit = me.position
 	_reaction = lerpf(0.30, 0.10, skill())
 	_plan_timer = 0.0
 	_prev_rel = INF
@@ -117,9 +177,14 @@ func return_reach() -> float:
 	return lerpf(1.35, 1.55, skill())
 
 
-## Called when the CPU itself hits (or feeds): plan the recovery position.
-func on_cpu_hit(target_x: float) -> void:
-	_recovery = Vector3(clampf(target_x * 0.25, -1.5, 1.5), 0.0, -12.4)
+## Called when the CPU itself hits (or feeds): plan the recovery position, at the net
+## after an approach (it stays there for the volleys).
+func on_cpu_hit(target_x: float, approach := false) -> void:
+	_at_net = approach
+	if approach:
+		_recovery = Vector3(clampf(target_x * 0.35, -2.0, 2.0), 0.0, -lerpf(NET_POS_FAR, NET_POS_NEAR, skill()))
+	else:
+		_recovery = Vector3(clampf(target_x * 0.25, -1.5, 1.5), 0.0, -12.4)
 	_goal = _recovery
 
 
@@ -163,6 +228,8 @@ func _replan() -> void:
 		if b0.z > 0.0 or margin > lerpf(0.6, 0.05, skill()):
 			_goal = _recovery
 			return
+	if game.bounces == 0 and (_at_net or me.position.z > -FORECOURT_Z) and _plan_volley(pred):
+		return
 	var start_i := pred.bounce_indices[0]
 	var end_i := pred.points.size() - 1
 	if pred.bounce_indices.size() > 1:
@@ -202,6 +269,25 @@ func _replan() -> void:
 		_goal = fallback
 
 
+## At the net: the earliest point before the bounce it can get to (a volley, or a smash
+## of a short lob). False if none: then it plays the ball after the bounce.
+func _plan_volley(pred: BallPhysics.Prediction) -> bool:
+	var end_i := pred.bounce_indices[0]
+	for i in range(0, end_i):
+		var p := pred.points[i]
+		if p.z > -1.2 or p.y < 0.35 or p.y > 2.6:
+			continue
+		for side in [1, -1]:
+			var stance := me.stance_for(p, side)
+			if stance.z > -0.8:
+				continue
+			if (stance - me.position).length() / me.max_speed + 0.08 <= pred.times[i]:
+				_goal = stance
+				me.prepare(side)
+				return true
+	return false
+
+
 ## Starts the visible swing a beat before the ball reaches the hitting plane, so the
 ## racket comes through the ball instead of appearing at the contact point. Only the
 ## look: the shot itself is still played in _check_hit().
@@ -233,7 +319,8 @@ func _check_hit() -> void:
 		# Returning serve there's no time to lunge fully: a little less reach, so wide or
 		# fast serves can still be aces.
 		var reach := return_reach() if game.rally == 1 else Athlete.REACH
-		if flat_d <= reach and bp.y > 0.05 and bp.y < 2.5:
+		var top_h := 2.9 if game.bounces == 0 and me.position.z > -FORECOURT_Z else 2.5  # a smash at the net
+		if flat_d <= reach and bp.y > 0.05 and bp.y < top_h:
 			_hit(bp)
 	_prev_rel = rel
 
@@ -244,58 +331,39 @@ func _hit(bp: Vector3) -> void:
 	var side := 1 if lateral >= 0.0 else -1
 	var t_err := rng.randfn(0.0, lerpf(0.10, 0.04, s))
 	var tq: Array = game.timing_quality(t_err)
-	var q: float = tq[0] * game.position_quality(lateral, bp.y) * game.movement_quality(me.velocity.length())
+	var q: float = tq[0] * game.position_quality(lateral, minf(bp.y, 1.2) if bp.y > 2.2 else bp.y) * game.movement_quality(me.velocity.length())
 	q *= lerpf(0.72, 0.92, s)  # the CPU never plays quite as cleanly as a perfect swipe
 	if game.rally == 1:
 		# Returning serve: big serves are only blocked back.
 		q *= clampf(1.15 - (game.last_serve_kmh - 120.0) / 130.0, 0.4, 1.0)
+	# How far it had to run for this ball: errors grow with it (error_chance).
+	var run := Vector2(bp.x - _pos_at_player_hit.x, bp.z - _pos_at_player_hit.z).length() - Athlete.IDEAL_LATERAL
+	_stretch = clampf((run - 1.5) / 3.5, 0.0, 1.0)
 
-	var player_x: float = game.player.position.x
-	var tx: float
-	var tz: float
-	var pace: float
-	var top: float
-	if q < 0.45:
-		# Stretched: high, deep, central — buy time.
-		tx = rng.randf_range(-1.5, 1.5)
-		tz = rng.randf_range(8.0, 10.0)
-		pace = rng.randf_range(18.0, 21.0)
-		top = 240.0
-	else:
-		var open_side := -signf(player_x) if absf(player_x) > 0.8 else (1.0 if rng.randf() < 0.5 else -1.0)
-		if absf(player_x) <= 0.8 and absf(me.position.x) > 1.0 and rng.randf() < 0.65:
-			# Neutral rally from a corner: cross-court, like the pros do most of the time
-			# (more net to clear in the middle, more court on the diagonal); the change
-			# down the line comes when the player is pulled out of position.
-			open_side = -signf(me.position.x)
-		elif rng.randf() > 0.35 + s * 0.6:
-			open_side = -open_side
-		tx = open_side * lerpf(1.2, 3.6, rng.randf() * (0.4 + s * 0.6))
-		tz = lerpf(6.8, 10.8, clampf(rng.randf_range(0.3, 1.0) * (0.55 + 0.45 * s), 0.0, 1.0))
-		pace = lerpf(22.0, 32.0, s) * rng.randf_range(0.88, 1.1)
-		top = rng.randf_range(160.0, 300.0)
-	var lob := false
-	var drop := false
-	var player_z: float = game.player.position.z
-	if q >= 0.6 and player_z > 12.6 and me.position.z > -11.6 and rng.randf() < 0.03 + 0.04 * s:
-		# Player camped far behind the baseline and the CPU is inside the court: drop shot.
-		tx = rng.randf_range(-2.5, 2.5)
-		tz = rng.randf_range(1.6, 2.6)
-		pace = 9.0
-		top = -280.0
-		drop = true
-	if player_z < 6.5 and q >= 0.45:
-		# Player at the net: lob over them, or pass down the open side hard.
-		if rng.randf() < 0.3 + 0.35 * s:
-			lob = true
-			tx = rng.randf_range(-2.5, 2.5)
-			tz = rng.randf_range(9.0, 10.8)
-			pace = 30.0
-			top = 220.0
-		else:
-			tx = (-signf(player_x) if absf(player_x) > 0.3 else (1.0 if rng.randf() < 0.5 else -1.0)) * rng.randf_range(2.8, 3.5)
-			tz = rng.randf_range(6.0, 9.0)
-			pace *= 1.1
+	# Out of the air in the forecourt = a volley (a high one is smashed); a high ball
+	# taken early from the back is just a rally ball.
+	var volley: bool = game.bounces == 0 and me.position.z > -FORECOURT_Z
+	var smash := volley and bp.y > 2.2
+	var plan := ShotPlanner.choose({
+		"q": q, "skill": s, "me": me.position, "contact": bp, "player": game.player.position,
+		"player_vel": game.player.velocity, "volley": volley, "rally": game.rally,
+		"player_contact": _player_contact, "player_q": _player_q,
+		"short": not volley and game.rally >= 2 and bp.z > -9.6,
+		"bh_x": -signf(game.player.right().x), "bh_weak": model.backhand_weakness(),
+	}, style, rng)
+	if smash:
+		plan["kind"] = "smash"
+		plan["pace"] = lerpf(28.0, 36.0, s)
+		plan["top"] = 40.0
+		plan["lob"] = false
+		plan["drop"] = false
+	var tx: float = plan["tx"]
+	var tz: float = plan["tz"]
+	var pace: float = plan["pace"]
+	var top: float = plan["top"]
+	var lob: bool = plan["lob"]
+	var drop: bool = plan["drop"]
+	_risk = float(plan["risk"])
 	if game.rally == 1 and rng.randf() < clampf((0.55 - q) * 1.5, 0.0, 0.6):
 		# Overpowered by the serve: a frame shot that flies anywhere.
 		tx = rng.randf_range(-7.0, 7.0)
@@ -304,6 +372,54 @@ func _hit(bp: Vector3) -> void:
 		top = 60.0
 		lob = false
 		drop = false
-	me.swing(side, 0.02, bp, Athlete.Style.SLICE if q < 0.45 else Athlete.Style.TOPSPIN)
+		plan["kind"] = "framed"
+		plan["approach"] = false
+	_count(plan["kind"])
+	if plan["approach"] and not _at_net:
+		_count("came_in")
+	var look := Athlete.Style.SMASH if smash else (Athlete.Style.DROP if drop else (Athlete.Style.SLICE if q < 0.45 else Athlete.Style.TOPSPIN))
+	me.swing(side, 0.02, bp, look)
 	game.execute_shot(CPU, me, bp, Vector3(tx, BallPhysics.RADIUS, tz), pace, top, q, t_err, side, lob, 0.0, drop)
-	on_cpu_hit(tx)
+	on_cpu_hit(tx, plan["approach"])
+
+
+## The chance this shot is simply missed (Main.error_chance asks the AI for its own):
+## rare on an easy ball, much more when stretched or under a heavy ball, plus the risk
+## of what it went for and the play style's appetite for it. q: contact quality;
+## incoming: the ball's speed (m/s).
+func error_chance(q: float, incoming: float, stretch := -1.0) -> float:
+	var s := skill()
+	var st := _stretch if stretch < 0.0 else stretch
+	var heavy := clampf((incoming - 18.0) / 18.0, 0.0, 1.0)
+	var base := lerpf(0.045, 0.008, s) * (1.0 - q * 0.6)          # unforced: rare
+	var forced := (0.4 * st + 0.35 * heavy * (1.0 - q * 0.5)) * lerpf(0.4, 0.16, s)
+	var poor := pow(1.0 - q, 2.0) * 0.26
+	# x0.85: the AI's contact model is harsher than a thumb's (as before D-3).
+	var p := clampf((base + forced + poor + _risk) * float(style.get("risk", 1.0)) * 0.85, 0.0, 0.6)
+	if stretch < 0.0:
+		# Bot metrics: this model against the old one (Main.error_chance before D-3).
+		var pressure := clampf((incoming - 16.0) / 22.0, 0.0, 1.0)
+		var old := (lerpf(0.09, 0.02, s) * (1.0 - q * 0.7) + pressure * (1.0 - q) * lerpf(0.6, 0.35, s) + pow(1.0 - q, 2.0) * 0.35) * 0.8
+		stats["err_n"] = int(stats.get("err_n", 0)) + 1
+		stats["err_new"] = float(stats.get("err_new", 0.0)) + p
+		stats["err_old"] = float(stats.get("err_old", 0.0)) + clampf(old, 0.0, 0.6)
+		stats["stretch"] = float(stats.get("stretch", 0.0)) + st
+	return p
+
+
+func _count(key: String) -> void:
+	stats[key] = int(stats.get(key, 0)) + 1
+
+
+## One line for the bot metrics: the style and how often each decision was taken.
+func report() -> String:
+	var total := 0
+	for k in ShotPlanner.KINDS:
+		total += int(stats.get(k, 0))
+	var parts := PackedStringArray()
+	for k in ShotPlanner.KINDS + ["smash", "framed", "came_in"]:
+		if stats.has(k):
+			parts.append("%s %d (%.0f%%)" % [k, stats[k], 100.0 * stats[k] / maxf(total, 1)])
+	var n := maxf(stats.get("err_n", 0), 1)
+	parts.append("| error chance %.3f (old model %.3f), stretch %.2f" % [stats.get("err_new", 0.0) / n, stats.get("err_old", 0.0) / n, stats.get("stretch", 0.0) / n])
+	return "ai style %s: %s" % [style_id, "  ".join(parts)]

@@ -17,6 +17,11 @@ func _run() -> void:
 		test_metrics_serve,
 		test_early_difficulty,
 		test_serve_reading,
+		test_shot_planner,
+		test_play_styles,
+		test_player_habits,
+		test_pressure_errors,
+		test_net_and_footwork,
 	]
 	expected = tests.size()
 	for t in tests:
@@ -204,4 +209,151 @@ func test_serve_reading() -> void:
 	g.player.free()
 	g.cpu.free()
 	g.free()
+	finished += 1
+
+
+func _sit(over := {}) -> Dictionary:
+	var d := {"q": 0.8, "skill": 0.5, "me": Vector3(-2.0, 0, -12.4), "contact": Vector3(-1.3, 1.0, -12.0),
+		"player": Vector3(0.0, 0, 12.6), "player_vel": Vector3.ZERO, "volley": false, "short": false,
+		"rally": 4, "bh_x": -1.0, "bh_weak": 0.0}
+	d.merge(over, true)
+	return d
+
+
+## Share of each plan kind over n tries of the same situation.
+func _kinds(sit: Dictionary, style_id: String, n := 400) -> Dictionary:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	var out := {}
+	for i in n:
+		var p := ShotPlanner.choose(sit, Opponents.PLAY_STYLES[style_id], rng)
+		out[p["kind"]] = out.get(p["kind"], 0.0) + 1.0 / n
+	return out
+
+
+func test_shot_planner() -> void:
+	print("D-3: the shot fits the situation")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	var ok_targets := true
+	for i in 600:
+		var sit := _sit({"q": rng.randf_range(0.2, 1.0), "player": Vector3(rng.randf_range(-4, 4), 0, rng.randf_range(3, 15)),
+			"me": Vector3(rng.randf_range(-4, 4), 0, rng.randf_range(-14, -3)), "short": rng.randf() < 0.3, "volley": rng.randf() < 0.1})
+		var p := ShotPlanner.choose(sit, Opponents.PLAY_STYLES[Opponents.PLAY_STYLES.keys()[i % 5]], rng)
+		if absf(p["tx"]) > 3.75 or p["tz"] < 1.5 or p["tz"] > 11.0 or not ShotPlanner.KINDS.has(p["kind"]):
+			ok_targets = false
+	check(ok_targets, "every target lands inside the singles court, every kind is known")
+	var neutral := _kinds(_sit(), "allcourt")
+	check(neutral.get("neutral", 0.0) + neutral.get("change", 0.0) > 0.9, "neutral rally: patience and a change of direction (%s)" % str(neutral))
+	var short := _kinds(_sit({"short": true, "me": Vector3(-1, 0, -8.8), "contact": Vector3(-0.3, 1, -8.4)}), "allcourt")
+	check(short.get("approach", 0.0) > 0.25, "a short ball: approach and come in (%.0f%%)" % (short.get("approach", 0.0) * 100.0))
+	var deep := _kinds(_sit({"player": Vector3(0.5, 0, 14.4), "me": Vector3(-1, 0, -10.6)}), "allcourt")
+	check(deep.get("drop", 0.0) > 0.15, "the player camped deep, we are inside: drop shot (%.0f%%)" % (deep.get("drop", 0.0) * 100.0))
+	var net := _kinds(_sit({"player": Vector3(1.0, 0, 4.0)}), "allcourt")
+	check(is_equal_approx(net.get("lob", 0.0) + net.get("pass", 0.0), 1.0) and net.get("lob", 0.0) > 0.2, "the player at the net: lob or pass, nothing else (%s)" % str(net))
+	var pulled := _kinds(_sit({"player": Vector3(3.6, 0, 12.4)}), "allcourt")
+	check(pulled.get("attack", 0.0) > 0.35, "the player pulled wide: go for the open court (%.0f%%)" % (pulled.get("attack", 0.0) * 100.0))
+	var p := ShotPlanner.choose(_sit({"player": Vector3(3.6, 0, 12.4)}), {"aggr": 1.0}, rng)
+	check(p["kind"] == "attack" and p["tx"] < -2.5, "the attack goes to the open side (tx %.1f)" % p["tx"])
+	var poor := ShotPlanner.choose(_sit({"q": 0.3}), Opponents.PLAY_STYLES["attacker"], rng)
+	check(poor["kind"] == "defend" and poor["tz"] >= 8.0 and absf(poor["tx"]) <= 1.5, "stretched: high, deep and central")
+	var vol := ShotPlanner.choose(_sit({"volley": true, "me": Vector3(0, 0, -4.2)}), Opponents.PLAY_STYLES["allcourt"], rng)
+	check(vol["kind"] == "volley" and vol["tz"] < 8.5 and vol["approach"], "at the net: an angled volley, and stay in")
+	var weak := _kinds(_sit({"bh_weak": 1.0, "me": Vector3(0.0, 0, -12.4)}), "counter")
+	var rng2 := RandomNumberGenerator.new()
+	rng2.seed = 3
+	var to_bh := 0
+	for i in 300:
+		var pl := ShotPlanner.choose(_sit({"bh_weak": 1.0, "me": Vector3(0.0, 0, -12.4)}), Opponents.PLAY_STYLES["counter"], rng2)
+		if pl["tx"] < 0.0:
+			to_bh += 1
+	check(to_bh > 300 * 0.7, "a weak backhand seen: most neutral balls go to it (%d of 300)" % to_bh)
+	finished += 1
+
+
+func test_play_styles() -> void:
+	print("D-3: play styles decide differently")
+	for o in Opponents.ROSTER:
+		check(Opponents.PLAY_STYLES.has(String(o.get("play_style", ""))) and o.has("skill") and o.has("lesson"), "%s: a play style, the old fields kept" % o["id"])
+	var ids := []
+	for o in Opponents.ROSTER:
+		if not ids.has(o["play_style"]):
+			ids.append(o["play_style"])
+	check(ids.size() >= 4, "at least four styles in the roster: %s" % str(ids))
+	var short := _sit({"short": true, "me": Vector3(-1, 0, -8.8)})
+	check(_kinds(short, "netrusher").get("approach", 0.0) > _kinds(short, "counter").get("approach", 0.0) + 0.3, "the net rusher comes in far more than the counter-puncher")
+	var neutral := _sit({"q": 0.85})
+	check(_kinds(neutral, "netrusher").get("approach", 0.0) > 0.1 and _kinds(neutral, "counter").get("approach", 0.0) == 0.0, "the net rusher comes in behind good neutral balls too")
+	var pulled := _sit({"player": Vector3(3.4, 0, 12.4)})
+	check(_kinds(pulled, "attacker").get("attack", 0.0) > _kinds(pulled, "counter").get("attack", 0.0) + 0.3, "the attacker goes for the open court far more often")
+	var net := _sit({"player": Vector3(1.0, 0, 4.0)})
+	check(_kinds(net, "counter").get("lob", 0.0) > _kinds(net, "attacker").get("lob", 0.0) + 0.2, "the counter-puncher lobs a net rusher, the attacker passes")
+	check(Opponents.PLAY_STYLES["bomber"]["serve"] > 1.05 and Opponents.PLAY_STYLES["attacker"]["risk"] > Opponents.PLAY_STYLES["counter"]["risk"], "the bomber serves bigger, the attacker risks more")
+	check(Opponents.play_style({}) == Opponents.PLAY_STYLES["allcourt"] and Opponents.find("zverev")["play_style"] == "bomber", "practice: the all-rounder; Zverev: the bomber")
+	finished += 1
+
+
+func test_player_habits() -> void:
+	print("D-3: it reads the player's weaker wing")
+	var m := PlayerModel.new()
+	check(m.backhand_weakness() == 0.0, "nothing seen: no weak wing")
+	for i in 10:
+		m.note_stroke(1, 0.85)
+		m.note_stroke(-1, 0.55)
+		if i % 3 == 0:
+			m.note_error(-1)
+	check(m.backhand_weakness() > 0.3, "a shaky backhand is read (%.2f)" % m.backhand_weakness())
+	m.reset()
+	for i in 10:
+		m.note_stroke(1, 0.5)
+		m.note_error(1)
+		m.note_stroke(-1, 0.85)
+	check(m.backhand_weakness() < -0.3, "a shaky forehand is read too (%.2f)" % m.backhand_weakness())
+	finished += 1
+
+
+func test_pressure_errors() -> void:
+	print("D-3: errors come from pressure")
+	var tuning := root.get_node("Tuning")
+	var s0: float = tuning.ai_skill
+	tuning.ai_skill = 0.45
+	var ai: Node = load("res://scripts/opponent_ai.gd").new()
+	var easy: float = ai.error_chance(0.85, 18.0, 0.0)
+	var stretched: float = ai.error_chance(0.85, 18.0, 1.0)
+	var heavy: float = ai.error_chance(0.6, 34.0, 0.0)
+	var both: float = ai.error_chance(0.6, 34.0, 1.0)
+	check(easy < 0.05, "an easy ball from where it stands: rarely missed (%.3f)" % easy)
+	check(stretched > easy * 3.0, "stretched for it: misses much more (%.3f)" % stretched)
+	check(heavy > easy * 2.5, "a heavy ball: misses more (%.3f)" % heavy)
+	check(both > stretched and both > heavy and both <= 0.6, "both: the most (%.3f)" % both)
+	# The old model for an easy ball (Main.error_chance, CPU): base 0.0585 x (1 - 0.6) + ...
+	var old_easy := (lerpf(0.09, 0.02, 0.45) * (1.0 - 0.85 * 0.7) + clampf((18.0 - 16.0) / 22.0, 0.0, 1.0) * 0.15 * lerpf(0.6, 0.35, 0.45) + pow(0.15, 2.0) * 0.35) * 0.8
+	check(easy < old_easy, "fewer cheap errors than before (%.3f < %.3f)" % [easy, old_easy])
+	ai.set_profile(Opponents.find("basilashvili"))
+	check(ai.error_chance(0.85, 18.0, 0.0) > easy, "the attacker risks more on the same ball")
+	tuning.ai_skill = s0
+	ai.free()
+	finished += 1
+
+
+func test_net_and_footwork() -> void:
+	print("D-3: the AI comes in; the player runs around the backhand")
+	var g := FakeGame.new()
+	var ai: Node = load("res://scripts/opponent_ai.gd").new()
+	ai.game = g
+	ai.on_cpu_hit(2.0, true)
+	check(ai._recovery.z > -5.0 and ai._at_net, "after an approach it closes in on the net (z %.1f)" % ai._recovery.z)
+	ai.on_cpu_hit(2.0)
+	check(ai._recovery.z < -12.0 and not ai._at_net, "after a rally ball it goes back to the baseline")
+	check(ai.serve_mult() == 1.0, "the all-rounder's serve as before")
+	ai.set_profile(Opponents.find("zverev"))
+	check(ai.serve_mult() > 1.05 and ai.style_id == "bomber", "Zverev serves bigger")
+	ai.free()
+	g.player.free()
+	g.cpu.free()
+	g.free()
+	check(Footwork.auto_side(-1, -0.6, 1.4, 1.2, 6.0) == 1, "a backhand near the middle with time: run around it")
+	check(Footwork.auto_side(-1, -2.5, 3.0, 1.2, 6.0) == -1, "a wide backhand stays a backhand")
+	check(Footwork.auto_side(-1, -0.6, 1.4, 0.4, 6.0) == -1, "no time: the backhand")
+	check(Footwork.auto_side(1, 0.6, 0.0, 1.0, 6.0) == 1, "a forehand stays a forehand")
 	finished += 1

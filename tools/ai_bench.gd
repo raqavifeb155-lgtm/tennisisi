@@ -17,6 +17,7 @@ var opp_id := "rublev"
 var skill := -1.0
 var style := ""
 var serve_x := -1.0
+var opp := {}
 
 
 func _initialize() -> void:
@@ -55,26 +56,27 @@ func _initialize() -> void:
 		for id in Skills.LIST:
 			Skills.add_xp(id, add)
 	Skills.pending = []
-	var opp := {}
 	for o in Opponents.ROSTER:
 		if o["id"] == opp_id:
 			opp = o
-	var tuning := root.get_node("Tuning")
-	tuning.ai_skill = skill if skill >= 0.0 else float(opp.get("skill", 0.5))
-	if main.ai.has_method("set_profile"):
-		var prof := opp.duplicate()
-		if style != "":
-			prof["style"] = style
-		main.ai.set_profile(prof)
-	var lv := PackedStringArray()
-	for id in Skills.LIST:
-		lv.append("%s %d" % [id, Skills.level(id)])
-	print("BENCH opp=%s skill=%.2f style=%s levels: %s" % [opp_id, tuning.ai_skill, style if style != "" else str(opp.get("style", "-")), ", ".join(lv)])
+	# Main's _ready runs once the tree starts: it reads this skill for the practice match.
+	root.get_node("Tuning").ai_skill = skill if skill >= 0.0 else float(opp.get("skill", 0.5))
 
 
 func _process(_delta: float) -> bool:
 	frame += 1
-	if frame == 2 and seed_v >= 0:
-		main.rng.seed = seed_v
-		main.ai.rng.seed = seed_v + 1
+	if frame == 2:
+		if seed_v >= 0:
+			main.rng.seed = seed_v
+			main.ai.rng.seed = seed_v + 1
+		# After Main's _ready (the practice match_started set the all-rounder).
+		if main.ai.has_method("set_profile"):
+			var prof := opp.duplicate()
+			if style != "":
+				prof["play_style"] = style
+			main.ai.set_profile(prof)
+		var lv := PackedStringArray()
+		for id in Skills.LIST:
+			lv.append("%s %d" % [id, Skills.level(id)])
+		print("BENCH opp=%s skill=%.2f style=%s levels: %s" % [opp_id, root.get_node("Tuning").ai_skill, main.ai.get("style_id"), ", ".join(lv)])
 	return false
