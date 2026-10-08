@@ -418,9 +418,115 @@ func test_simulation() -> void:
 	check(absf(bj / n - 0.0475) < 0.003, "a blackjack every ~21 hands (%.2f%%)" % (bj * 100.0 / n))
 
 
-## The table at the bar (filled in by E-2).
+## The table at the bar in the club: the place, the bets, the gold of every move, a hand
+## left in the middle, the break after three losses.
 func test_table() -> void:
-	pass
+	print("table at the bar")
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	root.add_child(main)
+	await _frames(5)
+	SaveData.enabled = false
+	SaveData.club = {"met_coach": true}
+	SaveData.active = null
+	SaveData.run = {}
+	SaveData.played = 1
+	SaveData.titles = 1
+	SaveData.gold = 400
+	SaveData.bets = {}
+	Skills.pending = []
+	main._show_menu()
+	await _frames(3)
+	var club = main.club
+	var t = club.world.get_node_or_null("blackjack")
+	check(t is ClubBlackjack, "the table stands in the club's world")
+	var place := ClubPlaces.find("blackjack")
+	check(not place.is_empty() and ClubPlaces.state("blackjack")["action"] == "club_blackjack", "the place blackjack, its button opens the table")
+	check(not ClubPlaces.is_open(place, 5, 0) and ClubPlaces.is_open(place, 5, 1), "it opens after the first title, as the roulette")
+	check(not club.world.walk.route(Vector2(0, 14), Vector2(25, -27.5)).is_empty(), "a way from the court to the table")
+	check(not club.world.walk.blocked(Vector2(25, -27.5), 0.3), "its circle is free to stand in")
+	main.player.position = place["pos"]
+	club._update_place()
+	await _frames(2)
+	check(club.hud.current_place() == "blackjack", "the hero at the table: its button is up")
+	club._on_choice("club_blackjack", 0)
+	await _frames(3)
+	check(t.is_open() and not main.ui.is_open(), "the table is a 3D scene, not a screen")
+	check(not main.player.visible and not (club.hud.get("_bottom") as Control).visible, "the hero steps aside, the club's bottom bar too")
+	check(main.hud.touch.blocked_controls.has(t._ui.catcher), "the joystick leaves the table alone")
+	# Bets: the bar's limit (25 at level 0), a quarter of the gold, side bets <= main.
+	t.clear_bets()
+	check(t.max_main() == 25, "level 0 bar: the main bet up to 25")
+	check(t.add_chip(25, "main") and not t.add_chip(5, "main"), "25 on the main spot, not a chip more")
+	check(t.add_chip(25, "pp") and not t.add_chip(5, "pp"), "a side bet up to the main one")
+	# A whole round on a stacked shoe: pair of 8s (a mixed pair), split, double, stand.
+	t.game = stacked([C("8", "s"), C("7", "h"), C("8", "h"), C("3", "c"), C("10", "d"), C("8", "d"), C("10", "s")])
+	check(t.deal() and SaveData.gold == 350, "the deal takes both stakes at once (400 -> 350)")
+	check(SaveData.bets.has("bj_round"), "a hand in progress is saved")
+	check(t.game.pp_hit == "mixed", "a mixed pair on the side bet")
+	t.skip()
+	await _frames(2)
+	check(not t._ui.act["split"].disabled and not t._ui.act["double"].disabled, "split and double are offered")
+	check(t.split() and SaveData.gold == 325, "split: 25 more")
+	check(t.double() and SaveData.gold == 300, "double after split: 25 more")
+	check(t.stand(), "stand on 16")
+	check(t.game.phase == Blackjack.Phase.DONE and SaveData.gold == 300 + 100 + 175, "paid at once: the doubled 21 (100) and the pair 6:1 (175)")
+	check(not SaveData.bets.has("bj_round") and int(SaveData.bets.get("loss_streak", 0)) == 0, "the round is closed; a win resets the streak")
+	t.skip()
+	for i in 90:
+		await process_frame
+	check(not t.busy() and t.showing_result(), "a tap shows the end at once")
+	check(t._cards.size() == 7, "seven cards on the felt (%d)" % t._cards.size())
+	check(not t._ui.card.visible == false, "the bets panel is back for the next round")
+	check(int(t.bets["main"]) == 25 and int(t.bets["pp"]) == 25, "the same bets stay for the next round")
+	# Closing in the middle of a hand plays it out by standing.
+	var g0: int = SaveData.gold
+	t.bets = {"pp": 0, "main": 25, "t3": 0}
+	t.game = stacked([C("10", "s"), C("6", "h"), C("8", "d"), C("10", "c"), C("9", "s")])
+	t.deal()
+	check(SaveData.gold == g0 - 25, "the next stake goes")
+	t.close()
+	await _frames(3)
+	check(not t.is_open() and SaveData.gold == g0 + 25, "«Назад» mid-hand: stands and is paid (18 vs bust)")
+	check(main.player.visible and (club.hud.get("_bottom") as Control).visible and club.hud.current_place() == "blackjack", "back in the club at the table's circle")
+	# A hand left when the game was closed comes back and is played out by standing.
+	var left := stacked([C("10", "s"), C("6", "h"), C("9", "d"), C("10", "c"), C("9", "s")])
+	left.deal(25, 0, 0)
+	SaveData.bets["bj_round"] = left.to_dict()
+	g0 = SaveData.gold
+	club._on_choice("club_blackjack", 0)
+	await _frames(2)
+	check(t.is_open() and not SaveData.bets.has("bj_round") and t.game.phase == Blackjack.Phase.DONE, "a saved hand is played out on the way in")
+	check(SaveData.gold >= g0, "and its winnings, if any, are paid (%d -> %d)" % [g0, SaveData.gold])
+	t.skip()
+	await _frames(2)
+	# Three losses in a row: the dealer suggests a break; the table stays open.
+	SaveData.bets["loss_streak"] = 2
+	t.bets = {"pp": 0, "main": 25, "t3": 0}
+	t.game = stacked([C("10", "s"), C("10", "h"), C("7", "d"), C("9", "c")])
+	t.deal()
+	t.stand()
+	t.skip()
+	for i in 10:
+		await process_frame
+	check(Bets.needs_break(SaveData.bets), "three hands lost in a row")
+	check(t._ui.bubble.visible and t._ui.bubble_label.text.contains("ерерыв"), "the dealer: «Перерыв?» (%s)" % t._ui.bubble_label.text)
+	check(not t._ui.deal_btn.disabled, "the table stays open")
+	# Little gold: a quarter of it is the limit.
+	SaveData.gold = 30
+	t.clear_bets()
+	t._refresh()
+	check(t.max_main() == 7 and t.add_chip(5, "main") and not t.add_chip(5, "main"), "30 gold: one chip of 5")
+	SaveData.gold = 12
+	t.clear_bets()
+	t._refresh()
+	check(not t.add_chip(5, "main") and t._ui.deal_btn.disabled, "12 gold: no bet at all")
+	t.close()
+	await _frames(2)
+	main.queue_free()
+	await _frames(2)
+	SaveData.played = 0
+	SaveData.titles = 0
+	SaveData.gold = 0
 
 
 func _frames(n: int) -> void:

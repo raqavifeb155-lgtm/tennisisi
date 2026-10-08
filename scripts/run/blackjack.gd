@@ -39,7 +39,7 @@ var shuffles := 0
 var record_events := true              # off in the simulation
 ## What happened since the table last looked, in order: {"kind": "shuffle"},
 ## {"kind": "card", "to": "player"|"dealer", "hand": i, "card": c}, {"kind": "split"},
-## {"kind": "turn", "hand": i}, {"kind": "settle"}.
+## {"kind": "double", "hand": i}, {"kind": "turn", "hand": i}, {"kind": "settle"}.
 var events: Array = []
 
 var phase := Phase.BETTING
@@ -346,6 +346,7 @@ func double() -> bool:
 		return false
 	hands[active]["bet"] = int(hands[active]["bet"]) * 2
 	hands[active]["doubled"] = true
+	_event({"kind": "double", "hand": active})
 	_give(active)
 	hands[active]["done"] = true
 	_advance()
