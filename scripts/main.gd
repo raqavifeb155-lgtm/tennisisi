@@ -71,6 +71,10 @@ var _autoplay_format := 0
 var _bot_dive_test := false
 var _bot_sd := 0.035
 var _bot_xp := -1.0
+var _bot_measure := 0        # v0.2 G: --measure=N: the bot plays N points against the same opponent (--stage, --seed) and reports its share
+var _bot_stage := 1
+var _bot_seed := 0
+var _bot_pts := [0, 0]
 var _cpu_serve_mult := 1.0        # difficulty modifier "Бомбардир"
 var _run_dist := 0.0              # metres run this rally (experience for "Ноги")
 var shot_type := ShotType.TOPSPIN
@@ -191,6 +195,12 @@ func _ready() -> void:
 			_profile_t = 5.0  # print frame statistics every 5 s (a profiling run, not headless)
 		elif a.begins_with("--bot-sd="):
 			_bot_sd = float(a.get_slice("=", 1))  # bot timing error (s): ~0.035 sharp, ~0.07 a thumb on a phone
+		elif a.begins_with("--measure="):
+			_bot_measure = int(a.get_slice("=", 1))
+		elif a.begins_with("--stage="):
+			_bot_stage = int(a.get_slice("=", 1))
+		elif a.begins_with("--seed="):
+			_bot_seed = int(a.get_slice("=", 1))
 		elif a.begins_with("--xp="):
 			_bot_xp = float(a.get_slice("=", 1))  # every skill starts with this much experience
 
@@ -1442,6 +1452,11 @@ func _end_point(winner: int, reason: String) -> void:
 	_stats["serve"][srv_key + outcome] = _stats["serve"].get(srv_key + outcome, 0) + 1
 	var key := ("YOU " if winner == Who.PLAYER else "CPU ") + "wins: " + text.split("\n")[0]
 	_stats["reasons"][key] = _stats["reasons"].get(key, 0) + 1
+	if autoplay and autoplay_tournament and _bot_measure > 0:
+		_bot_pts[winner] += 1
+		if _bot_pts[0] + _bot_pts[1] >= _bot_measure:
+			print("BOTPTS you=%d cpu=%d share=%.3f" % [_bot_pts[0], _bot_pts[1], float(_bot_pts[0]) / float(_bot_measure)])
+			get_tree().quit()
 	if autoplay and not autoplay_tournament:
 		print("point %d: %s (rally %d) -> %s %s  stamina %d%%" % [_points_played, key, rally, scoreboard.point_text(), scoreboard.games_text(), roundi(stamina * 100.0)])
 		if _points_played >= autoplay_points:
@@ -1821,7 +1836,10 @@ func _start_practice() -> void:
 
 
 func _start_tournament(format_index: int, run_conditions: Array = []) -> void:
-	tournament = Tournament.new(format_index)
+	tournament = Tournament.new(format_index, _bot_seed)
+	if autoplay and _bot_measure > 0:
+		tournament.stage = clampi(_bot_stage, 0, tournament.rounds() - 1)
+		tournament.current_lineup()["mods"] = []  # the same opponent every time: only --mods differs
 	if not run_conditions.is_empty():
 		Modifiers.set_run(tournament, run_conditions)  # v0.2 G: the run's conditions (RunMods screen)
 	tournament.location = _next_location
@@ -2137,6 +2155,13 @@ func _autoplay_after_match(won: bool, st: String) -> void:
 	var last: Dictionary = tournament.results.back()
 	var opp: Dictionary = Opponents.ROSTER[last["stage"]]
 	print("MATCH %s vs %s: %s %s   [%s]" % [Opponents.ROUND_NAMES[last["stage"]], opp["name"], "WON" if won else "LOST", st, _levels_text()])
+	if _bot_measure > 0:  # measuring: the same opponent again, nothing carried over
+		tournament.pending_loot = {}
+		tournament.stage = clampi(_bot_stage, 0, tournament.rounds() - 1)
+		tournament.state = Tournament.State.BRACKET
+		tournament.champion = false
+		_play_match()
+		return
 	while true:
 		var c := Skills.next_pending(rng)
 		if c.is_empty():

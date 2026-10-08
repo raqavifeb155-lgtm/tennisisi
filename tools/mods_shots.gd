@@ -7,6 +7,7 @@ var main: Node
 var h := 1564
 var out := ""
 var tag := ""
+var RM: GDScript
 
 
 func _initialize() -> void:
@@ -32,6 +33,7 @@ func _court(ids: Array, hidden: Array, name: String, wait := 2.2) -> void:
 	var t: Tournament = main.tournament
 	t.lineup[t.stage]["mods"] = ids
 	t.lineup[t.stage]["hidden"] = hidden
+	main.ui.close()
 	main._play_match()
 	await _shot(name, wait)
 
@@ -41,17 +43,18 @@ func _run() -> void:
 	main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(main)
 	await create_timer(7.0).timeout
+	RM = load("res://scripts/ui/screens/run_mods.gd")  # loaded: it reaches the autoloads
 	SaveData.control_chosen = true
 	SaveData.enabled = false
 	SaveData.played = 3
 	main._show_menu()
 	main.ui.show_formats()
-	RunMods.picked = []
-	RunMods.show(main.ui, true)
+	RM.picked = []
+	RM.show(main.ui, true)
 	await _shot("01_run_none")
-	RunMods.ui_action(main, "mods_preset", 0)
+	RM.ui_action(main, "mods_preset", 0)
 	await _shot("02_run_pro")
-	RunMods.ui_action(main, "mods_toggle", 8)
+	RM.ui_action(main, "mods_toggle", 8)
 	main.ui._scroll.scroll_vertical = 700
 	await _shot("03_run_three_full", 0.5)
 	main.ui._scroll.scroll_vertical = 2400
