@@ -61,7 +61,7 @@ static func extra(ui: TournamentUI, t: Tournament) -> void:
 # Income by lines with coins, flying into the bank; one item into the locker; the next
 # goal. TournamentUI.show_summary hands over to show_summary.
 
-const INCOME_NAMES := {"prize": "Призовые", "style": "Стиль", "sell": "Продажа вещей", "quests": "Задания", "bonus": "Бонусы"}
+const INCOME_NAMES := {"prize": "Призовые", "chest": "Сундуки", "style": "Стиль", "sell": "Продажа вещей", "quests": "Задания", "bonus": "Бонусы"}
 static var _flown: Tournament = null     # the run whose coins already flew into the chip
 static var _msg := ""
 static var _msg_good := true

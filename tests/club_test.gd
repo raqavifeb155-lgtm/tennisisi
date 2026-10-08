@@ -6,6 +6,7 @@ var failures := 0
 
 
 func _initialize() -> void:
+	Tournament.BEGINNER_START = 1.0  # tests count a newcomer's prizes at the plain scale
 	Items.PRICE_SCALE = 1.0  # these tests count in base prices; the shipped scale is checked in economy_test
 	ClubBuilds.CLUB_PRICE_SCALE = 1.0
 	SaveData.enabled = false  # never the developer's save: buy() saves

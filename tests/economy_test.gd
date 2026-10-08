@@ -15,6 +15,8 @@ func _run() -> void:
 	var shipped := Items.PRICE_SCALE
 	test_shipped_scale(shipped)
 	Items.PRICE_SCALE = 1.0  # the rest counts in base prices
+	var beginner := Tournament.BEGINNER_START
+	Tournament.BEGINNER_START = 1.0
 	ClubBuilds.CLUB_PRICE_SCALE = 1.0
 	test_prices()
 	test_item_level()
@@ -22,6 +24,7 @@ func _run() -> void:
 	test_prize_money()
 	test_income_scale()
 	test_package()
+	test_chest()
 	test_income()
 	test_sell_extra()
 	test_locker()
@@ -125,8 +128,9 @@ func test_prize_money() -> void:
 		u.drop_bonus = -1.0
 		for i in out:
 			u.record_match(true, "6:1", _rng(i))
+			u.chest = {}  # (a chest's gold is counted by test_chest)
 			if u.state == Tournament.State.REWARD:
-				u.take_reward(0)  # a perk: no wildcard, the loss ends the run
+				u.state = Tournament.State.BRACKET
 		if out < 5:
 			u.record_match(false, "1:6", _rng(9))
 		by_round.append(u.gold)
@@ -402,13 +406,15 @@ func test_islands() -> void:
 func test_income_scale() -> void:
 	print("income scale")
 	_reset_save()
-	check(is_equal_approx(Tournament.income_scale(), 1.0), "a newcomer is paid in full")
-	SaveData.played = 3
-	check(is_equal_approx(Tournament.income_scale(), Tournament.INCOME_SCALE + (1.0 - Tournament.INCOME_SCALE) * 0.5), "halfway through the first runs")
-	SaveData.played = 6
+	Tournament.BEGINNER_START = 2.0
+	check(is_equal_approx(Tournament.income_scale(), Tournament.BEGINNER_START), "a newcomer is paid double")
+	SaveData.played = Tournament.BEGINNER_RUNS / 2
+	check(is_equal_approx(Tournament.income_scale(), Tournament.INCOME_SCALE + (Tournament.BEGINNER_START - Tournament.INCOME_SCALE) * 0.5), "halfway through the first runs")
+	SaveData.played = Tournament.BEGINNER_RUNS
 	var t := Tournament.new(1, 3)
 	check(is_equal_approx(Tournament.income_scale(), Tournament.INCOME_SCALE), "after %d runs the long-run scale" % Tournament.BEGINNER_RUNS)
 	check(t.prize_on_loss(0) == roundi(20 * Tournament.INCOME_SCALE) and t.gold_for_win(4) == roundi(50 * Tournament.INCOME_SCALE), "prizes follow it (%d, %d)" % [t.prize_on_loss(0), t.gold_for_win(4)])
+	Tournament.BEGINNER_START = 1.0
 	_reset_save()
 
 
@@ -433,3 +439,91 @@ func test_package() -> void:
 	check(float(band["mods"]["serve_window"]) > 0.1, "an epic wristband widens every PERFECT window")
 	var lv := Items.set_level(Items.instance(Items.find("sledgehammer")), 3)
 	check(float(lv["mods"]["forehand_pace"]) > float(epic["mods"]["forehand_pace"]) * 1.15, "level 3 strengthens the package too")
+
+
+# --- A-7: the chest by the net ---------------------------------------------------------
+
+func test_chest() -> void:
+	print("chest")
+	_reset_save()
+	# frequency by round over many matches: 35% / 55% / the final always; pity: never 3 dry wins
+	var n := [0, 0, 0, 0]
+	var total := [0, 0, 0, 0]
+	var longest_dry := 0
+	for k in 1000:
+		var t := Tournament.new(1, 100 + k)
+		t.drop_bonus = -1.0  # no trophy muddies the pity count
+		var dry := 0
+		for r in 4:
+			t.record_match(true, "6:1", _rng(k))
+			total[r] += 1
+			if not t.chest.is_empty():
+				n[r] += 1
+				dry = 0
+			else:
+				dry += 1
+				longest_dry = maxi(longest_dry, dry)
+			t.chest = {}
+			t.state = Tournament.State.BRACKET
+	var fr := n.map(func(v): return float(v) / 1000.0)
+	check(fr[0] > 0.30 and fr[0] < 0.40, "round 1: %.0f%% of wins leave a chest (the 35%% chance)" % [fr[0] * 100.0])
+	check(fr[1] > 0.30 and fr[1] < 0.42, "round 2: %.0f%%" % [fr[1] * 100.0])
+	check(fr[2] > fr[0] and fr[2] > 0.55, "quarter-final: %.0f%%" % [fr[2] * 100.0])
+	check(longest_dry <= Tournament.CHEST_PITY, "never more than %d wins in a row with no chest (longest %d)" % [Tournament.CHEST_PITY, longest_dry])
+	var f := Tournament.new(1, 5)
+	f.stage = 4
+	f.record_match(true, "6:1", _rng(1))
+	check(f.champion and not f.chest.is_empty(), "the final always leaves a chest")
+	# the same run and match: the same chest
+	var a := Tournament.new(1, 77)
+	var b := Tournament.new(1, 77)
+	a.dry = 2
+	b.dry = 2
+	a.record_match(true, "6:1", _rng(1))
+	b.record_match(true, "6:1", _rng(2))
+	check(a.chest == b.chest and not a.chest.is_empty(), "the chest comes from the run's seed, not from the match's random")
+	# contents: gold only / item / both / perk or wildcard, the item at the island's level
+	var kinds := {"gold": 0, "item": 0, "both": 0, "other": 0}
+	var perks_seen := 0
+	var epics := 0
+	var items_n := 0
+	var levels_ok := true
+	var cr := _rng(3)
+	var holder := Tournament.new(1, 8)
+	holder.location = "paris"
+	for k in 1000:
+		var c := holder.make_chest(2, cr)
+		perks_seen += 1 if String(c["perk"]) != "" else 0
+		if c["wildcard"]:
+			kinds["other"] += 1
+		elif c["gold"] > 0 and not c["item"].is_empty():
+			kinds["both"] += 1
+		elif not c["item"].is_empty():
+			kinds["item"] += 1
+		else:
+			kinds["gold"] += 1
+		if not c["item"].is_empty():
+			levels_ok = levels_ok and Items.level(c["item"]) == 4
+			items_n += 1
+			epics += 1 if int(c["item"]["rarity"]) >= Gear.EPIC else 0
+	check(kinds["gold"] > 330 and kinds["item"] > 230 and kinds["both"] > 140 and kinds["other"] > 60 and kinds["other"] < 140, "contents %s" % [kinds])
+	check(perks_seen == 0, "1000 chests: no temporary perks")
+	check(levels_ok, "every chest item in Paris is level 4")
+	check(float(epics) / items_n > 0.28 and float(epics) / items_n < 0.45, "quarter-final chests: epic+ in %d of %d items" % [epics, items_n])
+	# taking it: gold into the run's lines, the item worn or in the bag, state goes on
+	var t2 := Tournament.new(1, 12)
+	t2.state = Tournament.State.REWARD
+	t2.chest = {"round": 1, "gold": 30, "item": _item(Gear.RARE, 1, "band"), "perk": "light_feet", "wildcard": true, "opened": false}
+	t2.open_chest()
+	check(t2.gold == 30 and int(t2.income["chest"]) == 30 and t2.perks == ["light_feet"] and t2.wildcards == 1, "open: gold on its line, a perk, a wildcard")
+	t2.open_chest()
+	check(t2.gold == 30, "opened once")
+	t2.take_chest()
+	check(t2.equip["band"]["rarity"] == Gear.RARE and t2.chest.is_empty() and t2.state == Tournament.State.BRACKET, "taken: the band is on, on with the run")
+	var saved := Tournament.from_dict(Tournament.new(1, 5).to_dict())
+	check(saved.chest.is_empty() and saved.dry == 0, "chest and pity survive a save")
+	var t3 := Tournament.new(1, 6)
+	t3.chest = {"round": 0, "gold": 5, "item": {}, "perk": "", "wildcard": false, "opened": false}
+	t3.dry = 1
+	check(Tournament.from_dict(t3.to_dict()).chest == t3.chest and Tournament.from_dict(t3.to_dict()).dry == 1, "a chest waiting survives a save")
+	_reset_save()

@@ -130,10 +130,13 @@ func _play_run(xp: float, island: String) -> RunLog:
 			log.wins += 1
 		match t.state:
 			Tournament.State.REWARD:
-				t.take_reward(_pick_reward(t))
+				t.take_chest()  # v0.2 A-7: a chest by the net instead of 1 of 3
+				_wear_best(t)
 			Tournament.State.LOST:
 				t.use_wildcard()
-	# the end of the run: sell the extras, bank, keep one item
+	# the end of the run: the final's chest, sell the extras, bank, keep one item
+	t.take_chest()
+	_wear_best(t)
 	t.sell_extra()
 	log.title = t.champion
 	log.xp = xp
@@ -171,6 +174,19 @@ func _play_run(xp: float, island: String) -> RunLog:
 				Locker.save_from(t, best, worst)
 	log.minutes = log.matches * min_per_match + min_per_run
 	return log
+
+
+## Puts on whatever in the bag is rarer than the worn thing of its slot.
+func _wear_best(t: Tournament) -> void:
+	var i := 0
+	while i < t.bag.size():
+		var it: Dictionary = t.bag[i]
+		var worn: Dictionary = t.equip.get(String(it["slot"]), {})
+		if worn.is_empty() or int(it["rarity"]) > int(worn["rarity"]):
+			t.equip_from_bag(i)
+			i = 0
+		else:
+			i += 1
 
 
 func _item_value(it: Dictionary) -> float:
