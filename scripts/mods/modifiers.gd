@@ -30,7 +30,7 @@ const HARD_STYLE := 1.5           # «Хардкор»: the match's style gold x
 const HARD_RARITY := 0.02         # «Хардкор»: +2 points to the chance of a legendary item (above epic)
 ## The bot has no thumb: its auto-positioning (1.0 in an ordinary run) is cut to this in a
 ## hardcore one, as a stand-in for a player steering the legs alone (G-6, table in the spec).
-const BOT_HARD_ASSIST := 0.5
+const BOT_HARD_ASSIST := 0.8
 ## What «Хардкор» already contains: not offered again on top of it.
 const HARD_HAS := ["tier_up", "short_ring", "no_slowmo", "blind", "late_flash"]
 const MAX_RUN := 3                # conditions a run may take
