@@ -12,15 +12,17 @@ const GROUPS := [["run", "Ты"], ["opponent", "Соперники"], ["court", 
 
 static var picked: Array = []
 static var format := 1
+static var from_club := false  # opened by the club's «Условия» link: «Назад» returns to the club
 
 
 # --- Entry: the format was chosen -----------------------------------------------------
 
 ## The "format" action (and the Club's quick tournament): the conditions screen, or - for
 ## a player who has not finished a run yet, or with modifiers off - the run right away.
-static func open(m: Node, fmt: int) -> void:
+static func open(m: Node, fmt: int, club := false) -> void:
 	format = fmt
 	picked = []
+	from_club = club
 	if not Modifiers.enabled or SaveData.played == 0:
 		m._start_tournament(fmt)
 		return
@@ -187,4 +189,7 @@ static func ui_action(m: Node, action: String, arg: int) -> void:
 		"mods_go":
 			m._start_tournament(format, picked.duplicate())
 		"mods_back":
-			m.ui.show_formats()
+			if from_club:
+				m._open_menu()  # back to the club, where the link was
+			else:
+				m.ui.show_formats()

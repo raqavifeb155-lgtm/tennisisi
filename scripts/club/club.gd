@@ -430,7 +430,7 @@ func ui_action(action: String, arg: int) -> void:
 			# The run's conditions, then the run in the remembered place and format.
 			if SaveData.club.has("last_location"):
 				main._next_location = SaveData.club["last_location"]
-			RunMods.open(main, int(SaveData.club.get("last_format", 1)))
+			RunMods.open(main, int(SaveData.club.get("last_format", 1)), true)
 
 
 ## 'Забрать' at the coach's: every finished quest's reward at once.
