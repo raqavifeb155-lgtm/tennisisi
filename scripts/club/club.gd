@@ -25,6 +25,8 @@ var cam: ClubCamera
 var hud: ClubHud
 var coach := ClubCoach.new()
 var npc := ClubNpc.new()              # whoever can be talked to and bumped into (stream H-8)
+var _hero_y := 0.0                     # the floor he stands on, eased (rooms stand above the ground)
+var _coach_y := 0.0
 var _npc_btn := ""                    # the person whose button is up
 var quests: ClubQuests.Watch          # the coach's quests, counted from the match's events
 var active := false
@@ -305,10 +307,13 @@ func _physics_process(delta: float) -> void:
 	# Walls and posts: the body slides along them (Athlete only knows its rectangle).
 	var at := world.walk.resolve(Vector2(p.position.x, p.position.z), Vector2(p.position.x, p.position.z), 0.35, npc.agent_list())
 	if at.x != p.position.x or at.y != p.position.z:
-		p.position = Vector3(at.x, 0.0, at.y)
+		p.position = Vector3(at.x, _hero_y, at.y)
+	_hero_y = move_toward(_hero_y, world.walk.floor_at(Vector2(p.position.x, p.position.z)), 1.0 * delta + 0.02)
+	p.position.y = _hero_y
 	var c := coach.body
+	_coach_y = move_toward(_coach_y, world.walk.floor_at(Vector2(c.position.x, c.position.z)), 1.0 * delta + 0.02)
 	var cat := world.walk.resolve(Vector2(c.position.x, c.position.z), Vector2(c.position.x, c.position.z), 0.35, npc.agent_list("coach") + [[Vector2(p.position.x, p.position.z), 0.35]])
-	c.position = Vector3(cat.x, 0.0, cat.y)
+	c.position = Vector3(cat.x, _coach_y, cat.y)
 	if main.ui.is_open() or _roulette_on or _foreman_on or _building:
 		p.move_input = Vector2.ZERO
 		return

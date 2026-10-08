@@ -85,7 +85,7 @@ static func shape(a: Athlete, delta: float, speed: float, amt: float) -> float:
 	if a.has_meta("junior") or a.has_meta("elder"):
 		_body(a)
 		if bool(a.get_meta("elder", false)) and a._mode == 0 and a._down < 0.0:
-			a._pitch = lerpf(a._pitch, 0.2, 1.0 - exp(-4.0 * delta))   # a slight stoop
+			a._pitch = 0.2   # a slight stoop (Athlete eases _pitch back to its own every frame: set after it)
 	var on := is_on(a)
 	var racket: Node3D = a._racket
 	if racket != null:

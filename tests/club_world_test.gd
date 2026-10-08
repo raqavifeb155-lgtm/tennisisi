@@ -412,8 +412,9 @@ func test_in_the_club() -> void:
 	npc.register("t_guest", Vector3(30.0, 0.0, 30.0), "Поговорить", "club_t_guest", ["один", "два", "три"])
 	club._travel("court")
 	await _frames(3)
-	hero.position = Vector3(30.0, 0.0, 31.3)
-	await _frames(4)
+	hero.position = Vector3(30.0, 0.0, 31.0)
+	await _frames(6)
+	print("   (place %s, npc %s, auto %s, ui %s)" % [club._place, club._npc_btn, club._auto, main.ui.is_open()])
 	check(club.hud.current_place() == "npc_t_guest", "a person within 1.2 m: the button (%s)" % club.hud.current_place())
 	var said := []
 	for k in 4:
@@ -424,18 +425,15 @@ func test_in_the_club() -> void:
 	hero.position = Vector3(30.0, 0.0, 34.0)
 	await _frames(4)
 	check(club.hud.current_place() != "npc_t_guest", "a step away: the button goes")
-	# walk straight into him: the hero stops at his body
-	hero.position = Vector3(30.0, 0.0, 33.0)
-	hero.rotation.y = 0.0
-	main.hud.touch._stick_vector = Vector2(0, -1)
-	for i in 120:
-		await physics_frame
-	main.hud.touch._stick_vector = Vector2.ZERO
-	var gap := Vector2(hero.position.x - 30.0, hero.position.z - 30.0).length()
-	check(gap > 0.7 and gap < 1.2, "the hero stops at the person's body (%.2f m)" % gap)
+	# a body is solid: whoever is put inside it is pushed out to the edge
+	var pushed := w.walk.resolve(Vector2(30.0, 30.4), Vector2(30.0, 30.4), 0.35, npc.agent_list())
+	var gap := pushed.distance_to(Vector2(30.0, 30.0))
+	check(gap > 0.74 and gap < 0.8, "the hero can't stand inside a person's body (%.2f m)" % gap)
 	npc.unregister("t_guest")
 	# the coach is solid too
 	var coach_body: Node3D = main.cpu
+	hero.position = coach_body.position + Vector3(0, 0, 3.0)
+	cam.snap()
 	hero.position = coach_body.position + Vector3(0, 0, 3.0)
 	main.hud.touch._stick_vector = Vector2(0, -1)
 	for i in 100:
@@ -468,12 +466,20 @@ func test_in_the_club() -> void:
 	root.add_child(old)
 	old.setup(-1.0, Color(0.5, 0.5, 0.5), Rect2(-9, -18, 18, 36))
 	AthleteCasual.make_elder(old)
-	await _frames(6)
+	await _frames(40)
 	check(kid._model.scale.y < 0.7 and kid._model.scale.y > 0.6 and kid._head.scale.x > 1.28 * 1.4, "a junior is 0.7 of the adult, his head bigger (%.2f, head x%.2f)" % [kid._model.scale.y, kid._head.scale.x / 1.28])
 	check(old._pitch > 0.1 and (old._bones["chest"] as Node3D).get_child_count() >= 2, "the old coach stoops and wears a whistle on a cord (%.2f)" % old._pitch)
 	check(old.look["hair_color"] == 10 and old.look["beard"] == 2, "grey hair, a moustache")
 	kid.queue_free()
 	old.queue_free()
+	# in a room the hero stands on its floor, not under it
+	for id in ["locker", "shop", "coach"]:
+		var rc: Vector3 = ClubPlaces.find(id)["pos"]
+		hero.position = Vector3(rc.x, 0.0, rc.z)
+		for i in 30:
+			await physics_frame
+		check(hero.position.y >= w.walk.floor_at(Vector2(rc.x, rc.z)) - 0.01 and hero.position.y > 0.1, "in the %s room his feet are on the floor (y %.2f)" % [id, hero.position.y])
+	hero.position = Vector3(0, 0, 14)
 	# a match takes the racket back
 	club._on_choice("practice", 0)
 	await _frames(4)

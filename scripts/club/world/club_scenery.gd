@@ -110,6 +110,14 @@ func _ready() -> void:
 	daytime = ClubDaytime.new()
 	daytime.name = "daytime"
 	add_child(daytime)
+	# the rooms' floors stand above the ground: the walker stands on them (ClubWalk.floor_at)
+	for id in ["locker", "shop", "coach"]:
+		var c: Vector3 = ClubPlaces.find(id)["pos"]
+		world.walk.floors.append([Rect2(c.x - 3.2, c.z - 2.7, 6.4, 5.4), 0.15])
+	var bt: Vector3 = ClubPlaces.find("bar")["pos"]
+	world.walk.floors.append([Rect2(bt.x - 3.0, bt.z - 3.2 - 2.9, 6.0, 5.0), 0.12])      # the roulette's deck
+	world.walk.floors.append([Rect2(ClubLevels.TROPHY.x - 2.0, ClubLevels.TROPHY.z - 0.6, 4.0, 2.0), 0.12])
+	world.walk.floors.append([Rect2(ClubLevels.BAR.x - 6.5, ClubLevels.BAR.z - 4.9, 13.0, 3.0), 0.10])   # the bar's terrace
 	ClubPack.request(self)
 	_build_signs()
 	_refresh(true)
