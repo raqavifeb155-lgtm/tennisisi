@@ -13,11 +13,15 @@ func _initialize() -> void:
 	test_place_levels()
 	test_roulette_physics()
 	test_builds()
+	test_quests()
+	test_shop_locker()
 	await test_world()
 	await test_flow()
+	await test_transitions()
 	await test_places_flow()
 	await test_build_world()
 	await test_foreman_flow()
+	await test_quests_flow()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -36,7 +40,7 @@ func test_places() -> void:
 		check(float(p["r"]) > 0.5, "%s has a circle" % p["id"])
 		var st0 := ClubPlaces.state(p["id"], 0)
 		check(st0.get("action", "") != "" or st0.get("sign", "") != "", "%s has a button or a sign" % p["id"])
-	for id in ["court", "machine", "coach", "gate", "locker", "shop", "trophy", "bar", "arena", "board"]:
+	for id in ["court", "machine", "coach", "gate", "locker", "shop", "trophy", "bar", "blackjack", "arena", "board", "academy", "booth"]:
 		check(ids.has(id), "place %s exists" % id)
 	var overlap := false
 	for i in ClubPlaces.LIST.size():
@@ -69,6 +73,10 @@ func test_place_levels() -> void:
 	check(ClubPlaces.state("shop", 0)["action"] == "club_shop", "the shop opens its screen")
 	check(ClubPlaces.state("bar", 0)["action"] == "club_roulette", "the bar's button is the roulette")
 	check(ClubPlaces.state("arena", 0)["action"] == "club_place", "the arena site tells what will be there")
+	var bj := ClubPlaces.find("blackjack")
+	check(ClubPlaces.state("blackjack", 0)["action"] == "club_blackjack" and ClubPlaces.state("blackjack", 0)["label"] == "Блэкджек", "the blackjack table: 'Блэкджек' -> club_blackjack")
+	check(bj.get("unlock", "") == "title" and bj.get("build", "") == "bar", "after the first title, like the Totalizator; grows with the bar")
+	check((bj["pos"] as Vector3).distance_to(ClubPlaces.find("bar")["pos"]) < 9.0, "on the bar's terrace, by the roulette")
 	check(int(ClubPlaces.state("bar", 3)["bet_limit"]) > int(ClubPlaces.state("bar", 0)["bet_limit"]), "a bigger bar takes bigger bets")
 	check(ClubPlaces.state("bar", 9)["bet_limit"] == ClubPlaces.state("bar", 3)["bet_limit"], "past the last level the last one holds")
 	var shop := ClubPlaces.find("shop")
@@ -170,7 +178,7 @@ func test_builds() -> void:
 	check(ClubBuilds.affordable_count() == 3, "with plenty of gold: court, stands, gate (%d)" % ClubBuilds.affordable_count())
 	SaveData.played = 1
 	SaveData.titles = 1
-	check(ClubBuilds.affordable_count() == 5, "all five after a title")
+	check(ClubBuilds.affordable_count() == 7, "all seven after a title (with the shop and the locker room)")
 	SaveData.gold = 45
 	check(ClubBuilds.affordable_count() == 1, "45 gold: only the court (%d)" % ClubBuilds.affordable_count())
 	SaveData.gold = 0
@@ -183,6 +191,108 @@ func test_builds() -> void:
 	SaveData.club = {}
 	SaveData.played = 0
 	SaveData.titles = 0
+
+
+## The coach's quests (hub spec 5): three a run from a pool of 15, progress by events,
+## rewards by the island, every third one an item.
+func test_quests() -> void:
+	print("quests")
+	SaveData.club = {}
+	SaveData.gold = 0
+	check(ClubQuests.TEMPLATES.size() >= 12, "a pool of at least 12 (%d)" % ClubQuests.TEMPLATES.size())
+	var fine := true
+	for t in ClubQuests.TEMPLATES:
+		fine = fine and (t["n"] as Array).size() == 3 and int(t["gold"]) >= 20 and int(t["gold"]) <= 60 and t["event"] != ""
+	check(fine, "every template: three thresholds, 20..60 gold, an event")
+	ClubQuests.start_run("111", 0)
+	var q: Array = ClubQuests.current()
+	check(q.size() == 3, "three quests a run")
+	check(q[0]["tpl"] != q[1]["tpl"] and q[1]["tpl"] != q[2]["tpl"] and q[0]["tpl"] != q[2]["tpl"], "three different ones")
+	var again := ClubQuests.current().duplicate(true)
+	ClubQuests.start_run("111", 0)
+	check(ClubQuests.current() == again, "the same run: the same quests")
+	SaveData.club = {}
+	ClubQuests.start_run("111", 0)
+	check(ClubQuests.current() == again, "the same run's seed gives the same quests")
+	# Progress: drive the first quest to its end by its own event.
+	var first: Dictionary = ClubQuests.current()[0]
+	var ev: String = first["event"]
+	var need := float(first["need"])
+	if first["kind"] == "max":
+		ClubQuests.note(ev, need - 0.5 if need > 1.0 else 0.0)
+		check(not ClubQuests.progress(0)["done"], "short of the mark: not done")
+		ClubQuests.note(ev, need)
+	else:
+		for k in int(need) - 1:
+			ClubQuests.note(ev, 1.0)
+		check(not ClubQuests.progress(0)["done"], "one short: not done")
+		ClubQuests.note(ev, 1.0)
+	check(ClubQuests.progress(0)["done"], "done when the count is reached (%s)" % ev)
+	check(ClubQuests.claimable_count() == 1, "one to collect")
+	var gold0 := SaveData.gold
+	var reward := ClubQuests.claim(0)
+	check(int(reward["gold"]) >= 20 and SaveData.gold == gold0 + int(reward["gold"]), "the gold comes on 'Забрать' (+%d)" % int(reward["gold"]))
+	check(ClubQuests.claim(0).is_empty() and ClubQuests.claim(1).is_empty(), "no claiming twice, nothing for an unfinished one")
+	# A match-scope count starts again each match.
+	SaveData.club = {"quests": {"run": "x", "issued": 0, "claimed": 0, "list": [
+		{"tpl": "aces", "text": "", "event": "ace", "kind": "count", "scope": "match", "need": 3, "have": 0, "done": false, "claimed": false, "gold": 40, "item": false, "tier": 0}]}}
+	ClubQuests.note("ace")
+	ClubQuests.note("ace")
+	ClubQuests.match_started()
+	check(int(ClubQuests.progress(0)["have"]) == 0, "aces in a match: counted afresh each match")
+	# A new run burns what wasn't done; done-but-not-collected stays.
+	SaveData.club = {}
+	ClubQuests.start_run("A", 0)
+	var l: Array = ClubQuests.current()
+	l[0]["have"] = l[0]["need"]
+	l[0]["done"] = true
+	ClubQuests.start_run("B", 0)
+	check(ClubQuests.current().size() == 4 and ClubQuests.claimable_count() == 1, "a new run: the old unfinished go, the finished one waits to be collected")
+	# Rewards by island; every third quest an item.
+	SaveData.club = {}
+	ClubQuests.start_run("C", 3)
+	var paris: Dictionary = ClubQuests.current()[0]
+	var tpl := ClubQuests.find_template(paris["tpl"])
+	check(int(paris["gold"]) == roundi(int(tpl["gold"]) * ClubQuests.GOLD_MULT[3]), "Paris pays x2")
+	check(not ClubQuests.current()[0]["item"] and not ClubQuests.current()[1]["item"] and ClubQuests.current()[2]["item"], "the third quest carries an item")
+	var third: Dictionary = ClubQuests.current()[2]
+	third["have"] = third["need"]
+	third["done"] = true
+	SaveData.active = null
+	SaveData.run = {}
+	var r3 := ClubQuests.claim(2)
+	var item: Dictionary = r3.get("item", {})
+	check(not item.is_empty() and int(item["rarity"]) >= Gear.RARE, "an item, rare or better")
+	check(r3["to"] == "locker" or (r3["to"] == "club" and (SaveData.club.get("quest_items", []) as Array).size() == 1), "with no run the item goes to the locker (or waits in the club until stream A's locker)")
+	check(ClubQuests.tier_of("park") == 0 and ClubQuests.tier_of("paris") == 3, "islands: New York 0 .. Paris 3")
+	SaveData.club = {}
+	SaveData.gold = 0
+
+
+## The shop and the locker room are constructions too (hub spec 1, 2).
+func test_shop_locker() -> void:
+	print("shop and locker")
+	SaveData.club = {}
+	check(ClubBuilds.max_level("shop") == 2 and ClubBuilds.max_level("locker") == 3, "shop 0..2, locker room 0..3")
+	check(int(ClubBuilds.TABLE["shop"]["levels"][0]["price"]) == 150 and int(ClubBuilds.TABLE["shop"]["levels"][1]["price"]) == 450, "the shop: 150, 450")
+	check(int(ClubBuilds.TABLE["locker"]["levels"][0]["price"]) == 80 and int(ClubBuilds.TABLE["locker"]["levels"][2]["price"]) == 550, "the locker room: 80 .. 550")
+	var stock := []
+	var rar := []
+	for lv in 3:
+		SaveData.club = {"levels": {"shop": lv}}
+		stock.append(ClubBuilds.shop_stock())
+		rar.append(ClubBuilds.shop_max_rarity())
+	check(stock == [2, 3, 4] and rar == [Gear.RARE, Gear.EPIC, Gear.LEGENDARY], "the shop shows 2/3/4 things, up to rare/epic/legendary")
+	var slots := []
+	for lv in 4:
+		SaveData.club = {"levels": {"locker": lv}}
+		slots.append(ClubBuilds.locker_slots())
+	check(slots == [1, 2, 3, 4], "locker slots: 1 + the level, up to 4")
+	SaveData.club = {}
+	SaveData.played = 0
+	check(not ClubBuilds.is_open("shop") and not ClubBuilds.is_open("locker"), "both after the first run")
+	check(ClubPlaces.find("shop").get("build", "") == "shop" and ClubPlaces.find("locker").get("build", "") == "locker", "the places grow with their constructions")
+	check(ClubPlaces.state("locker", 0)["action"] == "club_locker", "the locker room's button: club_locker (stream A's screen)")
 
 
 ## ClubMaterial: one soft toon material per colour, outlines only where they pay.
@@ -314,6 +424,24 @@ func test_flow() -> void:
 	check(club.active and main.player.position.distance_to(club.START) < 0.5, "back in the club, at the court")
 	var again: Dictionary = club.place_buttons("court")
 	check(again["label"].begins_with("НОВАЯ ИГРА  ·  ИСПАНИЯ") and again["extra"].size() == 1, "the button names the last place, one quiet 'другое место'")
+	check(again["extra"][0][1] == "club_locations", "'Другое место' opens the club's islands screen")
+	var screens: GDScript = load("res://scripts/club/club_screens.gd")  # loaded: it reaches the autoloads
+	check(screens.loc_unlocked("grass") and screens.loc_hint("grass") == "", "no Locations.unlocked yet: everything open (a stub)")
+	club._on_choice("club_locations", 0)
+	await _frames(2)
+	check(main.ui.is_open(), "the islands screen opens")
+	screens.locations(main.ui, func(id: String) -> bool: return id == "park", func(id: String) -> String: return "за титул в Испании")
+	await _frames(1)
+	var locked := 0
+	for c in main.ui._box.get_children():
+		if c is Button and (c as Button).disabled:
+			locked += 1
+	check(locked == Locations.LIST.size() - 1, "locked islands show a lock and can't be picked (%d)" % locked)
+	main._on_ui("location", 0)
+	await _frames(2)
+	check(main.ui.is_open(), "an open island: on to the formats, as before")
+	main._on_ui("menu", 0)
+	await _frames(2)
 	club._on_choice("club_tournament", 0)
 	await _frames(3)
 	check(main.tournament != null and main.location_id == "clay" and main.ui.is_open(), "one tap: the bracket in Spain")
@@ -369,6 +497,11 @@ func test_places_flow() -> void:
 	var w = club.world
 	check(not w.walk.route(Vector2(0, 14), Vector2(22, 2)).is_empty(), "a way from the court to the shop")
 	check(not w.walk.route(Vector2(0, 14), Vector2(20, -30)).is_empty(), "a way from the court to the bar")
+	var bjp: Vector3 = ClubPlaces.find("blackjack")["pos"]
+	check(not w.walk.route(Vector2(0, 14), Vector2(bjp.x, bjp.z)).is_empty(), "a way from the court to the blackjack table")
+	var bjt: Transform3D = w.blackjack()
+	check(bjt.origin.distance_to(bjp) < 3.5 and (-bjt.basis.z).z < -0.9, "the blackjack table's marker: by its circle, the dealer's side toward the river")
+	check(w.blackjack_root() != null and w.blackjack_root().name == "blackjack_table", "stream E's scene has a node to stand in")
 	club._travel("shop")
 	await _frames(3)
 	check(club.hud.current_place() == "shop", "quick travel to the shop")
@@ -411,6 +544,14 @@ func test_places_flow() -> void:
 	club.roulette_close()
 	await _frames(2)
 	check(not club.roulette_on() and club.hud.current_place() == "bar", "back from the roulette: at the bar")
+	club._travel("blackjack")
+	await _frames(2)
+	check(club.hud.current_place() == "blackjack", "quick travel to the blackjack table")
+	club._on_choice("club_blackjack", 0)
+	await _frames(2)
+	check(main.ui.is_open() or club.get("blackjack_on") == true, "Блэкджек: stream E's scene, or a 'скоро' card until it comes")
+	main._on_ui("menu", 0)
+	await _frames(2)
 	main.queue_free()
 	await _frames(2)
 	SaveData.played = 0
@@ -425,13 +566,16 @@ func test_build_world() -> void:
 	root.add_child(w)
 	await process_frame
 	var fine := true
+	var ghosts := true
 	for id in ClubBuilds.ORDER:
 		for lv in ClubBuilds.max_level(id) + 1:
 			w.set_level(id, lv)
 			if w.level_built(id) != lv:
 				fine = false
 		w.show_ghost(id, ClubBuilds.max_level(id))
+		ghosts = ghosts and w.ghost_id() == id
 		w.show_ghost("", 0)
+	check(ghosts, "every construction has its ghost (the rooms too)")
 	check(fine, "every level of the five constructions builds")
 	w.set_club_color(1)
 	check(true, "the club's colour paints without errors")
@@ -492,3 +636,153 @@ func test_foreman_flow() -> void:
 	SaveData.played = 0
 	SaveData.titles = 0
 	SaveData.gold = 0
+
+
+## Quests in play: GameEvents move them, the coach's room shows them, 'Забрать' pays.
+func test_quests_flow() -> void:
+	print("quests flow")
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	root.add_child(main)
+	await _frames(5)
+	SaveData.enabled = false
+	SaveData.club = {"last_location": "park", "last_format": 0}
+	SaveData.active = null
+	SaveData.run = {}
+	SaveData.played = 1
+	SaveData.gold = 0
+	Skills.pending = []
+	Skills.points = 0
+	main._show_menu()
+	await _frames(3)
+	var club = main.club
+	club._on_choice("club_tournament", 0)   # a run starts: its bracket
+	await _frames(2)
+	main.tournament_mode = true
+	var ev: Node = root.get_node("GameEvents")  # by path: the test compiles before autoloads
+	ev.match_started.emit({"tournament": true, "opponent": ""})
+	await _frames(1)
+	var q: Array = ClubQuests.current()
+	check(q.size() == 3 and SaveData.club["quests"]["run"] == str(main.tournament.rng.seed), "the run's first match deals three quests")
+	# Force a known quest in slot 0 and play its events through GameEvents.
+	q[0] = {"tpl": "aces", "text": "Подай 2 эйса за матч", "event": "ace", "kind": "count", "scope": "match", "need": 2, "have": 0, "done": false, "claimed": false, "gold": 40, "item": false, "tier": 0}
+	var got := []
+	ev.quest_done.connect(func(info: Dictionary) -> void: got.append(info))
+	for k in 2:
+		ev.point.emit({"winner": 0, "reason": "ACE", "rally": 1, "server": 0, "close_call": {}, "best": false})
+	await _frames(1)
+	check(ClubQuests.progress(0)["done"] and got.any(func(x): return int(x["index"]) == 0), "two aces by GameEvents: done, quest_done fired")
+	q[1] = {"tpl": "streak", "text": "", "event": "streak", "kind": "max", "scope": "run", "need": 3, "have": 0, "done": false, "claimed": false, "gold": 35, "item": false, "tier": 0}
+	ev.point.emit({"winner": 0, "reason": "OUT", "rally": 3, "server": 1, "close_call": {}, "best": false})
+	check(ClubQuests.progress(1)["done"], "points in a row are counted across reasons")
+	main.tournament_mode = false
+	main._show_menu()
+	await _frames(3)
+	club._travel("coach")
+	await _frames(2)
+	var b: Dictionary = club.place_buttons("coach")
+	check(b["action"] == "club_claim" and String(b["label"]).begins_with("ЗАБРАТЬ"), "at the coach's: ЗАБРАТЬ")
+	check(club.badge_counts()["coach"] >= 2, "the badge over the coach's room counts what's to collect")
+	check(club.world.board_text().contains("✓"), "the chalkboard shows the quests")
+	var g0: int = SaveData.gold
+	club._on_choice("club_claim", 0)
+	await _frames(2)
+	check(SaveData.gold >= g0 + 75 and ClubQuests.claimable_count() == 0, "Забрать: all the rewards at once")
+	check(club.place_buttons("coach")["action"] == "character", "then the button is НАВЫКИ again")
+	club._on_choice("club_quests", 0)
+	await _frames(2)
+	check(main.ui.is_open(), "the quests' board screen")
+	main._on_ui("menu", 0)
+	main.queue_free()
+	await _frames(2)
+	SaveData.club = {}
+	SaveData.played = 0
+	SaveData.gold = 0
+
+
+## The owner's phone test (08.10): taps walk, never press; the club's props leave the
+## court for a match; every way out of the club comes back to it.
+func test_transitions() -> void:
+	print("transitions")
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	root.add_child(main)
+	await _frames(5)
+	SaveData.enabled = false
+	SaveData.club = {"last_location": "clay", "last_format": 0, "met_coach": true}
+	SaveData.active = null
+	SaveData.run = {}
+	SaveData.played = 1
+	Skills.pending = []
+	main._show_menu()
+	await _frames(3)
+	var club = main.club
+	# 1. A tap on a place (the machine's circle on the court) walks there; it never starts
+	# practice. Only the button does.
+	var mp: Vector3 = ClubPlaces.find("machine")["pos"]
+	var screen: Vector2 = club.cam.unproject_position(mp)
+	club._on_tap(screen)
+	await _frames(3)
+	check(club.active and main.phase == club._idle, "a tap on the machine's circle doesn't start a match")
+	check(club._move_target != Vector3.INF and Vector2(club._move_target.x - mp.x, club._move_target.z - mp.z).length() < 0.5, "it walks the hero to the place")
+	for i in 240:
+		await physics_frame
+		if club.hud.current_place() == "machine":
+			break
+	check(club.hud.current_place() == "machine", "arrived: the place's button shows (%s)" % club.hud.current_place())
+	check(not club.hud.buttons.has(club.hud._bubble) and club.hud._bubble.mouse_filter == Control.MOUSE_FILTER_IGNORE, "the coach's bubble never eats a tap")
+	# Hold to walk (tap mode): the hero follows the finger.
+	club._move_target = Vector3.INF
+	club._on_hold(club.cam.unproject_position(Vector3(-4, 0, 12)))
+	check(club._move_target != Vector3.INF, "holding the finger walks the hero toward it")
+	club._move_target = Vector3.INF
+	# 3. Leaving the court's circle: the buttons go, a hint once.
+	club._travel("court")
+	await _frames(2)
+	check(club.hud.current_place() == "court", "the main screen's buttons in the court's circle")
+	SaveData.club.erase("walk_hint")
+	main.player.position = Vector3(0, 0, 20.5)
+	await _frames(3)
+	check(club.hud.current_place() == "", "out of the circle: Новая игра / Продолжить ride away")
+	check(club.hud.hint_shown(), "a hint how to walk, the first time")
+	check(SaveData.club.get("walk_hint", false), "only once")
+	club._travel("court")
+	await _frames(2)
+	# Club -> the bracket -> back: in the club, the hero where he was.
+	var before: Vector3 = main.player.position
+	club._on_choice("club_tournament", 0)
+	await _frames(3)
+	check(main.ui.is_open() and not club.active, "the bracket")
+	main._on_ui("menu", 0)
+	await _frames(3)
+	check(club.active and main.location_id == "club" and main.player.position.distance_to(before) < 0.6, "back from the bracket: the club, the hero where he was")
+	SaveData.active = null
+	SaveData.run = {}
+	# 2. Practice on the club's court: no machine, coach props or circles on it.
+	club._on_choice("practice", 0)
+	await _frames(3)
+	check(main.phase != club._idle and main.location_id == "club", "practice on the club court")
+	check(not club.world.props_visible(), "the machine and the circles leave the court for the match")
+	check(not main.cpu.get_meta("club_coach", false), "the opponent is not the coach in his cap")
+	# Pause in the match -> 'Выйти в клуб'.
+	main.hud.menu_requested.emit()
+	await _frames(3)
+	check(club.active and main.phase == club._idle and not main.get_tree().paused, "Выйти в клуб from a match: the club, not paused")
+	check(club.world.props_visible(), "the props are back")
+	# A tournament match to its end -> the result -> the club.
+	club._on_choice("club_tournament", 0)
+	await _frames(2)
+	main._on_ui("play", 0)
+	await _frames(3)
+	check(main.phase != club._idle and not club.active, "a tournament match")
+	main.scoreboard.winner = 0
+	main._finish_match()
+	await _frames(3)
+	check(main.ui.is_open(), "its result")
+	main._on_ui("menu", 0)
+	await _frames(3)
+	check(club.active and main.location_id == "club" and club.world.props_visible(), "from the result: back in the club")
+	main.queue_free()
+	await _frames(2)
+	SaveData.club = {}
+	SaveData.played = 0
+	SaveData.active = null
+	SaveData.run = {}
