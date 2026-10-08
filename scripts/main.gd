@@ -1443,6 +1443,7 @@ func _end_point(winner: int, reason: String) -> void:
 
 func _fault(kind: String) -> void:
 	var by := server
+	GameEvents.fault.emit({"server": by, "kind": kind, "second": serve_attempt == 2})
 	if serve_attempt == 1:
 		serve_attempt = 2
 		_replay_serve = true
