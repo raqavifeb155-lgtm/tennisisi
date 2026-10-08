@@ -12,6 +12,69 @@ class_name AthleteCasual
 const WALK_TO_JOG := Vector2(2.0, 3.8)      # speeds (m/s) where the walk turns into a jog
 
 
+## The old coach (stream H-8): grey side-parted hair, a moustache, a cap, a navy polo, a
+## whistle on a cord - and a slight stoop (see `shape`).
+const ELDER_LOOK := {"skin": 2, "hair": 3, "hair_color": 10, "beard": 2, "head": 1, "shirt": 4, "shorts": 2, "accent": 1}
+
+
+## Dresses an athlete as the old coach.
+static func make_elder(a: Athlete, look := ELDER_LOOK) -> void:
+	a.set_meta("elder", true)
+	a.set_look(look)
+
+
+## A child or a teenager: `size` 0.7..1.0 of the adult's height, with a bigger head and the
+## limbs a little short for the body (the model's non-uniform scale; the poses and the
+## strokes are the adult's, scaled with it, so nothing in the animation changes).
+static func set_junior(a: Athlete, size: float) -> void:
+	a.set_meta("junior", clampf(size, 0.7, 1.0))
+
+
+## Brings the body in line with the metas "junior" and "elder": runs every frame from `shape`
+## (cheap) and redoes its work when the model has been rebuilt (a new look).
+static func _body(a: Athlete) -> void:
+	var model: Node3D = a._model
+	if model == null:
+		return
+	var jr := float(a.get_meta("junior", 1.0))
+	var elder := bool(a.get_meta("elder", false))
+	var stamp := "%d:%.2f:%d" % [model.get_instance_id(), jr, int(elder)]
+	if a.get_meta("body_stamp", "") == stamp:
+		return
+	a.set_meta("body_stamp", stamp)
+	model.scale = Vector3.ONE if jr >= 0.999 else Vector3(jr * 1.05, jr * 0.94, jr * 1.05)
+	var head: Node3D = a._head
+	if head != null and jr < 0.999:
+		head.scale = head.scale * (1.0 + (1.0 - jr) * 1.6)   # a child's head is big
+	if elder:
+		var chest: Node3D = a._bones.get("chest")
+		if chest != null:
+			var whistle := MeshInstance3D.new()
+			var cap := CapsuleMesh.new()
+			cap.radius = 0.035
+			cap.height = 0.11
+			whistle.mesh = cap
+			var mat := StandardMaterial3D.new()
+			mat.albedo_color = Color(0.95, 0.8, 0.2)
+			whistle.material_override = mat
+			whistle.position = Vector3(0.0, 0.08, -0.2)
+			whistle.rotation = Vector3(0.0, 0.0, PI * 0.5)
+			chest.add_child(whistle)
+			var cord := MeshInstance3D.new()
+			var cm := CylinderMesh.new()
+			cm.top_radius = 0.008
+			cm.bottom_radius = 0.008
+			cm.height = 0.22
+			cm.radial_segments = 4
+			cm.rings = 0
+			cord.mesh = cm
+			var cmat := StandardMaterial3D.new()
+			cmat.albedo_color = Color(0.1, 0.1, 0.12)
+			cord.material_override = cmat
+			cord.position = Vector3(0.0, 0.17, -0.19)
+			chest.add_child(cord)
+
+
 ## Whether a node walks casually.
 static func is_on(a: Node) -> bool:
 	return a.has_meta("casual") and bool(a.get_meta("casual"))
@@ -19,6 +82,10 @@ static func is_on(a: Node) -> bool:
 
 ## Adjusts the athlete's pose inputs for this frame; returns the stride factor `amt`.
 static func shape(a: Athlete, delta: float, speed: float, amt: float) -> float:
+	if a.has_meta("junior") or a.has_meta("elder"):
+		_body(a)
+		if bool(a.get_meta("elder", false)) and a._mode == 0 and a._down < 0.0:
+			a._pitch = lerpf(a._pitch, 0.2, 1.0 - exp(-4.0 * delta))   # a slight stoop
 	var on := is_on(a)
 	var racket: Node3D = a._racket
 	if racket != null:

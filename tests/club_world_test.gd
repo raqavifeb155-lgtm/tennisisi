@@ -404,6 +404,76 @@ func test_in_the_club() -> void:
 		if bad:
 			hits.append("%d@%s" % [i, str(views[i])])
 	check(hits.is_empty(), "nothing stands between the camera and the hero in any view (%s)" % ", ".join(hits))
+	# people: a person to talk to, and nobody to walk through
+	var npc: ClubNpc = club.npc
+	check(npc.has("coach") and (npc.entry("coach")["lines"] as Array).size() >= 3, "the coach is registered as a person with lines")
+	var acted := []
+	npc.acted.connect(func(id: String, action: String) -> void: acted.append([id, action]))
+	npc.register("t_guest", Vector3(30.0, 0.0, 30.0), "Поговорить", "club_t_guest", ["один", "два", "три"])
+	club._travel("court")
+	await _frames(3)
+	hero.position = Vector3(30.0, 0.0, 31.3)
+	await _frames(4)
+	check(club.hud.current_place() == "npc_t_guest", "a person within 1.2 m: the button (%s)" % club.hud.current_place())
+	var said := []
+	for k in 4:
+		club._on_choice("club_npc_t_guest", 0)
+		said.append(club.hud._bubble_label.text)
+	check(said[0] == "один" and said[1] == "два" and said[2] == "три" and said[3] == "один", "the lines go round: %s" % str(said))
+	check(acted.size() == 4 and acted[0][1] == "club_t_guest", "and each press does the action")
+	hero.position = Vector3(30.0, 0.0, 34.0)
+	await _frames(4)
+	check(club.hud.current_place() != "npc_t_guest", "a step away: the button goes")
+	# walk straight into him: the hero stops at his body
+	hero.position = Vector3(30.0, 0.0, 33.0)
+	hero.rotation.y = 0.0
+	main.hud.touch._stick_vector = Vector2(0, -1)
+	for i in 120:
+		await physics_frame
+	main.hud.touch._stick_vector = Vector2.ZERO
+	var gap := Vector2(hero.position.x - 30.0, hero.position.z - 30.0).length()
+	check(gap > 0.7 and gap < 1.2, "the hero stops at the person's body (%.2f m)" % gap)
+	npc.unregister("t_guest")
+	# the coach is solid too
+	var coach_body: Node3D = main.cpu
+	hero.position = coach_body.position + Vector3(0, 0, 3.0)
+	main.hud.touch._stick_vector = Vector2(0, -1)
+	for i in 100:
+		await physics_frame
+	main.hud.touch._stick_vector = Vector2.ZERO
+	var cgap := Vector2(hero.position.x - coach_body.position.x, hero.position.z - coach_body.position.z).length()
+	check(cgap > 0.6, "and so is the coach (%.2f m)" % cgap)
+	# 60 seconds of strolling: nobody gets stuck, nobody walks through anybody
+	var crowd: ClubCrowd = scenery.crowd
+	var worst_wait := 0.0
+	var closest := 9.0
+	hero.position = Vector3(0, 0, 36)
+	for i in 3600:
+		hero.position = Vector3(0, 0, 36.0 - float(i % 1800) / 1800.0 * 20.0)    # the hero walks the main alley and back
+		crowd._update(1.0 / 60.0)
+		for a in crowd.walker_count():
+			worst_wait = maxf(worst_wait, crowd._walkers[a].waiting)
+			for b in range(a + 1, crowd.walker_count()):
+				var d := (crowd._walkers[a].pos - crowd._walkers[b].pos).length()
+				if d < 1.0e4:
+					closest = minf(closest, d)
+	check(worst_wait < 6.0, "60 s of strolling: nobody is held up for long (%.1f s)" % worst_wait)
+	check(closest > 0.55, "and nobody walks through anybody (closest %.2f m)" % closest)
+	# the bodies: juniors and the old coach
+	var kid := Athlete.new()
+	root.add_child(kid)
+	kid.setup(-1.0, Color(0.2, 0.5, 0.9), Rect2(-9, -18, 18, 36))
+	AthleteCasual.set_junior(kid, 0.7)
+	var old := Athlete.new()
+	root.add_child(old)
+	old.setup(-1.0, Color(0.5, 0.5, 0.5), Rect2(-9, -18, 18, 36))
+	AthleteCasual.make_elder(old)
+	await _frames(6)
+	check(kid._model.scale.y < 0.7 and kid._model.scale.y > 0.6 and kid._head.scale.x > 1.28 * 1.4, "a junior is 0.7 of the adult, his head bigger (%.2f, head x%.2f)" % [kid._model.scale.y, kid._head.scale.x / 1.28])
+	check(old._pitch > 0.1 and (old._bones["chest"] as Node3D).get_child_count() >= 2, "the old coach stoops and wears a whistle on a cord (%.2f)" % old._pitch)
+	check(old.look["hair_color"] == 10 and old.look["beard"] == 2, "grey hair, a moustache")
+	kid.queue_free()
+	old.queue_free()
 	# a match takes the racket back
 	club._on_choice("practice", 0)
 	await _frames(4)

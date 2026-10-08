@@ -26,6 +26,9 @@ class Walker:
 	var lane := 0.0
 	var length := 0.0
 	var cool := 0.0           # after turning away from the hero
+	var pos := Vector2(1.0e5, 1.0e5)   # where he stood last frame (the others look at it)
+	var heading := Vector2.ZERO
+	var waiting := 0.0        # how long he has been held up
 
 class Pigeon:
 	var home := Vector3.ZERO
@@ -46,6 +49,7 @@ var _high := true
 var _lengths: Array[float] = []
 var _routes: Array = []
 var _fan_n := 0
+var _registered := false
 var _fan_base: Array[Color] = []
 var _fan_t := 0.0
 
@@ -80,7 +84,7 @@ func _ready() -> void:
 			w.dir = 1.0 if _rng.randf() < 0.5 else -1.0
 			w.speed = _rng.randf_range(0.8, 1.4)
 			w.phase = _rng.randf_range(0.0, TAU)
-			w.lane = _rng.randf_range(-0.25, 0.25)
+			w.lane = 0.45          # everybody keeps to the same hand: two who meet pass 0.9 m apart
 			_walkers.append(w)
 			body_col.append(shirts[_rng.randi() % shirts.size()])
 			var skin: Color = skins[_rng.randi() % skins.size()]
@@ -114,6 +118,8 @@ func refresh(high: bool) -> void:
 
 func _process(delta: float) -> void:
 	_update(delta)
+	if not _registered:
+		_register()
 
 
 func _update(delta: float) -> void:
@@ -144,6 +150,20 @@ func _update(delta: float) -> void:
 				if to_hero.length() < 1.5 and w.cool <= 0.0:
 					w.dir = -w.dir
 					w.cool = 3.0
+		# nor through each other: one with somebody close ahead waits; held up too long, he turns round
+		for j in _walkers.size():
+			if j != i:
+				var od := _walkers[j].pos - w.pos
+				if od.length() < 0.85 and od.dot(w.heading) > 0.0:
+					move = 0.0
+		if move == 0.0:
+			w.waiting += delta
+			if w.waiting > 3.0 and w.cool <= 0.0:
+				w.dir = -w.dir
+				w.cool = 3.0
+				w.waiting = 0.0
+		else:
+			w.waiting = 0.0
 		w.s += w.dir * w.speed * WALK_SPEED * delta * move
 		if w.s > w.length:
 			w.s = w.length
@@ -159,6 +179,8 @@ func _update(delta: float) -> void:
 		tang = tang.normalized()
 		var side := Vector2(-tang.y, tang.x) * w.lane
 		var q := at + side
+		w.pos = q
+		w.heading = tang
 		w.phase += delta * (5.0 + w.speed * 2.0)
 		var bob := absf(sin(w.phase)) * 0.045
 		var yaw := atan2(-tang.x, -tang.y)
@@ -191,6 +213,38 @@ func _update(delta: float) -> void:
 		var lift := 0.0 if p.t >= 0.0 else 0.0
 		var b := Basis.from_euler(Vector3(sin(p.peck) * 0.35 if p.t < 0.0 else -0.25, p.yaw, 0.0))
 		pm.set_instance_transform(i, Transform3D(b, p.pos + Vector3(0, lift, 0)))
+
+
+## Where stroller `i` stands, and where fan `i` does (Vector3.INF = not there).
+func walker_pos(i: int) -> Vector3:
+	var w := _walkers[i]
+	return Vector3(w.pos.x, 0.0, w.pos.y) if w.pos.x < 1.0e4 else Vector3.INF
+
+
+func fan_pos(i: int) -> Vector3:
+	if i >= _fan_n:
+		return Vector3.INF
+	return Vector3(-ClubLayout.HX - 1.3 - 0.25 * float(i % 2), 0.0, -9.5 + float(i) * 2.55)
+
+
+func walker_count() -> int:
+	return _walkers.size()
+
+
+## Everybody here is somebody the hero can bump into and greet (ClubNpc).
+func _register() -> void:
+	var main: Node = get_parent().world.get_parent()
+	var club = main.get("club") if main != null else null
+	if club == null or club.get("npc") == null:
+		return
+	_registered = true
+	var npc: ClubNpc = club.npc
+	for i in _walkers.size():
+		npc.register("walker_%d" % i, [self, "walker_pos", i], "", "", [
+			"Добрый день!", "Хорошая погода сегодня", "Играете? Удачи!", "Говорят, скоро здесь всё починят"], {"auto": true, "head": 1.95})
+	for i in FANS:
+		npc.register("fan_%d" % i, [self, "fan_pos", i], "", "", [
+			"Давай, чемпион!", "Мы за тебя!", "Отсюда лучший вид на корт", "Ещё один такой удар!"], {"auto": true, "head": 1.95})
 
 
 func _point(route: int, s: float) -> Vector2:
