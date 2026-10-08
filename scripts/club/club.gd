@@ -120,6 +120,13 @@ func open() -> bool:
 		cam.snap()
 		_place = ""
 		hud.hide_place()
+		# A walk, a quick-travel route or a held finger from before the bracket must not outlive it.
+		_move_target = Vector3.INF
+		_route = []
+		_auto_route = []
+		_stick_down = false
+		_foreman_on = false
+		_roulette_on = false
 	main.ui.close()
 	world.set_props_visible(true)
 	_finish_builds()
@@ -152,7 +159,6 @@ func close() -> void:
 		main.player.visible = true
 		if is_instance_valid(world):
 			world.set_roulette_view(false)
-	_hero = main.player.position if _place != "" else START
 	var p: Athlete = main.player
 	p.set_meta("casual", false)
 	p.accel = 22.0   # the court's own pick-up and braking (Athlete's defaults)
@@ -238,6 +244,7 @@ func _process(delta: float) -> void:
 	if main.phase != _idle or main.location_id != "club" or not is_instance_valid(world):
 		close()
 		return
+	_hero = main.player.position  # where he stands now: back from a bracket or a match he comes here
 	var screen_open: bool = main.ui.is_open()
 	hud.visible = not screen_open
 	_show_hud_settings(screen_open)

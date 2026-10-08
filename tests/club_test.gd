@@ -22,6 +22,7 @@ func _initialize() -> void:
 	await test_flow()
 	await test_transitions()
 	await test_places_flow()
+	await test_returns()
 	await test_build_world()
 	await test_foreman_flow()
 	await test_quests_flow()
@@ -589,6 +590,106 @@ func test_flow() -> void:
 	check(club.hud.current_place() == "coach", "quick travel lands in the coach's circle")
 	main.queue_free()
 	await _frames(2)
+
+
+## Every way back into the club (the owner's phone: "teleported to the middle of the court and
+## can't move"): the hero is where he was, the club is on, the stick and the tap work.
+func test_returns() -> void:
+	print("returns")
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	root.add_child(main)
+	await _frames(5)
+	SaveData.enabled = false
+	SaveData.club = {"last_location": "clay", "last_format": 1, "met_coach": true}
+	SaveData.titles = 4
+	SaveData.titles_by_loc = {"park": 1, "clay": 1, "grass": 1}
+	SaveData.played = 1
+	SaveData.active = null
+	SaveData.run = {}
+	Skills.pending = []
+	main._show_menu()
+	await _frames(3)
+	var club = main.club
+	var mods: GDScript = load("res://scripts/ui/screens/run_mods.gd")
+	var at := Vector3(14.0, 0.0, 30.0)  # somewhere that is not the court's circle: in front of the pavilions
+	var routes := {
+		"new game, bracket, back": func() -> void:
+			club._on_choice("club_tournament_new", 0)
+			await _frames(3)
+			main._on_ui("menu", 0),
+		"another place, back": func() -> void:
+			club._on_choice("club_locations", 0)
+			await _frames(3)
+			main._on_ui("menu", 0),
+		"another place picked, back": func() -> void:
+			club._on_choice("club_locations", 0)
+			await _frames(3)
+			main._on_ui("location", 1)
+			await _frames(3)
+			main._on_ui("menu", 0),
+		"conditions, back": func() -> void:
+			club._on_choice("club_mods", 0)
+			await _frames(3)
+			mods.ui_action(main, "mods_back", 0)
+			await _frames(2)
+			main._on_ui("menu", 0),
+		"bracket, opponent card, back, back": func() -> void:
+			club._on_choice("club_tournament_new", 0)
+			await _frames(3)
+			main._on_ui("opponent_card", 0)
+			await _frames(2)
+			main._on_ui("opp_back", 0)
+			await _frames(2)
+			main._on_ui("menu", 0),
+		"continue, bracket, back": func() -> void:
+			club._on_choice("club_tournament_new", 0)
+			await _frames(3)
+			main._show_menu()
+			await _frames(3)
+			club._on_choice("club_tournament", 0)  # ПРОДОЛЖИТЬ
+			await _frames(3)
+			main._on_ui("menu", 0),
+		"practice, pause, exit to the club": func() -> void:
+			club._on_choice("practice", 0)
+			await _frames(5)
+			main.hud.menu_requested.emit(),
+	}
+	for name in routes:
+		for spot in ["court", "away"]:
+			SaveData.active = null
+			SaveData.run = {}
+			main._show_menu()
+			await _frames(3)
+			if spot == "away":
+				main.player.position = at
+				club._update_place()
+				await _frames(2)
+			var want: Vector3 = main.player.position
+			var label: String = "%s (%s)" % [name, spot]
+			await routes[name].call()
+			await _frames(4)
+			var p: Vector3 = main.player.position
+			check(club.active and main.location_id == "club" and main.phase == club._idle, label + ": the club is on (active %s, at %s, phase %s)" % [club.active, main.location_id, main.phase])
+			check(Vector2(p.x - want.x, p.z - want.z).length() < 0.5 or (spot == "court" and p.distance_to(club.START) < 0.5), label + ": the hero is where he was (%.1f m off)" % Vector2(p.x - want.x, p.z - want.z).length())
+			check(club.world.props_visible() and club.cam.current and not main.ui.is_open(), label + ": props, the club's camera, no screen")
+			main.hud.touch._stick_vector = Vector2(1.0, 0.0)
+			for i in 10:
+				await physics_frame
+				await process_frame
+			main.hud.touch._stick_vector = Vector2.ZERO
+			var q: Vector3 = main.player.position
+			check(Vector2(q.x - p.x, q.z - p.z).length() > 0.05, label + ": the stick moves him (%.2f m in 10 frames)" % Vector2(q.x - p.x, q.z - p.z).length())
+			club._move_target = Vector3(q.x, 0.0, q.z - 3.0)
+			for i in 20:
+				await physics_frame
+			var r: Vector3 = main.player.position
+			check(Vector2(r.x - q.x, r.z - q.z).length() > 0.05, label + ": a tap walks him")
+			club._move_target = Vector3.INF
+	main.queue_free()
+	await _frames(2)
+	SaveData.played = 0
+	SaveData.titles = 0
+	SaveData.club = {}
 
 
 ## The places' own actions: the shop's screen, a place's card, the roulette at the bar.
