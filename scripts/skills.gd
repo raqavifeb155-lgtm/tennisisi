@@ -95,6 +95,7 @@ static var perks: Array = []      # taken build perk ids
 static var pending: Array = []    # skills waiting for a perk choice (one entry per milestone)
 static var points := START_POINTS # starting points: each buys one level of any skill
 static var gear := {}             # mods from the racket in hand this run (Gear item "mods")
+static var mods_layer := {}       # stream G: this match's modifiers (scripts/mods), never online
 
 
 static func reset() -> void:
@@ -154,6 +155,7 @@ static func add_xp(id: String, amount: float) -> int:
 		return -1
 	var before := level(id)
 	xp[id] = float(xp.get(id, 0.0)) + amount
+	SaveData.lifetime_xp += amount  # never reset: a monotonic measure of progress (ACADEMY_LEGACY_TZ)
 	var after := level(id)
 	if after == before:
 		return -1
@@ -209,7 +211,7 @@ static func next_pending(rng: RandomNumberGenerator) -> Dictionary:
 
 
 static func mod(key: String) -> float:
-	var total := float(gear.get(key, 0.0))
+	var total := float(gear.get(key, 0.0)) + float(mods_layer.get(key, 0.0))
 	for id in perks:
 		var p := find_perk(id)
 		total += float(p.get("mods", {}).get(key, 0.0))
@@ -271,7 +273,7 @@ static func stamina_rest(kind: String) -> float:
 		"set":
 			return lerpf(0.50, 0.70, t)
 		_:
-			return lerpf(0.10, 0.20, t) + mod("stamina_rest")
+			return lerpf(0.10, 0.20, t) + mod("stamina_rest") + ClubBuilds.recovery_bonus()  # + the coach's room (v0.2 B)
 
 
 ## Below this much stamina the player is tired: slower, wilder, softer.

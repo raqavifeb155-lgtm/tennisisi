@@ -15,7 +15,11 @@ func _run() -> void:
 	test_calls()
 	await test_announcer_strip()
 	await test_announcer_moments()
-	check(finished == 4, "every test ran to its end: %d of 4" % finished)
+	await test_modal_stack()
+	test_layers()
+	test_graphics_labels()
+	test_match_tally()
+	check(finished == 8, "every test ran to its end: %d of 8" % finished)
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -112,9 +116,128 @@ func test_announcer_moments() -> void:
 	check(a.current().get("main", "") == "ВТОРОЙ КРУГ", "the intro follows")
 	a.set_hint("Подача по бегущему: попади в него мячом")
 	check(a.hint_text() != "", "the hint is up")
+	a.set_hint("тап по корту — подброс\nкороткий свайп вниз до подброса — подача снизу")
+	await process_frame
+	check(a._hint.size.y < 260.0, "a two-line hint is a thin plate, not a screen tall: %d" % a._hint.size.y)
 	a.set_hint("")
 	check(a.hint_text() == "", "and gone")
 	a.free()
 	finished += 1
 
 
+
+
+## One owner of the pause (UI_FLOW_TZ 5.5, rule 4): the game stands while a window opened
+## from a match is in the stack; closing returns to the window under it.
+func test_modal_stack() -> void:
+	print("modal stack")
+	var m := ModalStack.new()
+	root.add_child(m)
+	var nodes := {}
+	for id in ["settings", "pause", "help", "confirm"]:
+		var c := Control.new()
+		root.add_child(c)
+		nodes[id] = c
+	m.push("settings", nodes["settings"], false)
+	check(m.top() == "settings" and not paused, "settings outside a match: no pause")
+	m.pop("settings")
+	check(m.is_empty(), "closed")
+	m.push("pause", nodes["pause"], true)
+	check(paused, "the pause stops the game")
+	m.push("help", nodes["help"], true)
+	m.pop("help")
+	check(m.top() == "pause" and paused, "help closed: back to the pause, still paused")
+	m.push("settings", nodes["settings"], true)
+	m.pop("settings")
+	check(m.top() == "pause" and paused, "settings closed: back to the pause")
+	m.push("confirm", nodes["confirm"], true)
+	m.pop("pause")
+	check(m.is_empty() and not paused, "closing the pause closes what is over it and resumes")
+	m.push("help", nodes["help"], true)
+	check(m.has("help") and paused, "help from a match pauses")
+	nodes["help"].visible = false  # tools hide it from outside
+	await process_frame
+	await process_frame
+	check(m.is_empty() and not paused, "a hidden top window leaves the stack, the pause goes")
+	paused = true  # someone else's pause: the stack doesn't fight it
+	await process_frame
+	check(paused, "the stack writes the pause only when its own decision changes")
+	paused = false
+	for c in nodes.values():
+		c.free()
+	m.free()
+	finished += 1
+
+
+## The layer map lives in UiTheme, in the order of UI_FLOW_TZ 5.5.
+func test_layers() -> void:
+	print("layers")
+	var order := [UiTheme.LAYER_HUD, UiTheme.LAYER_STYLE, UiTheme.LAYER_CLUB, UiTheme.LAYER_SCREENS,
+		UiTheme.LAYER_SHEETS, UiTheme.LAYER_PAUSE, UiTheme.LAYER_CONFIRM, UiTheme.LAYER_HELP, UiTheme.LAYER_LOADING]
+	var sorted := order.duplicate()
+	sorted.sort()
+	check(order == sorted, "layers go up: %s" % str(order))
+	check(UiTheme.LAYER_SCREENS == 10 and UiTheme.LAYER_PAUSE == 20 and UiTheme.LAYER_HELP == 30, "screens 10, pause 20, help 30")
+	finished += 1
+
+
+## Graphics (HANDOFF 9.6): on a phone "Авто" never goes above Medium (High stutters in
+## Telegram); High and Max say so on the button and in the line under the presets.
+func test_graphics_labels() -> void:
+	print("graphics labels")
+	check(GraphicsQuality.auto_steps(true) == [GraphicsQuality.MEDIUM, GraphicsQuality.LOW], "phone: Auto is Medium, then Low")
+	check(GraphicsQuality.auto_steps(false) == [GraphicsQuality.HIGH, GraphicsQuality.MEDIUM, GraphicsQuality.LOW], "computer: Auto starts at High")
+	for i in [GraphicsQuality.HIGH, GraphicsQuality.MAX]:
+		check("!" in GraphicsQuality.caption(i), "the %s button is marked" % GraphicsQuality.NAMES[i])
+		check("Telegram" in GraphicsQuality.note(i, false), "and its line warns about Telegram")
+	for i in [GraphicsQuality.AUTO, GraphicsQuality.LOW, GraphicsQuality.MEDIUM]:
+		check(not "!" in GraphicsQuality.caption(i) and not "Telegram" in GraphicsQuality.note(i, false), "%s is not marked" % GraphicsQuality.NAMES[i])
+	check("Средней" in GraphicsQuality.note(GraphicsQuality.AUTO, true), "Auto on a phone says its cap")
+	finished += 1
+
+
+## The match's numbers for the result screen (HANDOFF 7.3), from GameEvents payloads.
+func test_match_tally() -> void:
+	print("match tally")
+	var t := MatchTally.new()
+	t.shot(0, {"side": 1, "serve": false, "incoming": 20.0})
+	check(t.forehands[0] == 0, "nothing counts before the match starts")
+	t.start()
+	# Point 1: you serve, the first serve faults, the second goes in; a rally; you hit a
+	# winner with your backhand.
+	t.fault({"server": 0, "second": false})
+	t.shot(0, {"side": 1, "serve": true, "incoming": 0.0})
+	t.shot(1, {"side": 1, "serve": false, "incoming": 30.0})
+	t.shot(0, {"side": -1, "serve": false, "incoming": 25.0})
+	t.point({"winner": 0, "reason": "WINNER", "rally": 3, "server": 0})
+	# Point 2: an ace.
+	t.shot(0, {"side": 1, "serve": true, "incoming": 0.0})
+	t.point({"winner": 0, "reason": "ACE", "rally": 1, "server": 0})
+	# Point 3: a double fault.
+	t.fault({"server": 0, "second": false})
+	t.fault({"server": 0, "second": true})
+	t.point({"winner": 1, "reason": "DOUBLE FAULT", "rally": 1, "server": 0})
+	# Point 4: they serve; you push a slow ball out (unforced).
+	t.shot(1, {"side": 1, "serve": true, "incoming": 0.0})
+	t.shot(0, {"side": 1, "serve": false, "incoming": 30.0})
+	t.shot(1, {"side": -1, "serve": false, "incoming": 18.0})
+	t.shot(0, {"side": 1, "serve": false, "incoming": 15.0})
+	t.point({"winner": 1, "reason": "OUT", "rally": 4, "server": 1})
+	# Point 5: they serve; you miss into the net under a heavy ball (forced).
+	t.shot(1, {"side": 1, "serve": true, "incoming": 0.0})
+	t.shot(0, {"side": -1, "serve": false, "incoming": 34.0})
+	t.point({"winner": 1, "reason": "NET", "rally": 2, "server": 1})
+	t.finish()
+	t.shot(0, {"side": 1, "serve": false, "incoming": 10.0})  # the trophy mini-game after
+	check(t.forehands == [2, 1] and t.backhands == [2, 1], "forehands %s, backhands %s (serves apart)" % [t.forehands, t.backhands])
+	check(t.aces == [1, 0] and t.doubles == [1, 0], "aces and double faults")
+	check(t.winners == [1, 0], "winners (aces apart)")
+	check(t.unforced == [1, 0], "a slow ball out is unforced, a heavy one into the net is not")
+	check(t.first_serve_pct(0) == 33 and t.first_serve_pct(1) == 100, "first serve in: you 1 of 3, them 2 of 2: %d / %d" % [t.first_serve_pct(0), t.first_serve_pct(1)])
+	check(t.best_rally == 4, "the best rally")
+	var rows := t.rows()
+	check(rows.size() == 7 and rows[0][0] == "Эйсы" and rows[0][1] == "1", "rows for the screen: %s" % str(rows[0]))
+	check(t.has_data(), "a finished match has numbers")
+	t.start()
+	check(not t.has_data() and t.aces == [0, 0], "a new match starts from zero")
+	finished += 1

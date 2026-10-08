@@ -39,6 +39,10 @@ static var last_crash := ""            # where the last one happened ("матч 
 static var style := {}                 # style records (v0.2 A): best_mult, best_points, total
 static var bets := {}                  # the betting desk (v0.2 A): placed, won, loss_streak, net_hits
 static var golden: Array = []          # golden opponents beaten (v0.2 A): roster ids
+## Club-side, not the character's (v0.2 A; a retired player keeps them, ACADEMY_LEGACY_TZ):
+static var locker := {}                # the locker: "items" kept, "next" bought for the next run, "shop" the shop's state
+static var titles_by_loc := {}         # titles won per location id (the islands open by them)
+static var lifetime_xp := 0.0          # every bit of skill experience ever earned (never reset)
 static var source := "none"            # where the progress came from: local, old, cloud (telemetry)
 static var _cloud_checked := false
 static var _last_cloud := ""
@@ -71,9 +75,13 @@ static func _score(cf: ConfigFile) -> float:
 	var d: Dictionary = cf.get_value("skills", "xp", {})
 	for k in d:
 		xp += float(d[k])
-	return float(cf.get_value("meta", "played", 0)) * 1000.0 + float(cf.get_value("meta", "titles", 0)) * 500.0 \
+	var base := float(cf.get_value("meta", "played", 0)) * 1000.0 + float(cf.get_value("meta", "titles", 0)) * 500.0 \
 		+ xp + float(cf.get_value("meta", "gold", 0)) * 0.1 + (1.0 if cf.get_value("settings", "control_chosen", false) else 0.0) \
 		+ float((cf.get_value("club", "data", {}) as Dictionary).get("spent", 0)) * 0.1  # v0.2 B: gold built into the club still counts
+	# v0.2 A: the shop's and the locker's spending counts too, and experience that was
+	# earned and then reset by a retirement (lifetime_xp) - the score only ever grows.
+	return base + float((cf.get_value("locker", "data", {}) as Dictionary).get("spent", 0)) * 0.1 \
+		+ maxf(0.0, float(cf.get_value("lifetime", "xp", 0.0)) - xp)
 
 
 static func _apply(cf: ConfigFile) -> void:
@@ -94,6 +102,9 @@ static func _apply(cf: ConfigFile) -> void:
 	style = cf.get_value("style", "data", {})
 	bets = cf.get_value("bets", "data", {})
 	golden = cf.get_value("golden", "beaten", [])
+	locker = cf.get_value("locker", "data", {})
+	titles_by_loc = cf.get_value("titles_by_loc", "data", {})
+	lifetime_xp = cf.get_value("lifetime", "xp", 0.0)
 	active = null
 	Skills.xp = cf.get_value("skills", "xp", {})
 	Skills.perks = cf.get_value("skills", "perks", [])
@@ -199,6 +210,12 @@ static func _to_config() -> ConfigFile:
 		cf.set_value("bets", "data", bets)
 	if not golden.is_empty():
 		cf.set_value("golden", "beaten", golden)
+	if not locker.is_empty():
+		cf.set_value("locker", "data", locker)
+	if not titles_by_loc.is_empty():
+		cf.set_value("titles_by_loc", "data", titles_by_loc)
+	if lifetime_xp > 0.0:
+		cf.set_value("lifetime", "xp", lifetime_xp)
 	if active != null and not active.banked and active.state != Tournament.State.OVER:
 		run = active.to_dict()
 	else:
@@ -241,3 +258,8 @@ static func note_style(r: Dictionary) -> void:
 	style["best_mult"] = maxf(float(style.get("best_mult", 1.0)), float(r.get("mult", 1.0)))
 	style["best_points"] = maxi(int(style.get("best_points", 0)), int(r.get("points", 0)))
 	style["total"] = int(style.get("total", 0)) + int(r.get("points", 0))
+
+
+## A title won at a location (v0.2 A-4): the next island opens by it.
+static func note_title(loc: String) -> void:
+	titles_by_loc[loc] = int(titles_by_loc.get(loc, 0)) + 1

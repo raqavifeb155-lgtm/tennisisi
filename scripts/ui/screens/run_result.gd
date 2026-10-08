@@ -55,3 +55,208 @@ static func extra(ui: TournamentUI, t: Tournament) -> void:
 		var b := ui._make_button("Поделиться в чат", "share", 0, "")
 		b.add_theme_color_override("font_color", UiTheme.GOLD)
 		ui._box.add_child(b)
+
+
+# --- The run's summary (v0.2 A-2, spec 1 and 9.2) -------------------------------------
+# Income by lines with coins, flying into the bank; one item into the locker; the next
+# goal. TournamentUI.show_summary hands over to show_summary.
+
+const INCOME_NAMES := {"prize": "Призовые", "style": "Стиль", "sell": "Продажа вещей", "quests": "Задания", "bonus": "Бонусы"}
+static var _flown: Tournament = null     # the run whose coins already flew into the chip
+static var _msg := ""
+static var _msg_good := true
+static var _replacing := -1              # the candidate waiting for a locker cell to give way
+
+
+static func _gold_lines(t: Tournament) -> Array:
+	var out: Array = []
+	var sum := 0
+	for k in Tournament.INCOME_KINDS:
+		var v := int(t.income.get(k, 0))
+		sum += v
+		if v != 0:
+			out.append([INCOME_NAMES.get(k, k), v])
+	if t.gold != sum:  # an older save with no lines for part of the gold
+		out.append([INCOME_NAMES["bonus"], t.gold - sum])
+	if out.is_empty():
+		out.append([INCOME_NAMES["prize"], 0])
+	return out
+
+
+static func show_summary(ui: TournamentUI, t: Tournament) -> void:
+	ui._open(t)
+	ui._box.add_child(ui._text("ЧЕМПИОН!" if t.champion else "Турнир окончен", UiTheme.display(), UiTheme.T_HERO if t.champion else UiTheme.T_TITLE, UiTheme.GOLD if t.champion else UiTheme.INK))
+	ui._sub(t.finish_text())
+	var wins := 0
+	for r in t.results:
+		if r["won"]:
+			wins += 1
+	ui._note("Побед: %d  ·  матчей: %d" % [wins, t.results.size()])
+	if _msg != "":
+		ui._box.add_child(ui._text(_msg, UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.WIN if _msg_good else UiTheme.LOSE))
+		_msg = ""
+	var total_label := _income_panel(ui, t)
+	var goal := Goals.line()
+	if goal != "":
+		var gl := ui._text(goal, UiTheme.text_bold(), UiTheme.T_SMALL + 2, UiTheme.GOLD)
+		gl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		ui._box.add_child(gl)
+	_locker_block(ui, t)
+	ui._primary("ЕЩЁ ТУРНИР", "start_tournament")
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	ui._actions.add_child(row)
+	var pairs := [["В клуб", "menu"], ["Магазин", "sum_shop"]]
+	if not ClubBuilds.is_open("shop"):
+		pairs = [["В клуб", "menu"], ["Тренерская", "character"]]
+	for pair in pairs:
+		var b := ui._make_button(pair[0], pair[1], 0, "")
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(b)
+	if _flown != t:
+		_flown = t
+		# The coins fly from the run chip into the bank chip (C-4, TournamentUI.show_summary).
+
+
+## «Приход»: the run's gold line by line (each appears in turn), then the bank. Returns
+## the total's label (the coins fly out of it).
+static func _income_panel(ui: TournamentUI, t: Tournament) -> Label:
+	var panel := PanelContainer.new()
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_theme_stylebox_override("panel", UiTheme.box(UiTheme.SURFACE, UiTheme.LINE, 2, UiTheme.RADIUS, 22))
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 8)
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(v)
+	var rows: Array[Control] = []
+	for ln in _gold_lines(t):
+		var h := HBoxContainer.new()
+		h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var n := ui._left(ui._text(String(ln[0]), UiTheme.text(), UiTheme.T_BODY, UiTheme.MUTED))
+		n.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		h.add_child(n)
+		h.add_child(ui._text("%+d" % int(ln[1]), UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.GOLD if int(ln[1]) >= 0 else UiTheme.LOSE))
+		v.add_child(h)
+		rows.append(h)
+	var sep := ColorRect.new()
+	sep.color = UiTheme.LINE
+	sep.custom_minimum_size = Vector2(0, 2)
+	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(sep)
+	var tot := HBoxContainer.new()
+	tot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var tn := ui._left(ui._text("В банк", UiTheme.text_bold(), UiTheme.T_BODY + 2, UiTheme.INK))
+	tn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tot.add_child(tn)
+	var tv := ui._text("+%d" % t.gold, UiTheme.display(), UiTheme.T_HEAD, UiTheme.GOLD)
+	tot.add_child(tv)
+	v.add_child(tot)
+	rows.append(sep)
+	rows.append(tot)
+	ui._box.add_child(panel)
+	if _flown != t:  # the first time: the lines come one after another
+		for r in rows:
+			r.modulate.a = 0.0
+		for i in rows.size():
+			var tw := rows[i].create_tween()
+			tw.set_ignore_time_scale(true)
+			tw.tween_interval(0.35 + 0.28 * i)
+			tw.tween_property(rows[i], "modulate:a", 1.0, 0.2)
+		var last := rows.size() - 1
+		tw_sfx(ui, 0.35 + 0.28 * last)
+	return tv
+
+
+static func tw_sfx(ui: TournamentUI, delay: float) -> void:
+	var tw := ui.create_tween()
+	tw.set_ignore_time_scale(true)
+	tw.tween_interval(delay)
+	tw.tween_callback(func() -> void: ui.sfx_request.emit("bounce", -12.0, 1.5))
+
+
+## «Одна вещь в шкафчик»: worn things and the bag as cards; above the ceiling they go
+## dark with the reason, a legendary or mythic shows its insurance.
+static func _locker_block(ui: TournamentUI, t: Tournament) -> void:
+	var cands := Locker.candidates(t)
+	if cands.is_empty() and not t.locker_done:
+		return
+	var round_i := Locker.exit_round(t)
+	if t.locker_done:
+		_kept_line(ui)
+		return
+	ui._sub("Одна вещь в шкафчик  ·  потолок: %s" % Locker.cap_text(round_i))
+	ui._note("Что не сохранишь — пропадёт с забегом. Ячеек: %d из %d" % [Locker.items().size(), Locker.slots()])
+	for i in cands.size():
+		var c: Dictionary = cands[i]
+		var it: Dictionary = c["item"]
+		var why := Locker.check(it, round_i)
+		var full := why.begins_with("шкафчик полон")
+		var ins := Locker.insurance(it)
+		var line := ""
+		var ok := why == ""
+		if ok:
+			line = "В шкафчик" + ("  ·  страховка %d" % ins if ins > 0 else "  ·  бесплатно")
+		elif full:
+			line = "Шкафчик полон: выбери, что заменить"
+		elif why.begins_with("нужно ещё"):
+			line = "Страховка %d  ·  %s" % [ins, why]
+		else:
+			line = RunShop.sentence(why)
+		var card := RunShop.item_card(ui, it, "Надето" if c["from"] == "equip" else "В сумке", line, "sum_keep" if ok or full else "", i)
+		if not ok and not full:
+			card.modulate = Color(0.55, 0.55, 0.6, 0.85)
+			card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+
+static func _kept_line(ui: TournamentUI) -> void:
+	ui._note("Вещь в шкафчике. В следующем забеге её можно взять с собой")
+
+
+## The cells to give way when the locker is full: sells the old one into the bank.
+static func _replace_screen(ui: TournamentUI, t: Tournament, cand: int) -> void:
+	_replacing = cand
+	ui._open(t, true, "to_summary")
+	ui._title("Шкафчик полон")
+	ui._sub("Какую вещь заменить? Старая продаётся в банк по цене продажи")
+	var cands := Locker.candidates(t)
+	if cand < 0 or cand >= cands.size():
+		return
+	var new_item: Dictionary = cands[cand]["item"]
+	var ins := Locker.insurance(new_item)
+	RunShop.item_card(ui, new_item, "Кладём", "Страховка %d из банка" % ins if ins > 0 else "")
+	ui._sub("Заменить")
+	var li := Locker.items()
+	for i in li.size():
+		var gain := Items.sell_price(li[i])
+		RunShop.item_card(ui, li[i], "Ячейка %d" % (i + 1), "Продать +%d и положить новую" % gain, "sum_replace", i)
+
+
+static func ui_action(m: Node, action: String, arg: int) -> void:
+	var t: Tournament = m.tournament
+	var ui: TournamentUI = m.ui
+	if t == null:
+		m._on_ui("menu", 0)
+		return
+	match action:
+		"sum_keep":
+			var why := Locker.save_from(t, arg)
+			if why.begins_with("шкафчик полон"):
+				_replace_screen(ui, t, arg)
+				return
+			if why == "":
+				_msg = "В шкафчик: %s" % String(Locker.items().back()["name"])
+				_msg_good = true
+				SaveData.save()
+			else:
+				_msg = RunShop.sentence(why)
+				_msg_good = false
+			ui.show_summary(t)
+		"sum_replace":
+			var why2 := Locker.save_from(t, _replacing, arg)
+			_msg = "Заменено. В шкафчик: %s" % String(Locker.items().back()["name"]) if why2 == "" else why2.capitalize()
+			_msg_good = why2 == ""
+			if why2 == "":
+				SaveData.save()
+			ui.show_summary(t)
+		"sum_shop":
+			RunShop.ui_action(m, "shop_open", 0)

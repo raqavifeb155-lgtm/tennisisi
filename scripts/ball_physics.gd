@@ -34,6 +34,17 @@ const SURFACES := {
 static var friction := 0.62
 static var bounce_offset := 0.0
 static var pace := 1.0            # share of the ball's speed along the court kept by the surface
+## Stream G match modifiers (scripts/mods; ModsHub sets them for a match and puts them back):
+## "Лунная гравитация" scales gravity, "Ветер" pushes the ball sideways (m/s^2),
+## "Резиновая сетка" makes a ball into the net hop over it. Predictions and the shot
+## solver use the same model, so aiming and the AI stay right.
+static var gravity_scale := 1.0
+static var wind := Vector3.ZERO
+static var rubber_net := false
+
+
+static func gravity() -> float:
+	return GRAVITY * gravity_scale
 
 
 static func set_surface(id: String) -> void:
@@ -70,7 +81,7 @@ class Prediction:
 
 
 static func acceleration(vel: Vector3, spin: Vector3) -> Vector3:
-	return Vector3(0.0, -GRAVITY, 0.0) - K_DRAG * vel.length() * vel + K_MAGNUS * spin.cross(vel)
+	return Vector3(0.0, -GRAVITY * gravity_scale, 0.0) + wind - K_DRAG * vel.length() * vel + K_MAGNUS * spin.cross(vel)
 
 
 ## Free flight only (no collisions). Used by the shot solver.
@@ -118,6 +129,12 @@ static func substep(s: State, h: float) -> int:
 					# Below the tape's crown: it pops up and drops back.
 					s.pos = Vector3(cross.x, top, 0.0) + n * (RADIUS * 1.02)
 					s.vel.z = side * absf(s.vel.z) * 0.25
+				return Event.NET
+			if rubber_net:
+				# The net gives like a trampoline and throws the ball softly over the tape.
+				s.pos = Vector3(cross.x, top + RADIUS + 0.03, -side * (RADIUS + 0.01))
+				s.vel = Vector3(s.vel.x * 0.3, 2.6 + absf(s.vel.z) * 0.04, -side * clampf(absf(s.vel.z) * 0.12, 1.6, 3.2))
+				s.spin *= 0.2
 				return Event.NET
 			s.pos = Vector3(cross.x, maxf(cross.y, RADIUS), side * (RADIUS + 0.01))
 			s.vel = Vector3(s.vel.x * 0.25, minf(s.vel.y, 0.0) * 0.2, -s.vel.z * 0.08)

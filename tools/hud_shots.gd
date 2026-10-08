@@ -10,16 +10,19 @@ extends SceneTree
 var main: Node
 var h := 1564
 var out := ""
+var tag := ""  # --tag=X: X_ in the file names (other worktrees shoot into the same folder)
 var safe := false
 
 
 func _initialize() -> void:
 	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--tag="):
+			tag = a.get_slice("=", 1) + "_"
 		if a.begins_with("--size="):
 			h = int(a.get_slice("=", 1))
 		if a == "--safe":
 			safe = true
-	out = ProjectSettings.globalize_path("user://hud_%d%s_" % [h, "_safe" if safe else ""])
+	out = ProjectSettings.globalize_path("user://hud_%s%d%s_" % [tag, h, "_safe" if safe else ""])
 	_run.call_deferred()
 
 
@@ -68,7 +71,7 @@ func _run() -> void:
 	await create_timer(0.5).timeout
 	main.hud._toggle_debug()
 	await _shot("03_settings_menu")
-	var sheet_scroll: ScrollContainer = main.hud._debug_panel.get_child(0)
+	var sheet_scroll: ScrollContainer = main.hud.settings_sheet.scroll
 	sheet_scroll.scroll_vertical = 1400
 	await _shot("04_settings_scrolled")
 	sheet_scroll.scroll_vertical = 100000
@@ -85,9 +88,16 @@ func _run() -> void:
 	await create_timer(0.4).timeout
 	main.hud.show_board(main.scoreboard, ["ВЫ", "CPU"])
 	await _shot("06_serve_hint")
-	main.hud._toggle_debug()  # in a match: the sheet is the pause
+	main.hud._toggle_debug()  # in a match: the short pause
 	await _shot("07_pause")
-	main.hud._toggle_debug()
+	main.hud.open_settings()  # the pause's "Настройки": the sheet over it
+	await _shot("07b_pause_settings")
+	main.hud.close_settings()
+	main.hud._tournament_match = true  # leaving a tournament match asks first
+	main.hud._leave()
+	await _shot("07c_pause_confirm")
+	main.hud._tournament_match = false
+	main.hud.resume()
 
 	# --- A match: the score, the ring verdict, level-ups, point verdicts -----------
 	var s: MatchScore = MatchScore.new(2, 4, 3, 0, "БАСИЛАШВИЛИ")
@@ -173,6 +183,19 @@ func _run() -> void:
 	lost.wildcards = 1
 	lost.record_match(false, "3:6", rng)
 	main.tournament = lost
+	var tl: MatchTally = main.hud.tally  # the match stats table (C-5): typical numbers
+	tl.start()
+	tl.aces = [3, 1]
+	tl.doubles = [1, 2]
+	tl.winners = [9, 5]
+	tl.unforced = [7, 12]
+	tl.serve_points = [30, 28]
+	tl.first_faults = [10, 12]
+	tl.forehands = [41, 38]
+	tl.backhands = [22, 30]
+	tl.best_rally = 14
+	tl.points = 58
+	tl.finish()
 	main.ui.show_result(lost, false, "3:6", {"perfect": 2, "aces": 0, "best_rally": 6})
 	await _shot("18_result_lost", 0.7)
 	var champ := Tournament.new(1)

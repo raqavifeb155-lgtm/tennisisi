@@ -78,6 +78,11 @@ static func bracket_extra(ui: TournamentUI, t: Tournament) -> void:
 	for s in Gear.SLOTS:
 		worn += 0 if t.equip.get(s, {}).is_empty() else 1
 	ui._row("Сумка", "надето %d из 3 · в сумке %d" % [worn, t.bag.size()], "bag")
+	if t.can_take_locker():  # v0.2 A-2: the locker's things can come along until the first match
+		if not Locker.items().is_empty():
+			ui._row("Шкафчик", "%d — взять в забег" % Locker.items().size(), "bag")
+		if not Locker.boarded.is_empty():
+			ui._note("С тобой из магазина: %s" % ", ".join(Locker.boarded))
 
 
 ## Under an opponent in the bracket: not what he carries, only a hint — the glow of his
@@ -110,6 +115,7 @@ static func reward_tag(t: Tournament, item: Dictionary) -> String:
 static func show_bag(ui: TournamentUI, t: Tournament) -> void:
 	ui._open(t, true, "bag_back")
 	ui._title("Сумка")
+	RunLocker.bag_section(ui, t)  # v0.2 A-2: the kept things, until the first match
 	ui._sub("Надето")
 	for i in Gear.SLOTS.size():
 		var slot: String = Gear.SLOTS[i]
@@ -119,6 +125,13 @@ static func show_bag(ui: TournamentUI, t: Tournament) -> void:
 		ui._note("Пусто. Вещи падают с побеждённых соперников и приходят в наградах.")
 	for i in t.bag.size():
 		item_card(ui, t.bag[i], "", "", "bag_item", BAG_ARG + i)
+	var extra := t.extra_items()
+	if not extra.is_empty():
+		var sum := 0
+		for it in extra:
+			sum += Gear.price(it)
+		var b := ui._secondary("Продать всё лишнее (%d)  +%d" % [extra.size(), sum], "sell_extra")
+		b.add_theme_color_override("font_color", UiTheme.GOLD)
 	ui._primary("К СЕТКЕ", "bag_back")
 
 
@@ -167,5 +180,9 @@ static func ui_action(m: Node, action: String, arg: int) -> void:
 			show_bag(m.ui, t)
 		"sell":
 			t.sell_from_bag(arg)
+			SaveData.save()
+			show_bag(m.ui, t)
+		"sell_extra":
+			t.sell_extra()
 			SaveData.save()
 			show_bag(m.ui, t)

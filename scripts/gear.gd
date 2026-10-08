@@ -30,7 +30,6 @@ const FORMS := {
 	"band": ["Обычный", "Редкий", "Эпический", "Легендарный", "Мифический"],
 }
 const NOUNS := {"racket": "ракетка", "shoes": "кроссовки", "band": "напульсник"}
-const PRICES := [3, 6, 12, 25, 50]     # sold for run gold
 const UNIQUE_SHARE := 0.35             # a common or rare is a catalog item this often
 
 ## [key, text with %d, min, max] — percentages; negative keys (scatter, penalties) shrink.
@@ -82,18 +81,33 @@ const NAMES := {
 }
 
 
-## A random item of the given rarity for a slot (a racket when no slot is given).
-static func roll(rarity: int, rng: RandomNumberGenerator, slot := "racket") -> Dictionary:
+## A random item of the given rarity for a slot (a racket when no slot is given), at a
+## level (v0.2 A economy: the island's tier, the shop's best island).
+static func roll(rarity: int, rng: RandomNumberGenerator, slot := "racket", level := 1) -> Dictionary:
 	rarity = clampi(rarity, COMMON, MYTHIC)
+	var it := {}
 	if rarity >= EPIC or rng.randf() < UNIQUE_SHARE:
-		var u := Items.roll(slot, rarity, rng)
-		if not u.is_empty():
-			return u
-	return _affix_item(rarity, rng, slot)
+		it = Items.roll(slot, rarity, rng)
+	if it.is_empty():
+		it = _affix_item(rarity, rng, slot)
+	return Items.set_level(it, level) if level > 1 else it
 
 
 static func _affix_item(rarity: int, rng: RandomNumberGenerator, slot: String) -> Dictionary:
 	var r: Dictionary = RARITIES[rarity]
+	var aff := affixes(slot, rarity, int(r["affixes"]), rng)
+	var names: Array = NAMES.get(r["id"], NAMES["rare"])
+	return {
+		"slot": slot, "rarity": rarity,
+		"name": "%s %s «%s»" % [FORMS[slot][rarity], NOUNS[slot], names[rng.randi_range(0, names.size() - 1)]],
+		"mods": aff["mods"], "lines": aff["lines"],
+	}
+
+
+## n random affixes of the slot at the rarity's power: {"mods": {...}, "lines": [...]}
+## (also the shop's strings, v0.2 A-3).
+static func affixes(slot: String, rarity: int, n: int, rng: RandomNumberGenerator) -> Dictionary:
+	var r: Dictionary = RARITIES[clampi(rarity, COMMON, MYTHIC)]
 	var pool: Array = AFFIXES_BY_SLOT[slot].duplicate()
 	for i in range(pool.size() - 1, 0, -1):
 		var j := rng.randi_range(0, i)
@@ -102,18 +116,24 @@ static func _affix_item(rarity: int, rng: RandomNumberGenerator, slot: String) -
 		pool[j] = t
 	var mods := {}
 	var lines: Array[String] = []
-	for a in pool.slice(0, mini(r["affixes"], pool.size())):
+	for a in pool.slice(0, mini(n, pool.size())):
 		var pct := maxi(1, roundi(rng.randf_range(a[2], a[3]) * float(r["power"])))
 		var key: String = a[0]
 		var shrink := key.ends_with("_scatter") or key == "move_penalty" or key == "stamina_drain"
 		mods[key] = (-1.0 if shrink else 1.0) * pct / 100.0
 		lines.append(String(a[1]) % pct)
-	var names: Array = NAMES.get(r["id"], NAMES["rare"])
-	return {
-		"slot": slot, "rarity": rarity,
-		"name": "%s %s «%s»" % [FORMS[slot][rarity], NOUNS[slot], names[rng.randi_range(0, names.size() - 1)]],
-		"mods": mods, "lines": lines,
-	}
+	return {"mods": mods, "lines": lines}
+
+
+## The slot's affixes as the shop shows the strings' pool: "+4–10% к силе форхенда".
+static func affix_pool(slot: String, rarity: int) -> Array[String]:
+	var k := float(RARITIES[clampi(rarity, COMMON, MYTHIC)]["power"])
+	var out: Array[String] = []
+	for a in AFFIXES_BY_SLOT.get(slot, []):
+		var lo := maxi(1, roundi(a[2] * k))
+		var hi := maxi(1, roundi(a[3] * k))
+		out.append(String(a[1]).replace("%d", "%d–%d" % [lo, hi]).replace("%%", "%"))
+	return out
 
 
 static func color(item: Dictionary) -> Color:
@@ -126,8 +146,9 @@ static func glow(item: Dictionary) -> float:
 	return 0.0 if item.is_empty() else float(RARITIES[int(item["rarity"])]["glow"])
 
 
+## What the item sells for (v0.2 A economy: a third of its buy price, Items.sell_price).
 static func price(item: Dictionary) -> int:
-	return 0 if item.is_empty() else PRICES[clampi(int(item["rarity"]), 0, PRICES.size() - 1)]
+	return Items.sell_price(item)
 
 
 static func slot_name(slot: String) -> String:
@@ -135,4 +156,4 @@ static func slot_name(slot: String) -> String:
 
 
 static func describe(item: Dictionary) -> String:
-	return "\n".join(item.get("lines", []))
+	return Items.describe(item)

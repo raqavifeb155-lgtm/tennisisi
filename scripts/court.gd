@@ -18,6 +18,15 @@ const COLOR_COURT := Color(0.16, 0.33, 0.64)
 const COLOR_LINE := Color(0.96, 0.96, 0.96)
 
 
+## Stream G "Узкий корт" (scripts/mods): the singles lines move in by this much a side
+## for a match. Every in/out rule and the aim of the shots read half_width().
+static var inset := 0.0
+
+
+static func half_width() -> float:
+	return SINGLES_HALF_WIDTH - inset
+
+
 static func net_height(x: float) -> float:
 	var t := clampf(absf(x) / NET_HALF_WIDTH, 0.0, 1.0)
 	return lerpf(NET_HEIGHT_CENTER, NET_HEIGHT_POST, t * t)
@@ -32,7 +41,7 @@ static func is_in_singles(p: Vector3, half: int, radius: float) -> bool:
 ## Like is_in_singles for a ball mark that reaches `reach.x` sideways and `reach.y`
 ## along the court from its centre (see mark_reach): the mark touching the line is in.
 static func is_in_singles_mark(p: Vector3, half: int, reach: Vector2) -> bool:
-	if absf(p.x) > SINGLES_HALF_WIDTH + reach.x:
+	if absf(p.x) > half_width() + reach.x:
 		return false
 	var z := p.z * half
 	return z >= 0.0 and z <= HALF_LENGTH + reach.y
@@ -49,7 +58,7 @@ static func in_service_box_mark(p: Vector3, half: int, box_side: float, reach: V
 	if z < 0.0 or z > SERVICE_LINE + reach.y:
 		return false
 	var x := p.x * box_side
-	return x >= -reach.x and x <= SINGLES_HALF_WIDTH + reach.x
+	return x >= -reach.x and x <= half_width() + reach.x
 
 
 ## The mark a ball leaves on the court: [length along the flight, width] in metres.

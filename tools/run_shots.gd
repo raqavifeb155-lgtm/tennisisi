@@ -7,13 +7,16 @@ extends SceneTree
 var main: Node
 var h := 1564
 var out := ""
+var tag := ""        # --tag=X: run_X_<h>_*.png (worktrees shoot into one folder)
 
 
 func _initialize() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--size="):
 			h = int(a.get_slice("=", 1))
-	out = ProjectSettings.globalize_path("user://run_%d_" % h)
+		elif a.begins_with("--tag="):
+			tag = a.get_slice("=", 1) + "_"
+	out = ProjectSettings.globalize_path("user://run_%s%d_" % [tag, h])
 	_run.call_deferred()
 
 

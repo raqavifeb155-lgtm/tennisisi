@@ -6,7 +6,9 @@ extends CanvasLayer
 ## Balatro). Every button reports through `chosen(action, arg)`; Main decides.
 ##
 ## Every screen has the same frame, so the way in and out is always in the same place:
-##   top bar   "← back" on the left, the gold chip on the right (НАСТР sits right of it)
+##   top bar   "← back" on the left, the gold chips on the right (⚙ sits right of them):
+##             the bank (saved gold) and, during a run, the run's gold apart ("+75 забег")
+##             until the summary pours it into the bank (HANDOFF 7.2)
 ##   middle    the screen's content, scrolling when it doesn't fit
 ##   bottom    the main action(s), pinned under the thumb
 
@@ -38,6 +40,10 @@ var _chip: PanelContainer          # gold balance, top right
 var _chip_label: Label
 var _chip_icon: Control
 var _gold_shown := 0
+var _run_chip: PanelContainer      # the run's gold, not banked yet (left of the bank)
+var _run_label: Label
+var _run_icon: Control
+var _run_shown := 0
 var _busy := false                 # a press animation is playing: ignore other taps
 var _rays: Rays
 var _look_editor: LookEditor        # the open look editor, if any
@@ -86,7 +92,7 @@ class Badge extends Control:
 
 
 func _ready() -> void:
-	layer = 10
+	layer = UiTheme.LAYER_SCREENS
 	root = Control.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -116,6 +122,7 @@ func _ready() -> void:
 	_back_slot.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_back_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_top.add_child(_back_slot)
+	_build_run_chip()
 	_build_chip()
 	var hud_gap := Control.new()
 	hud_gap.custom_minimum_size = Vector2(HUD_BUTTON_W - UiTheme.GUTTER + 14.0, 0)
@@ -180,14 +187,65 @@ func _build_chip() -> void:
 	h.add_child(_chip_label)
 
 
-## Gold to show: saved gold plus what the current run has earned but not banked yet.
+## The run's gold: a quiet chip left of the bank, "+75 забег".
+func _build_run_chip() -> void:
+	_run_chip = PanelContainer.new()
+	var sb := UiTheme.box(Color(UiTheme.SURFACE, 0.94), UiTheme.LINE, 2, 40, 12)
+	sb.content_margin_left = 14
+	sb.content_margin_right = 18
+	_run_chip.add_theme_stylebox_override("panel", sb)
+	_run_chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_run_chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_run_chip.visible = false
+	_top.add_child(_run_chip)
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 8)
+	_run_chip.add_child(h)
+	_run_icon = Control.new()
+	_run_icon.custom_minimum_size = Vector2(26, 26)
+	var coin := Coin.new()
+	coin.position = Vector2(13, 13)
+	coin.scale = Vector2(0.85, 0.85)
+	_run_icon.add_child(coin)
+	h.add_child(_run_icon)
+	_run_label = Label.new()
+	_run_label.add_theme_font_override("font", UiTheme.display())
+	_run_label.add_theme_font_size_override("font_size", 26)
+	_run_label.add_theme_color_override("font_color", UiTheme.GOLD)
+	h.add_child(_run_label)
+	var word := Label.new()
+	word.text = "забег"
+	word.add_theme_font_override("font", UiTheme.text())
+	word.add_theme_font_size_override("font_size", UiTheme.T_SMALL)
+	word.add_theme_color_override("font_color", UiTheme.MUTED)
+	h.add_child(word)
+
+
+## The bank: saved gold. A run's gold is shown apart until the summary banks it, so a run
+## that SaveData has just banked (the final, giving up) still shows the bank from before.
 func _balance(t: Tournament) -> int:
-	return SaveData.gold + (t.gold if t != null and not t.banked else 0)
+	return SaveData.gold - (t.gold if t != null and t.banked else 0)
 
 
 func _set_chip(v: int) -> void:
 	_gold_shown = v
 	_chip_label.text = str(v)
+
+
+## The run's gold chip; shown while a run has gold (or a win is flying into it).
+func _set_run(v: int, show: bool) -> void:
+	_run_shown = v
+	_run_label.text = "+%d" % v
+	_run_chip.visible = show
+
+
+## For the overlay probe: (bank shown, run gold shown).
+func chip_values() -> Vector2i:
+	return Vector2i(_gold_shown, _run_shown)
+
+
+func run_chip_shown() -> bool:
+	return _run_chip.visible
 
 
 func is_open() -> bool:
@@ -321,13 +379,7 @@ func show_controls(first := false) -> void:
 # --- Tournament ------------------------------------------------------------------
 
 func show_locations() -> void:
-	_open(null, true, "menu")
-	_title("Где играем")
-	_sub("У каждого покрытия своя физика мяча")
-	var colors := {"hard": Color(0.4, 0.62, 1.0), "clay": Color(0.95, 0.55, 0.3), "grass": Color(0.5, 0.85, 0.4)}
-	for i in Locations.LIST.size():
-		var l: Dictionary = Locations.LIST[i]
-		_card({"tag": String(l["surface_name"]).capitalize(), "title": l["name"], "desc": l["desc"]}, "location", i, colors.get(l["surface"], UiTheme.LINE))
+	RunIslands.show_locations(self)  # v0.2 A-4: the islands, the closed ones locked
 
 
 func show_formats() -> void:
@@ -349,8 +401,11 @@ func show_bracket(t: Tournament) -> void:
 			names.append(Rewards.find_perk(id)["title"])
 		info += "   ·   Перки: " + ", ".join(names)
 	_sub(info)
+	if t.gold > 0:
+		_note("Золото забега +%d уйдёт в банк в конце турнира" % t.gold)
 	RunBag.bracket_extra(self, t)  # v0.2 A: the bag
 	RunBets.bracket_extra(self, t)  # v0.2 A: a bet on the coming match
+	RunMods.bracket_extra(self, t)  # v0.2 G: the run's conditions
 	for i in t.rounds():
 		_bracket_row(t, i)
 	var opp := t.opponent()
@@ -365,14 +420,14 @@ func show_result(t: Tournament, won: bool, score_text: String, stats: Dictionary
 	_box.add_child(_text("ПОБЕДА" if won else "ПОРАЖЕНИЕ", UiTheme.display(), UiTheme.T_HERO, UiTheme.WIN if won else UiTheme.LOSE))
 	_sub("против: %s" % opp["name"])
 	_box.add_child(_text(score_text, UiTheme.display(), 64, UiTheme.INK))
-	_sub("PERFECT: %d   ·   эйсы: %d   ·   лучший розыгрыш: %d" % [stats.get("perfect", 0), stats.get("aces", 0), stats.get("best_rally", 0)])
-	if won:
-		var gain := t.gold_for_win(t.stage - 1) + (roundi(Tournament.CHAMPION_BONUS * float(t.format_info()["reward"])) if t.champion else 0) + RunResult.style_gold(self)
-		var gl := _text("+%d золота" % gain, UiTheme.display(), UiTheme.T_HEAD, UiTheme.GOLD)
+	if not MatchStats.block(self, stats, String(opp.get("short", "соперник"))):  # C-5: the match's numbers
+		_sub("PERFECT: %d   ·   эйсы: %d   ·   лучший розыгрыш: %d" % [stats.get("perfect", 0), stats.get("aces", 0), stats.get("best_rally", 0)])
+	var gain := t.last_prize + RunResult.style_gold(self)  # v0.2 A: prize money (a lost run pays too) and style
+	if gain > 0:
+		var gl := _text("+%d золота в забег" % gain, UiTheme.display(), UiTheme.T_HEAD, UiTheme.GOLD)
 		_box.add_child(gl)
-		var total := _balance(t)
-		_set_chip(total - gain)
-		_fly_coins(gl, gain, total)
+		_set_run(t.gold - gain, true)
+		_fly_coins(gl, gain, t.gold, true)
 	if won and not t.pending_loot.is_empty():
 		_box.add_child(_text("Трофей: %s" % t.pending_loot["name"], UiTheme.text_bold(), UiTheme.T_BODY, Gear.color(t.pending_loot)))
 	elif won and t.missed_loot != "":
@@ -463,23 +518,10 @@ func show_reward(t: Tournament) -> void:
 
 
 func show_summary(t: Tournament) -> void:
-	_open(t)
-	_box.add_child(_text("ЧЕМПИОН!" if t.champion else "Турнир окончен", UiTheme.display(), UiTheme.T_HERO if t.champion else UiTheme.T_TITLE, UiTheme.GOLD if t.champion else UiTheme.INK))
-	_sub(t.finish_text())
-	var wins := 0
-	for r in t.results:
-		if r["won"]:
-			wins += 1
-	_box.add_child(_text("Побед: %d   ·   золото за турнир: +%d" % [wins, t.gold], UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.INK))
-	_box.add_child(_text("Всего золота: %d" % SaveData.gold, UiTheme.text(), UiTheme.T_BODY, UiTheme.GOLD))
-	_primary("ЕЩЁ ТУРНИР", "start_tournament")
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 12)
-	_actions.add_child(row)
-	for pair in [["В клуб", "menu"], ["Тренерская", "character"]]:
-		var b := _make_button(pair[0], pair[1], 0, "")
-		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		row.add_child(b)
+	RunResult.show_summary(self, t)  # v0.2 A-2: income by lines, the locker, the next goal
+	if t.gold > 0 and t.banked:  # C-4: the run's gold flies into the bank chip
+		_set_run(t.gold, true)
+		_bank_run(t.gold)
 
 
 # --- Building blocks ------------------------------------------------------------
@@ -500,6 +542,7 @@ func _open(t: Tournament = null, animate := true, back := "", veil := VEIL_SCREE
 	_busy = false
 	SaveData.load_once()
 	_set_chip(_balance(t))
+	_set_run(t.gold if t != null else 0, t != null and t.gold > 0)
 	if back != "":
 		var b := _make_button("←  Назад", back, 0, "")
 		b.custom_minimum_size = Vector2(196, 76)
@@ -554,17 +597,25 @@ func _press(b: Control, action: String, arg: int, card := false) -> void:
 	chosen.emit(action, arg)
 
 
-## Coins burst out of `from` and fly into the balance chip, which counts up to `to_value`.
-func _fly_coins(from: Control, gain: int, to_value: int) -> void:
+## Coins burst out of `from` and fly into the bank chip (or the run's chip, `into_run`),
+## which counts up to `to_value`. `drain_run`: the run's chip counts down to 0 as they land.
+func _fly_coins(from: Control, gain: int, to_value: int, into_run := false, drain_run := false) -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
+	var set_value := func(v: int) -> void:
+		if into_run:
+			_set_run(v, true)
+		else:
+			_set_chip(v)
 	if not is_instance_valid(from) or gain <= 0:
-		_set_chip(to_value)
+		set_value.call(to_value)
 		return
+	var chip: Control = _run_chip if into_run else _chip
 	var start := from.get_global_rect().get_center()
-	var target := _chip_icon.get_global_rect().get_center()
+	var target := (_run_icon if into_run else _chip_icon).get_global_rect().get_center()
 	var n := clampi(gain / 2, 6, 18)
-	var base := _gold_shown
+	var base := _run_shown if into_run else _gold_shown
+	var run0 := _run_shown
 	var landed := [0]
 	for i in n:
 		var coin := Coin.new()
@@ -580,13 +631,23 @@ func _fly_coins(from: Control, gain: int, to_value: int) -> void:
 		tw.tween_callback(func() -> void:
 			coin.queue_free()
 			landed[0] += 1
-			_set_chip(base + roundi(float(gain) * landed[0] / n) if landed[0] < n else to_value)
-			_chip.pivot_offset = _chip.size * 0.5
-			var p := _chip.create_tween()
+			set_value.call(base + roundi(float(gain) * landed[0] / n) if landed[0] < n else to_value)
+			if drain_run:
+				_set_run(run0 - roundi(float(run0) * landed[0] / n), landed[0] < n)
+			chip.pivot_offset = chip.size * 0.5
+			var p := chip.create_tween()
 			p.set_ignore_time_scale(true)
-			p.tween_property(_chip, "scale", Vector2(1.12, 1.12), 0.05)
-			p.tween_property(_chip, "scale", Vector2.ONE, 0.1)
+			p.tween_property(chip, "scale", Vector2(1.12, 1.12), 0.05)
+			p.tween_property(chip, "scale", Vector2.ONE, 0.1)
 			sfx_request.emit("bounce", -12.0, 1.7 + 0.02 * landed[0]))
+
+
+## The summary: the run's gold leaves its chip and lands in the bank.
+func _bank_run(gold: int) -> void:
+	await get_tree().create_timer(0.5, true, false, true).timeout
+	if not _run_chip.visible:
+		return
+	_fly_coins(_run_chip, gold, _gold_shown + gold, false, true)
 
 
 ## The old shared box, still used by LookEditor: the theme's shape with a 3 px border.
@@ -613,6 +674,13 @@ func _left(l: Label) -> Label:
 func _title(s: String, c := UiTheme.GOLD) -> Label:
 	var l := _text(s, UiTheme.display(), UiTheme.T_TITLE, c)
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	# A long name ("Клубный турнир · Нью-Йорк") gets smaller to stay on one line instead of
+	# breaking at the hyphen; a still longer one wraps at the smallest size.
+	var font := UiTheme.display()
+	var size := UiTheme.T_TITLE
+	while size > 40 and font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x > 640.0:
+		size -= 2
+	l.add_theme_font_size_override("font_size", size)
 	_box.add_child(l)
 	return l
 
@@ -768,10 +836,10 @@ func _bracket_row(t: Tournament, i: int) -> void:
 	if not done and i < t.lineup.size():
 		var lu: Dictionary = t.lineup[i]
 		if not lu["mods"].is_empty():
-			var names: Array[String] = []
-			for m in lu["mods"]:
-				names.append(Tournament.MODIFIERS[m]["name"])
-			v.add_child(_left(_text("Модификаторы: " + ", ".join(names), UiTheme.text(), UiTheme.T_SMALL, Color(1.0, 0.6, 0.35))))
+			# v0.2 G: old modifiers and auras ("???" while hidden), with the prize multiplier
+			var mt := _left(_text(Modifiers.bracket_text(lu), UiTheme.text(), UiTheme.T_SMALL, Color(1.0, 0.6, 0.35)))
+			mt.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			v.add_child(mt)
 		RunBag.opponent_hint(self, v, lu)  # v0.2 A: his gear is a hint, revealed on court
 	if current:
 		var lesson := _left(_text(o["lesson"], UiTheme.text(), UiTheme.T_SMALL, UiTheme.MUTED))

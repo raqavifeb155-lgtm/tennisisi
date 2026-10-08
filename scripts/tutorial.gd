@@ -1,7 +1,8 @@
 class_name Tutorial
 extends Control
 ## First-launch tutorial: a few cards with animated drawings instead of permanent
-## on-screen hints. Pauses the game while open; reopen it from the settings panel.
+## on-screen hints. The pause while it is open is Hud's (ModalStack): it opens from the
+## first match, the pause, the Club's "?".
 
 signal finished
 
@@ -9,7 +10,7 @@ const DONE_FILE := "user://tutorial_done_v2"  # v2: joystick controls
 const PAGES := [
 	{
 		"title": "Бег",
-		"text": "Большой палец левой руки — внизу, под игроком: это джойстик. Веди пальцем, и игрок бежит.\nОтпустишь — он сам подстроится под мяч. Режим управления меняется в меню и в «НАСТР».",
+		"text": "Большой палец левой руки — внизу, под игроком: это джойстик. Веди пальцем, и игрок бежит.\nОтпустишь — он сам подстроится под мяч. Режим управления меняется в Раздевалке и в настройках.",
 		"pic": "run",
 	},
 	{
@@ -34,7 +35,7 @@ const PAGES := [
 	},
 ]
 
-const TAP_RUN_TEXT := "Тапни по корту — игрок побежит туда. Держи палец — бежит за пальцем.\nОтпустишь — он сам подстроится под мяч. Режим управления меняется в меню и в «НАСТР»."
+const TAP_RUN_TEXT := "Тапни по корту — игрок побежит туда. Держи палец — бежит за пальцем.\nОтпустишь — он сам подстроится под мяч. Режим управления меняется в Раздевалке и в настройках."
 
 var _page := 0
 var _t := 0.0
@@ -131,7 +132,6 @@ func open() -> void:
 	_page = 0
 	_show_page()
 	visible = true
-	get_tree().paused = true
 
 
 func _advance() -> void:
@@ -144,7 +144,6 @@ func _advance() -> void:
 
 func _finish() -> void:
 	visible = false
-	get_tree().paused = false
 	var f := FileAccess.open(DONE_FILE, FileAccess.WRITE)
 	if f:
 		f.store_string("1")
