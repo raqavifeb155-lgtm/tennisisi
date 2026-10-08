@@ -2049,6 +2049,9 @@ func _finish_match() -> void:
 func _on_ui(action: String, arg: int) -> void:
 	if RunShop.route(self, action, arg):  # v0.2 A: the shop, the locker, the summary's choice
 		return
+	if action.begins_with("club_") and club != null:  # T-2: the club's own screens (hiring a student)
+		club.ui_action(action, arg)
+		return
 	match action:
 		"start_tournament":
 			ui.show_locations()
