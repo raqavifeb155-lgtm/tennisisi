@@ -19,8 +19,8 @@ const EPIC := 2
 const MYTHIC := 3
 const RARITY_NAMES := ["Обычный", "Редкий", "Эпический", "Мифический"]
 
-const AURA_CHANCE := 0.06         # an ordinary opponent comes with an aura
-const BOSS_CHANCE := 0.25         # the boss...
+const AURA_CHANCE := 0.05         # an ordinary opponent comes with an aura
+const BOSS_CHANCE := 0.22         # the boss...
 const BOSS_TWO := 0.33            # ...and of those, this share with two
 const RARITY_WEIGHT := [50.0, 30.0, 15.0, 5.0]
 const HIDE_EPIC := 0.5            # an epic aura is "???" until the first point this often (mythic: always)

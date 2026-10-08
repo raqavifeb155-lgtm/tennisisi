@@ -119,6 +119,8 @@ static func apply(hub: Node, f: Array) -> void:
 			hub.undo.append(func() -> void:
 				Court.inset = old
 				if is_instance_valid(lines):
+					if lines.get_parent():
+						lines.get_parent().remove_child(lines)
 					lines.queue_free())
 		"ball_scale":
 			var ball: Node3D = main.ball
