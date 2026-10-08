@@ -44,6 +44,7 @@ var _ghost_id := ""
 var _high := true
 var _board := "Задания — с началом турнира"
 var _chalk: Label3D
+var _focus_room := ""
 
 
 func _ready() -> void:
@@ -93,12 +94,31 @@ func set_inside(id: String) -> void:
 		(p["fade"] as Node3D).visible = pid != id
 
 
-## Pavilions' contents are not drawn while the hero is far from them.
+## Pavilions' contents are not drawn while the hero is far from them (unless a room is
+## shown on the foreman's card: focus_room).
 func show_interiors_near(pos: Vector3) -> void:
 	for pid in _pavilions:
 		var p: Dictionary = _pavilions[pid]
 		var root := p["root"] as Node3D
-		(p["inside"] as Node3D).visible = Vector2(pos.x - root.position.x, pos.z - root.position.z).length() < 14.0
+		(p["inside"] as Node3D).visible = pid == _focus_room or Vector2(pos.x - root.position.x, pos.z - root.position.z).length() < 14.0
+
+
+## A room looked into from afar (the foreman's card): walls and roof open, contents shown.
+## "" = none.
+func focus_room(id: String) -> void:
+	_focus_room = id if _pavilions.has(id) else ""
+	set_inside(_focus_room)
+	if _focus_room != "":
+		(_pavilions[_focus_room]["inside"] as Node3D).visible = true
+
+
+func is_room(id: String) -> bool:
+	return _pavilions.has(id)
+
+
+## A room's contents (for the build moment's grow-in).
+func room_inside(id: String) -> Node3D:
+	return _pavilions[id]["inside"] if _pavilions.has(id) else null
 
 
 ## The gold circle of the place the hero stands in glows brighter.
@@ -165,12 +185,19 @@ func show_ghost(id: String, lv: int) -> void:
 		_ghost.queue_free()
 		_ghost = null
 	_ghost_id = ""
-	if id == "" or not ClubLevels.has(id):
+	if id == "" or not (ClubLevels.has(id) or _pavilions.has(id)):
 		return
 	_ghost = Node3D.new()
 	_ghost.name = "ghost"
 	add_child(_ghost)
-	ClubLevels.build(self, id, _ghost, lv, true)
+	if _pavilions.has(id):
+		# A room: its next level's things where the room's stand.
+		_ghost.position = (_pavilions[id]["root"] as Node3D).position + Vector3(0, 0.01, 0)
+		var chalk := _chalk
+		_fill_room(id, _ghost, lv)
+		_chalk = chalk
+	else:
+		ClubLevels.build(self, id, _ghost, lv, true)
 	var mat := ClubMaterial.ghost()
 	for n in _ghost.find_children("*", "GeometryInstance3D", true, false):
 		var g := n as GeometryInstance3D
@@ -516,15 +543,25 @@ func _fill_room(id: String, inside: Node3D, lv: int) -> void:
 	var trim := ClubMaterial.pal(ClubMaterial.WOOD_DARK)
 	match id:
 		"locker":
+			# One locker a slot (ClubBuilds.locker_slots), a bench; 1: a mirror; 2: a wall of
+			# rackets; 3: a lit wardrobe.
 			var metal := ClubMaterial.pal(ClubMaterial.STEEL)
-			var lockers := clampi(1 + lv * 2, 1, 6)
-			for i in lockers:
+			for i in mini(1 + lv, 4):
 				inside.add_child(_mesh_box(Vector3(0.6, 2.0, 0.55), Vector3(-2.4 + i * 0.65, 1.0, -hz + 0.4), metal))
+				inside.add_child(_mesh_box(Vector3(0.08, 0.3, 0.04), Vector3(-2.25 + i * 0.65, 1.2, -hz + 0.69), ClubMaterial.pal(ClubMaterial.METAL_DARK, false)))
 			inside.add_child(_mesh_box(Vector3(2.2, 0.08, 0.5), Vector3(0.9, 0.45, 0.2), ClubMaterial.pal(ClubMaterial.WOOD, false)))
 			for lx in [0.0, 1.8]:
 				inside.add_child(_mesh_box(Vector3(0.08, 0.45, 0.45), Vector3(lx, 0.22, 0.2), trim))
 			if lv >= 1:  # a mirror
 				inside.add_child(_mesh_box(Vector3(0.06, 1.6, 1.0), Vector3(2.85, 1.3, -0.6), ClubMaterial.pal(ClubMaterial.GLASS)))
+			if lv >= 2:  # the wall of rackets: the things you keep
+				inside.add_child(_mesh_box(Vector3(2.0, 1.2, 0.08), Vector3(1.4, 1.9, -hz + 0.16), ClubMaterial.pal(ClubMaterial.WOOD_DARK)))
+				var frames := [Color("d9473b"), Color("2a54a3"), UiTheme.GOLD, Color("9a5cf0")]
+				for i in 4:
+					inside.add_child(_racket(Vector3(0.65 + i * 0.5, 2.0, -hz + 0.24), frames[i]))
+			if lv >= 3:  # a lit wardrobe
+				inside.add_child(_mesh_box(Vector3(1.0, 2.3, 0.6), Vector3(-2.4, 1.15, 1.4), ClubMaterial.pal(ClubMaterial.WOOD_DARK)))
+				inside.add_child(_mesh_box(Vector3(0.9, 0.05, 0.5), Vector3(-2.4, 2.1, 1.4), ClubMaterial.glow(UiTheme.GOLD, 1.2)))
 		"coach":
 			inside.add_child(_mesh_box(Vector3(2.4, 1.3, 0.06), Vector3(0.6, 1.7, -hz + 0.14), ClubMaterial.pal(ClubMaterial.CHALKBOARD)))
 			# The coach's chalkboard: this run's quests (ClubQuests.board_text).
@@ -553,30 +590,24 @@ func _fill_room(id: String, inside: Node3D, lv: int) -> void:
 			if lv >= 1:  # dumbbells and a mat
 				inside.add_child(_mesh_box(Vector3(1.8, 0.03, 0.9), Vector3(1.4, 0.17, 0.6), ClubMaterial.pal(ClubMaterial.TEAL, false)))
 		"shop":
-			# A counter with a till, a rack of rackets, a glass case of things.
-			inside.add_child(_mesh_box(Vector3(2.6, 1.0, 0.7), Vector3(-0.8, 0.5, -0.2), ClubMaterial.pal(ClubMaterial.WOOD)))
-			inside.add_child(_mesh_box(Vector3(2.7, 0.06, 0.8), Vector3(-0.8, 1.03, -0.2), trim))
-			inside.add_child(_mesh_box(Vector3(0.4, 0.3, 0.3), Vector3(-1.6, 1.21, -0.25), ClubMaterial.pal(ClubMaterial.METAL_DARK, false)))
-			inside.add_child(_mesh_box(Vector3(2.2, 1.6, 0.12), Vector3(0.9, 1.4, -hz + 0.2), ClubMaterial.pal(ClubMaterial.WOOD_DARK)))
-			var frames := [Color("d9473b"), Color("2a54a3"), Color("f2f0ea"), Color("ffd642")]
-			var rackets := 3 + mini(lv, 3)
-			for i in rackets:
-				var rk := MeshInstance3D.new()
-				var tm := TorusMesh.new()
-				tm.inner_radius = 0.13
-				tm.outer_radius = 0.16
-				tm.rings = 10
-				tm.ring_segments = 4
-				rk.mesh = tm
-				rk.material_override = ClubMaterial.get_mat(frames[i % frames.size()], false)
-				rk.rotation.x = PI * 0.5
-				rk.scale = Vector3(0.8, 1.0, 1.0)
-				rk.position = Vector3(0.1 + i * 0.32 * (3.0 / rackets), 1.65, -hz + 0.3)
-				inside.add_child(rk)
-				inside.add_child(_mesh_box(Vector3(0.03, 0.32, 0.03), Vector3(rk.position.x, 1.32, -hz + 0.3), ClubMaterial.pal(ClubMaterial.BLACK, false)))
-			if lv >= 1:  # a glass case with a lit shelf
-				inside.add_child(_mesh_box(Vector3(1.2, 0.9, 0.6), Vector3(2.1, 0.45, 0.6), ClubMaterial.pal(ClubMaterial.GLASS)))
-				inside.add_child(_mesh_box(Vector3(1.1, 0.04, 0.5), Vector3(2.1, 0.92, 0.6), ClubMaterial.glow(UiTheme.GOLD, 1.0)))
+			# A counter with a till and the window: 2 / 3 / 4 stands with a thing each
+			# (ClubBuilds.shop_stock); the boutique's window glows in the rarities' colours.
+			inside.add_child(_mesh_box(Vector3(2.0, 1.0, 0.7), Vector3(-1.4, 0.5, -0.4), ClubMaterial.pal(ClubMaterial.WOOD)))
+			inside.add_child(_mesh_box(Vector3(2.1, 0.06, 0.8), Vector3(-1.4, 1.03, -0.4), trim))
+			inside.add_child(_mesh_box(Vector3(0.4, 0.3, 0.3), Vector3(-2.0, 1.21, -0.45), ClubMaterial.pal(ClubMaterial.METAL_DARK, false)))
+			var stock: int = [2, 3, 4][clampi(lv, 0, 2)]
+			var glow := [Color(0.35, 0.6, 1.0), Color(0.62, 0.4, 0.95), Color(1.0, 0.6, 0.2), Color(0.35, 0.6, 1.0)]
+			var frames := [Color("d9473b"), Color("2a54a3"), Color("f2f0ea"), UiTheme.GOLD]
+			for i in stock:
+				var x: float = 0.2 + i * (2.4 / maxf(stock - 1, 1)) if stock > 1 else 1.4
+				var stand := Vector3(x, 0, -hz + 0.7)
+				inside.add_child(_mesh_box(Vector3(0.5, 0.8, 0.5), stand + Vector3(0, 0.4, 0), ClubMaterial.pal(ClubMaterial.PLASTER)))
+				if lv >= 2:
+					inside.add_child(_mesh_box(Vector3(0.52, 0.05, 0.52), stand + Vector3(0, 0.82, 0), ClubMaterial.glow(glow[i], 1.3)))
+				inside.add_child(_racket(stand + Vector3(0, 1.15, 0), frames[i % frames.size()]))
+			if lv >= 1:  # the stringing bench (струны)
+				inside.add_child(_mesh_box(Vector3(0.9, 0.9, 0.5), Vector3(-2.4, 0.45, 1.3), ClubMaterial.pal(ClubMaterial.METAL_DARK)))
+				inside.add_child(_racket(Vector3(-2.4, 1.0, 1.3), Color("f2f0ea"), true))
 			var sign := Label3D.new()
 			sign.text = "МАГАЗИН"
 			sign.font = UiTheme.display()
@@ -589,6 +620,26 @@ func _fill_room(id: String, inside: Node3D, lv: int) -> void:
 			sign.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			sign.position = Vector3(0, 2.6, -hz + 0.12)
 			inside.add_child(sign)
+
+
+## A racket: a ring of a frame and a handle (stands in shops and on walls).
+func _racket(at: Vector3, col: Color, flat := false) -> Node3D:
+	var n := Node3D.new()
+	n.position = at
+	var rk := MeshInstance3D.new()
+	var tm := TorusMesh.new()
+	tm.inner_radius = 0.13
+	tm.outer_radius = 0.16
+	tm.rings = 10
+	tm.ring_segments = 4
+	rk.mesh = tm
+	rk.material_override = ClubMaterial.get_mat(col, false)
+	rk.rotation.x = 0.0 if flat else PI * 0.5
+	rk.scale = Vector3(0.8, 1.0, 1.0)
+	n.add_child(rk)
+	var h := _mesh_box(Vector3(0.03, 0.03, 0.3) if flat else Vector3(0.03, 0.3, 0.03), Vector3(0, 0, 0.3) if flat else Vector3(0, -0.3, 0), ClubMaterial.pal(ClubMaterial.BLACK, false))
+	n.add_child(h)
+	return n
 
 
 ## The bar's table with the roulette under an umbrella (the Totalizator, HANDOFF 9.1).

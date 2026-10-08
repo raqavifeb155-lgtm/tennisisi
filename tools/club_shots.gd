@@ -141,6 +141,8 @@ func _builds() -> void:
 	await _shot("b01_foreman_stands_ghost", 1.0)
 	club.foreman_show("court")
 	await _shot("b02_foreman_court", 0.8)
+	club.foreman_show("shop")
+	await _shot("b02_foreman_shop_ghost", 0.8)
 	club.foreman_build()
 	await _shot("b03_build_moment", 0.75)
 	club.skip_build()
@@ -164,9 +166,11 @@ func _builds() -> void:
 			club._refresh()
 			var view: Array = club.BUILD_VIEW[id]
 			club.cam.frame(view[0], view[1], 0.0)
+			club.world.focus_room(id)
 			club.hud.visible = false
 			await _shot("b_%s_%d" % [id, lv], 0.5)
 	# The whole club at the top, from the start: the budget with everything built.
+	club.world.focus_room("")
 	club.cam.release(0.0)
 	club._travel("court")
 	await _shot("b99_all_max_start", 1.0)

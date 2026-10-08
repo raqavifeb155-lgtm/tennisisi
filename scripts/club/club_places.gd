@@ -15,7 +15,8 @@ class_name ClubPlaces
 ##   build   the construction (ClubBuilds, H2) whose level is this place's level
 ##   levels  what the place offers at level i: label, action ("" = no button: the sign
 ##           shows), note (what is here now), sign, and its own keys (bar: bet_limit,
-##           shop: offers). A level past the list repeats the last one.
+##           shop: offers). A level inherits the keys of the levels below it; a level
+##           past the list repeats the last one.
 
 const LIST := [
 	{
@@ -52,25 +53,32 @@ const LIST := [
 	},
 	{
 		"id": "locker", "name": "Раздевалка", "pos": Vector3(-14, 0, 26), "r": 1.8,
-		"unlock": "played", "sign": "Раздевалка · после первого забега",
+		"unlock": "played", "sign": "Раздевалка · после первого забега", "build": "locker",
 		"cam": {"pos": Vector3(-14, 10.5, 35.0), "look": Vector3(-14, 0.4, 25.6)},
 		"levels": [
-			{"label": "Раздевалка", "action": "locker", "note": "Скамейка и один шкафчик"},
+			# club_locker: stream A's locker screen (RunLocker.ui_action) when it exists,
+			# else the look / backhand / controls screen as before.
+			{"label": "Раздевалка", "action": "club_locker", "note": "Скамейка и один шкафчик"},
+			{"label": "Раздевалка", "action": "club_locker", "note": "Ряд шкафчиков и зеркало"},
+			{"label": "Раздевалка", "action": "club_locker", "note": "Стена ракеток"},
+			{"label": "Раздевалка", "action": "club_locker", "note": "Гардероб с подсветкой"},
 		],
 	},
 	{
 		# New in v0.2 (HANDOFF 9.1): buy, sell, change mods. The trade itself is stream
 		# A's; until then the rows say "скоро".
 		"id": "shop", "name": "Магазин вещей", "pos": Vector3(22, 0, 2), "r": 1.8,
-		"unlock": "played", "sign": "Магазин · после первого забега",
+		"unlock": "played", "sign": "Магазин · после первого забега", "build": "shop",
 		"cam": {"pos": Vector3(22, 10.5, 11.0), "look": Vector3(22, 0.4, 1.6)},
 		"levels": [
 			{"label": "Магазин", "action": "club_shop", "note": "Прилавок и стойка с ракетками",
 				"offers": [
 					{"id": "buy", "title": "Купить", "desc": "вещи на следующий забег", "action": ""},
 					{"id": "sell", "title": "Продать", "desc": "цена по редкости и уровню вещи", "action": ""},
-					{"id": "mods", "title": "Моды", "desc": "сменить свойство вещи", "action": ""},
+					{"id": "mods", "title": "Струны", "desc": "перебросить свойство вещи", "action": ""},
 				]},
+			{"label": "Магазин", "action": "club_shop", "note": "Лавка: 3 вещи до эпической, струны"},
+			{"label": "Магазин", "action": "club_shop", "note": "Бутик: 4 вещи до легендарной, витрина светится"},
 		],
 	},
 	{
@@ -141,9 +149,10 @@ static func state(id: String, lv := -1) -> Dictionary:
 	for k in p:
 		if k != "levels":
 			out[k] = p[k]
+	# A level inherits the ones below it and overrides what it names.
 	var levels: Array = p.get("levels", [])
-	if not levels.is_empty():
-		var l: Dictionary = levels[clampi(lv, 0, levels.size() - 1)]
+	for i in range(0, clampi(lv, 0, levels.size() - 1) + 1 if not levels.is_empty() else 0):
+		var l: Dictionary = levels[i]
 		for k in l:
 			out[k] = l[k]
 	out["level"] = lv

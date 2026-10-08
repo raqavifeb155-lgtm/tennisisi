@@ -126,6 +126,7 @@ func close() -> void:
 		hud.hide_foreman()
 		if is_instance_valid(world):
 			world.show_ghost("", 0)
+			world.focus_room("")
 	if _roulette_on:
 		_roulette_on = false
 		hud.hide_roulette()
@@ -355,11 +356,15 @@ func _on_choice(action: String, arg: int) -> void:
 
 ## The club's own actions (the places' buttons and the club's screens). Main hands the
 ## ones that come from TournamentUI screens here too ("club_*").
-func ui_action(action: String, _arg: int) -> void:
+func ui_action(action: String, arg: int) -> void:
 	var id := _place if _place != "" else hud.current_place()
 	match action:
 		"club_shop":
-			ClubScreens.shop(main.ui, ClubPlaces.state("shop"))
+			if not _hand_to("RunShop", action, arg):
+				ClubScreens.shop(main.ui, ClubPlaces.state("shop"))
+		"club_locker":
+			if not _hand_to("RunLocker", action, arg):
+				main._on_ui("locker", 0)  # until stream A's locker: the look / backhand / controls screen
 		"club_place":
 			ClubScreens.place(main.ui, ClubPlaces.state(id))
 		"club_roulette":
@@ -387,6 +392,20 @@ func _claim() -> void:
 	coach.say(line, true)
 	world.set_board(ClubQuests.board_text())
 	_show_place(_place if _place != "" else "coach")
+
+
+## Hands a club action to another stream's screen class, the way Main hands the bets and
+## the bag to RunBets / RunBag: `Class.ui_action(main, action, arg)`. False if the class
+## isn't in the game yet.
+func _hand_to(cls: String, action: String, arg: int) -> bool:
+	for c in ProjectSettings.get_global_class_list():
+		if c["class"] == cls:
+			var scr: GDScript = load(c["path"])
+			for m in scr.get_script_method_list():
+				if m["name"] == "ui_action":
+					scr.call("ui_action", main, action, arg)
+					return true
+	return false
 
 
 # --- The Totalizator at the bar: a 3D roulette ---------------------------------------
@@ -538,6 +557,8 @@ const BUILD_VIEW := {
 	"stands": [Vector3(14.0, 9.0, 12.0), Vector3(11.5, 0.5, -3.0)],
 	"gate": [Vector3(3.5, 21.0, 60.0), Vector3(3.5, 0.0, 42.0)],
 	"trophy": [Vector3(-17.5, 10.0, -11.0), Vector3(-17.5, 0.0, -24.5)],
+	"shop": [Vector3(22.0, 11.0, 13.0), Vector3(22.0, 0.0, 4.6)],
+	"locker": [Vector3(-14.0, 11.0, 37.0), Vector3(-14.0, 0.0, 28.6)],
 	"bar": [Vector3(20.0, 17.0, -9.0), Vector3(20.0, 0.0, -27.5)],
 }
 const BUILD_TIME := 2.0
@@ -636,6 +657,7 @@ func foreman_show(id: String) -> void:
 	hud.set_gold(SaveData.gold)
 	var view: Array = BUILD_VIEW[id]
 	cam.frame(view[0], view[1])
+	world.focus_room(id)
 	if lv < mx and ClubBuilds.is_open(id):
 		world.show_ghost(id, lv + 1)
 	else:
@@ -681,7 +703,7 @@ func _play_build(id: String, lv: int) -> void:
 	hud.fly_coins(cam.unproject_position(focus))
 	# The camera comes closer.
 	cam.frame((view[0] as Vector3).lerp(focus, 0.3), focus, 0.4)
-	var root := world.level_root(id)
+	var root := world.level_root(id) if not world.is_room(id) else world.room_inside(id)
 	if root:
 		root.scale = Vector3(1, 0.0, 1)
 	# Dust and a gold ring at the foot of it.
@@ -745,7 +767,9 @@ func skip_build() -> void:
 
 func _end_build(id: String, lv: int) -> void:
 	_building = false
-	var root := world.level_root(id) if is_instance_valid(world) else null
+	var root: Node3D = null
+	if is_instance_valid(world):
+		root = world.level_root(id) if not world.is_room(id) else world.room_inside(id)
 	if root:
 		root.scale = Vector3.ONE
 	for n in _build_fx:
@@ -767,6 +791,7 @@ func foreman_close() -> void:
 	_foreman_on = false
 	hud.hide_foreman()
 	world.show_ghost("", 0)
+	world.focus_room("")
 	cam.release()
 	_place = ""
 	_refresh()

@@ -14,6 +14,7 @@ func _initialize() -> void:
 	test_roulette_physics()
 	test_builds()
 	test_quests()
+	test_shop_locker()
 	await test_world()
 	await test_flow()
 	await test_places_flow()
@@ -172,7 +173,7 @@ func test_builds() -> void:
 	check(ClubBuilds.affordable_count() == 3, "with plenty of gold: court, stands, gate (%d)" % ClubBuilds.affordable_count())
 	SaveData.played = 1
 	SaveData.titles = 1
-	check(ClubBuilds.affordable_count() == 5, "all five after a title")
+	check(ClubBuilds.affordable_count() == 7, "all seven after a title (with the shop and the locker room)")
 	SaveData.gold = 45
 	check(ClubBuilds.affordable_count() == 1, "45 gold: only the court (%d)" % ClubBuilds.affordable_count())
 	SaveData.gold = 0
@@ -261,6 +262,32 @@ func test_quests() -> void:
 	check(ClubQuests.tier_of("park") == 0 and ClubQuests.tier_of("paris") == 3, "islands: New York 0 .. Paris 3")
 	SaveData.club = {}
 	SaveData.gold = 0
+
+
+## The shop and the locker room are constructions too (hub spec 1, 2).
+func test_shop_locker() -> void:
+	print("shop and locker")
+	SaveData.club = {}
+	check(ClubBuilds.max_level("shop") == 2 and ClubBuilds.max_level("locker") == 3, "shop 0..2, locker room 0..3")
+	check(int(ClubBuilds.TABLE["shop"]["levels"][0]["price"]) == 150 and int(ClubBuilds.TABLE["shop"]["levels"][1]["price"]) == 450, "the shop: 150, 450")
+	check(int(ClubBuilds.TABLE["locker"]["levels"][0]["price"]) == 80 and int(ClubBuilds.TABLE["locker"]["levels"][2]["price"]) == 550, "the locker room: 80 .. 550")
+	var stock := []
+	var rar := []
+	for lv in 3:
+		SaveData.club = {"levels": {"shop": lv}}
+		stock.append(ClubBuilds.shop_stock())
+		rar.append(ClubBuilds.shop_max_rarity())
+	check(stock == [2, 3, 4] and rar == [Gear.RARE, Gear.EPIC, Gear.LEGENDARY], "the shop shows 2/3/4 things, up to rare/epic/legendary")
+	var slots := []
+	for lv in 4:
+		SaveData.club = {"levels": {"locker": lv}}
+		slots.append(ClubBuilds.locker_slots())
+	check(slots == [1, 2, 3, 4], "locker slots: 1 + the level, up to 4")
+	SaveData.club = {}
+	SaveData.played = 0
+	check(not ClubBuilds.is_open("shop") and not ClubBuilds.is_open("locker"), "both after the first run")
+	check(ClubPlaces.find("shop").get("build", "") == "shop" and ClubPlaces.find("locker").get("build", "") == "locker", "the places grow with their constructions")
+	check(ClubPlaces.state("locker", 0)["action"] == "club_locker", "the locker room's button: club_locker (stream A's screen)")
 
 
 ## ClubMaterial: one soft toon material per colour, outlines only where they pay.
@@ -503,13 +530,16 @@ func test_build_world() -> void:
 	root.add_child(w)
 	await process_frame
 	var fine := true
+	var ghosts := true
 	for id in ClubBuilds.ORDER:
 		for lv in ClubBuilds.max_level(id) + 1:
 			w.set_level(id, lv)
 			if w.level_built(id) != lv:
 				fine = false
 		w.show_ghost(id, ClubBuilds.max_level(id))
+		ghosts = ghosts and w.ghost_id() == id
 		w.show_ghost("", 0)
+	check(ghosts, "every construction has its ghost (the rooms too)")
 	check(fine, "every level of the five constructions builds")
 	w.set_club_color(1)
 	check(true, "the club's colour paints without errors")
