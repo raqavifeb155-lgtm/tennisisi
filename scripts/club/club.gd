@@ -280,11 +280,12 @@ func _show_place(id: String) -> void:
 	hud.show_place(id, b["label"], b["action"], b["extra"], upgrade_price(id))
 
 
-## "↑ 340" by a place whose construction's next level is affordable (not at the gate:
-## its own button is the foreman).
+## "↑ 340" by a place whose construction's next level is affordable. Not at the gate (its
+## own button is the foreman) and not on the main screen by the court (Новая игра /
+## Продолжить stay alone there; the court is built at the foreman's).
 func upgrade_price(place_id: String) -> int:
 	var b: String = ClubPlaces.find(place_id).get("build", "")
-	if b == "" or place_id == "gate" or not ClubBuilds.can_afford(b):
+	if b == "" or place_id in ["gate", "court"] or not ClubBuilds.can_afford(b):
 		return 0
 	return ClubBuilds.next_price(b)
 
@@ -488,12 +489,15 @@ func _on_tap(screen_pos: Vector2) -> void:
 # --- The foreman: buying the constructions' levels (H2) --------------------------------
 
 ## Where the camera looks at each construction from (above the foreman's cards).
+## The phone's frame is narrow (a 52-degree vertical FOV is ~25 degrees across), so the
+## camera stands far enough to take a construction's whole width, and looks a little in
+## front of it: the foreman's card covers the lower part of the screen.
 const BUILD_VIEW := {
-	"court": [Vector3(0, 26.0, 38.0), Vector3(0, 0, 8.0)],
-	"stands": [Vector3(26.0, 13.0, 4.0), Vector3(11.5, 0.5, -4.0)],
-	"gate": [Vector3(4.0, 12.0, 54.0), Vector3(3.0, 1.0, 42.0)],
-	"trophy": [Vector3(-18.0, 8.0, -16.5), Vector3(-18.0, 0.8, -25.0)],
-	"bar": [Vector3(21.0, 11.0, -20.0), Vector3(20.5, 0.5, -30.0)],
+	"court": [Vector3(0, 27.0, 36.0), Vector3(0, 0, 10.0)],
+	"stands": [Vector3(14.0, 9.0, 12.0), Vector3(11.5, 0.5, -3.0)],
+	"gate": [Vector3(3.5, 21.0, 60.0), Vector3(3.5, 0.0, 42.0)],
+	"trophy": [Vector3(-17.5, 10.0, -11.0), Vector3(-17.5, 0.0, -24.5)],
+	"bar": [Vector3(20.0, 17.0, -9.0), Vector3(20.0, 0.0, -27.5)],
 }
 const BUILD_TIME := 2.0
 
@@ -572,7 +576,7 @@ func foreman_show(id: String) -> void:
 	else:
 		var nx: Dictionary = t["levels"][lv]
 		card["title"] = nx["title"]
-		var now := "ничего" if lv == 0 else String(t["levels"][lv - 1]["now"])
+		var now: String = t.get("start", "ничего") if lv == 0 else String(t["levels"][lv - 1]["now"])
 		card["desc"] = "Сейчас: %s\nБудет: %s" % [now, nx["now"]]
 		var perk_now := "" if lv == 0 else String(t["levels"][lv - 1].get("perk", ""))
 		if String(nx.get("perk", "")) != "":

@@ -8,11 +8,12 @@ class_name ClubBuilds
 
 const CLUB_PRICE_SCALE := 1.0
 
-## id -> {name, place (ClubPlaces id where it stands), unlock, levels: [level 1, 2, ...]}.
+## id -> {name, place (ClubPlaces id where it stands), unlock, start (level 0 as it is),
+## levels: [level 1, 2, ...]}.
 ## A level: title, now (what you see), perk ("" = none), price, line (the coach, <= 60).
 const TABLE := {
 	"court": {
-		"name": "Главный корт", "place": "court", "unlock": "",
+		"name": "Главный корт", "place": "court", "unlock": "", "start": "трещины и выцветшие линии",
 		"levels": [
 			{"title": "Свежий хард", "now": "свежий хард, яркие линии", "perk": "", "price": 40,
 				"line": "Свежая краска! Мяч теперь отскакивает честно"},
@@ -25,7 +26,7 @@ const TABLE := {
 		],
 	},
 	"stands": {
-		"name": "Трибуны", "place": "court", "unlock": "",
+		"name": "Трибуны", "place": "court", "unlock": "", "start": "колышки с лентой",
 		"levels": [
 			{"title": "Две скамейки", "now": "две скамейки у корта", "perk": "+2% золота за победы", "bonus": 0.02, "price": 50,
 				"line": "Две скамейки. Уже кто-то придёт посмотреть"},
@@ -40,7 +41,7 @@ const TABLE := {
 		],
 	},
 	"gate": {
-		"name": "Вход", "place": "gate", "unlock": "",
+		"name": "Вход", "place": "gate", "unlock": "", "start": "калитка и табличка «Public Courts»",
 		"levels": [
 			{"title": "Ворота и вывеска", "now": "ворота с деревянной вывеской с именем клуба", "perk": "", "price": 60,
 				"line": "%s. Звучит!"},
@@ -53,7 +54,7 @@ const TABLE := {
 		],
 	},
 	"trophy": {
-		"name": "Трофейная", "place": "trophy", "unlock": "played",
+		"name": "Трофейная", "place": "trophy", "unlock": "played", "start": "пустое место",
 		"levels": [
 			{"title": "Полка", "now": "полка: кубок за каждый титул", "perk": "Кодекс (скоро)", "price": 60,
 				"line": "Полка для кубков. Давай её заполним"},
@@ -64,7 +65,7 @@ const TABLE := {
 		],
 	},
 	"bar": {
-		"name": "Бар", "place": "bar", "unlock": "title",
+		"name": "Бар", "place": "bar", "unlock": "title", "start": "стол с рулеткой под зонтом",
 		"levels": [
 			{"title": "Ларёк", "now": "ларёк с газировкой", "perk": "ставка до 50", "price": 100,
 				"line": "Газировка есть. Ставки покрупнее"},

@@ -258,10 +258,11 @@ static func _stands(w: ClubWorld, root: Node3D, lv: int, ghost: bool) -> void:
 	if lv >= 4:
 		# A canopy on posts and the club's flags.
 		var dark := ClubMaterial.pal(ClubMaterial.METAL_DARK)
+		# A cantilever over the back rows (the front rows and the crowd stay in view).
 		for z in [z0 + 0.3, (z0 + z1) * 0.5, z1 - 0.3]:
 			_cyl(root, 0.07, 0.07, 3.6, Vector3(x1 - 0.2, 1.8, z), dark, 6)
-		var roof := _box(root, Vector3(x1 - x0 + 0.6, 0.12, z1 - z0 + 0.4), Vector3((x0 + x1) * 0.5, 3.65, (z0 + z1) * 0.5), ClubMaterial.get_mat(ClubBuilds.club_color()))
-		roof.rotation.z = deg_to_rad(-8.0)
+		var roof := _box(root, Vector3(1.8, 0.12, z1 - z0 + 0.4), Vector3(x1 - 0.7, 3.65, (z0 + z1) * 0.5), ClubMaterial.get_mat(ClubBuilds.club_color()))
+		roof.rotation.z = deg_to_rad(10.0)
 		for k in 3:
 			var z := lerpf(z0 + 2.0, z1 - 2.0, k / 2.0)
 			_cyl(root, 0.03, 0.03, 2.0, Vector3(x1 + 0.1, 4.6, z), dark, 6)

@@ -6,6 +6,7 @@ var failures := 0
 
 
 func _initialize() -> void:
+	SaveData.enabled = false  # never the developer's save: buy() saves
 	test_places()
 	test_walk()
 	test_material()
@@ -475,6 +476,7 @@ func test_foreman_flow() -> void:
 	club._travel("bar")
 	await _frames(2)
 	check(club.upgrade_price("bar") == 100, "an affordable upgrade shows by its place (↑ 100)")
+	check(club.upgrade_price("court") == 0, "never on the main screen: Новая игра / Продолжить stay alone")
 	main.queue_free()
 	await _frames(2)
 	SaveData.club = {}

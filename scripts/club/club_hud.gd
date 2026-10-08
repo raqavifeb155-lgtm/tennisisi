@@ -190,6 +190,8 @@ func _build_bottom() -> void:
 	_primary.theme_type_variation = "Primary"
 	_primary.custom_minimum_size = Vector2(0, TRAVEL)
 	_primary.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_primary.clip_text = true
+	_primary.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_primary.focus_mode = Control.FOCUS_NONE
 	_primary.pressed.connect(func() -> void:
 		var a: String = _primary.get_meta("action", "")

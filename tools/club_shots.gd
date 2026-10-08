@@ -4,11 +4,14 @@ extends SceneTree
 ## 720x1564 = iPhone 17 Pro Max (440x956), --size=1480 = a small Android (360x740).
 ## PNGs go to the user data folder (path printed). Never writes the save.
 ## --gfx=N: graphics preset (1 Low .. 4 Max), and the draw calls are printed per shot.
+## --builds: H2 - every construction at every level, the foreman, the build moment, and
+## the whole club at the top (its draw calls).
 
 var main: Node
 var h := 1564
 var gfx := -1
 var out := ""
+var builds := false
 
 
 func _initialize() -> void:
@@ -17,6 +20,8 @@ func _initialize() -> void:
 			h = int(a.get_slice("=", 1))
 		elif a.begins_with("--gfx="):
 			gfx = int(a.get_slice("=", 1))
+		elif a == "--builds":
+			builds = true
 	out = ProjectSettings.globalize_path("user://club_%d_" % h)
 	_run.call_deferred()
 
@@ -63,6 +68,10 @@ func _run() -> void:
 	Skills.pending = []
 	main._show_menu()
 	print("club active=%s location=%s scenery=%s" % [main.club.active, main.location_id, main.scenery.get_script().resource_path])
+	if builds:
+		await _builds()
+		quit()
+		return
 	await _shot("01_start", 1.6)
 	main.club.hud._toggle_travel(true)
 	await _shot("02_travel", 0.4)
@@ -115,3 +124,52 @@ func _run() -> void:
 	await _shot("16_arena_card", 0.8)
 	main._on_ui("menu", 0)
 	quit()
+
+
+func _builds() -> void:
+	var club = main.club
+	SaveData.played = 3
+	SaveData.titles = 4
+	SaveData.gold = 380
+	SaveData.club = {"met_coach": true}
+	club._refresh()
+	club.hud.say("", 0.0)
+	club._travel("gate")
+	await create_timer(0.4).timeout
+	club._on_choice("club_foreman", 0)
+	club.foreman_show("stands")
+	await _shot("b01_foreman_stands_ghost", 1.0)
+	club.foreman_show("court")
+	await _shot("b02_foreman_court", 0.8)
+	club.foreman_build()
+	await _shot("b03_build_moment", 0.75)
+	club.skip_build()
+	await _shot("b04_built_court1", 0.8)
+	SaveData.gold = 20
+	club.foreman_show("gate")
+	await _shot("b05_need_more", 0.8)
+	SaveData.club["levels"] = {"bar": 3}
+	club._refresh()
+	club.foreman_show("bar")
+	await _shot("b06_maximum", 0.8)
+	club.foreman_close()
+	# Every level of every construction, framed as on the foreman's card.
+	for id in ClubBuilds.ORDER:
+		for lv in range(1, ClubBuilds.max_level(id) + 1):
+			var levels: Dictionary = SaveData.club.get("levels", {}).duplicate()
+			levels[id] = lv
+			SaveData.club["levels"] = levels
+			if id == "court" and lv >= 3:
+				SaveData.club["color"] = 2
+			club._refresh()
+			var view: Array = club.BUILD_VIEW[id]
+			club.cam.frame(view[0], view[1], 0.0)
+			club.hud.visible = false
+			await _shot("b_%s_%d" % [id, lv], 0.5)
+	# The whole club at the top, from the start: the budget with everything built.
+	club.cam.release(0.0)
+	club._travel("court")
+	await _shot("b99_all_max_start", 1.0)
+	main.player.position = Vector3(14.6, 0, 6.0)
+	club._update_place()
+	await _shot("b99_all_max_east", 1.2)
