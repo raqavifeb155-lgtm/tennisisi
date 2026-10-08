@@ -10,15 +10,11 @@ const WALK_SPEED := 0.75
 const FANS := 8                       # the fence's watchers (the first FANS instances), by the stands' level
 
 ## Routes the strollers walk back and forth along (x, z points), with their lane offset.
-const ROUTES := [
+const MANUAL := [        # the promenade and the street's pavement (not in the path graph)
 	[Vector2(-46, -42.3), Vector2(46, -42.3)],
 	[Vector2(-46, -40.9), Vector2(46, -40.9)],
-	[Vector2(0.4, 46.0), Vector2(0.4, 31.0), Vector2(-14.0, 31.0)],
-	[Vector2(17.0, 31.0), Vector2(14.6, 29.0), Vector2(14.6, -26.0)],
-	[Vector2(-12.9, -25.0), Vector2(-12.9, -0.5), Vector2(-20.0, 0.0)],
 	[Vector2(-60, 47.5), Vector2(60, 47.5)],
 	[Vector2(60, 48.2), Vector2(-60, 48.2)],
-	[Vector2(16.0, 6.2), Vector2(23.0, 6.2)],
 ]
 
 class Walker:
@@ -48,6 +44,7 @@ var _birds: MultiMeshInstance3D
 var _rng := RandomNumberGenerator.new()
 var _high := true
 var _lengths: Array[float] = []
+var _routes: Array = []
 var _fan_n := 0
 var _fan_base: Array[Color] = []
 var _fan_t := 0.0
@@ -55,7 +52,10 @@ var _fan_t := 0.0
 
 func _ready() -> void:
 	_rng.seed = 55
-	for r in ROUTES:
+	_routes = MANUAL.duplicate()
+	for i in ClubPaths.WALKS.size():   # the others walk the path graph's own chains
+		_routes.append(ClubPaths.walk_points(i))
+	for r in _routes:
 		var l := 0.0
 		for i in range(1, (r as Array).size()):
 			l += (r[i - 1] as Vector2).distance_to(r[i])
@@ -70,8 +70,8 @@ func _ready() -> void:
 		_fan_base.append(shirt)
 		body_col.append(shirt)
 		leg_col.append(Color.WHITE.lerp(skins[_rng.randi() % skins.size()], 0.35))
-	for i in ROUTES.size():
-		var n := 2 if i < 2 or i > 4 else 1
+	for i in _routes.size():
+		var n := 2 if i < MANUAL.size() else 1
 		for k in n:
 			var w := Walker.new()
 			w.route = i
@@ -194,7 +194,7 @@ func _update(delta: float) -> void:
 
 
 func _point(route: int, s: float) -> Vector2:
-	var r: Array = ROUTES[route]
+	var r: Array = _routes[route]
 	var d := s
 	for i in range(1, r.size()):
 		var seg: float = (r[i - 1] as Vector2).distance_to(r[i])

@@ -633,7 +633,7 @@ func travel_run(id: String) -> void:
 		return
 	var here := Vector2(main.player.position.x, main.player.position.z)
 	var to := Vector2(p["pos"].x, p["pos"].z)
-	var route := world.walk.route(here, to)
+	var route := _path_route(here, to)
 	if route.is_empty() or here.distance_to(to) < 4.0:
 		_travel(id)  # next door, or no way to run: as before
 		return
@@ -653,6 +653,25 @@ func travel_run(id: String) -> void:
 	world.highlight("")
 	cam.run_mode = true
 	cam.release(0.3)
+
+
+## The way to run: along the path graph (the shortest), joined to where the hero is and to
+## the place by straight legs that must be clear; else the walk's own route.
+func _path_route(here: Vector2, to: Vector2) -> Array:
+	var g := ClubPaths.route(here, to)
+	if not g.is_empty():
+		var pts: Array = []
+		var prev := here
+		var ok := true
+		for q in g + [to]:
+			if prev.distance_to(q) > 0.05 and not world.walk.clear(prev, q):
+				ok = false
+				break
+			pts.append(q)
+			prev = q
+		if ok:
+			return pts
+	return world.walk.route(here, to)
 
 
 func running_to() -> String:

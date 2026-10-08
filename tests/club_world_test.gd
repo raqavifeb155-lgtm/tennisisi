@@ -12,6 +12,7 @@ func _initialize() -> void:
 	test_pack()
 	test_layout()
 	test_daytime()
+	test_paths()
 	await test_in_the_club()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
@@ -81,6 +82,13 @@ func test_layout() -> void:
 				in_court += 1
 	check(on_place == 0, "no solid prop stands in a place's circle (%d)" % on_place)
 	check(in_court == 0, "no solid prop stands inside the court's fence (%d)" % in_court)
+	var on_path := []
+	for p in ruin:
+		if p.solid > 0.0:
+			var q2 := Vector2(p.xf.origin.x, p.xf.origin.z)
+			if ClubPaths.near(q2, p.solid * 0.5):
+				on_path.append("%s@(%.0f,%.0f)" % [p.id, q2.x, q2.y])
+	check(on_path.is_empty(), "no solid prop stands on a path (%s)" % ", ".join(on_path.slice(0, 8)))
 	# every owner is a real place or construction, and a ruin goes by a real level
 	var owners := {}
 	for p in props.props:
@@ -101,6 +109,72 @@ func test_layout() -> void:
 		for cls in low_cells[k]:
 			classes_low[cls] = true
 	check(classes_low.keys() == ["big"], "Low folds a square into one mesh (%s)" % str(classes_low.keys()))
+
+
+func test_paths() -> void:
+	print("the paths")
+	check(ClubPaths.connected(), "the path graph is one piece")
+	var ids := ClubPaths.ids()
+	var unreachable := []
+	for a in ids:
+		var r := ClubPaths.route(ClubPaths.node(a), ClubPaths.node("gate"))
+		if r.is_empty():
+			unreachable.append(a)
+	check(unreachable.is_empty(), "every node has a way to the gate (%s)" % ", ".join(unreachable))
+	var missing := []
+	for pl in ClubPlaces.LIST:
+		if not ClubPaths.PLACE_NODE.has(pl["id"]):
+			missing.append(pl["id"])
+	check(missing.is_empty(), "every place has its path (%s)" % ", ".join(missing))
+	var no_way := []
+	for a in ClubPlaces.LIST:
+		for b in ClubPlaces.LIST:
+			var na := ClubPaths.node(ClubPaths.PLACE_NODE[a["id"]])
+			var nb := ClubPaths.node(ClubPaths.PLACE_NODE[b["id"]])
+			if na != nb and ClubPaths.route(na, nb).is_empty():
+				no_way.append("%s>%s" % [a["id"], b["id"]])
+	check(no_way.is_empty(), "from every place to every place along paths (%s)" % ", ".join(no_way))
+	var meshes := ClubPaths.build_meshes(-0.25)
+	check((meshes["surface"] as ArrayMesh).get_surface_count() == 1 and (meshes["curb"] as ArrayMesh).get_surface_count() == 1, "one surface mesh and one kerb mesh")
+	var holes := []
+	var wide := []
+	var steps := []
+	for i in ClubPaths.EDGES.size():
+		var e: Array = ClubPaths.EDGES[i]
+		var a := ClubPaths.node(e[0])
+		var b := ClubPaths.node(e[1])
+		var w: float = e[2]
+		var l := a.distance_to(b)
+		var d := (b - a) / l
+		var nrm := Vector2(-d.y, d.x)
+		var s := 0.0
+		var prev_y := NAN
+		while s <= l:
+			var c := a + d * s
+			if s > 0.0 and s < l:
+				for off: float in [0.0, w * 0.5 - 0.12, -(w * 0.5 - 0.12)]:
+					if not ClubPaths.covers(c + nrm * off):
+						holes.append("%d@%.0f" % [i, s])
+				# beyond the edge of the path: bare, unless another path is there
+				if s > 2.2 and s < l - 2.2:
+					for off: float in [w * 0.5 + 0.3, -(w * 0.5 + 0.3)]:
+						var q := c + nrm * off
+						var other := false
+						for j in ClubPaths.EDGES.size():
+							if j != i:
+								var ej: Array = ClubPaths.EDGES[j]
+								if q.distance_to(Geometry2D.get_closest_point_to_segment(q, ClubPaths.node(ej[0]), ClubPaths.node(ej[1]))) < float(ej[2]) * 0.5 + 0.9:
+									other = true
+						if not other and ClubPaths.covers(q):
+							wide.append("%d@%.0f" % [i, s])
+			var y := ClubPaths.surface_y(c)
+			if not is_nan(prev_y) and absf(y - prev_y) > 0.09:
+				steps.append("%d@%.0f" % [i, s])
+			prev_y = y
+			s += 0.5
+	check(holes.is_empty(), "the path mesh covers every edge, centre and sides, without a gap (%s)" % ", ".join(holes.slice(0, 6)))
+	check(wide.is_empty(), "and no wider than its width (%s)" % ", ".join(wide.slice(0, 6)))
+	check(steps.is_empty(), "the ground along every path rises smoothly, no step (%s)" % ", ".join(steps.slice(0, 6)))
 
 
 func test_daytime() -> void:
@@ -275,6 +349,13 @@ func test_in_the_club() -> void:
 		if c is MultiMeshInstance3D:
 			fence_draws += 1
 	check(fence_draws == 4, "the fence costs four draws (%d)" % fence_draws)
+	# the graph's nodes are free to stand on
+	var blocked_nodes := []
+	for id in ClubPaths.ids():
+		var pn := ClubPaths.node(id)
+		if id != "prom" and id != "street" and w.walk.blocked(pn, 0.3):
+			blocked_nodes.append(id)
+	check(blocked_nodes.is_empty(), "every node of the path graph is walkable (%s)" % ", ".join(blocked_nodes))
 	# the routes between the places are still there with all the props
 	var from := Vector2(0, 14)
 	for id in ["coach", "gate", "locker", "shop", "trophy", "bar", "arena"]:

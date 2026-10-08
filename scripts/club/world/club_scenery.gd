@@ -62,6 +62,11 @@ static func prop_material() -> StandardMaterial3D:
 ## river. The club plants its own (ClubLayout), where its paths and places leave room.
 static func _thin_park(w: ClubWorld) -> void:
 	for c in w.get_children():
+		# the old path from the court to the promenade (a box 2.4 m wide, 10 cm thick): the graph has it
+		var mib := c as MeshInstance3D
+		if mib != null and mib.mesh is BoxMesh and absf((mib.mesh as BoxMesh).size.x - 2.4) < 0.01 and absf((mib.mesh as BoxMesh).size.y - 0.1) < 0.01:
+			mib.queue_free()
+			continue
 		var mmi := c as MultiMeshInstance3D
 		if mmi == null or mmi.multimesh == null or mmi.multimesh.mesh == null:
 			continue

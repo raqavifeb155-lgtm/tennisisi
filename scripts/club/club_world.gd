@@ -547,16 +547,9 @@ func _build_south_fence() -> void:
 
 
 func _build_paths() -> void:
-	var y := 0.02
-	_box(Vector3(2.4, 0.06, 22.0), Vector3(0, y, HZ + 11.0), _paving, false)       # gate -> court
-	_box(Vector3(34.0, 0.06, 2.4), Vector3(1.0, y, 31.0), _paving, false)         # past the pavilion doors
-	_box(Vector3(2.4, 0.06, 40.0), Vector3(14.6, y, -8.0), _paving, false)       # east: to the bar
-	_box(Vector3(8.0, 0.06, 2.4), Vector3(18.6, y, -30.0), _paving, false)
-	_box(Vector3(13.0, 0.06, 2.4), Vector3(-HX - 6.0, y, 0.0), _paving, false)    # west: to the arena
-	_box(Vector3(2.4, 0.06, 26.0), Vector3(-HX - 4.0, y, -13.0), _paving, false)  # to the trophy room
-	_box(Vector3(9.0, 0.06, 2.4), Vector3(-HX - 8.0, y, -26.0), _paving, false)
-	_box(Vector3(8.6, 0.06, 2.4), Vector3(19.5, y, 6.2), _paving, false)         # east: to the shop
-	_box(Vector3(6.0, 0.06, 2.4), Vector3(25.6, y, -30.0), _paving, false)       # on to the blackjack table
+	# The paths are data now (ClubPaths): one continuous mesh with kerbs, built by ClubTerrain
+	# (stream H-7). Nothing is laid here any more.
+	pass
 
 
 func _build_places() -> void:
