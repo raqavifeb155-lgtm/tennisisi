@@ -109,6 +109,17 @@ func _add(mesh: PrimitiveMesh, xf: Transform3D, col: Color) -> ClubShapes:
 	return self
 
 
+## Takes everything another builder holds (to build a High mesh = Low + extras in one).
+func merge(o: ClubShapes) -> ClubShapes:
+	var base := _v.size()
+	_v.append_array(o._v)
+	_n.append_array(o._n)
+	_c.append_array(o._c)
+	for k in o._i:
+		_i.append(base + k)
+	return self
+
+
 func build() -> ArrayMesh:
 	var m := ArrayMesh.new()
 	var arr := []

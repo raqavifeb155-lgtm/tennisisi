@@ -19,8 +19,8 @@ extends RefCounted
 ##              tag      a name for a group (the evening's lamps, ...)
 
 const CELL := 24.0
-## Draw distances (m, to the middle of a square's mesh): small clutter goes first.
-const RANGE := {"small": 62.0, "big": 120.0, "tall": 140.0}
+## Draw distances (m, to the middle of a square's mesh).
+const RANGE := {"big": 100.0, "tall": 140.0}
 
 class Prop:
 	var id := ""
@@ -69,25 +69,24 @@ func visible(level_of: Callable, high: bool) -> Array[Prop]:
 	return out
 
 
-## Bakes props into meshes per map square: {cell: {"small"|"big"|"tall": ArrayMesh}}.
+## Bakes props into meshes per map square: {cell: {"big"|"tall": ArrayMesh}}.
 ## "tall" holds the ones that cast shadows (a mesh of their own, drawn twice on High and
-## once, without the shadow, below it), "big" what is seen from far off without a shadow,
-## "small" the clutter - each class is drawn out to its own distance (RANGE).
+## once, without the shadow, below it), "big" everything else; each is drawn out to its
+## own distance (RANGE).
 static func bake(list: Array[Prop], shadows := true) -> Dictionary:
 	var cells := {}
 	for p in list:
 		var key := Vector2i(floori(p.xf.origin.x / CELL), floori(p.xf.origin.z / CELL))
 		if not cells.has(key):
-			cells[key] = {"small": _Acc.new(), "big": _Acc.new(), "tall": _Acc.new()}
-		# Without shadows (Low) "tall" is just "big", and near clutter rides along in it too:
-		# one draw call a square.
-		var cls := "tall" if (p.shadow and shadows) else ("big" if (p.far or not shadows) else "small")
+			cells[key] = {"big": _Acc.new(), "tall": _Acc.new()}
+		# Without shadows (Low) "tall" is just "big": one draw call a square.
+		var cls := "tall" if (p.shadow and shadows) else "big"
 		var acc: _Acc = cells[key][cls]
 		acc.add(ClubPack.mesh(p.id), p.xf, p.tint)
 	var out := {}
 	for key in cells:
 		var d := {}
-		for k in ["small", "big", "tall"]:
+		for k in ["big", "tall"]:
 			var acc: _Acc = cells[key][k]
 			if acc.v.size() > 0:
 				d[k] = acc.build()

@@ -177,6 +177,7 @@ func test_in_the_club() -> void:
 	for id in props_built:
 		n_built += int(props_built[id][0])
 	check(n_built < n_ruin - 40, "built: the weeds and junk around the places are gone (%d -> %d props)" % [n_ruin, n_built])
+	check(scenery.crowd._fan_n == 4, "stands level 2: four watchers at the fence (%d)" % scenery.crowd._fan_n)
 	check(net_root.get_node_or_null("sag_net") == null, "a new net at court level 2")
 	var green := false
 	for m in scenery._fence_mats:

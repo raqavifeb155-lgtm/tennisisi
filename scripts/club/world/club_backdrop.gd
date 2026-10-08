@@ -13,7 +13,8 @@ const WATER_Y := Scenery.WATER_Y
 var _skyline: Array[MultiMeshInstance3D] = []
 var _forest: Array[MultiMeshInstance3D] = []
 var _islands: MeshInstance3D
-var _islands_far: MeshInstance3D   # the two farther islands: High only
+var _islands_near: ArrayMesh       # Low: the two near islands
+var _islands_all: ArrayMesh        # High: all four, in the same one mesh
 
 
 func _ready() -> void:
@@ -26,7 +27,7 @@ func _ready() -> void:
 
 func refresh(high: bool) -> void:
 	# Low keeps every second tree of the forest: the instance count is the budget.
-	_islands_far.visible = high
+	_islands.mesh = _islands_all if high else _islands_near
 	for mmi in _forest:
 		mmi.multimesh.visible_instance_count = mmi.multimesh.instance_count if high else mmi.multimesh.instance_count / 2
 
@@ -114,18 +115,14 @@ func _build_islands(rng: RandomNumberGenerator) -> void:
 			else:
 				s.ball(h * 0.3, p + Vector3(0, h * 0.62, 0), ClubShapes.LEAF[k % 4], Vector3(1, 0.9, 1), 6, 4)
 		s.ball(1.6, Vector3(c.x + r * 0.6, WATER_Y + 1.5, c.z + 1.0), ClubShapes.STONE, Vector3(1, 0.6, 0.9), 5, 3)
-	_islands = _island_node("islands", near)
-	_islands_far = _island_node("islands_far", far)
-
-
-func _island_node(node_name: String, s: ClubShapes) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	mi.name = node_name
-	mi.mesh = s.build()
-	mi.material_override = ClubScenery.prop_material()
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(mi)
-	return mi
+	_islands_near = near.build()
+	_islands_all = ClubShapes.new().merge(near).merge(far).build()
+	_islands = MeshInstance3D.new()
+	_islands.name = "islands"
+	_islands.mesh = _islands_all
+	_islands.material_override = ClubScenery.prop_material()
+	_islands.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_islands)
 
 
 func _mm(mesh: Mesh, mat: Material, xf: Array[Transform3D], cols: Array[Color]) -> MultiMeshInstance3D:

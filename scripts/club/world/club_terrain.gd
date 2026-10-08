@@ -9,9 +9,9 @@ const KERB := Color("a8a398")
 const ASPHALT := Color("3b3d42")
 const LINE := Color("e6e2d6")
 
-var _base: MeshInstance3D       # kerbs, pavement, road
-var _detail: MeshInstance3D     # road markings, joints: High only
-var _extra: MeshInstance3D      # every second lawn patch: High only
+var _ground: MeshInstance3D     # kerbs, pavement, road; on High also every second lawn patch and the markings
+var _low: ArrayMesh
+var _high: ArrayMesh
 
 
 func _ready() -> void:
@@ -21,32 +21,20 @@ func _ready() -> void:
 	_street(s)
 	var hi := ClubShapes.new()
 	_lawn_patches(s, hi)
-	_base = MeshInstance3D.new()
-	_base.name = "ground"
-	_base.mesh = s.build()
-	_base.material_override = ClubScenery.prop_material()
-	_base.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(_base)
-	_extra = MeshInstance3D.new()
-	_extra.name = "patches"
-	_extra.mesh = hi.build()
-	_extra.material_override = ClubScenery.prop_material()
-	_extra.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(_extra)
-	var d := ClubShapes.new()
-	_markings(d)
-	_detail = MeshInstance3D.new()
-	_detail.name = "markings"
-	_detail.mesh = d.build()
-	_detail.material_override = ClubScenery.prop_material()
-	_detail.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(_detail)
+	_markings(hi)
+	_low = s.build()
+	_high = ClubShapes.new().merge(s).merge(hi).build()   # High: one mesh with the extras, not two
+	_ground = MeshInstance3D.new()
+	_ground.name = "ground"
+	_ground.mesh = _high
+	_ground.material_override = ClubScenery.prop_material()
+	_ground.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_ground)
 
 
 func refresh(_level_of: Callable, high: bool) -> void:
-	if _detail:
-		_detail.visible = high
-		_extra.visible = high
+	if _ground:
+		_ground.mesh = _high if high else _low
 
 
 ## The club's paving gets its slabs: the world's flat paving colour is replaced by a

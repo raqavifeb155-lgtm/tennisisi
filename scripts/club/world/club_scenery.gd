@@ -23,7 +23,7 @@ var _t := 0.0
 var _boards := {}               # place id -> MeshInstance3D (planks across the door of a shut room)
 var _fence_mats: Array[StandardMaterial3D] = []
 var _net_ok := false
-const SHADOW_REACH := 26.0
+const SHADOW_REACH := 20.0
 const DRAW_RANGE := 80.0
 var _tuning: Node
 var terrain: ClubTerrain
@@ -158,7 +158,7 @@ func _refresh(first: bool) -> void:
 		if not _cells.has(key):
 			_cells[key] = {}
 		var d: Dictionary = baked[key]
-		for k in ["small", "big", "tall"]:
+		for k in ["big", "tall"]:
 			var mi: MeshInstance3D = _cells[key].get(k)
 			if mi == null:
 				if not d.has(k):
@@ -376,5 +376,5 @@ func _build_signs() -> void:
 		l.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		l.position = Vector3(sp[1], sp[2], 61.4)
 		l.rotation.y = PI    # the street's far side faces the gate (north)
-		l.visibility_range_end = 70.0
+		l.visibility_range_end = 44.0
 		add_child(l)

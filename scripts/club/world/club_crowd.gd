@@ -7,6 +7,7 @@ extends Node3D
 ## fans and the court are others'.
 
 const WALK_SPEED := 1.1
+const FANS := 8                       # the fence's watchers (the first FANS instances), by the stands' level
 
 ## Routes the strollers walk back and forth along (x, z points), with their lane offset.
 const ROUTES := [
@@ -46,6 +47,9 @@ var _birds: MultiMeshInstance3D
 var _rng := RandomNumberGenerator.new()
 var _high := true
 var _lengths: Array[float] = []
+var _fan_n := 0
+var _fan_base: Array[Color] = []
+var _fan_t := 0.0
 
 
 func _ready() -> void:
@@ -60,6 +64,11 @@ func _ready() -> void:
 	var body_xf: Array[Transform3D] = []
 	var body_col: Array[Color] = []
 	var leg_col: Array[Color] = []
+	for f in FANS:   # the watchers first: their instances never move in the list
+		var shirt: Color = shirts[_rng.randi() % shirts.size()]
+		_fan_base.append(shirt)
+		body_col.append(shirt)
+		leg_col.append(Color.WHITE.lerp(skins[_rng.randi() % skins.size()], 0.35))
 	for i in ROUTES.size():
 		var n := 2 if i < 2 or i > 4 else 1
 		for k in n:
@@ -90,10 +99,16 @@ func _ready() -> void:
 
 func refresh(high: bool) -> void:
 	_high = high
-	var n := _walkers.size()
-	_body.multimesh.visible_instance_count = n if high else mini(n, 6)
-	_legs.multimesh.visible_instance_count = n if high else mini(n, 6)
+	var n := _walkers.size() + FANS
+	_body.multimesh.visible_instance_count = n if high else mini(n, FANS + 5)
+	_legs.multimesh.visible_instance_count = n if high else mini(n, FANS + 5)
 	_birds.visible = high
+	# the fence's watchers: more of them the higher the stands (ClubBuilds "stands")
+	var lv: int = get_parent().level_of("stands")
+	_fan_n = [0, 2, 4, 6, 7, 8][clampi(lv, 0, 5)]
+	var club := ClubBuilds.club_color()
+	for i in FANS:
+		_body.multimesh.set_instance_color(i, club if lv >= 3 and i % 4 != 3 else _fan_base[i])
 
 
 func _process(delta: float) -> void:
@@ -103,8 +118,18 @@ func _process(delta: float) -> void:
 func _update(delta: float) -> void:
 	var bm := _body.multimesh
 	var lm := _legs.multimesh
+	# the watchers at the court's west fence, facing it, a small sway and now and then a clap
+	_fan_t += delta
+	for i in FANS:
+		var at := Vector3(-ClubLayout.HX - 1.3 - 0.25 * float(i % 2), 0.0, -9.5 + float(i) * 2.55)
+		var sc := 1.0 if i < _fan_n else 0.0
+		var cheer := maxf(0.0, sin(_fan_t * 2.2 + float(i) * 1.7)) * 0.05
+		var fb := Basis.from_euler(Vector3(0.0, -PI * 0.5 + 0.1 * sin(float(i)), 0.03 * sin(_fan_t * 1.3 + float(i)))) * Basis.from_scale(Vector3.ONE * sc)
+		bm.set_instance_transform(i, Transform3D(fb, at + Vector3(0, cheer, 0)))
+		lm.set_instance_transform(i, Transform3D(fb, at))
 	for i in _walkers.size():
 		var w := _walkers[i]
+		var slot := FANS + i
 		w.s += w.dir * w.speed * WALK_SPEED * delta
 		if w.s > w.length:
 			w.s = w.length
@@ -126,8 +151,8 @@ func _update(delta: float) -> void:
 		var sway := sin(w.phase) * 0.05
 		var gy := ClubLayout.gy(q)
 		var b := Basis.from_euler(Vector3(0.0, yaw, sway))
-		bm.set_instance_transform(i, Transform3D(b, Vector3(q.x, gy + bob, q.y)))
-		lm.set_instance_transform(i, Transform3D(b, Vector3(q.x, gy + bob * 0.4, q.y)))
+		bm.set_instance_transform(slot, Transform3D(b, Vector3(q.x, gy + bob, q.y)))
+		lm.set_instance_transform(slot, Transform3D(b, Vector3(q.x, gy + bob * 0.4, q.y)))
 	# pigeons
 	var hero := _hero_pos()
 	var pm := _birds.multimesh

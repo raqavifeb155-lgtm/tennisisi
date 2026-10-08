@@ -310,11 +310,18 @@ func _views() -> void:
 		["v13_arena_yard", Vector3(-20, 0, 8), PI * 0.5, 0],
 		["v14_gate_junk", Vector3(-6, 0, 33), PI, 0],
 		["v15_court_gate", Vector3(0, 0, 21), 0.0, 0],
+		["v16_fans", Vector3(-14, 0, 3), -PI * 0.5, 1],
+		["v17_built", Vector3(0, 0, 30), 0.0, 1],
 	]
 	for v in list:
 		var p: Athlete = main.player
 		SaveData.played = v[3]
 		SaveData.titles = v[3]
+		SaveData.club["levels"] = {}
+		if v[0] == "v16_fans":
+			SaveData.club["levels"] = {"stands": 3, "court": 3}
+		elif v[0] == "v17_built":
+			SaveData.club["levels"] = {"court": 4, "stands": 5, "gate": 3, "shop": 2, "locker": 3, "trophy": 3, "bar": 3, "coach": 3}
 		main.club._refresh()
 		p.position = v[1]
 		p.rotation.y = v[2]
@@ -331,6 +338,8 @@ func _census() -> void:
 	SaveData.played = 1
 	SaveData.titles = 1
 	SaveData.club = {"met_coach": true, "walk_hint": true}
+	if "--max" in OS.get_cmdline_user_args():
+		SaveData.club["levels"] = {"court": 4, "stands": 5, "gate": 4, "shop": 2, "locker": 3, "trophy": 3, "bar": 3}
 	main.club._refresh()
 	main.club.hud.say("", 0.0)
 	var p: Athlete = main.player
