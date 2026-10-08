@@ -126,8 +126,8 @@ const ADAPT_FROM := 2.0
 const EASE_UNTIL := 4.0            # a beginner is spared up to this average level (D-1: he must be able to win points)
 const FLOOR_MAX := 0.6
 const ADD_MAX := 0.1
-static var floor_slope := 0.045    # floor of the AI skill per skill level above ADAPT_FROM
-static var add_slope := 0.008      # and the gain for all (--adapt-floor= / --adapt-add= for the bot)
+static var floor_slope := 0.055    # floor of the AI skill per skill level above ADAPT_FROM
+static var add_slope := 0.014      # and the gain for all (--adapt-floor= / --adapt-add= for the bot)
 static var ease_max := 0.25        # what a level-0 player is spared: the AI skill below the roster's (--adapt-ease=)
 
 
@@ -141,10 +141,12 @@ static func player_level() -> float:
 
 ## The AI skill an opponent of this roster skill plays with against a player of this level
 ## (-1: the current one). Modifiers and gear come on top (Tournament.modifier_value).
-static func adapted_skill(skill: float, level := -1.0) -> float:
+## The boss only gets the floor (he is the top of the roster already: no gain on top).
+static func adapted_skill(skill: float, level := -1.0, boss := false) -> float:
 	var lv := player_level() if level < 0.0 else level
 	var over := maxf(lv - ADAPT_FROM, 0.0)
-	return clampf(maxf(skill, minf(over * floor_slope, FLOOR_MAX)) + minf(over * add_slope, ADD_MAX), 0.0, 1.0)
+	var gain := 0.0 if boss else minf(over * add_slope, ADD_MAX)
+	return clampf(maxf(skill, minf(over * floor_slope, FLOOR_MAX)) + gain, 0.0, 1.0)
 
 
 ## What a beginner is spared: stats points x 1/9 taken off every stat of the opponent (OpponentAI
@@ -158,7 +160,7 @@ static func spared(level := -1.0) -> float:
 static func shown_stats(opp: Dictionary, level := -1.0) -> Dictionary:
 	var st := stats(opp)
 	var sk := float(opp.get("skill", 0.5))
-	var shift := (adapted_skill(sk, level) - sk - spared(level)) * 9.0
+	var shift := (adapted_skill(sk, level, bool(opp.get("boss", false))) - sk - spared(level)) * 9.0
 	for k in STAT_KEYS:
 		st[k] = clampi(roundi(float(st[k]) + shift), 1, 10)
 	return st

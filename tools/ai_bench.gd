@@ -62,7 +62,7 @@ func _initialize() -> void:
 		if o["id"] == opp_id:
 			opp = o
 	# Main's _ready runs once the tree starts: it reads this skill for the practice match.
-	root.get_node("Tuning").ai_skill = skill if skill >= 0.0 else Opponents.adapted_skill(float(opp.get("skill", 0.5)))  # D-5: like a tournament match
+	root.get_node("Tuning").ai_skill = skill if skill >= 0.0 else Opponents.adapted_skill(float(opp.get("skill", 0.5)), -1.0, bool(opp.get("boss", false)))  # D-5: like a tournament match
 
 
 func _process(_delta: float) -> bool:

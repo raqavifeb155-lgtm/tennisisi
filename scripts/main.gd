@@ -1939,7 +1939,7 @@ func _continue_tournament() -> void:
 func _play_match() -> void:
 	var opp := tournament.opponent()
 	Rewards.apply(tournament.perks)
-	Tuning.ai_skill = clampf(Opponents.adapted_skill(float(opp["skill"])) + tournament.modifier_value("skill"), 0.0, 1.0)  # D-5: keeps up with the player
+	Tuning.ai_skill = clampf(Opponents.adapted_skill(float(opp["skill"]), -1.0, bool(opp.get("boss", false))) + tournament.modifier_value("skill"), 0.0, 1.0)  # D-5: keeps up with the player
 	cpu.set_look(opp.get("look", Looks.from_shirt(opp.get("shirt", Color(0.22, 0.28, 0.42)))))
 	_set_opponent_mods(tournament.modifier_value("speed"), tournament.modifier_value("serve"), tournament.current_lineup()["racket"])
 	cpu_label = opp["short"]
