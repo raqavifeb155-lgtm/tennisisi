@@ -140,6 +140,15 @@ func test_builds() -> void:
 	check(ClubBuilds.level("court") == 2 and ClubBuilds.level("gate") == 1 and ClubBuilds.color_index() == 2 and ClubBuilds.club_name() == "Клуб Димы", "save and load: the same levels, colour and name")
 	SaveData.club = {}
 	check(is_zero_approx(ClubBuilds.gold_win_bonus()), "no stands, no bonus")
+	var t := Tournament.new(1, 3)
+	t.lineup[1]["golden"] = false
+	var plain := t.gold_for_win(1)
+	SaveData.club = {"levels": {"stands": 5}}
+	check(t.gold_for_win(1) == roundi(plain * 1.10), "full stands: a won match pays +10%% (%d -> %d)" % [plain, t.gold_for_win(1)])
+	ClubBuilds.utility_enabled = false
+	check(t.gold_for_win(1) == plain, "utility off (online): the stands pay nothing")
+	ClubBuilds.utility_enabled = true
+	SaveData.club = {}
 	var ok := true
 	for lv in range(1, 6):
 		SaveData.club = {"levels": {"stands": lv}}
