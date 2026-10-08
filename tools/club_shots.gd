@@ -184,6 +184,23 @@ func _builds() -> void:
 	club._refresh()
 	club.foreman_show("bar")
 	await _shot("b06_maximum", 0.8)
+	# Hub 13: a level that takes runs - the card, the scaffolding, the card while it stands.
+	SaveData.club["levels"] = {"stands": 3, "court": 4}
+	SaveData.gold = 5000
+	club._refresh()
+	club.foreman_show("stands")
+	await _shot("b07_runs_card", 0.8)
+	club.foreman_build()
+	await _shot("b08_scaffold", 1.0)
+	club.foreman_show("court")
+	club.foreman_build()
+	club.foreman_show("stands")
+	await _shot("b09_building_card", 0.8)
+	club.foreman_close()
+	await _shot("b10_scaffolds_club", 1.0)
+	SaveData.club["building"] = {}
+	SaveData.club["levels"] = {}
+	club._refresh()
 	club.foreman_close()
 	# Every level of every construction, framed as on the foreman's card.
 	for id in ClubBuilds.ORDER:

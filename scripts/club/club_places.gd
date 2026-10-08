@@ -38,10 +38,15 @@ const LIST := [
 	},
 	{
 		"id": "coach", "name": "Тренерская", "pos": Vector3(16, 0, 26), "r": 1.8,
-		"unlock": "", "sign": "",
+		"unlock": "", "sign": "", "build": "coach",
 		"cam": {"pos": Vector3(16, 10.5, 35.0), "look": Vector3(16, 0.4, 25.6)},
 		"levels": [
 			{"label": "Навыки", "action": "character", "note": "Стул и доска с мелом"},
+			{"note": "Коврик и гантели"},
+			{"note": "Беговая дорожка и тренажёр"},
+			{"note": "Экран с видеоразбором"},
+			{"note": "Массажный стол и аптечка"},
+			{"note": "Штаб: тактическая доска и кубки тренера"},
 		],
 	},
 	{
@@ -62,6 +67,8 @@ const LIST := [
 			{"label": "Раздевалка", "action": "club_locker", "note": "Ряд шкафчиков и зеркало"},
 			{"label": "Раздевалка", "action": "club_locker", "note": "Стена ракеток"},
 			{"label": "Раздевалка", "action": "club_locker", "note": "Гардероб с подсветкой"},
+			{"label": "Раздевалка", "action": "club_locker", "note": "Душевая, вторая стена шкафчиков"},
+			{"label": "Раздевалка", "action": "club_locker", "note": "VIP: кожаные диваны, золотые ручки"},
 		],
 	},
 	{
@@ -78,7 +85,10 @@ const LIST := [
 					{"id": "mods", "title": "Струны", "desc": "перебросить свойство вещи", "action": ""},
 				]},
 			{"label": "Магазин", "action": "club_shop", "note": "Лавка: 3 вещи до эпической, струны"},
-			{"label": "Магазин", "action": "club_shop", "note": "Бутик: 4 вещи до легендарной, витрина светится"},
+			{"label": "Магазин", "action": "club_shop", "note": "Бутик: до легендарной, витрина светится"},
+			{"label": "Магазин", "action": "club_shop", "note": "Салон: 4 вещи, один переброс бесплатно"},
+			{"label": "Магазин", "action": "club_shop", "note": "Пассаж: мастерская струн, струны дешевле на 10%"},
+			{"label": "Магазин", "action": "club_shop", "note": "Универмаг: два зала, струны дешевле на 20%"},
 		],
 	},
 	{
@@ -89,6 +99,8 @@ const LIST := [
 			{"label": "Трофейная", "action": "club_place", "note": "Полка: кубок за каждый титул"},
 			{"label": "Трофейная", "action": "club_place", "note": "Витрина: лучшие вещи светятся цветом редкости"},
 			{"label": "Трофейная", "action": "club_place", "note": "Зал кубков, прожектор на лучшую вещь"},
+			{"label": "Трофейная", "action": "club_place", "note": "Стена славы: фото чемпионов, колонны с кубками"},
+			{"label": "Трофейная", "action": "club_place", "note": "Зал славы: золотая статуя под прожектором"},
 		],
 	},
 	{
@@ -100,7 +112,9 @@ const LIST := [
 			{"label": "Тотализатор", "action": "club_roulette", "note": "Стол с рулеткой под зонтом", "bet_limit": 25},
 			{"label": "Тотализатор", "action": "club_roulette", "note": "Ларёк с газировкой", "bet_limit": 50},
 			{"label": "Тотализатор", "action": "club_roulette", "note": "Бар с зонтиками и стульями", "bet_limit": 150},
-			{"label": "Тотализатор", "action": "club_roulette", "note": "Терраса у воды, неон", "bet_limit": 500},
+			{"label": "Тотализатор", "action": "club_roulette", "note": "Терраса у воды, неон", "bet_limit": 300},
+			{"label": "Тотализатор", "action": "club_roulette", "note": "Лаундж: стойка с табуретами", "bet_limit": 500},
+			{"label": "Тотализатор", "action": "club_roulette", "note": "VIP-зал: диваны, пальмы, прожекторы", "bet_limit": 1000},
 		],
 	},
 	{
