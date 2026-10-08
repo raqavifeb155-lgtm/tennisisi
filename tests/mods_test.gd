@@ -5,6 +5,7 @@ extends SceneTree
 
 var failures := 0
 var main: Node
+var RM: GDScript
 
 const PRIMS := ["stat", "stamina_start", "no_ring", "ring_late", "mirror", "tuning", "tuning_x", "gravity",
 	"wind", "rubber_net", "surface", "narrow", "ball_scale", "fog", "night", "shot_pace", "serve_pace", "echo",
@@ -182,6 +183,8 @@ func test_card() -> void:
 	check(c.size() == 3 and c[2]["name"] == "???" and c[1]["name"] == "Туман", "the card: names, «???» for the hidden one")
 	check(Modifiers.bracket_text(lu).contains("???") and Modifiers.bracket_text(lu).contains("×"), "bracket line: %s" % Modifiers.bracket_text(lu))
 	check(Modifiers.match_set(null) == [], "no tournament, nothing forced: no modifiers")
+	check(Modifiers.name("fog") == "Туман" and Modifiers.desc("fast") == "Бегает на 12% быстрее" and Modifiers.name("nope") == "nope" and Modifiers.desc("nope") == "",
+		"Modifiers.name / desc: new, old and unknown ids (for the opponent card)")
 
 
 # --- The live scene -----------------------------------------------------------------
@@ -274,4 +277,47 @@ func _live() -> void:
 	await physics_frame
 	check(h.active.is_empty() and not h.fog and not h._halo.visible, "leaving the match for the menu puts everything back")
 	check(_diff(base, _snap()).filter(func(k): return k != "opp" and k != "cpu" and k != "tuning").is_empty(), "...the court, the ball and the physics too")
+	await _run_screen()
 	_done()
+
+
+## The «Условия забега» screen: picks, the preset, the cap, the start with them.
+func _run_screen() -> void:
+	print("run conditions screen")
+	RM = load("res://scripts/ui/screens/run_mods.gd")  # loaded, not named: it reaches the autoloads
+	if main.club.active:
+		main.club.close()
+	main._stop_match()
+	main.tournament = null
+	main.tournament_mode = false
+	SaveData.played = 0
+	RM.open(main, 1)
+	check(main.tournament != null and main.tournament.run_modifiers.is_empty(), "a new player: straight to the run, no screen")
+	main.tournament = null
+	SaveData.played = 2
+	RM.open(main, 1)
+	await process_frame
+	check(main.tournament == null and main.ui.is_open() and RM.picked.is_empty(), "a returning player gets the screen")
+	var rows := 0
+	for c in main.ui._box.get_children():
+		if c is Button:
+			rows += 1
+	check(rows == RM.choices().size() + 1, "a row per condition and the preset (%d)" % rows)
+	RM.ui_action(main, "mods_preset", 0)
+	check(RM.picked == ["short_ring", "tier_up"] and absf(RM.total() - 1.5) < 0.001, "«Про» takes two and pays x1.5")
+	RM.ui_action(main, "mods_toggle", RM.choices().find_custom(func(e): return e["id"] == "tier_up"))
+	check(RM.picked == ["short_ring"] and not RM.preset_on(), "one condition of the preset comes off alone")
+	RM.ui_action(main, "mods_preset", 0)
+	RM.ui_action(main, "mods_toggle", 0)
+	RM.ui_action(main, "mods_toggle", 1)
+	check(RM.picked.size() == 3, "three at most (%s)" % [RM.picked])
+	RM.ui_action(main, "mods_preset", 0)
+	check(RM.picked.size() == 1 and RM.picked[0] == "no_ring" or RM.picked.size() == 2, "the preset off leaves the others")
+	RM.picked = ["short_ring", "tier_up", "night"]
+	RM.ui_action(main, "mods_go", 0)
+	var t: Tournament = main.tournament
+	check(t != null and t.run_modifiers == ["short_ring", "tier_up", "night"] and t.format == 1, "the run starts with the three")
+	check(t.modifier_value("skill") >= 0.099 and absf(Modifiers.gold_mult(t, 3) - Modifiers.reward(t.run_modifiers) * Modifiers.reward(t.lineup[3]["mods"])) < 0.001,
+		"opponents a tier up and the prize multiplied")
+	RM.ui_action(main, "mods_back", 0)
+	SaveData.played = 0

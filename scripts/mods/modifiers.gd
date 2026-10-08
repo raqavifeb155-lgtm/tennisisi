@@ -189,6 +189,18 @@ static func rarity_color(r: int) -> Color:
 	return UiTheme.rarity_color([0, 1, 2, 4][clampi(r, 0, 3)])
 
 
+## For stream D's card and any screen: the shown name and one-line effect of an id
+## (the old fast / steady / bomber too). An unknown id gives itself and "".
+static func name(id: String) -> String:
+	var e := find(id)
+	return String(Tournament.MODIFIERS.get(id, {}).get("name", id)) if e.is_empty() else String(e["name"])
+
+
+static func desc(id: String) -> String:
+	var e := find(id)
+	return String(Tournament.MODIFIERS.get(id, {}).get("desc", "")) if e.is_empty() else String(e["desc"])
+
+
 # --- Auras --------------------------------------------------------------------------
 
 ## The auras of opponent i, rolled with their own generator from the tournament's seed
