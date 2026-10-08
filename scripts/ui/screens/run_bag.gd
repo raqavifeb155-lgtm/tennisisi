@@ -78,6 +78,11 @@ static func bracket_extra(ui: TournamentUI, t: Tournament) -> void:
 	for s in Gear.SLOTS:
 		worn += 0 if t.equip.get(s, {}).is_empty() else 1
 	ui._row("Сумка", "надето %d из 3 · в сумке %d" % [worn, t.bag.size()], "bag")
+	if t.can_take_locker():  # v0.2 A-2: the locker's things can come along until the first match
+		if not Locker.items().is_empty():
+			ui._row("Шкафчик", "%d — взять в забег" % Locker.items().size(), "bag")
+		if not Locker.boarded.is_empty():
+			ui._note("С тобой из магазина: %s" % ", ".join(Locker.boarded))
 
 
 ## Under an opponent in the bracket: not what he carries, only a hint — the glow of his
@@ -110,6 +115,7 @@ static func reward_tag(t: Tournament, item: Dictionary) -> String:
 static func show_bag(ui: TournamentUI, t: Tournament) -> void:
 	ui._open(t, true, "bag_back")
 	ui._title("Сумка")
+	RunLocker.bag_section(ui, t)  # v0.2 A-2: the kept things, until the first match
 	ui._sub("Надето")
 	for i in Gear.SLOTS.size():
 		var slot: String = Gear.SLOTS[i]
