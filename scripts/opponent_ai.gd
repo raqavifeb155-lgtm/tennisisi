@@ -38,6 +38,9 @@ var style: Dictionary = Opponents.PLAY_STYLES[Opponents.DEFAULT_STYLE]
 var style_id := Opponents.DEFAULT_STYLE
 
 ## The opponent's stats 1..10 (Opponents.stats; D-5): every stroke, the serve, the legs.
+const SLOW_BALL := 3.0           # m/s along the ground: a drop's hover, not a rally ball (D-7)
+const SLOW_AHEAD := 0.4           # m: the ball may be this far in front of the contact plane
+
 var ratings: Dictionary = Opponents.stats({}, 0.5)
 var spared := 0.0                 # what a beginner is spared (Opponents.spared), set with the profile
 var _base_skill := 0.5            # the profile's skill: Tuning.ai_skill above / below it
@@ -371,7 +374,26 @@ func _check_hit() -> void:
 		var top_h := 2.9 if game.bounces == 0 and me.position.z > -FORECOURT_Z else 2.5  # a smash at the net
 		if flat_d <= reach and bp.y > 0.05 and bp.y < top_h:
 			_hit(bp)
+	elif _slow_ball_in_reach(rel):
+		_hit(ball.state.pos)
 	_prev_rel = rel
+
+
+## D-7: a drop shot dies in front of the net and hovers (backspin holds it back to ~0.4 m/s), so
+## the contact plane, which only the ball crossing it can trigger, is reached by the runner
+## after the ball has crept to a stop: it ran up and did not swing, the second bounce won the
+## point. A slow ball already bounced and within reach is played when it is at the plane, or a
+## little ahead of it (the body is in front of the ball: the arm reaches).
+func _slow_ball_in_reach(rel: float) -> bool:
+	if game.serve_flight or game.bounces < 1 or game.rally < 2 or me.is_down():
+		return false
+	var v := ball.state.vel
+	if Vector2(v.x, v.z).length() > SLOW_BALL or rel > SLOW_AHEAD:
+		return false
+	var bp := ball.state.pos
+	if bp.y < 0.2 or bp.y > 1.5 or bp.z > -0.8:
+		return false
+	return Vector2(bp.x - me.position.x, bp.z - me.position.z).length() <= Athlete.REACH
 
 
 func _hit(bp: Vector3) -> void:
