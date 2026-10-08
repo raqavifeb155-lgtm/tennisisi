@@ -15,7 +15,9 @@ func _run() -> void:
 	test_calls()
 	await test_announcer_strip()
 	await test_announcer_moments()
-	check(finished == 4, "every test ran to its end: %d of 4" % finished)
+	await test_modal_stack()
+	test_layers()
+	check(finished == 6, "every test ran to its end: %d of 6" % finished)
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -112,9 +114,66 @@ func test_announcer_moments() -> void:
 	check(a.current().get("main", "") == "ВТОРОЙ КРУГ", "the intro follows")
 	a.set_hint("Подача по бегущему: попади в него мячом")
 	check(a.hint_text() != "", "the hint is up")
+	a.set_hint("тап по корту — подброс\nкороткий свайп вниз до подброса — подача снизу")
+	await process_frame
+	check(a._hint.size.y < 260.0, "a two-line hint is a thin plate, not a screen tall: %d" % a._hint.size.y)
 	a.set_hint("")
 	check(a.hint_text() == "", "and gone")
 	a.free()
 	finished += 1
 
 
+
+
+## One owner of the pause (UI_FLOW_TZ 5.5, rule 4): the game stands while a window opened
+## from a match is in the stack; closing returns to the window under it.
+func test_modal_stack() -> void:
+	print("modal stack")
+	var m := ModalStack.new()
+	root.add_child(m)
+	var nodes := {}
+	for id in ["settings", "pause", "help", "confirm"]:
+		var c := Control.new()
+		root.add_child(c)
+		nodes[id] = c
+	m.push("settings", nodes["settings"], false)
+	check(m.top() == "settings" and not paused, "settings outside a match: no pause")
+	m.pop("settings")
+	check(m.is_empty(), "closed")
+	m.push("pause", nodes["pause"], true)
+	check(paused, "the pause stops the game")
+	m.push("help", nodes["help"], true)
+	m.pop("help")
+	check(m.top() == "pause" and paused, "help closed: back to the pause, still paused")
+	m.push("settings", nodes["settings"], true)
+	m.pop("settings")
+	check(m.top() == "pause" and paused, "settings closed: back to the pause")
+	m.push("confirm", nodes["confirm"], true)
+	m.pop("pause")
+	check(m.is_empty() and not paused, "closing the pause closes what is over it and resumes")
+	m.push("help", nodes["help"], true)
+	check(m.has("help") and paused, "help from a match pauses")
+	nodes["help"].visible = false  # tools hide it from outside
+	await process_frame
+	await process_frame
+	check(m.is_empty() and not paused, "a hidden top window leaves the stack, the pause goes")
+	paused = true  # someone else's pause: the stack doesn't fight it
+	await process_frame
+	check(paused, "the stack writes the pause only when its own decision changes")
+	paused = false
+	for c in nodes.values():
+		c.free()
+	m.free()
+	finished += 1
+
+
+## The layer map lives in UiTheme, in the order of UI_FLOW_TZ 5.5.
+func test_layers() -> void:
+	print("layers")
+	var order := [UiTheme.LAYER_HUD, UiTheme.LAYER_STYLE, UiTheme.LAYER_CLUB, UiTheme.LAYER_SCREENS,
+		UiTheme.LAYER_SHEETS, UiTheme.LAYER_PAUSE, UiTheme.LAYER_CONFIRM, UiTheme.LAYER_HELP, UiTheme.LAYER_LOADING]
+	var sorted := order.duplicate()
+	sorted.sort()
+	check(order == sorted, "layers go up: %s" % str(order))
+	check(UiTheme.LAYER_SCREENS == 10 and UiTheme.LAYER_PAUSE == 20 and UiTheme.LAYER_HELP == 30, "screens 10, pause 20, help 30")
+	finished += 1
