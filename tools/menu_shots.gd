@@ -9,13 +9,16 @@ extends SceneTree
 var main: Node
 var h := 1564
 var out := ""
+var tag := ""                     # --tag=d: the shots of one stream go into their own files (all worktrees share user://)
 
 
 func _initialize() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--size="):
 			h = int(a.get_slice("=", 1))
-	out = ProjectSettings.globalize_path("user://menu_%d_" % h)
+		elif a.begins_with("--tag="):
+			tag = a.get_slice("=", 1) + "_"
+	out = ProjectSettings.globalize_path("user://%smenu_%d_" % [tag, h])
 	_run.call_deferred()
 
 
@@ -51,6 +54,14 @@ func _run() -> void:
 	main.tournament = t
 	main.ui.show_bracket(t)
 	await _shot("07_bracket")
+	t.lineup[0]["golden"] = true
+	main.ui.show_opponent_card(t, 0)  # D-5: the card of the opponent, golden, before "Играть"
+	await _shot("07b_opponent_card")
+	t.lineup[0]["golden"] = false
+	t.lineup[4]["mods"] = ["fast", "steady"]
+	main.ui.show_opponent_card(t, 4)  # the boss with auras (the strongest stats, a long list)
+	await _shot("07c_boss_card")
+	t.lineup[4]["mods"] = []
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7
 	t.lineup[0]["racket"] = Gear.roll(Gear.EPIC, rng)

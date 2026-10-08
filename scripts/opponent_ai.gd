@@ -69,7 +69,7 @@ func setup(g: Node, athlete: Athlete, b: Ball) -> void:
 		ge.bounce.connect(_on_bounce)
 		ge.match_started.connect(func(i: Dictionary) -> void:
 			new_match()
-			set_profile(Opponents.find(String(i.get("opponent", "")))))
+			set_profile(i.get("profile", Opponents.find(String(i.get("opponent", ""))))))  # "profile": a stats dictionary (AiProfile)
 		ge.player_stroke.connect(_on_player_stroke)
 		ge.point.connect(_on_point)
 

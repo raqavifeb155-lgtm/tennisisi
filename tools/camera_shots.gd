@@ -7,13 +7,16 @@ extends SceneTree
 var main: Node
 var h := 1564
 var out := ""
+var tag := ""                     # --tag=d: own file names (all worktrees share user://)
 
 
 func _initialize() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--size="):
 			h = int(a.get_slice("=", 1))
-	out = ProjectSettings.globalize_path("user://camera_%d_" % h)
+		elif a.begins_with("--tag="):
+			tag = a.get_slice("=", 1) + "_"
+	out = ProjectSettings.globalize_path("user://%scamera_%d_" % [tag, h])
 	_run.call_deferred()
 
 
@@ -32,9 +35,11 @@ func _run() -> void:
 	root.add_child(main)
 	await create_timer(3.0).timeout
 	for i in 2:
-		for tv in [false, true]:
-			tuning.tv_camera = tv
+		for mode in ["normal", "tv", "booth", "booth_wide"]:  # booth: D-6, the coach's booth (and its wide plan between points)
+			tuning.tv_camera = mode == "tv"
+			main.cam.booth = mode.begins_with("booth")
+			main.cam.booth_wide = mode == "booth_wide"
 			main.cam.snap()
-			await _shot("%s_%d" % ["tv" if tv else "normal", i])
+			await _shot("%s_%d" % [mode, i])
 		await create_timer(1.3).timeout
 	quit()

@@ -4,6 +4,9 @@ extends Camera3D
 ## far court in view, and supports small hit impulses (shake + FOV kick).
 ## Two framings (Tuning.tv_camera, saved as SaveData.camera; --camera=tv for the bot):
 ##   normal  low behind the player, the far court ahead;
+##   booth   (D-6, watching an academy match: --camera=booth or `booth = true`) the coach's booth
+##           behind the baseline at the corner, 2.2 m up, the court running away into the
+##           frame like the normal view; `booth_wide` pulls back to the TV frame between points.
 ##   tv      the broadcast view (ATP Finals): high behind the baseline, the whole court in
 ##           the frame, the players small; it only drifts a little with the player.
 
@@ -12,6 +15,9 @@ var ball: Ball
 var height := 8.0
 var back := 6.0
 var look_ahead := 9.0
+
+var booth := false
+var booth_wide := false           # between the points: the whole court (the TV frame)
 
 var _shake := 0.0
 var _fov_kick := 0.0
@@ -22,6 +28,11 @@ var _last_us := 0
 ## it looks (just past the net), per screen shape.
 const TV_PORTRAIT := {"height": 17.0, "z": 23.0, "look_z": -0.5, "fov": 50.0, "follow": 0.12}
 const TV_LANDSCAPE := {"height": 13.0, "z": 23.0, "look_z": -0.8, "fov": 44.0, "follow": 0.18}
+
+## The coach's booth: behind the near baseline, at the corner, low; looks at the far court.
+const BOOTH_POS := Vector3(6.2, 2.2, 15.4)
+const BOOTH_LOOK := Vector3(0.0, 0.6, -4.5)
+const BOOTH_FOV := 60.0
 
 
 func tv() -> bool:
@@ -36,6 +47,8 @@ func _ready() -> void:
 		look_ahead = 1.0
 	if "--camera=tv" in OS.get_cmdline_user_args():
 		Tuning.tv_camera = true
+	if "--camera=booth" in OS.get_cmdline_user_args():
+		booth = true
 	Tuning.changed.connect(_remember_mode)
 	process_mode = Node.PROCESS_MODE_ALWAYS  # keep framing the player behind the paused tutorial
 	fov = _base_fov
@@ -68,9 +81,15 @@ func snap() -> void:
 		look_at(_look_point(), Vector3.UP)
 
 
+func _wide() -> bool:
+	return tv() or (booth and booth_wide)
+
+
 func _desired_position() -> Vector3:
 	var p := target.global_position
-	if tv():
+	if booth and not booth_wide:
+		return BOOTH_POS
+	if _wide():
 		var f := _tv_frame()
 		return Vector3(p.x * float(f["follow"]), float(f["height"]), float(f["z"]))
 	return Vector3(p.x * (0.7 if look_ahead > 3.0 else 1.0), height, p.z + back)
@@ -78,7 +97,10 @@ func _desired_position() -> Vector3:
 
 func _look_point() -> Vector3:
 	var p := target.global_position
-	if tv():
+	if booth and not booth_wide:
+		var bx0 := ball.state.pos.x * 0.25 if ball and ball.active else 0.0
+		return BOOTH_LOOK + Vector3(bx0, 0.0, 0.0)
+	if _wide():
 		return Vector3(p.x * float(_tv_frame()["follow"]) * 0.5, 0.0, float(_tv_frame()["look_z"]))
 	var bx := ball.state.pos.x if ball and ball.active else 0.0
 	return Vector3(p.x * 0.35 + bx * 0.12, 0.0 if look_ahead > 3.0 else 1.0, p.z - look_ahead)
@@ -95,8 +117,10 @@ func _process(_delta: float) -> void:
 	var vp := get_viewport().get_visible_rect().size
 	keep_aspect = Camera3D.KEEP_WIDTH if vp.x < vp.y else Camera3D.KEEP_HEIGHT
 	_base_fov = 52.0 if vp.x < vp.y else 48.0
-	if tv():
+	if _wide():
 		_base_fov = float(_tv_frame()["fov"])
+	elif booth:
+		_base_fov = BOOTH_FOV
 
 	global_position = global_position.lerp(_desired_position(), 1.0 - exp(-5.0 * rd))
 	look_at(_look_point(), Vector3.UP)
