@@ -515,7 +515,10 @@ func test_flow() -> void:
 	main._on_ui("format", 0)
 	await _frames(3)
 	check(SaveData.club.get("last_location", "") == "clay" and int(SaveData.club.get("last_format", -1)) == 0, "the choice is remembered")
-	check(not club.active, "a tournament's bracket closes the club")
+	check(club.active and main.location_id == "club" and main.tournament.location == "clay" and main.ui.is_open(), "the bracket is shown over the club: the island waits for «Играть»")
+	main._on_ui("play", 0)
+	await _frames(3)
+	check(main.location_id == "clay" and main.phase != club._idle and not club.active, "a match starts: the island, and the club steps aside")
 	# Back to the club, then "Турнир" goes straight to the bracket: tap 1 Турнир, tap 2 Играть.
 	SaveData.active = null
 	SaveData.run = {}
@@ -538,7 +541,7 @@ func test_flow() -> void:
 	check(mods.picked.size() == 2, "the Про preset picks two")
 	mods.ui_action(main, "mods_go", 0)
 	await _frames(3)
-	check(main.tournament != null and main.location_id == "clay" and main.tournament.run_modifiers.size() == 2, "the run starts in Spain with the conditions (%s)" % str(main.tournament.run_modifiers if main.tournament else []))
+	check(main.tournament != null and main.tournament.location == "clay" and main.location_id == "club" and main.tournament.run_modifiers.size() == 2, "the run starts in Spain with the conditions (%s)" % str(main.tournament.run_modifiers if main.tournament else []))
 	SaveData.active = null
 	SaveData.run = {}
 	main._show_menu()
@@ -566,7 +569,7 @@ func test_flow() -> void:
 	await _frames(2)
 	club._on_choice("club_tournament", 0)
 	await _frames(3)
-	check(main.tournament != null and main.location_id == "clay" and main.ui.is_open(), "one tap: the bracket in Spain")
+	check(main.tournament != null and main.tournament.location == "clay" and main.location_id == "club" and main.ui.is_open(), "one tap: the bracket for Spain, over the club")
 	var run_buttons: Dictionary = club.place_buttons("court")
 	check(run_buttons["action"] == "continue" and run_buttons["extra"].size() == 1, "a run: ПРОДОЛЖИТЬ and one 'Новая игра'")
 	SaveData.active = null
@@ -1012,7 +1015,7 @@ func test_transitions() -> void:
 	var before: Vector3 = main.player.position
 	club._on_choice("club_tournament", 0)
 	await _frames(3)
-	check(main.ui.is_open() and not club.active, "the bracket")
+	check(main.ui.is_open() and club.active and main.location_id == "club", "the bracket (over the club)")
 	main._on_ui("menu", 0)
 	await _frames(3)
 	check(club.active and main.location_id == "club" and main.player.position.distance_to(before) < 0.6, "back from the bracket: the club, the hero where he was")
