@@ -55,6 +55,7 @@ var scoreboard := MatchScore.new(1, 99, 0)  # practice: one endless set
 # Tournament / menus (TournamentUI) and skills (Skills)
 var ui: TournamentUI
 var run_hub: RunHub
+var mods_hub: ModsHub             # v0.2 G: modifiers of the match (scripts/mods)
 var club: Club                    # v0.2 B: the club as the main screen (scripts/club)
 var tournament: Tournament
 var tournament_mode := false
@@ -244,6 +245,9 @@ func _ready() -> void:
 	run_hub = RunHub.new()  # v0.2 A: style, gear effects, opponent stamina, bets (scripts/run)
 	add_child(run_hub)
 	run_hub.setup(self)
+	mods_hub = ModsHub.new()  # v0.2 G: auras, the run's conditions (after RunHub: its match comes first)
+	add_child(mods_hub)
+	mods_hub.setup(self)
 	club = Club.new()  # v0.2 B: the walkable club replaces the menu list (scripts/club)
 	add_child(club)
 	club.setup(self)
