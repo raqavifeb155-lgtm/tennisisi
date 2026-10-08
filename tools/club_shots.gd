@@ -16,6 +16,7 @@ var stats := false
 var views := false
 var nopack := false     # --nopack: the club as it stands before the model pack arrives (simple forms)
 var census := false
+var npcs := false       # --npc: T-2, the coach's offer, the hire screens, the students, the visitor
 var lots := false       # --lots: T-1, the empty lots, the sheet, the build moment
 var hour := 11.0   # shots are of the morning unless --hour= says otherwise (else they depend on the clock)
 var tag := ""          # --tag=X: club_X_<h>_*.png (other worktrees shoot into the same folder)
@@ -37,6 +38,8 @@ func _initialize() -> void:
 			census = true
 		elif a == "--lots":
 			lots = true
+		elif a == "--npc":
+			npcs = true
 		elif a == "--nopack":
 			nopack = true
 			ClubPack.state = ClubPack.FAILED
@@ -192,6 +195,10 @@ func _run() -> void:
 		return
 	if lots:
 		await _lots()
+		quit()
+		return
+	if npcs:
+		await _npc()
 		quit()
 		return
 	if builds:
@@ -641,3 +648,90 @@ func _lots() -> void:
 	club.hud.visible = true
 	_go("lot_n6")
 	await _shot("18_open_lot_north", 1.0)
+
+
+## T-2: after the first run the coach offers newcomers; the list, a candidate's card, the
+## student in the club (a button, a word, his card), three students, a visiting star.
+func _npc() -> void:
+	var club = main.club
+	SaveData.played = 1
+	SaveData.titles = 0
+	SaveData.gold = 0
+	SaveData.academy = {}
+	SaveData.club = {"met_coach": true, "walk_hint": true, "hire_hint": true}
+	club.close()
+	main.set_location(Locations.LIST[0]["id"])
+	main._show_menu()
+	await create_timer(0.8).timeout
+	club = main.club
+	club.hud._bubble.visible = false
+	ClubDaytime.force_hour = 10.0
+	main.cpu.position = Vector3(-2.3, 0, 8.0)
+	main.player.position = Vector3(-0.6, 0, 8.4)
+	club._place = ""
+	club._update_place()
+	club.cam.snap()
+	print("DBG coach ", main.cpu.position, " visible ", main.cpu.visible, " npc ", ClubNpc.get_npc("coach"), " place ", club.hud.current_place(), " hero ", main.player.position)
+	await _shot("01_coach_offers", 1.0)
+	club._on_choice("club_hire", 0)
+	await _shot("02_hire_list", 0.9)
+	main.ui._scroll.scroll_vertical = 700
+	await _shot("02b_hire_list_scrolled", 0.5)
+	main.ui._scroll.scroll_vertical = 0
+	club._on_choice("club_hire_pick", 1)
+	await _shot("03_candidate_card", 0.9)
+	main.ui._scroll.scroll_vertical = 600
+	await _shot("03b_candidate_traits", 0.5)
+	club._on_choice("club_hire_confirm", 0)
+	await create_timer(0.9).timeout
+	club.hud._bubble.visible = false
+	var npc = club.npc_life.people()[0]
+	main.player.position = Vector3(0.6, 0, 9.6)
+	npc.pos = Vector3(2.0, 0, 8.0)
+	npc.route = []
+	npc.dwell = 999.0
+	npc.activity = "idle"
+	club._place = ""
+	club._update_place()
+	club.cam.snap()
+	await _shot("04_student_button", 1.0)
+	club._on_choice("club_npc_talk:stu_s1", 0)
+	await _shot("05_student_speaks", 0.5)
+	club._on_choice("club_npc_train:s1", 0)
+	await _shot("06_student_card", 0.9)
+	main.ui._scroll.scroll_vertical = 700
+	await _shot("06b_student_card_traits", 0.5)
+	main._on_ui("menu", 0)
+	await create_timer(0.6).timeout
+	# Three students (the academy's room, as it will be) and a visitor.
+	SaveData.club["lots"] = {"n7": "academy"}
+	SaveData.club["levels"] = {"academy": 3}
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 9
+	for i in 2:
+		var st: Dictionary = JuniorGen.make(rng, 1)
+		st["id"] = "s%d" % (i + 2)
+		st["age0"] = 13 + i * 3
+		st["since"] = SaveData.played
+		Academy.students().append(st)
+	Academy.data()["guest"] = {"roster": "rublev", "name": "Андрей Рублёв", "until": SaveData.played + 2, "seed": 5}
+	club._refresh()
+	await create_timer(0.3).timeout
+	var spots := [Vector3(-2.5, 0, 11.0), Vector3(2.5, 0, 9.0), Vector3(5.0, 0, 12.5), Vector3(-6.0, 0, 14.5)]
+	var i := 0
+	for n in club.npc_life.people():
+		n.pos = spots[i % spots.size()]
+		n.route = []
+		n.dwell = 999.0
+		n.activity = "train" if i % 2 == 0 else "idle"
+		i += 1
+	main.player.position = Vector3(0.0, 0, 16.2)
+	main.player.rotation.y = 0.0
+	club._place = ""
+	club._update_place()
+	club.hud.visible = false
+	await _shot("07_students_and_visitor", 1.2)
+	club.npc_life.say("stu_s2", "Сегодня подача идёт", 3.0)
+	club.npc_life.say("guest", "Хороший корт. Давно так не играл", 3.0)
+	await _shot("08_speech", 0.5)
+	club.hud.visible = true
