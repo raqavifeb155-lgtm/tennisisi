@@ -22,6 +22,7 @@ const STRIP_H := 440
 var main: Node
 var h := 1564
 var out := ""
+var tag := ""        # --tag=X: gear_X_<h>_*.png (other worktrees shoot into the same folder)
 var cells: Array = []        # [SubViewport, Athlete or null, kind]
 
 
@@ -29,7 +30,9 @@ func _initialize() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--size="):
 			h = int(a.get_slice("=", 1))
-	out = ProjectSettings.globalize_path("user://gear_%d_" % h)
+		elif a.begins_with("--tag="):
+			tag = a.get_slice("=", 1) + "_"
+	out = ProjectSettings.globalize_path("user://gear_%s%d_" % [tag, h])
 	_run.call_deferred()
 
 

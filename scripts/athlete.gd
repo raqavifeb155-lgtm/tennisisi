@@ -2123,8 +2123,10 @@ func _lathe_bone(bone: String, ref: float, prof: Array, flat := 1.0) -> void:
 	_bones[bone] = mi
 
 
-## The profile turned round +Y, centred on the origin, with vertex colours.
-static func _lathe(len: float, prof: Array, segs: int) -> ArrayMesh:
+## The profile turned round +Y, centred on the origin, with vertex colours. `colour`
+## (t, angle, row colour) -> Color paints per vertex instead (patterns, AthleteGear); the
+## UV's x is then t along the bone.
+static func _lathe(len: float, prof: Array, segs: int, colour := Callable()) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var n := prof.size()
@@ -2144,7 +2146,11 @@ static func _lathe(len: float, prof: Array, segs: int) -> ArrayMesh:
 				nrm = (rad - Vector3(0, dr / dy, 0)).normalized()
 			elif r > 0.0001:
 				nrm = (rad + nrm * 0.6).normalized()
-			st.set_color(prof[i][2])
+			if colour.is_valid():
+				st.set_color(colour.call(t, a, prof[i][2]))
+				st.set_uv(Vector2(t, 0.0))
+			else:
+				st.set_color(prof[i][2])
 			st.set_normal(nrm)
 			st.add_vertex(rad * r + Vector3(0, (t - 0.5) * len, 0))
 	for i in n - 1:

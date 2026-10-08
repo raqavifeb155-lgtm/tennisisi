@@ -5,6 +5,11 @@ extends RefCounted
 ## rarity), the shoes and the wristbands. The look of an item is data: `skin` in the
 ## catalog (Items.LIST); generated commons and rares look like their slot and rarity.
 ##
+## Shoes and wristbands: the body's shoe / forearm meshes are rebuilt on the same lathe
+## (Athlete._lathe) with the item's colours and pattern; from epic up (wristband) and
+## always (shoes: the sole is found in the shader by the world normal) they take the gear
+## shader. The shapes below repeat the profiles of Athlete._build_body.
+##
 ## Draw calls (docs/PERFORMANCE.md): the racket is ONE mesh (rim, throat, shaft and grip
 ## coloured per vertex) plus the strings, plus one glow mesh (unshaded, additive) from
 ## epic up; a mythic adds a pulsing ring on the court. Shoes and wristbands are the
@@ -33,6 +38,14 @@ const TUBE_SEGS := 6
 ## The stock racket (nothing in the slot) and the generated items by slot and rarity.
 const STOCK := {"frame": "classic", "color": "#262633", "accent": "#3a3a4a", "grip": "#1b1b1f", "wrap": "#2c2c33", "strings": "#f2f2e6"}
 const GENERIC := {
+	"shoes": [
+		{"body": "#f2f2f2", "sole": "#c9ccd2", "stripe": "#8b9099", "pattern": "stripe"},
+		{"body": "#f6f8fb", "sole": "#2f6fe0", "stripe": "#2f6fe0", "pattern": "stripe"},
+	],
+	"band": [
+		{"color": "#9aa0a8"},
+		{"color": "#2f6fe0", "second": "#ffffff", "pattern": "stripe"},
+	],
 	"racket": [
 		{"frame": "classic", "color": "#8b9099", "accent": "#5d626b", "grip": "#1d1d22", "wrap": "#3a3d44", "strings": "#f0f0ea"},
 		{"frame": "classic", "color": "#2f6fe0", "accent": "#a9c8ff", "grip": "#f2f4f8", "wrap": "#2f6fe0", "strings": "#eef4ff", "pattern": "stripe"},
@@ -122,6 +135,7 @@ func dress(ath: Athlete) -> void:
 	if ath._model == null or ath._racket == null:
 		return
 	_build_racket(ath)
+	_dress_limbs(ath)
 	_build_aura(ath)
 
 
@@ -212,6 +226,169 @@ func _build_aura(ath: Athlete) -> void:
 	aura.position = Vector3(0, 0.025, 0)
 	ath._model.add_child(aura)
 
+
+
+# --- Shoes and wristbands ------------------------------------------------------------
+
+## [t along the bone, radius] of the sneaker (x1.3 on the toon body) and of the forearm
+## up to the wristband: the same shapes as Athlete._build_body.
+const SHOE_SHAPE := [[0.0, 0.0], [0.05, 0.054], [0.38, 0.062], [0.5, 0.063], [0.85, 0.052], [1.0, 0.0]]
+const FORE_SHAPE := [[0.0, 0.0], [0.04, 0.04], [0.3, 0.046], [0.72, 0.036]]
+const SHOE_LEN := 0.19
+const BAND_FROM := 0.72
+const BAND_TO := 0.94
+const SHOE_ROWS := 25
+const BAND_ROWS := 13
+const MARK := Color(0, 0, 0, 0.5)   # a row colour that says "the wristband" to the painter
+
+static var _meshes := {}
+
+
+## The shoes and the wristbands of this body, rebuilt for what is worn.
+func _dress_limbs(ath: Athlete) -> void:
+	var toon := ath._body == Athlete.Body.TOON
+	var shoe: Dictionary = worn["shoes"]
+	var band: Dictionary = worn["band"]
+	for i in 2:
+		_restyle(ath._bones.get("shoe%d" % i), shoe, "shoes", toon, ath)
+	for side in ["r", "l"]:
+		_restyle(ath._bones.get("fore_" + side), band, "band", toon, ath)
+
+
+## Swaps a body part's mesh and material for the item's, or puts back the first ones
+## (item {}); the classic body's capsules stay as they are.
+func _restyle(mi: MeshInstance3D, item: Dictionary, slot: String, toon: bool, ath: Athlete) -> void:
+	if mi == null:
+		return
+	if not mi.has_meta("gear_orig"):
+		if mi.mesh is CapsuleMesh:
+			return
+		mi.set_meta("gear_orig", [mi.mesh, mi.material_override])
+	var orig: Array = mi.get_meta("gear_orig")
+	if item.is_empty():
+		mi.mesh = orig[0]
+		mi.material_override = orig[1]
+		return
+	var skin := skin_of(item, slot)
+	var r := rarity_of(item)
+	var g: Dictionary = GLOW[maxi(r, 0)]
+	var outline: bool = orig[1] is BaseMaterial3D and (orig[1] as BaseMaterial3D).next_pass != null
+	var glows := r >= Gear.EPIC
+	var fx := int(g["fx"]) if glows else 0
+	var energy := float(g["frame"]) if glows else 0.0
+	if slot == "shoes":
+		mi.mesh = shoe_mesh(skin, toon)
+		var sole := _c(skin, "sole", "#d8d8d8").srgb_to_linear()
+		mi.material_override = gear_material(toon, fx, GLOW_COLORS[maxi(r, 0)], energy, sole, outline)
+	else:
+		mi.mesh = band_mesh(skin, toon, Looks.skin(ath.look))
+		mi.material_override = gear_material(toon, fx, GLOW_COLORS[maxi(r, 0)], energy, Color(0, 0, 0, 0), outline) if glows else orig[1]
+
+
+static func _shape_at(shape: Array, t: float) -> float:
+	for i in shape.size() - 1:
+		var a: Array = shape[i]
+		var b: Array = shape[i + 1]
+		if t <= float(b[0]) + 0.00001:
+			return lerpf(float(a[1]), float(b[1]), inverse_lerp(float(a[0]), float(b[0]), t))
+	return float((shape.back() as Array)[1])
+
+
+static func _wave(x: float) -> float:
+	return absf(fposmod(x, 1.0) * 2.0 - 1.0)
+
+
+## A sneaker: heel (t 0) -> toe (t 1), upper in `body`, the pattern in `stripe`. The
+## colour's alpha is the glow mask: the pattern 1, the upper a little.
+static func shoe_mesh(skin: Dictionary, toon: bool) -> ArrayMesh:
+	var key := "shoe|%s|%s" % [skin, toon]
+	if _meshes.has(key):
+		return _meshes[key]
+	var fk := 1.3 if toon else 1.0
+	var body := _c(skin, "body", "#f2f2f2").srgb_to_linear()
+	var acc := _c(skin, "stripe", "#8b9099").srgb_to_linear()
+	var pattern := String(skin.get("pattern", ""))
+	var rows: Array = []
+	for i in SHOE_ROWS:
+		var t := float(i) / (SHOE_ROWS - 1)
+		rows.append([t, _shape_at(SHOE_SHAPE, t) * fk, body])
+	var m := Athlete._lathe(SHOE_LEN, rows, 22 if toon else 14, func(t: float, a: float, _b: Color) -> Color:
+		var w := _shoe_weight(pattern, t, a)
+		var c := body.lerp(acc, w)
+		c.a = 0.2 + 0.8 * w
+		return c)
+	_meshes[key] = m
+	return m
+
+
+## 0..1: how much of the pattern's colour a point of the shoe takes.
+static func _shoe_weight(pattern: String, t: float, a: float) -> float:
+	match pattern:
+		"stripe":
+			return 1.0 if t > 0.36 and t < 0.52 else 0.0
+		"two":
+			return 1.0 if (t > 0.28 and t < 0.38) or (t > 0.46 and t < 0.56) else 0.0
+		"toe":
+			return 1.0 if t > 0.8 else 0.0
+		"heel":
+			return 1.0 if t < 0.27 else 0.0
+		"zigzag":
+			return 1.0 if absf(t - 0.45) < 0.03 + 0.1 * _wave(a / TAU * 4.0) else 0.0
+		"gradient":
+			return smoothstep(0.15, 1.0, t)
+		"wind":
+			return 1.0 if fposmod(t * 3.5 + a / TAU, 1.0) < 0.3 else 0.0
+	return 0.0
+
+
+## The forearm with a wristband on it (the shape and the skin as Athlete's). The alpha
+## is the glow mask: the band's pattern 1, its ground 0.5, the arm 0.
+static func band_mesh(skin: Dictionary, toon: bool, arm: Color) -> ArrayMesh:
+	var key := "band|%s|%s|%s" % [skin, toon, arm.to_html()]
+	if _meshes.has(key):
+		return _meshes[key]
+	var k := 1.14 if toon else 1.0
+	var ground := _c(skin, "color", "#ffffff").srgb_to_linear()
+	var second := _c(skin, "second", String(skin.get("color", "#ffffff"))).srgb_to_linear()
+	var pattern := String(skin.get("pattern", ""))
+	var rows: Array = []
+	for pt in FORE_SHAPE:
+		rows.append([pt[0], float(pt[1]) * k, arm])
+	rows.append([BAND_FROM, 0.036 * k, arm])
+	for i in BAND_ROWS:
+		var t := lerpf(BAND_FROM, BAND_TO, float(i) / (BAND_ROWS - 1))
+		rows.append([t, 0.043 * k - 0.001 * k * float(i) / (BAND_ROWS - 1), MARK])
+	rows.append([BAND_TO, 0.032 * k, arm])
+	rows.append([1.0, 0.0, arm])
+	var m := Athlete._lathe(Athlete.FOREARM, rows, 36 if toon else 16, func(t: float, a: float, base: Color) -> Color:
+		if base.a > 0.9:
+			return base
+		var u := inverse_lerp(BAND_FROM, BAND_TO, t)
+		var w := _band_weight(pattern, u, a)
+		var c := ground.lerp(second, w)
+		c.a = 0.5 + 0.5 * w
+		return c)
+	_meshes[key] = m
+	return m
+
+
+## 0..1 of the wristband's second colour at u (0..1 along the band) and angle a.
+static func _band_weight(pattern: String, u: float, a: float) -> float:
+	match pattern:
+		"stripe":
+			return 1.0 if absf(u - 0.5) < 0.17 else 0.0
+		"edges":
+			return 1.0 if u < 0.16 or u > 0.84 else 0.0
+		"dots":
+			var d := Vector2(fposmod(a / TAU * 6.0, 1.0) - 0.5, (u - 0.5) * 1.6)
+			return 1.0 if d.length() < 0.3 else 0.0
+		"stripes":
+			return 1.0 if int(floor(u * 5.0)) % 2 == 0 else 0.0
+		"zigzag":
+			return 1.0 if absf(u - (0.3 + 0.4 * _wave(a / TAU * 5.0))) < 0.17 else 0.0
+		"crown":
+			return 1.0 if (u - 0.45) / 0.55 < _wave(a / TAU * 5.0) and u > 0.45 else 0.0
+	return 0.0
 
 # --- Racket geometry (racket space: +Y from the hand to the head, face in XY) ---------
 
@@ -527,13 +704,17 @@ uniform float energy = 0.0;
 uniform int fx = 0;
 uniform float rough = 0.55;
 uniform float rim_amount = 0.55;
+uniform vec4 sole : source_color = vec4(0.0);
 %s
 void fragment() {
-	ALBEDO = COLOR.rgb;
+	// A shoe's sole is whatever faces the court (alpha 0: no sole).
+	vec3 wn = (INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz;
+	float on_sole = sole.a * smoothstep(-0.25, -0.6, wn.y);
+	ALBEDO = mix(COLOR.rgb, sole.rgb, on_sole);
 	ROUGHNESS = rough;
 	RIM = rim_amount;
 	RIM_TINT = 0.4;
-	EMISSION = glow.rgb * energy * gear_pulse(fx, UV.x, TIME) * COLOR.a;
+	EMISSION = glow.rgb * energy * gear_pulse(fx, UV.x, TIME) * COLOR.a * (1.0 - on_sole);
 }
 """
 const GLOW_SHADER := """
@@ -570,8 +751,8 @@ static func _shader(kind: String) -> Shader:
 
 
 ## The lit gear material: TOON gets the body's outline as its next pass.
-static func gear_material(toon: bool, fx: int, glow: Color, energy: float) -> ShaderMaterial:
-	var key := "lit|%s|%d|%s|%.2f" % [toon, fx, glow.to_html(), energy]
+static func gear_material(toon: bool, fx: int, glow: Color, energy: float, sole := Color(0, 0, 0, 0), outline := true) -> ShaderMaterial:
+	var key := "lit|%s|%d|%s|%.2f|%s|%s" % [toon, fx, glow.to_html(), energy, sole.to_html(), outline]
 	if _materials.has(key):
 		return _materials[key]
 	var m := ShaderMaterial.new()
@@ -579,9 +760,10 @@ static func gear_material(toon: bool, fx: int, glow: Color, energy: float) -> Sh
 	m.set_shader_parameter("glow", glow)
 	m.set_shader_parameter("energy", energy)
 	m.set_shader_parameter("fx", fx)
+	m.set_shader_parameter("sole", sole)
 	m.set_shader_parameter("rough", 0.55 if toon else 0.8)
 	m.set_shader_parameter("rim_amount", 0.55 if toon else 0.0)
-	if toon and Athlete._toon_outline != null:
+	if toon and outline and Athlete._toon_outline != null:
 		m.next_pass = Athlete._toon_outline  # made by the TOON body built just before
 	_materials[key] = m
 	return m

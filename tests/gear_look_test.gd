@@ -10,6 +10,10 @@ const BUDGET := 3               # extra draw calls per player for the gear (spec
 const RACKET_KEYS := ["frame", "tube", "color", "accent", "grip", "wrap", "strings", "pattern", "halo"]
 const PATTERNS := ["", "edge", "stripe", "spiral", "segments", "twotone", "veins", "core"]
 const HALOS := ["", "rays", "flames", "bolts", "double", "spiral"]
+const SHOE_KEYS := ["body", "sole", "stripe", "pattern"]
+const SHOE_PATTERNS := ["", "stripe", "two", "toe", "heel", "zigzag", "gradient", "wind"]
+const BAND_KEYS := ["color", "second", "pattern"]
+const BAND_PATTERNS := ["", "stripe", "edges", "dots", "stripes", "zigzag", "crown"]
 
 var failures := 0
 var _ran := false
@@ -24,6 +28,7 @@ func _process(_delta: float) -> bool:
 			Athlete.body_style = int(a.get_slice("=", 1))
 			print("body style ", Athlete.body_style)
 	test_catalog_skins()
+	test_shoes_and_bands()
 	test_racket_follows_hand()
 	test_glow_by_rarity()
 	test_mythic_on_court()
@@ -80,6 +85,55 @@ func test_catalog_skins() -> void:
 		var key := str(skin)
 		check(not seen.has(key), "%s looks unlike %s" % [e["id"], seen.get(key, "the others")])
 		seen[key] = e["id"]
+
+
+func test_shoes_and_bands() -> void:
+	print("shoes and wristbands: a skin each, on the body's own meshes")
+	var seen := {}
+	for e in Items.LIST:
+		var slot := String(e["slot"])
+		if slot == "racket":
+			continue
+		var skin: Dictionary = e.get("skin", {})
+		var keys: Array = SHOE_KEYS if slot == "shoes" else BAND_KEYS
+		var pats: Array = SHOE_PATTERNS if slot == "shoes" else BAND_PATTERNS
+		var ok := not skin.is_empty() and String(skin.get("pattern", "")) in pats
+		for k in skin:
+			ok = ok and k in keys
+			ok = ok and (k == "pattern" or Color.html_is_valid(String(skin[k])))
+		check(ok, "%s has a skin with known keys, colours and pattern" % e["id"])
+		var key := str(skin)
+		check(not seen.has(key), "%s looks unlike %s" % [e["id"], seen.get(key, "the others")])
+		seen[key] = e["id"]
+	var a := fresh()
+	var shoe0: MeshInstance3D = a._bones["shoe0"]
+	var fore: MeshInstance3D = a._bones["fore_r"]
+	var own_shoe := shoe0.mesh
+	var own_fore := fore.mesh
+	if a._body == Athlete.Body.CLASSIC:
+		a.set_gear([item("second_wind"), item("crown")])
+		check(shoe0.mesh == own_shoe, "classic body: capsules stay as they are")
+		a.free()
+		return
+	var colours := {}
+	for id in ["runners", "spikes", "second_wind", "berserk", "golden_hand"]:
+		a.set_gear([item(id)])
+		var m: Mesh = (shoe0 if Items.find(id)["slot"] == "shoes" else fore).mesh
+		colours[id] = (m.surface_get_arrays(0)[Mesh.ARRAY_COLOR] as PackedColorArray).slice(0, 400)
+	check(colours["runners"] != colours["spikes"] and colours["berserk"] != colours["golden_hand"], "different items paint different meshes")
+	a.set_gear([item("second_wind"), item("golden_hand")])
+	check(shoe0.mesh != own_shoe and (a._bones["shoe1"] as MeshInstance3D).mesh == shoe0.mesh, "both shoes wear it")
+	check(fore.mesh != own_fore and (a._bones["fore_l"] as MeshInstance3D).mesh == fore.mesh, "both wrists wear the band")
+	check(shoe0.material_override is ShaderMaterial and (shoe0.material_override as ShaderMaterial).get_shader_parameter("energy") > 0.0, "a mythic shoe glows (gear shader)")
+	check(fore.material_override is ShaderMaterial, "a mythic band glows (gear shader)")
+	a.set_gear([item("runners"), item("terry_band")])
+	check(fore.material_override is StandardMaterial3D, "a common band keeps the body's own material")
+	a.set_look({"shirt": 3, "accent": 5})
+	shoe0 = a._bones["shoe0"]
+	check(shoe0.material_override is ShaderMaterial, "set_look: the shoes are dressed again")
+	a.set_gear([])
+	check(shoe0.mesh == (a._bones["shoe0"] as MeshInstance3D).mesh and shoe0.material_override is StandardMaterial3D, "taken off: the look's own shoes")
+	a.free()
 
 
 func test_racket_follows_hand() -> void:
@@ -160,7 +214,7 @@ func test_draw_budget() -> void:
 	a._lighten()
 	var stock := draws(a)
 	var stock_racket := draws(a._racket)
-	for kit in [["sun"], ["sun", "cutter", "twister"], ["thunderer"]]:
+	for kit in [["sun"], ["sun", "cutter", "twister"], ["thunderer"], ["sun", "second_wind", "golden_hand"], ["twister", "springs", "cold_pack"], ["cutter", "ghost_sneakers", "crown"]]:
 		var items: Array = kit.map(func(id): return item(id))
 		a.set_gear(items)
 		a._lighten()
