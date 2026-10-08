@@ -78,6 +78,9 @@ static func show(ui: TournamentUI, t: Tournament, i: int) -> void:
 		hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		RunBag.opponent_hint(ui, hint, t.lineup[i])
 		if hint.get_child_count() > 0:
+			for c in hint.get_children():
+				if c is Label:
+					c.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			ui._box.add_child(hint)
 		else:
 			hint.free()

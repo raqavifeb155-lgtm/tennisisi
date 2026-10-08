@@ -30,9 +30,9 @@ const TV_PORTRAIT := {"height": 17.0, "z": 23.0, "look_z": -0.5, "fov": 50.0, "f
 const TV_LANDSCAPE := {"height": 13.0, "z": 23.0, "look_z": -0.8, "fov": 44.0, "follow": 0.18}
 
 ## The coach's booth: behind the near baseline, at the corner, low; looks at the far court.
-const BOOTH_POS := Vector3(6.2, 2.2, 15.4)
-const BOOTH_LOOK := Vector3(0.0, 0.6, -4.5)
-const BOOTH_FOV := 60.0
+const BOOTH_POS := Vector3(5.2, 2.4, 17.2)
+const BOOTH_LOOK := Vector3(-1.0, 0.2, 0.5)
+const BOOTH_FOV := 72.0
 
 
 func tv() -> bool:
