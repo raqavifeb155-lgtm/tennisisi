@@ -516,6 +516,25 @@ func test_flow() -> void:
 	var again: Dictionary = club.place_buttons("court")
 	check(again["label"].begins_with("НОВАЯ ИГРА  ·  ИСПАНИЯ") and again["extra"].size() == 1, "the button names the last place, one quiet 'другое место'")
 	check(again["extra"][0][1] == "club_locations", "'Другое место' opens the club's islands screen")
+	# The conditions link: not for a newcomer, one tap opens the screen, "Начать забег" starts
+	# the run in the remembered place with the picks.
+	SaveData.played = 1
+	var with_mods: Dictionary = club.place_buttons("court")
+	check(with_mods["extra"].size() == 2 and with_mods["extra"][1][1] == "club_mods" and String(with_mods["extra"][1][0]).begins_with("Условия · ×"), "after a run: a second quiet link 'Условия · ×k' (%s)" % str(with_mods["extra"]))
+	club._on_choice("club_mods", 0)
+	await _frames(2)
+	check(main.ui.is_open() and main.tournament == null, "the link opens the conditions screen, no run yet")
+	var mods: GDScript = load("res://scripts/ui/screens/run_mods.gd")  # loaded: it reaches the autoloads
+	mods.ui_action(main, "mods_preset", 0)
+	check(mods.picked.size() == 2, "the Про preset picks two")
+	mods.ui_action(main, "mods_go", 0)
+	await _frames(3)
+	check(main.tournament != null and main.location_id == "clay" and main.tournament.run_modifiers.size() == 2, "the run starts in Spain with the conditions (%s)" % str(main.tournament.run_modifiers if main.tournament else []))
+	SaveData.active = null
+	SaveData.run = {}
+	main._show_menu()
+	await _frames(3)
+	SaveData.played = 0
 	var screens: GDScript = load("res://scripts/club/club_screens.gd")  # loaded: it reaches the autoloads
 	check(screens.loc_unlocked("grass"), "with a Spanish title England is open")
 	SaveData.titles_by_loc = {"park": 1}
