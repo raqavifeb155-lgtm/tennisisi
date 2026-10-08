@@ -22,10 +22,11 @@ func _run() -> void:
 		test_player_habits,
 		test_pressure_errors,
 		test_net_and_footwork,
+		test_tv_camera,
 	]
 	expected = tests.size()
 	for t in tests:
-		t.call()
+		await t.call()
 	check(finished == expected, "every test ran to its end: %d of %d" % [finished, expected])
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
@@ -356,4 +357,57 @@ func test_net_and_footwork() -> void:
 	check(Footwork.auto_side(-1, -2.5, 3.0, 1.2, 6.0) == -1, "a wide backhand stays a backhand")
 	check(Footwork.auto_side(-1, -0.6, 1.4, 0.4, 6.0) == -1, "no time: the backhand")
 	check(Footwork.auto_side(1, 0.6, 0.0, 1.0, 6.0) == 1, "a forehand stays a forehand")
+	finished += 1
+
+
+## Ground point under a screen point, as Main._screen_to_ground does it.
+func _ground(cam: Camera3D, sp: Vector2) -> Vector3:
+	var from := cam.project_ray_origin(sp)
+	var dir := cam.project_ray_normal(sp)
+	return from + dir * (-from.y / dir.y)
+
+
+func test_tv_camera() -> void:
+	print("D-4: the TV camera")
+	var tuning := root.get_node("Tuning")
+	root.size = Vector2i(720, 1564)
+	var target := Node3D.new()
+	root.add_child(target)
+	target.position = Vector3(0.5, 0, 12.6)
+	var cam: Camera3D = load("res://scripts/game_camera.gd").new()
+	cam.target = target
+	root.add_child(cam)
+	cam.current = true
+	for tv in [false, true]:
+		tuning.tv_camera = tv
+		cam.snap()
+		await process_frame
+		cam.snap()
+		var vp := Vector2(root.size)
+		var inside := true
+		for c in [Vector3(-5.5, 0, -11.9), Vector3(5.5, 0, -11.9), Vector3(-4.1, 0, 11.9), Vector3(4.1, 0, 11.9)]:
+			var sp := cam.unproject_position(c)
+			if sp.x < 0.0 or sp.x > vp.x or sp.y < 0.0 or sp.y > vp.y:
+				inside = false
+		var feet := cam.unproject_position(target.position)
+		var err := 0.0
+		for p in [Vector3(-3.0, 0, 6.0), Vector3(2.5, 0, -9.0), Vector3(0.0, 0, 12.0)]:
+			err = maxf(err, (_ground(cam, cam.unproject_position(p)) - p).length())
+		if tv:
+			check(inside, "TV: the whole court is in the frame")
+			check(feet.y < vp.y * 0.75, "TV: the player's feet above the joystick zone (y %.0f of %.0f)" % [feet.y, vp.y])
+			var far := cam.unproject_position(Vector3(-4.1, 0, -11.9)).distance_to(cam.unproject_position(Vector3(4.1, 0, -11.9)))
+			check(far > vp.x * 0.2, "TV: the far baseline is still %.0f px wide (a fifth of the screen at least)" % far)
+		check(err < 0.02, "%s: a screen point maps back to the same court point (%.3f m)" % ["TV" if tv else "normal", err])
+	check(cam.global_position.y > 15.0, "TV: hangs high (%.1f m)" % cam.global_position.y)
+	tuning.tv_camera = false
+	cam.free()
+	target.free()
+	var ok := SaveData.camera == "normal"
+	var cf := ConfigFile.new()
+	cf.set_value("view", "camera", "tv")
+	SaveData._apply(cf)
+	ok = ok and SaveData.camera == "tv" and SaveData._to_config().get_value("view", "camera", "") == "tv"
+	SaveData._apply(ConfigFile.new())
+	check(ok and SaveData.camera == "normal", "the camera choice is saved in the new section [view], default normal")
 	finished += 1

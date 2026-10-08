@@ -39,6 +39,7 @@ static var last_crash := ""            # where the last one happened ("матч 
 static var style := {}                 # style records (v0.2 A): best_mult, best_points, total
 static var bets := {}                  # the betting desk (v0.2 A): placed, won, loss_streak, net_hits
 static var golden: Array = []          # golden opponents beaten (v0.2 A): roster ids
+static var camera := "normal"          # the match camera (v0.2 D): "normal" | "tv" (section "view")
 static var source := "none"            # where the progress came from: local, old, cloud (telemetry)
 static var _cloud_checked := false
 static var _last_cloud := ""
@@ -94,6 +95,7 @@ static func _apply(cf: ConfigFile) -> void:
 	style = cf.get_value("style", "data", {})
 	bets = cf.get_value("bets", "data", {})
 	golden = cf.get_value("golden", "beaten", [])
+	camera = cf.get_value("view", "camera", "normal")
 	active = null
 	Skills.xp = cf.get_value("skills", "xp", {})
 	Skills.perks = cf.get_value("skills", "perks", [])
@@ -192,6 +194,7 @@ static func _to_config() -> ConfigFile:
 	cf.set_value("settings", "graphics", graphics)
 	cf.set_value("settings", "gfx", gfx)
 	cf.set_value("player", "look", look)
+	cf.set_value("view", "camera", camera)
 	cf.set_value("club", "data", club)
 	if not style.is_empty():
 		cf.set_value("style", "data", style)

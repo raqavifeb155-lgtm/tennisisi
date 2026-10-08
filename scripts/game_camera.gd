@@ -2,6 +2,10 @@ class_name GameCamera
 extends Camera3D
 ## Elevated behind-the-player camera. Follows the player smoothly, keeps the whole
 ## far court in view, and supports small hit impulses (shake + FOV kick).
+## Two framings (Tuning.tv_camera, saved as SaveData.camera; --camera=tv for the bot):
+##   normal  low behind the player, the far court ahead;
+##   tv      the broadcast view (ATP Finals): high behind the baseline, the whole court in
+##           the frame, the players small; it only drifts a little with the player.
 
 var target: Node3D
 var ball: Ball
@@ -14,6 +18,15 @@ var _fov_kick := 0.0
 var _base_fov := 52.0
 var _last_us := 0
 
+## The TV framing: where the camera hangs (behind and above the near baseline) and where
+## it looks (just past the net), per screen shape.
+const TV_PORTRAIT := {"height": 17.0, "z": 23.0, "look_z": -0.5, "fov": 50.0, "follow": 0.12}
+const TV_LANDSCAPE := {"height": 13.0, "z": 23.0, "look_z": -0.8, "fov": 44.0, "follow": 0.18}
+
+
+func tv() -> bool:
+	return Tuning.tv_camera
+
 
 func _ready() -> void:
 	if "--closecam" in OS.get_cmdline_user_args():
@@ -21,6 +34,9 @@ func _ready() -> void:
 		height = 2.6
 		back = 3.6
 		look_ahead = 1.0
+	if "--camera=tv" in OS.get_cmdline_user_args():
+		Tuning.tv_camera = true
+	Tuning.changed.connect(_remember_mode)
 	process_mode = Node.PROCESS_MODE_ALWAYS  # keep framing the player behind the paused tutorial
 	fov = _base_fov
 	near = 1.0
@@ -33,6 +49,19 @@ func impulse(strength: float) -> void:
 	_fov_kick = maxf(_fov_kick, strength * 4.0)
 
 
+## The settings sheet switched the framing: keep it in the save (a new key, SaveData.camera).
+func _remember_mode() -> void:
+	var want := "tv" if Tuning.tv_camera else "normal"
+	if SaveData.camera != want:
+		SaveData.camera = want
+		SaveData.save()
+
+
+func _tv_frame() -> Dictionary:
+	var vp := get_viewport().get_visible_rect().size if is_inside_tree() else Vector2(720, 1564)
+	return TV_PORTRAIT if vp.x < vp.y else TV_LANDSCAPE
+
+
 func snap() -> void:
 	if target:
 		global_position = _desired_position()
@@ -41,11 +70,16 @@ func snap() -> void:
 
 func _desired_position() -> Vector3:
 	var p := target.global_position
+	if tv():
+		var f := _tv_frame()
+		return Vector3(p.x * float(f["follow"]), float(f["height"]), float(f["z"]))
 	return Vector3(p.x * (0.7 if look_ahead > 3.0 else 1.0), height, p.z + back)
 
 
 func _look_point() -> Vector3:
 	var p := target.global_position
+	if tv():
+		return Vector3(p.x * float(_tv_frame()["follow"]) * 0.5, 0.0, float(_tv_frame()["look_z"]))
 	var bx := ball.state.pos.x if ball and ball.active else 0.0
 	return Vector3(p.x * 0.35 + bx * 0.12, 0.0 if look_ahead > 3.0 else 1.0, p.z - look_ahead)
 
@@ -61,6 +95,8 @@ func _process(_delta: float) -> void:
 	var vp := get_viewport().get_visible_rect().size
 	keep_aspect = Camera3D.KEEP_WIDTH if vp.x < vp.y else Camera3D.KEEP_HEIGHT
 	_base_fov = 52.0 if vp.x < vp.y else 48.0
+	if tv():
+		_base_fov = float(_tv_frame()["fov"])
 
 	global_position = global_position.lerp(_desired_position(), 1.0 - exp(-5.0 * rd))
 	look_at(_look_point(), Vector3.UP)
