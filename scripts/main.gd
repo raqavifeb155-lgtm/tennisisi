@@ -1813,8 +1813,11 @@ func _start_practice() -> void:
 
 
 func _start_tournament(format_index: int) -> void:
+	if not autoplay and not Locations.unlocked(_next_location):
+		_next_location = Locations.best_unlocked()  # v0.2 A-4: an old "last tournament" on a closed island
 	tournament = Tournament.new(format_index)
 	tournament.location = _next_location
+	Locker.board(tournament)  # v0.2 A-2: what was bought in the shop comes along
 	SaveData.active = tournament
 	SaveData.save()
 	set_location(_next_location)
@@ -1994,12 +1997,16 @@ func _finish_match() -> void:
 
 
 func _on_ui(action: String, arg: int) -> void:
+	if RunShop.route(self, action, arg):  # v0.2 A: the shop, the locker, the summary's choice
+		return
 	match action:
 		"start_tournament":
 			ui.show_locations()
 		"continue":
 			_continue_tournament()
 		"location":
+			if not Locations.unlocked(Locations.LIST[arg]["id"]):
+				return  # v0.2 A-4: a closed island can't be picked
 			_next_location = Locations.LIST[arg]["id"]
 			set_location(_next_location)
 			ui.show_formats()
