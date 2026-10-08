@@ -1820,8 +1820,10 @@ func _start_practice() -> void:
 	_begin_match()
 
 
-func _start_tournament(format_index: int) -> void:
+func _start_tournament(format_index: int, run_conditions: Array = []) -> void:
 	tournament = Tournament.new(format_index)
+	if not run_conditions.is_empty():
+		Modifiers.set_run(tournament, run_conditions)  # v0.2 G: the run's conditions (RunMods screen)
 	tournament.location = _next_location
 	SaveData.active = tournament
 	SaveData.save()
@@ -2013,7 +2015,7 @@ func _on_ui(action: String, arg: int) -> void:
 			ui.show_formats()
 		"format":
 			club.remember(_next_location, arg)  # the club's "Турнир" goes straight to the bracket next time
-			_start_tournament(arg)
+			RunMods.open(self, arg)  # v0.2 G: the run's conditions screen, then _start_tournament
 		"practice":
 			_start_practice()
 		"character":
@@ -2084,6 +2086,8 @@ func _on_ui(action: String, arg: int) -> void:
 			ui.show_character(false)
 		"bets", "wheel_chip", "spin", "bet_match", "bet_chip", "bet_win", "bet_sweep", "bet_back":
 			RunBets.ui_action(self, action, arg)  # v0.2 A: the betting desk
+		"mods_toggle", "mods_preset", "mods_go", "mods_back":
+			RunMods.ui_action(self, action, arg)  # v0.2 G: the run's conditions
 		"bag", "bag_item", "bag_back", "equip", "sell":
 			RunBag.ui_action(self, action, arg)  # v0.2 A: the bag between matches
 		"replay", "share":
