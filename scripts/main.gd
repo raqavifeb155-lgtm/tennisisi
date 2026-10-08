@@ -1955,7 +1955,7 @@ func _set_opponent_mods(speed: float, serve: float, cpu_racket: Dictionary) -> v
 func _begin_match() -> void:
 	GameEvents.match_started.emit({"tournament": tournament_mode, "opponent": tournament.opponent()["id"] if tournament_mode and tournament != null else ""})
 	sfx.set_music(false)
-	stamina = 1.0
+	stamina = mods_hub.start_stamina  # v0.2 G: 1.0, or «Полбака»
 	score = [0, 0]
 	rally = 0
 	best_rally = 0
