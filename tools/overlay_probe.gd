@@ -125,7 +125,7 @@ func _run() -> void:
 	await _tap(_button(_sheet(), "Готово"))
 	_chosen = ""
 	await _tap(_button(main.ui.root, "НА КОРТ"))
-	_check("Сетка → ⚙ → Готово: «НА КОРТ» нажимается", _chosen == "play")
+	_check("Сетка → ⚙ → Готово: «НА КОРТ» нажимается (откроет карточку соперника)", _chosen == "opponent_card")
 
 	# --- A match and its pause --------------------------------------------------------
 	main.tournament = null
