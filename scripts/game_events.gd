@@ -31,3 +31,7 @@ signal match_started(info: Dictionary)
 
 ## A match is over: {"won": bool, "score": "6:3", "tournament": bool}
 signal match_finished(info: Dictionary)
+
+## A coach's quest is done (the club, docs/superpowers/specs/2026-10-08-v02-hub-economy.md 5):
+##   index (in ClubQuests.current()), text, gold, item (bool). For a toast (stream C later).
+signal quest_done(info: Dictionary)
