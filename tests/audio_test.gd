@@ -81,7 +81,9 @@ func _run() -> void:
 	_check(not sfx._streams.has("amb_clay") and not sfx._streams.has("amb_clay_gull"), "leaving Spain lets its sounds go")
 	sfx._neighbor_timer = 0.0
 	await _wait(0.1)
-	_check(sfx._neighbor_shots > 0 and sfx._neighbor.any(func(p: AudioStreamPlayer) -> bool: return p.playing), "a rally starts on the next court")
+	# The real hits are 50-90 ms long, so "still playing" can't be the check: the rally has
+	# shots left and the next one is scheduled (the first hit already went out).
+	_check(sfx._neighbor_shots > 0 and sfx._neighbor_timer > 0.0 and sfx._neighbor.any(func(p: AudioStreamPlayer) -> bool: return p.stream != null), "a rally starts on the next court")
 	sfx.rally = true
 	await _wait(0.1)
 	_check(sfx._neighbor_shots == 0, "and stops when our point starts")
