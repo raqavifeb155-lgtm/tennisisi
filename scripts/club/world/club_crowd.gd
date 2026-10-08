@@ -6,7 +6,7 @@ extends Node3D
 ## draw calls, moved from here each frame (a dozen transforms). The coach, the stands'
 ## fans and the court are others'.
 
-const WALK_SPEED := 1.1
+const WALK_SPEED := 0.75
 const FANS := 8                       # the fence's watchers (the first FANS instances), by the stands' level
 
 ## Routes the strollers walk back and forth along (x, z points), with their lane offset.
@@ -29,6 +29,7 @@ class Walker:
 	var phase := 0.0
 	var lane := 0.0
 	var length := 0.0
+	var cool := 0.0           # after turning away from the hero
 
 class Pigeon:
 	var home := Vector3.ZERO
@@ -130,7 +131,20 @@ func _update(delta: float) -> void:
 	for i in _walkers.size():
 		var w := _walkers[i]
 		var slot := FANS + i
-		w.s += w.dir * w.speed * WALK_SPEED * delta
+		# never through the hero: one that would meet him stops, then turns round
+		w.cool = maxf(0.0, w.cool - delta)
+		var hp := _hero_pos()
+		var here := _point(w.route, w.s)
+		var to_hero := Vector2(hp.x - here.x, hp.z - here.y)
+		var move := 1.0
+		if to_hero.length() < 2.2:
+			var ahead := _point(w.route, clampf(w.s + w.dir * 0.5, 0.0, w.length)) - here
+			if ahead.length() > 0.01 and ahead.normalized().dot(to_hero.normalized()) > 0.2:
+				move = 0.0
+				if to_hero.length() < 1.5 and w.cool <= 0.0:
+					w.dir = -w.dir
+					w.cool = 3.0
+		w.s += w.dir * w.speed * WALK_SPEED * delta * move
 		if w.s > w.length:
 			w.s = w.length
 			w.dir = -1.0
@@ -219,22 +233,27 @@ func _mm_of(mesh: Mesh, n: int) -> MultiMeshInstance3D:
 	return mmi
 
 
-## Torso and arms (white: the instance colour is the shirt) and a hairy head.
+## Torso, shoulders and arms (white: the instance colour is the shirt): a rounded figure
+## like the procedural crowds of the other scenery - capsule-ish body, not a box.
 static func _body_mesh() -> ArrayMesh:
 	var s := ClubShapes.new()
-	s.box(Vector3(0.42, 0.55, 0.26), Vector3(0, 1.22, 0), Color.WHITE)
-	for x in [-0.27, 0.27]:
-		s.box(Vector3(0.11, 0.52, 0.13), Vector3(x, 1.2, 0), Color.WHITE)
+	s.ball(0.23, Vector3(0, 1.2, 0), Color.WHITE, Vector3(1.0, 1.35, 0.68), 8, 5)     # chest
+	s.ball(0.2, Vector3(0, 1.0, 0), Color.WHITE, Vector3(1.0, 1.0, 0.7), 8, 4)         # belly
+	for x in [-0.26, 0.26]:
+		s.ball(0.075, Vector3(x, 1.38, 0), Color.WHITE, Vector3(1, 1, 1), 6, 3)         # shoulder
+		s.cyl(0.055, 0.05, 0.5, Vector3(x * 1.08, 1.12, 0.0), Color.WHITE, 6, Vector3(0, 0, -signf(x) * 0.08))
 	return s.build()
 
 
-## Legs (a dark trouser) and the head (skin), tinted together by one colour.
+## Legs (a dark trouser), the neck, the head (skin) and hair, tinted together by one colour.
 static func _legs_mesh() -> ArrayMesh:
 	var s := ClubShapes.new()
 	for x in [-0.1, 0.1]:
-		s.box(Vector3(0.16, 0.85, 0.18), Vector3(x, 0.43, 0), Color("2c3a52"))
-	s.ball(0.15, Vector3(0, 1.66, 0), Color("e3b48a"), Vector3(1, 1.1, 1), 6, 4)
-	s.ball(0.155, Vector3(0, 1.73, 0.02), Color("3b2a1e"), Vector3(1, 0.75, 1), 6, 3)
+		s.cyl(0.085, 0.07, 0.86, Vector3(x, 0.43, 0), Color("2c3a52"), 7)
+		s.ball(0.085, Vector3(x, 0.04, -0.05), Color("f2f0ea"), Vector3(1, 0.55, 1.6), 6, 3)   # a shoe
+	s.cyl(0.06, 0.07, 0.12, Vector3(0, 1.57, 0), Color("e3b48a"), 6)
+	s.ball(0.15, Vector3(0, 1.7, 0), Color("e3b48a"), Vector3(1, 1.1, 1.0), 8, 5)
+	s.ball(0.158, Vector3(0, 1.75, 0.025), Color("3b2a1e"), Vector3(1, 0.7, 1.0), 8, 3)
 	return s.build()
 
 

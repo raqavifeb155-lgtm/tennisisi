@@ -245,6 +245,32 @@ func test_in_the_club() -> void:
 	for id in ["coach", "gate", "locker", "shop", "trophy", "bar", "arena"]:
 		var p: Vector3 = ClubPlaces.find(id)["pos"]
 		check(not w.walk.route(from, Vector2(p.x, p.z)).is_empty(), "a way from the court to %s" % id)
+	# the camera never has a prop, a wall or the gate between it and the hero: the 17 views
+	club.world.focus_room("")
+	var views := [Vector3(0, 0, 25), Vector3(-9.5, 0, 22), Vector3(-6, 0, -36), Vector3(-8, 0, 3), Vector3(10, 0, -24),
+		Vector3(0, 0, 38), Vector3(-14, 0, -12), Vector3(24, 0, 12), Vector3(-26, 0, 30), Vector3(16, 0, 8),
+		Vector3(-14, 0, 36), Vector3(22, 0, 10), Vector3(-20, 0, 8), Vector3(-6, 0, 33), Vector3(0, 0, 21),
+		Vector3(-14, 0, 3), Vector3(0, 0, 30), Vector3(0, 0, 40), Vector3(1, 0, 39.5), Vector3(-1.5, 0, 37)]
+	var yaws := [PI, -PI * 0.5, 0.0, PI * 0.5, -PI * 0.5, 0.0, 0.0, -PI * 0.5, PI, -PI * 0.5, 0.0, 0.0, PI * 0.5, PI, 0.0, -PI * 0.5, 0.0, 0.0, 0.0, 0.0]
+	var hits := []
+	for i in views.size():
+		hero.position = views[i]
+		hero.rotation.y = yaws[i]
+		cam.release(0.0)
+		cam.snap(false)
+		var cam_at := Vector2(cam.global_position.x, cam.global_position.z)
+		var to := Vector2(hero.position.x, hero.position.z)
+		var gate_z: float = ClubLevels.GATE_Z
+		var through_gate: bool = (cam_at.y - gate_z) * (to.y - gate_z) < 0.0 and absf(cam_at.x) < 7.0 and cam.global_position.y < 5.0
+		var n := int(cam_at.distance_to(to) / 0.25)
+		var bad := through_gate
+		for k in range(0, n):
+			var q := cam_at.lerp(to, float(k) / n)
+			if q.distance_to(to) > 1.0 and w.walk.blocked(q, 0.0):
+				bad = true
+		if bad:
+			hits.append("%d@%s" % [i, str(views[i])])
+	check(hits.is_empty(), "nothing stands between the camera and the hero in any view (%s)" % ", ".join(hits))
 	# a match takes the racket back
 	club._on_choice("practice", 0)
 	await _frames(4)
