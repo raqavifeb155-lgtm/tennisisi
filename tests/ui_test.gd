@@ -18,7 +18,8 @@ func _run() -> void:
 	await test_modal_stack()
 	test_layers()
 	test_graphics_labels()
-	check(finished == 7, "every test ran to its end: %d of 7" % finished)
+	test_match_tally()
+	check(finished == 8, "every test ran to its end: %d of 8" % finished)
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -192,4 +193,51 @@ func test_graphics_labels() -> void:
 	for i in [GraphicsQuality.AUTO, GraphicsQuality.LOW, GraphicsQuality.MEDIUM]:
 		check(not "!" in GraphicsQuality.caption(i) and not "Telegram" in GraphicsQuality.note(i, false), "%s is not marked" % GraphicsQuality.NAMES[i])
 	check("Средней" in GraphicsQuality.note(GraphicsQuality.AUTO, true), "Auto on a phone says its cap")
+	finished += 1
+
+
+## The match's numbers for the result screen (HANDOFF 7.3), from GameEvents payloads.
+func test_match_tally() -> void:
+	print("match tally")
+	var t := MatchTally.new()
+	t.shot(0, {"side": 1, "serve": false, "incoming": 20.0})
+	check(t.forehands[0] == 0, "nothing counts before the match starts")
+	t.start()
+	# Point 1: you serve, the first serve faults, the second goes in; a rally; you hit a
+	# winner with your backhand.
+	t.fault({"server": 0, "second": false})
+	t.shot(0, {"side": 1, "serve": true, "incoming": 0.0})
+	t.shot(1, {"side": 1, "serve": false, "incoming": 30.0})
+	t.shot(0, {"side": -1, "serve": false, "incoming": 25.0})
+	t.point({"winner": 0, "reason": "WINNER", "rally": 3, "server": 0})
+	# Point 2: an ace.
+	t.shot(0, {"side": 1, "serve": true, "incoming": 0.0})
+	t.point({"winner": 0, "reason": "ACE", "rally": 1, "server": 0})
+	# Point 3: a double fault.
+	t.fault({"server": 0, "second": false})
+	t.fault({"server": 0, "second": true})
+	t.point({"winner": 1, "reason": "DOUBLE FAULT", "rally": 1, "server": 0})
+	# Point 4: they serve; you push a slow ball out (unforced).
+	t.shot(1, {"side": 1, "serve": true, "incoming": 0.0})
+	t.shot(0, {"side": 1, "serve": false, "incoming": 30.0})
+	t.shot(1, {"side": -1, "serve": false, "incoming": 18.0})
+	t.shot(0, {"side": 1, "serve": false, "incoming": 15.0})
+	t.point({"winner": 1, "reason": "OUT", "rally": 4, "server": 1})
+	# Point 5: they serve; you miss into the net under a heavy ball (forced).
+	t.shot(1, {"side": 1, "serve": true, "incoming": 0.0})
+	t.shot(0, {"side": -1, "serve": false, "incoming": 34.0})
+	t.point({"winner": 1, "reason": "NET", "rally": 2, "server": 1})
+	t.finish()
+	t.shot(0, {"side": 1, "serve": false, "incoming": 10.0})  # the trophy mini-game after
+	check(t.forehands == [2, 1] and t.backhands == [2, 1], "forehands %s, backhands %s (serves apart)" % [t.forehands, t.backhands])
+	check(t.aces == [1, 0] and t.doubles == [1, 0], "aces and double faults")
+	check(t.winners == [1, 0], "winners (aces apart)")
+	check(t.unforced == [1, 0], "a slow ball out is unforced, a heavy one into the net is not")
+	check(t.first_serve_pct(0) == 33 and t.first_serve_pct(1) == 100, "first serve in: you 1 of 3, them 2 of 2: %d / %d" % [t.first_serve_pct(0), t.first_serve_pct(1)])
+	check(t.best_rally == 4, "the best rally")
+	var rows := t.rows()
+	check(rows.size() == 7 and rows[0][0] == "Эйсы" and rows[0][1] == "1", "rows for the screen: %s" % str(rows[0]))
+	check(t.has_data(), "a finished match has numbers")
+	t.start()
+	check(not t.has_data() and t.aces == [0, 0], "a new match starts from zero")
 	finished += 1

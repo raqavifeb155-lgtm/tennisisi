@@ -7,8 +7,13 @@ extends Node
 
 ## Any shot launched (both sides), after the ball leaves the racket.
 ##   contact: Vector3, speed: m/s, top: spin (rpm-ish, + topspin / - backspin), q: 0..1,
-##   lob, drop: bool
+##   lob, drop: bool, side: +1 forehand / -1 backhand, incoming: m/s of the ball it met,
+##   serve: bool (the point's first shot)
 signal shot(who: int, info: Dictionary)
+
+## A serve missed the box (before the point's call): server, kind ("FAULT" | "NET"),
+## second (the second serve: a double fault follows as a point)
+signal fault(info: Dictionary)
 
 ## The player's own stroke or serve, with what the swipe meant.
 ##   type: "TOPSPIN" | "FLAT" | "SLICE" | "DROP SHOT" | "LOB" | "SMASH" | "SERVE"
