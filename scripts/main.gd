@@ -1942,10 +1942,14 @@ func _play_match() -> void:
 func _set_opponent_mods(speed: float, serve: float, cpu_racket: Dictionary) -> void:
 	ai.speed_mult = speed
 	_cpu_serve_mult = serve
-	cpu.set_racket_look(Gear.color(cpu_racket), Gear.glow(cpu_racket))
+	# Both wear what they have on the court: the opponent's three items are revealed here.
+	var theirs: Array = [cpu_racket]
+	if tournament_mode and tournament != null and not cpu_racket.is_empty():
+		theirs = AthleteGear.items_of(tournament.current_lineup().get("gear", {}))
+	cpu.set_gear(theirs)
 	var mine: Dictionary = tournament.racket if tournament_mode and tournament != null else {}
 	Skills.gear = mine.get("mods", {})
-	player.set_racket_look(Gear.color(mine), Gear.glow(mine))
+	player.set_gear(AthleteGear.items_of(tournament.equip) if tournament_mode and tournament != null else [])
 
 
 func _begin_match() -> void:
@@ -2175,7 +2179,7 @@ func _start_bonus() -> void:
 	cpu.relax()
 	_runner_timer = 0.0
 	if not tournament.pending_loot.is_empty():
-		cpu.set_racket_look(Gear.color(tournament.pending_loot), Gear.glow(tournament.pending_loot))
+		cpu.set_racket(tournament.pending_loot)
 	hud.announcer.item_card(tournament.pending_loot, "НОКАУТИРУЙ И ЗАБЕРИ")
 	hud.announcer.set_hint("Подача по бегущему: попади в него мячом")
 	_bonus_hud()
@@ -2261,7 +2265,7 @@ func _bonus_hit() -> void:
 	_bonus_hits += 1
 	cpu.knockout(ball.state.vel)
 	ball.state.vel = Vector3(-ball.state.vel.x * 0.2, 3.5, -ball.state.vel.z * 0.15)  # pops off the body
-	cpu.set_racket_look(Gear.color({}), 0.0)
+	cpu.set_racket({})
 	sfx.play("hit_perfect", -2.0)
 	cam.impulse(1.0)
 	_haptic("heavy")
@@ -2298,7 +2302,7 @@ func _bonus_pickup(delta: float) -> void:
 		_drop.queue_free()
 		_drop = null
 		player.move_input = Vector2.ZERO
-		player.set_racket_look(Gear.color(tournament.pending_loot), Gear.glow(tournament.pending_loot))
+		player.set_racket(tournament.pending_loot)
 		player.split_step()
 		hud.announcer.item_card(tournament.pending_loot, "ТРОФЕЙ")
 		sfx.play("point", -4.0, 1.25)
