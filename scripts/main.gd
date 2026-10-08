@@ -760,6 +760,8 @@ func _swipe_world_dir(start: Vector2, end: Vector2) -> Vector3:
 		var v := end - start
 		d = Vector3(v.x, 0.0, v.y)
 	d = d.normalized()
+	if mods_hub.mirror:
+		d.x = -d.x  # v0.2 G: «Зеркало»
 	if d.z > -0.3:  # always toward the opponent
 		d = Vector3(d.x, 0.0, -0.3).normalized() if absf(d.x) > 0.01 else Vector3(0, 0, -1)
 	return d
@@ -1151,6 +1153,8 @@ func _update_player_movement() -> void:
 		player.move_input = Vector2.ZERO
 		return
 	var mv := hud.touch.move_vector
+	if mods_hub.mirror:
+		mv.x = -mv.x  # v0.2 G: «Зеркало»
 	if hud.touch.stick_active:
 		_assist_suppressed = true  # the thumb is steering: no auto-positioning this ball
 	if mv != Vector2.ZERO:
