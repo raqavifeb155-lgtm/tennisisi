@@ -6,6 +6,10 @@
   "Tennis ball being hit" by freesound_community (Pixabay, sound 72611), used under the
   [Pixabay Content License](https://pixabay.com/service/license-summary/) (free for commercial
   use, no attribution required; credited here anyway).
+- `assets/sfx/hit_real_4.wav` … `hit_real_13.wav` — ten racket hits cut from the audio track of a
+  match video on YouTube (WyojGU0VlQ0), clips shorter than 0.25 s (50-90 ms: the click and its body,
+  the player's voice and the room's echo cut away), by the owner's decision on 09.10.2026.
+  How and where: `tools/cut_hits.py`.
 - `assets/sfx/bounce_real_1.wav` … `bounce_real_4.wav` — four bounces cut from
   "Tennis ball bounce" by freesound_community (Pixabay, sound 39028), same license.
 - `assets/sfx/birds.ogg` — a seamless one-minute loop from "Birds chirping calm" by
@@ -24,7 +28,8 @@
   (144751); `click.ogg` — "Click Button" (140881); `victory.ogg` — "Success Fanfare Trumpets"
   (6185); `defeat.ogg` — "Sad Trumpet" (278822); `music_menu.ogg` — "Lofi Sunny Cafe"
   (alex-morgan, 568156); `amb_park_plane.ogg` — "Airplane, aircraft take off" (freesound_community,
-  121949). Sources and the prep commands: `tools/prep_audio.py`.
+  121949). Sources and the prep commands: `tools/prep_audio.py`. `amb_park.ogg` was then
+  repaired (a helicopter in the recording: its blade wobble levelled out), see `tools/dechop_bed.py`.
 - All other sounds in `assets/sfx/` are generated procedurally by `tools/gen_sfx.py`.
 
 ## 3D models (the club's props)

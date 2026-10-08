@@ -3,6 +3,8 @@ extends Node
 ## Tiny voice pool for one-shot sound effects, plus the sound of each location.
 ## Racket hits and ball bounces are real recordings (several takes each, picked at
 ## random so consecutive sounds never repeat); the rest are procedural (tools/gen_sfx.py).
+## Hits: hit_real_1..3 are Pixabay, hit_real_4..13 are cut from a match recording by
+## tools/cut_hits.py, and the stroke decides the pool (HIT_GROUPS, set by GameEvents.shot).
 ##
 ## A location sounds in two layers:
 ##   amb_<id>.ogg          the bed: a seamless one-minute loop (the park falls back to
@@ -28,7 +30,17 @@ extends Node
 ## (desktop, tests) they are simply loaded from res://.
 
 const NAMES := ["bounce", "net", "swing", "point", "miss"]
-const HIT_TAKES := ["hit_real_1", "hit_real_2", "hit_real_3"]
+const HIT_TAKES := ["hit_real_1", "hit_real_2", "hit_real_3", "hit_real_4", "hit_real_5", "hit_real_6", "hit_real_7",
+	"hit_real_8", "hit_real_9", "hit_real_10", "hit_real_11", "hit_real_12", "hit_real_13"]
+## Which takes a stroke draws from (all levelled alike by tools/cut_hits.py): "power" for
+## serves and flat shots, "spin" for topspin, "soft" for slices, drop shots and lobs.
+## hit_real_1..3 (the old, longer Pixabay takes) fill the groups out, one each.
+const HIT_GROUPS := {
+	"power": ["hit_real_4", "hit_real_5", "hit_real_6", "hit_real_7", "hit_real_2"],
+	"spin": ["hit_real_8", "hit_real_9", "hit_real_10", "hit_real_11", "hit_real_1"],
+	"soft": ["hit_real_12", "hit_real_13", "hit_real_3"],
+}
+const HIT_GROUP_DB := {"power": 0.0, "spin": 0.0, "soft": -2.0}
 const BOUNCE_TAKES := ["bounce_real_1", "bounce_real_2", "bounce_real_3", "bounce_real_4"]
 
 const BUS_MUSIC := "Music"
@@ -43,7 +55,8 @@ const DUCK_SPEED := 4.0       # dB per second, slow enough not to be noticed
 ## Accents of each location: where the sound comes from (world position, the camera
 ## looks toward -Z), when it first plays (s after arriving) and how often it returns.
 ## Volumes are relative to files levelled by tools/prep_audio.py (-20 LUFS one-shots).
-## Rare and far is the rule: an accent you notice every minute stops being alive.
+## Rare and far is the rule: an accent you notice every minute stops being alive. The bells
+## (owner, 09.10: too frequent) ring first after 2..4 minutes and then every 7..12, 3 dB softer.
 const ACCENTS := {
 	"park": [
 		# East River Park: the city across the water, boats, a playground somewhere behind.
@@ -56,13 +69,13 @@ const ACCENTS := {
 	"clay": [
 		# A club on the seafront: gulls over the water, the beach below, the village behind.
 		{"sound": "amb_clay_gull", "pos": Vector3(-30.0, 15.0, -70.0), "first": [8.0, 20.0], "every": [25.0, 60.0], "db": -10.0},
-		{"sound": "amb_clay_bell", "pos": Vector3(60.0, 20.0, -120.0), "first": [30.0, 60.0], "every": [150.0, 260.0], "db": -11.0},
+		{"sound": "amb_clay_bell", "pos": Vector3(60.0, 20.0, -120.0), "first": [120.0, 240.0], "every": [420.0, 720.0], "db": -14.0},
 		{"sound": "amb_clay_kids", "pos": Vector3(-25.0, -2.0, -60.0), "first": [20.0, 40.0], "every": [90.0, 170.0], "db": -15.0},
 		{"sound": "amb_clay_chimes", "pos": Vector3(22.0, 3.0, -30.0), "first": [12.0, 30.0], "every": [60.0, 120.0], "db": -12.0},
 	],
 	"grass": [
 		# The clock tower of the town across the street (scenery_grass.gd).
-		{"sound": "amb_grass_bell", "pos": Vector3(-32.0, 24.0, -104.0), "first": [6.0, 14.0], "every": [150.0, 240.0], "db": -6.0},
+		{"sound": "amb_grass_bell", "pos": Vector3(-32.0, 24.0, -104.0), "first": [120.0, 240.0], "every": [420.0, 720.0], "db": -9.0},
 		{"sound": "amb_grass_crow", "pos": Vector3(20.0, 12.0, -20.0), "first": [15.0, 35.0], "every": [50.0, 110.0], "db": -11.0},
 		{"sound": "amb_pigeons", "pos": Vector3(-14.0, 4.0, -28.0), "first": [40.0, 80.0], "every": [90.0, 170.0], "db": -6.0},
 		{"sound": "amb_grass_bus", "pos": Vector3(25.0, 2.0, -30.0), "first": [25.0, 50.0], "every": [60.0, 120.0], "db": -11.0},
@@ -82,8 +95,10 @@ var plays := 0                # sounds started (the crash log reports it)
 
 var _streams := {}
 var _hits: Array[AudioStream] = []
+var _hit_pools := {}          # group -> Array[AudioStream] (HIT_GROUPS)
+var _hit_last := {}           # group ("" = any) -> index of the take played last
+var _shot_group := ""         # the stroke just launched (GameEvents.shot), used by the next "hit"
 var _bounces: Array[AudioStream] = []
-var _last_hit := -1
 var _last_bounce := -1
 var _players: Array[AudioStreamPlayer] = []
 var _next := 0
@@ -119,8 +134,19 @@ func _ready() -> void:
 			AudioServer.set_bus_send(AudioServer.bus_count - 1, "Master")
 	for n in NAMES:
 		_streams[n] = load("res://assets/sfx/%s.wav" % n)
+	var loaded := {}
 	for n in HIT_TAKES:
-		_hits.append(load("res://assets/sfx/%s.wav" % n))
+		var take: AudioStream = load("res://assets/sfx/%s.wav" % n)
+		loaded[n] = take
+		_hits.append(take)
+	for group in HIT_GROUPS:
+		var pool: Array[AudioStream] = []
+		for n in HIT_GROUPS[group]:
+			pool.append(loaded[n])
+		_hit_pools[group] = pool
+	var events := get_node_or_null("/root/GameEvents")
+	if events != null and events.has_signal("shot"):
+		events.shot.connect(_on_shot)
 	for n in BOUNCE_TAKES:
 		_bounces.append(load("res://assets/sfx/%s.wav" % n))
 	for i in 10:
@@ -138,6 +164,23 @@ func _ready() -> void:
 	_build_accents()
 	_crowd = _voice()
 	add_child(_crowd)
+
+
+## A stroke was launched: its kind picks the take for the "hit" that follows right away.
+func _on_shot(_who: int, info: Dictionary) -> void:
+	_shot_group = hit_group(info)
+
+
+## "power" | "spin" | "soft" for a GameEvents.shot payload: serves and flat shots are power,
+## topspin (top >= 200) is spin, slices (backspin), drops and lobs are soft.
+static func hit_group(info: Dictionary) -> String:
+	if info.get("serve", false):
+		return "power"
+	if info.get("drop", false) or info.get("lob", false) or float(info.get("top", 0.0)) < -60.0:
+		return "soft"
+	if float(info.get("top", 0.0)) >= 200.0:
+		return "spin"
+	return "power"
 
 
 func _process(delta: float) -> void:
@@ -437,12 +480,17 @@ func settle_crowd() -> void:
 func play(sound: String, volume_db := 0.0, pitch := 1.0) -> void:
 	var stream: AudioStream
 	if sound == "hit" or sound == "hit_perfect":
-		# A different take each time; a perfect hit is fuller: louder and a touch lower.
-		var i := randi() % _hits.size()
-		if i == _last_hit:
-			i = (i + 1) % _hits.size()
-		_last_hit = i
-		stream = _hits[i]
+		# A different take each time, from the pool of the stroke just launched (any take
+		# when there is none); a perfect hit is fuller: louder and a touch lower.
+		var group := _shot_group
+		_shot_group = ""
+		var pool: Array = _hit_pools.get(group, _hits)
+		var i := randi() % pool.size()
+		if i == int(_hit_last.get(group, -1)):
+			i = (i + 1) % pool.size()
+		_hit_last[group] = i
+		stream = pool[i]
+		volume_db += float(HIT_GROUP_DB.get(group, 0.0))
 		if sound == "hit_perfect":
 			volume_db += 3.0
 			pitch *= 0.94
