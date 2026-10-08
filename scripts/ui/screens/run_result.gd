@@ -115,8 +115,7 @@ static func show_summary(ui: TournamentUI, t: Tournament) -> void:
 		row.add_child(b)
 	if _flown != t:
 		_flown = t
-		ui._set_chip(maxi(0, ui._balance(t) - t.gold))
-		ui._fly_coins(total_label, t.gold, ui._balance(t))
+		# The coins fly from the run chip into the bank chip (C-4, TournamentUI.show_summary).
 
 
 ## «Приход»: the run's gold line by line (each appears in turn), then the bank. Returns
