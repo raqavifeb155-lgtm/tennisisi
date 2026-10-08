@@ -604,6 +604,7 @@ func _lots() -> void:
 	await _shot("12_built_coach", 0.9)
 	# The other lot: the stands, turned toward the court.
 	_go("lot_n2")
+	SaveData.gold = 300
 	await create_timer(0.5).timeout
 	club._on_choice("club_lot", 0)
 	club.lot_show("stands")
@@ -620,11 +621,13 @@ func _lots() -> void:
 	SaveData.club["levels"] = lv
 	club._refresh()
 	club.hud.visible = false
-	for spec in [["15_all_south", Vector3(0, 0, 33), PI], ["16_all_west", Vector3(-16, 0, 6), PI * 0.5], ["17_all_east", Vector3(20, 0, 6), -PI * 0.5]]:
-		main.player.position = spec[1]
-		main.player.rotation.y = spec[2]
-		club.cam.snap()
-		await _shot(spec[0], 1.2)
+	main.player.position = Vector3(0, 0, 14)
+	club._place = ""
+	club._update_place()
+	await create_timer(0.3).timeout
+	for spec in [["15_overview_south", Vector3(0, 40, 62), Vector3(0, 0, 18)], ["16_overview_west", Vector3(-48, 28, 16), Vector3(-18, 0, 0)], ["17_overview_east", Vector3(50, 28, 10), Vector3(24, 0, -8)], ["17b_overview_north", Vector3(0, 30, -2), Vector3(0, 0, -30)]]:
+		club.cam.frame(spec[1], spec[2], 0.0)
+		await _shot(spec[0], 1.0)
 	club.hud.visible = true
 	_go("lot_n6")
 	await _shot("18_open_lot_north", 1.0)
