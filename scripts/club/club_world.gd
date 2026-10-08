@@ -73,6 +73,7 @@ func _ready() -> void:
 	_paving = _noise_mat(Color(0.74, 0.7, 0.64), 0.05, 20.0)
 	walk.bounds = Rect2(-55, SHORE_Z + 1.5, 110, 46.0 - SHORE_Z - 1.5)
 	_clear_reserved()
+	ClubScenery.build(self)  # stream H: props, ground detail, backdrops, people, the hour
 	_build_worn_court()
 	_build_south_fence()
 	_build_paths()

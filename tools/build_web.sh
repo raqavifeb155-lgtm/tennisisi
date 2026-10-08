@@ -41,10 +41,18 @@ rm -f build/web/index.*.pck
 rm -rf build/web/sfx && mkdir -p build/web/sfx
 cp assets/sfx/amb_*.ogg assets/sfx/music_*.ogg assets/sfx/birds.ogg build/web/sfx/
 
+# The club's model pack (stream H) is left out of the game pack too (export_presets.cfg) and
+# served as models/club_props.<version>.glb: the version is in the file's name, so a browser
+# may keep it for good (ClubPack downloads it after the start; until then the club shows
+# simple forms made in code).
+rm -rf build/web/models && mkdir -p build/web/models
+PACK_V=$(grep -o 'VERSION := "[0-9a-f]*"' scripts/club/world/club_pack_info.gd | grep -o '[0-9a-f]\{10\}')
+cp assets/club/models/club_props.glb "build/web/models/club_props.$PACK_V.glb"
+
 # The game pack carries its content in its name: a browser may keep it for good, and a
 # new build is a new name, so a cached old pack can never come back after an update.
 H=$(sha256sum build/web/index.pck | cut -c1-10)
 mv build/web/index.pck "build/web/index.$H.pck"
 sed -i "s/\"index.pck\":/\"index.$H.pck\":/; s/\"executable\":\"index\",/\"executable\":\"index\",\"mainPack\":\"index.$H.pck\",/" build/web/index.html
 grep -q "\"mainPack\":\"index.$H.pck\"" build/web/index.html || { echo "index.html: mainPack not set" >&2; exit 1; }
-echo "Built: build/web (pack index.$H.pck, $(ls build/web/sfx | wc -l) sounds in sfx/)"
+echo "Built: build/web (pack index.$H.pck, $(ls build/web/sfx | wc -l) sounds in sfx/, club models $PACK_V)"

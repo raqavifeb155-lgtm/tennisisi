@@ -10,7 +10,9 @@ extends Node
 ## match loop and touch handling while `active`, practises on the club court, and tells
 ## remember() the tournament format chosen.
 
-const WALK_SPEED := 5.5
+const WALK_SPEED := 4.6               # a jog at a full stick (a walk when the finger is near the centre)
+const RUN_MIN := 6.5                  # the auto-run to a place (quick travel): m/s at least...
+const RUN_MAX := 10.5                 # ...and fast enough to take about five seconds
 const START := Vector3(0, 0, 14.0)     # the court's circle: "Турнир" is one tap away
 
 var main: Node
@@ -26,6 +28,11 @@ var _route: Array = []                 # turning points still to walk (a tap far
 var _place := ""
 var _safe := Vector2(-1, -1)
 var _open_ids: Array = []
+var _auto := ""                       # quick travel: the place the hero is running to
+var _auto_route: Array = []
+var _auto_speed := RUN_MIN
+var _stick_down := false
+var _stick_yaw := 0.0                  # the camera's heading when the finger went down
 var _idle := 4                         # Main's Phase.IDLE (Main has no class name to reach it by)
 
 
@@ -41,7 +48,7 @@ func setup(m: Node) -> void:
 	hud = ClubHud.new()
 	add_child(hud)
 	hud.chosen.connect(_on_choice)
-	hud.travel.connect(_travel)
+	hud.travel.connect(travel_run)
 	hud.roulette_chip.connect(func(c: int) -> void:
 		_chip = c
 		_roulette_panel())
@@ -97,6 +104,7 @@ func open() -> bool:
 		p.position = _hero
 		p.velocity = Vector3.ZERO
 		p.relax()
+		p.set_meta("casual", true)  # no racket, a walk and a jog (AthleteCasual)
 		var run: Tournament = main.tournament if main.tournament != null else SaveData.resumable()
 		p.set_gear(AthleteGear.items_of(run.equip) if run != null else [])  # dressed as in the current run
 		p.look_target = Vector3.INF
@@ -142,6 +150,9 @@ func close() -> void:
 			world.set_roulette_view(false)
 	_hero = main.player.position if _place != "" else START
 	var p: Athlete = main.player
+	p.set_meta("casual", false)
+	_auto = ""
+	cam.run_mode = false
 	p.area = main.PLAYER_AREA
 	p.rotation.y = 0.0
 	p.move_input = Vector2.ZERO
@@ -264,8 +275,22 @@ func _physics_process(delta: float) -> void:
 	var mv: Vector2 = main.hud.touch.move_vector
 	var here := Vector2(p.position.x, p.position.z)
 	if mv != Vector2.ZERO:
+		# The stick is read against the camera as it was when the finger went down: the
+		# camera swings behind the hero, the thumb does not have to chase it.
+		if not _stick_down:
+			_stick_down = true
+			_stick_yaw = cam.stick_yaw()
+		mv = mv.rotated(-_stick_yaw)
 		_move_target = Vector3.INF
 		_route = []
+		if _auto != "":
+			_end_run()  # a finger on the stick takes the hero back
+	else:
+		_stick_down = false
+	if _auto != "":
+		mv = _run_step(here)
+	elif mv != Vector2.ZERO:
+		pass
 	elif _move_target != Vector3.INF:
 		if _route.is_empty():
 			_route = world.walk.route(here, Vector2(_move_target.x, _move_target.z))
@@ -279,7 +304,7 @@ func _physics_process(delta: float) -> void:
 			mv = Vector2.ZERO
 		if _route.is_empty() and mv == Vector2.ZERO:
 			_move_target = Vector3.INF
-	p.max_speed = WALK_SPEED
+	p.max_speed = _auto_speed if _auto != "" else WALK_SPEED
 	p.move_input = mv
 	# The hero faces where he walks (the match keeps him facing the net).
 	var v := Vector2(p.velocity.x, p.velocity.z)
@@ -289,6 +314,8 @@ func _physics_process(delta: float) -> void:
 
 ## The hero stepped into a place's circle (or out of it).
 func _update_place() -> void:
+	if _auto != "":
+		return  # running past: the circles of the places on the way stay quiet
 	var here := ClubPlaces.at(main.player.position)
 	var id: String = here.get("id", "")
 	if id != "" and not _open_ids.has(id):
@@ -575,7 +602,72 @@ func _on_spun() -> void:
 		coach.say("Три ставки мимо подряд. Перерыв? Корт ждёт", true)
 
 
-## Quick travel: the camera flies, the hero comes out by the place's circle.
+## Quick travel (H): the hero runs along the path to the place, the camera behind him;
+## a tap skips the run, a finger on the stick takes the hero back.
+func travel_run(id: String) -> void:
+	var p := ClubPlaces.find(id)
+	if p.is_empty() or not active:
+		return
+	var here := Vector2(main.player.position.x, main.player.position.z)
+	var to := Vector2(p["pos"].x, p["pos"].z)
+	var route := world.walk.route(here, to)
+	if route.is_empty() or here.distance_to(to) < 4.0:
+		_travel(id)  # next door, or no way to run: as before
+		return
+	if _auto != "":
+		_end_run()
+	_auto = id
+	_auto_route = route
+	var length := here.distance_to(route[0])
+	for i in range(1, route.size()):
+		length += (route[i - 1] as Vector2).distance_to(route[i])
+	_auto_speed = clampf(length / 5.0, RUN_MIN, RUN_MAX)
+	_move_target = Vector3.INF
+	_route = []
+	_place = ""
+	hud.hide_place()
+	world.set_inside("")
+	world.highlight("")
+	cam.run_mode = true
+	cam.release(0.3)
+
+
+func running_to() -> String:
+	return _auto
+
+
+## One step of the run: the direction along the route; ends it at the circle.
+func _run_step(here: Vector2) -> Vector2:
+	var mv := Vector2.ZERO
+	while not _auto_route.is_empty():
+		mv = world.walk.steer(here, _auto_route[0])
+		if mv != Vector2.ZERO and (_auto_route.size() == 1 or here.distance_to(_auto_route[0]) > 0.6):
+			break
+		_auto_route.pop_front()
+		mv = Vector2.ZERO
+	if _auto_route.is_empty() and mv == Vector2.ZERO:
+		_end_run()
+	return mv
+
+
+## The run is over (arrived, or the finger took over): the place's circle shows.
+func _end_run() -> void:
+	_auto = ""
+	_auto_route = []
+	cam.run_mode = false
+	_update_place()
+
+
+## A tap during the run: the hero is at the place at once.
+func skip_run() -> void:
+	if _auto == "":
+		return
+	var id := _auto
+	_end_run()
+	_travel(id)
+
+
+## Quick travel by teleport: the camera flies, the hero comes out by the place's circle.
 func _travel(id: String) -> void:
 	var p := ClubPlaces.find(id)
 	if p.is_empty():
@@ -585,6 +677,8 @@ func _travel(id: String) -> void:
 	main.player.velocity = Vector3.ZERO
 	_move_target = Vector3.INF
 	_route = []
+	_auto = ""
+	cam.run_mode = false
 	_update_place()
 	cam.fly()
 
@@ -593,6 +687,9 @@ func _travel(id: String) -> void:
 ## pavilion) is that place's button, for whoever doesn't want to walk.
 func _on_tap(screen_pos: Vector2) -> void:
 	if not active or main.ui.is_open() or hud.travel_open():
+		return
+	if _auto != "":
+		skip_run()
 		return
 	if _roulette_on:
 		roulette_skip()

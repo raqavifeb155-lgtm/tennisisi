@@ -1,41 +1,97 @@
 class_name ClubCamera
 extends Camera3D
-## The club's camera (docs/club/H1_SPEC.md 5): above and behind the hero, following
-## softly; inside a pavilion it holds the room's own framing; quick travel flies it to a
-## place. The match camera (GameCamera) is untouched: Club switches between them.
+## The club's camera (docs/club/H1_SPEC.md 5, rebuilt for stream H): low and behind the
+## hero's back, like a walk through a park, not a map; it trails his heading softly.
+## Inside a pavilion it holds the room's own framing; the match camera (GameCamera) is
+## untouched: Club switches between them.
+##
+## The stick is relative to the camera as it was when the finger went down (Club asks
+## `stick_yaw()`): the camera may swing behind the hero on a long walk, and the thumb
+## does not have to chase it, so the hero never spirals while the camera turns.
 
-const HEIGHT := 9.0        # the hero stands at ~2/3 of the screen, over the buttons; beyond
-const BACK := 12.0         # him the court, the river and the city
-const AHEAD := 7.3
-const FOLLOW_K := 6.0       # 1/s
+const HEIGHT := 3.9        # metres over the ground, behind the hero's back
+const BACK := 8.8
+const AHEAD := 6.5         # the look point, ahead of the hero
+const LOOK_Y := 0.0
+const MIN_BACK := 2.6      # when a wall is behind him the camera comes closer, not through it
+const FOLLOW_K := 5.0      # 1/s, position
+const YAW_K := 2.2         # 1/s, how fast it swings behind a turning hero
+const YAW_K_RUN := 4.5     # the same on the auto-run along a path
 
 var target: Node3D
+var yaw := 0.0                  # the heading it looks along: 0 = north (-z), as Godot's rotation.y
+var run_mode := false           # the auto-run: swing behind faster
 var _frame_pos := Vector3.INF   # a held framing (a room), or INF = follow the hero
 var _frame_look := Vector3.ZERO
 var _look := Vector3.ZERO
+var _back := BACK               # the current distance (shorter near walls)
 var _tw: Tween
 
 
 func _ready() -> void:
-	fov = 52.0
-	near = 0.5
+	fov = 55.0
+	near = 0.4
 	far = 700.0
+
+
+## Forward on the ground (x, z) for a heading.
+static func forward_of(a: float) -> Vector3:
+	return Vector3(-sin(a), 0.0, -cos(a))
+
+
+## The yaw the stick is read against: the held room's (always north) or the following one.
+func stick_yaw() -> float:
+	return 0.0 if _frame_pos != Vector3.INF else yaw
+
+
+func _clear_back(p: Vector3) -> float:
+	var walk := _walk()
+	if walk == null:
+		return BACK
+	var back_dir := -forward_of(yaw)
+	var d := BACK
+	var from := Vector2(p.x, p.z)
+	var step := 0.5
+	var t := 1.5
+	while t <= BACK:
+		var q := from + Vector2(back_dir.x, back_dir.z) * t
+		if walk.blocked(q, 0.15):
+			d = maxf(t - 0.8, MIN_BACK)
+			break
+		t += step
+	return d
+
+
+func _walk() -> ClubWalk:
+	var club := get_parent()
+	if club != null and club.get("world") != null:
+		var w = club.get("world")
+		if is_instance_valid(w):
+			return (w as ClubWorld).walk
+	return null
 
 
 func _follow_pos() -> Vector3:
 	var p := target.global_position
-	return Vector3(p.x, HEIGHT, p.z + BACK)
+	return p - forward_of(yaw) * _back + Vector3(0.0, HEIGHT, 0.0)
 
 
 func _follow_look() -> Vector3:
 	var p := target.global_position
-	return Vector3(p.x, 0.0, p.z - AHEAD)
+	return p + forward_of(yaw) * AHEAD + Vector3(0.0, LOOK_Y, 0.0)
 
 
-## Straight to where the camera should be (entering the club, after quick travel).
-func snap() -> void:
+## Straight to where the camera should be (entering the club, after quick travel). On a
+## fresh entry it stands behind the hero looking north, as the main screen always did.
+func snap(north := true) -> void:
 	if target == null:
 		return
+	if north:
+		yaw = 0.0
+		target.rotation.y = 0.0
+	else:
+		yaw = target.rotation.y
+	_back = _clear_back(target.global_position)
 	global_position = _follow_pos() if _frame_pos == Vector3.INF else _frame_pos
 	_look = _follow_look() if _frame_pos == Vector3.INF else _frame_look
 	look_at(_look, Vector3.UP)
@@ -43,6 +99,7 @@ func snap() -> void:
 
 ## Holds a framing (a room) - eased over `t` seconds.
 func frame(pos: Vector3, look: Vector3, t := 0.4) -> void:
+	yaw = 0.0   # every framing looks north: leaving one starts from there and swings behind the hero as he walks
 	_frame_pos = pos
 	_frame_look = look
 	_glide(pos, look, t)
@@ -53,11 +110,15 @@ func release(t := 0.4) -> void:
 	if _frame_pos == Vector3.INF:
 		return
 	_frame_pos = Vector3.INF
-	_glide(_follow_pos(), _follow_look(), t)
+	if target != null:
+		_back = _clear_back(target.global_position)
+		_glide(_follow_pos(), _follow_look(), t)
 
 
-## Quick travel: a short flight to the hero's new place (the world stays one piece).
+## Quick travel by teleport (tests, the foreman): a short flight to the hero's new place.
 func fly(t := 0.4) -> void:
+	if target != null and _frame_pos == Vector3.INF:
+		_back = _clear_back(target.global_position)
 	_glide(_follow_pos() if _frame_pos == Vector3.INF else _frame_pos, _follow_look() if _frame_pos == Vector3.INF else _frame_look, t)
 
 
@@ -81,8 +142,17 @@ func _glide(pos: Vector3, look: Vector3, t: float) -> void:
 func _process(delta: float) -> void:
 	if target == null or not current or is_flying():
 		return
-	var want_pos := _follow_pos() if _frame_pos == Vector3.INF else _frame_pos
-	var want_look := _follow_look() if _frame_pos == Vector3.INF else _frame_look
+	var follow := _frame_pos == Vector3.INF
+	if follow:
+		# Swing behind the hero while he walks; hold the heading when he stands.
+		var p3 := target as Athlete
+		var moving := p3 != null and Vector2(p3.velocity.x, p3.velocity.z).length() > 0.8
+		if moving:
+			var k_yaw := 1.0 - exp(-(YAW_K_RUN if run_mode else YAW_K) * delta)
+			yaw = lerp_angle(yaw, target.rotation.y, k_yaw)
+		_back = lerpf(_back, _clear_back(target.global_position), 1.0 - exp(-6.0 * delta))
+	var want_pos := _follow_pos() if follow else _frame_pos
+	var want_look := _follow_look() if follow else _frame_look
 	var k := 1.0 - exp(-FOLLOW_K * delta)
 	global_position = global_position.lerp(want_pos, k)
 	_look = _look.lerp(want_look, k)
