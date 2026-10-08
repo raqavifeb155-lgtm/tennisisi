@@ -128,6 +128,31 @@ func _run() -> void:
 	_check(not Sfx.is_lazy("hit_real_1") and not Sfx.is_lazy("applause") and not Sfx.is_lazy("click"),
 		"strokes, crowd and UI stay in the pack: they play in the first seconds")
 
+	print("racket hits")
+	_check(Sfx.HIT_TAKES.size() == 13, "13 hit takes (3 Pixabay + 10 cut from a match)")
+	var in_group := {}
+	for g in Sfx.HIT_GROUPS:
+		_check((Sfx.HIT_GROUPS[g] as Array).size() >= 3, "%s: at least 3 takes to alternate" % g)
+		for n in Sfx.HIT_GROUPS[g]:
+			in_group[n] = true
+			_check(Sfx.HIT_TAKES.has(n), "%s: %s is a take" % [g, n])
+	_check(in_group.size() == Sfx.HIT_TAKES.size(), "every take plays in some group")
+	for n in Sfx.HIT_TAKES:
+		var take: AudioStreamWAV = load("res://assets/sfx/%s.wav" % n)
+		_check(take != null and take.get_length() > 0.03 and take.get_length() < 0.4, "%s: %.0f ms, loads" % [n, take.get_length() * 1000.0])
+	_check(Sfx.hit_group({"serve": true, "top": -300.0}) == "power", "a serve is power")
+	_check(Sfx.hit_group({"top": 40.0}) == "power", "a flat shot is power")
+	_check(Sfx.hit_group({"top": 350.0}) == "spin", "topspin is spin")
+	_check(Sfx.hit_group({"top": -200.0}) == "soft" and Sfx.hit_group({"drop": true, "top": 300.0}) == "soft" and Sfx.hit_group({"lob": true}) == "soft", "slice, drop and lob are soft")
+	for g in ["power", "spin", "soft"]:
+		sfx._shot_group = g
+		sfx.play("hit")
+		_check(sfx._shot_group == "", "%s: the stroke is spent by its hit" % g)
+	sfx._shot_group = "soft"
+	var before: int = sfx.plays
+	sfx.play("hit_perfect")
+	_check(sfx.plays == before + 1, "a perfect hit plays from a group too")
+
 	print("web playback")
 	# Web Audio samples (the web default) copied the whole sound, built ~10 audio nodes
 	# and a worklet on every play: on iPhone the strokes stayed silent and the page was

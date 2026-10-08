@@ -6,6 +6,10 @@
   "Tennis ball being hit" by freesound_community (Pixabay, sound 72611), used under the
   [Pixabay Content License](https://pixabay.com/service/license-summary/) (free for commercial
   use, no attribution required; credited here anyway).
+- `assets/sfx/hit_real_4.wav` … `hit_real_13.wav` — ten racket hits cut from the audio track of a
+  match video on YouTube (WyojGU0VlQ0), clips shorter than 0.25 s (50-90 ms: the click and its body,
+  the player's voice and the room's echo cut away), by the owner's decision on 09.10.2026.
+  How and where: `tools/cut_hits.py`.
 - `assets/sfx/bounce_real_1.wav` … `bounce_real_4.wav` — four bounces cut from
   "Tennis ball bounce" by freesound_community (Pixabay, sound 39028), same license.
 - `assets/sfx/birds.ogg` — a seamless one-minute loop from "Birds chirping calm" by
