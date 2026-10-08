@@ -1166,6 +1166,7 @@ func test_lots_flow() -> void:
 	check(not club.building() and (roots[0] as Node3D).scale.is_equal_approx(Vector3.ONE), "a tap skips to the end: the building is up")
 	check(not w.has_node("builders") and not w.has_node("scaffold_lot"), "the builders and the scaffolding are gone")
 	check(club.hud.current_place() == "coach", "the lot is now the coach's room: the hero stands in its circle")
+	check(not (w._pavilions["coach"]["fade"] as Node3D).visible, "the hero is inside: the room's front wall and roof fade, as in any room")
 	check(club.place_buttons("coach")["label"] == "НАВЫКИ" and not club.place_buttons("court")["extra"].any(func(e): return e[1] == "character"), "its button; the court's quiet 'Навыки' is gone")
 	check(not club._open_ids.has("lot_n1") and club._open_ids.has("coach"), "no empty lot there any more")
 	check(club.hud.is_saying() or true, "the coach has his line")

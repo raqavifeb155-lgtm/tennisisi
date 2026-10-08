@@ -16,6 +16,7 @@ var stats := false
 var views := false
 var nopack := false     # --nopack: the club as it stands before the model pack arrives (simple forms)
 var census := false
+var lots := false       # --lots: T-1, the empty lots, the sheet, the build moment
 var hour := -1.0
 var tag := ""          # --tag=X: club_X_<h>_*.png (other worktrees shoot into the same folder)
 
@@ -34,6 +35,8 @@ func _initialize() -> void:
 			views = true
 		elif a == "--census":
 			census = true
+		elif a == "--lots":
+			lots = true
 		elif a == "--nopack":
 			nopack = true
 			ClubPack.state = ClubPack.FAILED
@@ -185,6 +188,10 @@ func _run() -> void:
 		return
 	if census:
 		await _census()
+		quit()
+		return
+	if lots:
+		await _lots()
 		quit()
 		return
 	if builds:
@@ -550,3 +557,64 @@ func _keep_visible() -> void:
 	rng.randomize()
 	DisplayServer.window_set_position(Vector2i(rng.randi_range(0, 900), rng.randi_range(0, 120)))
 	DisplayServer.window_move_to_foreground()
+
+
+## T-1: a new club (the court and the shop, empty lots), a lot with its sign, the sheet with
+## the ghost, the build moment, the building up, and the club with a few lots built.
+func _lots() -> void:
+	var club = main.club
+	SaveData.played = 0
+	SaveData.titles = 0
+	SaveData.gold = 0
+	SaveData.club = {"met_coach": true, "walk_hint": true}
+	club._refresh()
+	club.hud.say("", 0.0)
+	await _shot("01_start", 1.6)
+	_go("lot_n1")
+	await _shot("02_lot_sign", 1.0)
+	club._on_choice("club_lot", 0)
+	await _shot("03_sheet_no_gold", 1.0)
+	SaveData.gold = 200
+	club.lot_show("coach")
+	await _shot("04_sheet_coach", 0.8)
+	club.lot_show("stands")
+	await _shot("05_sheet_stands", 0.8)
+	club.lot_show("bar")
+	await _shot("06_sheet_locked_bar", 0.8)
+	club.lot_show("academy")
+	await _shot("07_sheet_soon", 0.8)
+	club.lot_show("coach")
+	await create_timer(0.3).timeout
+	club.foreman_build()
+	await _shot("08_build_start", 0.7)
+	await _shot("09_build_hammer", 0.5)
+	await _shot("10_build_rise", 0.55)
+	await _shot("11_build_dust", 0.35)
+	club.skip_build()
+	await _shot("12_built_coach", 0.9)
+	# The other lot: the stands, turned toward the court.
+	_go("lot_n2")
+	await create_timer(0.5).timeout
+	club._on_choice("club_lot", 0)
+	club.lot_show("stands")
+	await _shot("13_sheet_stands_n2", 0.9)
+	club.foreman_build()
+	club.skip_build()
+	await _shot("14_built_stands", 1.0)
+	# Later: more lots open, a few buildings of different sizes on lots that were not theirs.
+	SaveData.played = 8
+	SaveData.titles = 2
+	SaveData.gold = 5000
+	SaveData.club["lots"] = {"n1": "bar", "n2": "locker", "n3": "stands", "n4": "coach", "n5": "trophy"}
+	var lv: Dictionary = {"bar": 3, "locker": 2, "stands": 3, "coach": 2, "trophy": 3}
+	SaveData.club["levels"] = lv
+	club._refresh()
+	club.hud.visible = false
+	for spec in [["15_all_south", Vector3(0, 0, 33), PI], ["16_all_west", Vector3(-16, 0, 6), PI * 0.5], ["17_all_east", Vector3(20, 0, 6), -PI * 0.5]]:
+		main.player.position = spec[1]
+		main.player.rotation.y = spec[2]
+		club.cam.snap()
+		await _shot(spec[0], 1.2)
+	club.hud.visible = true
+	_go("lot_n6")
+	await _shot("18_open_lot_north", 1.0)
