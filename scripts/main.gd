@@ -2044,6 +2044,10 @@ func _on_ui(action: String, arg: int) -> void:
 				ui.show_locker()
 		"menu":
 			_show_menu()
+		"opponent_card":
+			ui.show_opponent_card(tournament, arg)  # D-5: his stats before "Играть" (from the bracket)
+		"opp_back":
+			ui.show_bracket(tournament)
 		"play":
 			_play_match()
 		"give_up":
