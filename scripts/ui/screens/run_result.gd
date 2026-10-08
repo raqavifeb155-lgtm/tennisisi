@@ -37,6 +37,14 @@ static func extra(ui: TournamentUI, t: Tournament) -> void:
 		var won := int(b["paid"]) > 0
 		ui._box.add_child(ui._text("Ставка: +%d золота" % int(b["paid"]) if won else "Ставка %d — мимо" % int(b["stake"]),
 			UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.WIN if won else UiTheme.LOSE))
+		if bool(b.get("dq", false)):
+			var dq := ui._text("Дисквалификация! Ставка против себя: призовых за матч нет, штраф %d золота, забег окончен." % int(b.get("fine", 0)),
+				UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.LOSE)
+			dq.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			ui._box.add_child(dq)
+			var cl := ui._text("Тренер: «Против себя ставят только те, кто не уважает корт. В клубе такое не прощают.»", UiTheme.text(), UiTheme.T_SMALL + 2, UiTheme.MUTED)
+			cl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			ui._box.add_child(cl)
 	if h == null or int(h.last_match.get("points", 0)) <= 0:
 		return
 	var best: Dictionary = h.last_match.get("best", {})

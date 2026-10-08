@@ -21,18 +21,51 @@ static func menu_extra(ui: TournamentUI) -> void:
 		ui._secondary("Тотализатор  ·  рулетка и ставки", "bets")
 
 
-## The bracket: a bet on the coming match, or the bet already placed.
+## The bracket: the bookmaker's line for the coming match, or the bet already placed.
 static func bracket_extra(ui: TournamentUI, t: Tournament) -> void:
 	if not Bets.unlocked():
 		return
 	if t.bet.is_empty():
-		ui._row("Ставка на себя", "победа ×%s · всухую ×%s" % [_k(Bets.match_odds(t.stage, false)), _k(Bets.match_odds(t.stage, true))], "bet_match")
+		var mk := Bets.match_market(t)
+		ui._row("Букмекер", "%s / %s" % [_x(float(mk["you"])), _x(float(mk["opp"]))], "bet_match")
 	else:
-		ui._note("Ставка: %d золота на %s ×%s" % [int(t.bet["stake"]), "победу всухую" if t.bet["sweep"] else "победу", _k(float(t.bet["odds"]))])
+		ui._note(bet_line(t.bet))
+
+
+## "Ставка: 50 на себя ×1.75" / "... против себя ×2.10".
+static func bet_line(b: Dictionary) -> String:
+	return "Ставка: %d золота %s %s" % [int(b["stake"]), "против себя" if String(b.get("side", "self")) == "against" else "на себя", _x(float(b["odds"]))]
 
 
 static func _k(x: float) -> String:
-	return str(snappedf(x, 0.01)).trim_suffix(".0")
+	return "%.2f" % x
+
+
+static func _x(x: float) -> String:
+	return "×" + _k(x)
+
+
+## From the club's bar: the bookmaker's screen for the run in progress (or a word that
+## there is no match to bet on yet).
+static func club_open(m: Node) -> void:
+	_from_club = true
+	var t := _run(m)
+	if t == null or t.state != Tournament.State.BRACKET:
+		m.ui._open(null, true, "bet_back")
+		m.ui._title("Букмекер")
+		m.ui._note("Ставки принимаются на ближайший матч турнира. Начни турнир или вернись к сетке")
+		_history(m.ui)
+		return
+	show_match_bet(m.ui, t)
+
+
+static var _from_club := false
+
+
+## The run to bet in: the saved one in progress, else the one Main holds.
+static func _run(m: Node) -> Tournament:
+	var t := SaveData.resumable()
+	return t if t != null else m.tournament
 
 
 # --- The chips --------------------------------------------------------------------
@@ -55,19 +88,48 @@ static func _chips(ui: TournamentUI, action: String) -> bool:
 	return true
 
 
-# --- The bet on your own match -------------------------------------------------------
+# --- The bookmaker: a bet on the coming match -------------------------------------------
 
 static func show_match_bet(ui: TournamentUI, t: Tournament) -> void:
 	ui._open(t, true, "bet_back")
-	ui._title("Ставка на себя")
+	ui._title("Букмекер")
+	var mk := Bets.match_market(t)
 	ui._sub("%s · %s" % [t.round_name(), t.opponent()["name"]])
-	if not _chips(ui, "bet_chip"):
-		return
-	ui._card({"tag": "На победу", "title": "×%s  ·  %d → %d" % [_k(Bets.match_odds(t.stage, false)), chip, roundi(chip * Bets.match_odds(t.stage, false))],
-		"desc": "Выиграй матч"}, "bet_win", chip, UiTheme.GOLD)
-	ui._card({"tag": "Всухую", "title": "×%s  ·  %d → %d" % [_k(Bets.match_odds(t.stage, true)), chip, roundi(chip * Bets.match_odds(t.stage, true))],
-		"desc": "Соперник возьмёт не больше одного гейма" if t.format_info()["games"] > 0 else "Соперник возьмёт не больше двух очков"}, "bet_sweep", chip, UiTheme.GOLD)
+	ui._note("Шансы по статам, уровню и форме: ты %d%% · соперник %d%%. Коэффициент = 0,92 / шанс, маржа 8%%" % [roundi(float(mk["p"]) * 100.0), roundi(float(mk["p_opp"]) * 100.0)])
+	if not t.bet.is_empty():
+		ui._note(bet_line(t.bet))
+	elif _chips(ui, "bet_chip"):
+		ui._card({"tag": "На себя", "title": "%s  ·  %d → %d" % [_x(float(mk["you"])), chip, roundi(chip * float(mk["you"]))],
+			"desc": "Выиграй матч — получишь по коэффициенту"}, "bet_win", chip, UiTheme.GOLD)
+		var risk := "Ты ушлый: риска дисквалификации нет" if Bets.is_shady() else \
+			"Риск дисквалификации после матча: %d%% при проигрыше, %d%% при победе. Штраф %d%% золота, забег кончается" % [roundi(Bets.DQ_ON_LOSS * 100.0), roundi(Bets.DQ_ON_WIN * 100.0), roundi(Bets.DQ_FINE * 100.0)]
+		ui._card({"tag": "Против себя", "title": "%s  ·  %d → %d" % [_x(float(mk["opp"])), chip, roundi(chip * float(mk["opp"]))],
+			"desc": "Проиграй матч — получишь по коэффициенту. " + risk}, "bet_against", chip, UiTheme.LOSE)
 	ui._note("Только игровое золото. Ставка уходит сразу, выигрыш — после матча. Вайлд-кард ставку не спасает.")
+	if Bets.needs_break(SaveData.bets):
+		ui._note("Три ставки мимо подряд. Перерыв? Корт ждёт.")
+	_history(ui)
+
+
+## The last bets, newest first: who, which side, how it ended.
+static func _history(ui: TournamentUI) -> void:
+	var h: Array = SaveData.bets.get("history", [])
+	if h.is_empty():
+		return
+	ui._sub("История ставок")
+	var shown := 0
+	for i in range(h.size() - 1, -1, -1):
+		var e: Dictionary = h[i]
+		var res := "дисквалификация" if e.get("dq", false) else ("+%d" % int(e["paid"]) if e.get("won", false) else "мимо")
+		var col := UiTheme.WIN if e.get("won", false) else UiTheme.LOSE
+		var l := ui._text("%s · %s %s %d · %s" % [e.get("name", ""), "против себя" if e.get("side", "") == "against" else "на себя", _x(float(e.get("odds", 1.0))), int(e.get("stake", 0)), res],
+			UiTheme.text_bold(), UiTheme.T_SMALL + 2, col)
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		ui._box.add_child(l)
+		shown += 1
+		if shown >= 5:
+			break
+	ui._note("Поставлено %d · выиграно %d" % [int(SaveData.bets.get("placed", 0)), int(SaveData.bets.get("won", 0))])
 
 
 # --- The wheel --------------------------------------------------------------------
@@ -138,15 +200,21 @@ static func ui_action(m: Node, action: String, arg: int) -> void:
 			SaveData.save()
 			show_wheel(m.ui, {"field": field, "bet": bet, "stake": chip, "paid": paid})
 		"bet_match":
-			show_match_bet(m.ui, t)
+			_from_club = false
+			show_match_bet(m.ui, _run(m))
 		"bet_chip":
 			chip = arg
-			show_match_bet(m.ui, t)
-		"bet_win", "bet_sweep":
-			Bets.place_match(t, arg, action == "bet_sweep")
-			m.ui.show_bracket(t)
+			show_match_bet(m.ui, _run(m))
+		"bet_win", "bet_against":
+			var rt := _run(m)
+			Bets.place_match(rt, arg, "against" if action == "bet_against" else "self")
+			show_match_bet(m.ui, rt) if _from_club else m.ui.show_bracket(rt)
 		"bet_back":
-			m.ui.show_bracket(t)
+			if _from_club:
+				_from_club = false
+				m._on_ui("menu", 0)
+			else:
+				m.ui.show_bracket(_run(m))
 
 
 ## The wheel: 37 fields around a court-green hub; the ball runs around and slows down

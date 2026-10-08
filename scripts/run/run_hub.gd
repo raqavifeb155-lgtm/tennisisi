@@ -247,6 +247,8 @@ func _on_match_finished(info: Dictionary) -> void:
 	if not t.bet.is_empty():
 		var stake := int(t.bet["stake"])
 		last_match["bet"] = {"stake": stake, "paid": Bets.settle_match(t, main.scoreboard)}
+		last_match["bet"].merge(Bets.last_result)  # E-5: side, odds, the disqualification and its fine
+	Bets.note_form(SaveData.bets, bool(info.get("won", false)))  # the bookmaker's form
 	if main.autoplay:
 		print("  STYLE: %d points, +%d gold, best x%.2f" % [meter.match_points, g, float(meter.best.get("mult", 1.0))])
 

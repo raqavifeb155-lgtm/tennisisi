@@ -25,6 +25,7 @@ static func info(t: Tournament, i: int) -> Dictionary:
 		"mods": mods,
 		"golden": bool(lu.get("golden", false)),
 		"prize": t.gold_for_win(i),
+		"odds": Bets.match_market(t, i),  # E-5: the bookmaker's line, "Коэф. 1.75 / 2.10"
 	}
 
 
@@ -35,6 +36,11 @@ static func mod_text(id: String) -> String:
 		var m: Dictionary = Tournament.MODIFIERS[id]
 		return "%s · %s" % [m["name"], m["desc"]]
 	return id
+
+
+## "Коэф. 1.75 / 2.10": on yourself / on him (the bookmaker, E-5).
+static func odds_line(mk: Dictionary) -> String:
+	return "Коэф. %.2f / %.2f" % [float(mk["you"]), float(mk["opp"])]
 
 
 ## Just the name, for the bracket's line.
@@ -85,6 +91,8 @@ static func show(ui: TournamentUI, t: Tournament, i: int) -> void:
 		else:
 			hint.free()
 	ui._box.add_child(ui._text("За победу: +%d золота" % int(inf["prize"]), UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.GOLD))
+	if Bets.unlocked():
+		ui._box.add_child(ui._text(odds_line(inf["odds"]), UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.INK))
 	if i == t.stage:
 		ui._primary("ИГРАТЬ", "play")
 	else:
