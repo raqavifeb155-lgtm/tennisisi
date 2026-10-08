@@ -1781,9 +1781,12 @@ func set_gear(items: Array) -> void:
 	_gear.dress(self)
 
 
-## Only the racket (the trophy in hand, a knocked-out racket); shoes and band stay.
+## Only the racket (the trophy in hand, a knocked-out racket); shoes and band stay. A
+## trophy of another slot is a racket of its rarity in the hand.
 func set_racket(item: Dictionary) -> void:
 	var items := AthleteGear.items_of(_gear.worn)
+	if not item.is_empty() and AthleteGear.slot_of(item) != "racket":
+		item = {"slot": "racket", "rarity": item.get("rarity", 0)}
 	items[0] = item
 	set_gear(items)
 

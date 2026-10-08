@@ -248,4 +248,7 @@ func test_old_api() -> void:
 	check(String(a.gear()["racket"].get("id", "")) == "twister", "set_racket swaps the racket")
 	a.set_racket({})
 	check(a._gear.halo == null, "set_racket({}): stock, no glow")
+	a.set_gear([{}, item("second_wind")])
+	a.set_racket(item("second_wind"))
+	check(String(a.gear()["shoes"].get("id", "")) == "second_wind" and a._gear.halo != null and a.gear()["racket"]["rarity"] == Gear.MYTHIC, "a trophy of another slot: a racket of its rarity, the shoes stay")
 	a.free()
