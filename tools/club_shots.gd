@@ -12,6 +12,7 @@ var h := 1564
 var gfx := -1
 var out := ""
 var builds := false
+var stats := false
 var tag := ""          # --tag=X: club_X_<h>_*.png (other worktrees shoot into the same folder)
 
 
@@ -23,6 +24,8 @@ func _initialize() -> void:
 			gfx = int(a.get_slice("=", 1))
 		elif a == "--builds":
 			builds = true
+		elif a == "--stats":
+			stats = true
 		elif a.begins_with("--tag="):
 			tag = a.get_slice("=", 1) + "_"
 	out = ProjectSettings.globalize_path("user://club_%s%d_" % [tag, h])
@@ -47,6 +50,56 @@ func _shot(name: String, settle := 0.8) -> void:
 	main.player.visible = pv
 	main.cpu.visible = cv
 	print("saved %s%s.png   draws %d  tris %.1fk   world: draws %d  tris %.1fk" % [out, name, d, t, wd, wt])
+
+
+## Triangles and draw calls the club's nodes would cost if all were in view: by top-level
+## child of the scenery, the biggest first (--stats).
+func _tri_report() -> void:
+	var rows: Array = []
+	for c in main.scenery.get_children():
+		var t := [0, 0]
+		_count(c, t)
+		if t[1] > 0:
+			rows.append([t[0], t[1], "%s %s" % [c.get_class(), c.name]])
+	rows.sort_custom(func(a, b) -> bool: return a[1] > b[1])
+	var all_t := 0
+	var all_d := 0
+	for r in rows:
+		all_t += r[1]
+		all_d += r[0]
+	print("scenery total (no culling): %d nodes-with-geometry draws, %.1fk tris" % [all_d, all_t / 1000.0])
+	for r in rows.slice(0, 22):
+		print("  %-40s draws %3d  tris %6.1fk" % [r[2], r[0], r[1] / 1000.0])
+
+
+func _count(n: Node, t: Array) -> void:
+	if n is Node3D and not (n as Node3D).visible:
+		return
+	if n is MultiMeshInstance3D:
+		var mm := (n as MultiMeshInstance3D).multimesh
+		if mm and mm.mesh:
+			t[0] += 1
+			t[1] += mm.visible_instance_count if mm.visible_instance_count >= 0 else mm.instance_count
+			t[1] = t[1] - mm.instance_count + mm.instance_count * _mesh_tris(mm.mesh)
+	elif n is MeshInstance3D:
+		var mi := n as MeshInstance3D
+		if mi.mesh:
+			var k := _mesh_tris(mi.mesh)
+			t[0] += mi.mesh.get_surface_count()
+			t[1] += k
+	for c in n.get_children():
+		_count(c, t)
+
+
+func _mesh_tris(m: Mesh) -> int:
+	var k := 0
+	for i in m.get_surface_count():
+		var arr := m.surface_get_arrays(i)
+		if arr.size() > Mesh.ARRAY_INDEX and arr[Mesh.ARRAY_INDEX] != null:
+			k += (arr[Mesh.ARRAY_INDEX] as PackedInt32Array).size() / 3
+		elif arr[Mesh.ARRAY_VERTEX] != null:
+			k += (arr[Mesh.ARRAY_VERTEX] as PackedVector3Array).size() / 3
+	return k
 
 
 func _go(id: String) -> void:
@@ -79,6 +132,10 @@ func _run() -> void:
 	Skills.points = 2
 	Skills.pending = []
 	main._show_menu()
+	if stats:
+		_tri_report()
+		quit()
+		return
 	print("club active=%s location=%s scenery=%s" % [main.club.active, main.location_id, main.scenery.get_script().resource_path])
 	if builds:
 		await _builds()

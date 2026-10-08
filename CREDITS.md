@@ -26,3 +26,20 @@
   (alex-morgan, 568156); `amb_park_plane.ogg` — "Airplane, aircraft take off" (freesound_community,
   121949). Sources and the prep commands: `tools/prep_audio.py`.
 - All other sounds in `assets/sfx/` are generated procedurally by `tools/gen_sfx.py`.
+
+## 3D models (the club's props)
+
+All CC0 1.0 (public domain, no attribution required; credited here anyway). Brought to one
+look - colours baked into the vertices and pulled toward the club's palette, scaled to the
+hero (1.85 m), no textures - and packed into one file, `assets/club/models/club_props.glb`,
+by `tools/club_models.py` (which also lists what is taken from where). The web build serves
+it as `models/club_props.<version>.glb` and the game downloads it after the start.
+
+- KayKit by Kay Lousberg (kaylousberg.itch.io, github.com/KayKit-Game-Assets), CC0:
+  City Builder Bits 1.0 (bench, street light, bins, bags, dumpster, hydrant, boxes, three cars,
+  water tower, two buildings), Furniture Bits 1.0 (armchair, wooden chair, low table),
+  Restaurant Bits 1.0 (round table, chair, stool, crate, menu board).
+- Kenney (kenney.nl), CC0: Nature Kit 2.1 (trees, pines, bushes, flowers, rocks, logs, stump,
+  pot, sign, planks fence, broken column), Car Kit (cone, tyre, bumper), City Kit Commercial 2.1
+  (parasol, awning, five low-detail shop fronts), City Kit Suburban 2.0 (two fences).
+- Quaternius is not used (kept in reserve).
