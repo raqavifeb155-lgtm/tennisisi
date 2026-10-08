@@ -72,7 +72,7 @@ static func reroll_price() -> int:
 	if free_left() > 0:
 		return 0
 	var paid := maxi(0, int(_state()["rerolls"]) - ClubApi.free_rerolls())
-	return roundi(REROLL * pow(REROLL_GROWTH, paid))
+	return roundi(REROLL * Items.PRICE_SCALE * pow(REROLL_GROWTH, paid))
 
 
 static func reroll() -> bool:

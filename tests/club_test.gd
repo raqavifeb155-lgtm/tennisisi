@@ -6,6 +6,8 @@ var failures := 0
 
 
 func _initialize() -> void:
+	Items.PRICE_SCALE = 1.0  # these tests count in base prices; the shipped scale is checked in economy_test
+	ClubBuilds.CLUB_PRICE_SCALE = 1.0
 	SaveData.enabled = false  # never the developer's save: buy() saves
 	test_places()
 	test_walk()

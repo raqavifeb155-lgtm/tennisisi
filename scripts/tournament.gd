@@ -13,7 +13,7 @@ const GOLD_PER_WIN := [10, 15, 20, 30, 50]
 ## is about a fifth of the first design in the long run. A newcomer is paid fully at first
 ## and the scale falls to INCOME_SCALE over BEGINNER_RUNS runs, so the first build comes in
 ## run 1-2. Item prices, the shop and the club's table are not touched by it.
-static var INCOME_SCALE := 0.22
+static var INCOME_SCALE := 0.5
 const BEGINNER_RUNS := 6
 
 

@@ -16,9 +16,9 @@ extends SceneTree
 const Model := preload("res://tools/bot_model.gd")
 
 ## Win-chance edge (bot_model log-odds units, 0.1 = ten points against an even opponent) of
-## one worn item by rarity - calibrated on tools/power_bot.sh (3 epics = +2 points of
+## one worn item by rarity - calibrated on tools/power_bot.sh after A-6 (3 epics +9 points of the
 ## the points won at level 12, 3 legendaries +3.6; x5 from points to a match, /4 to the edge).
-var gear_edge := [0.005, 0.015, 0.035, 0.06, 0.09]
+var gear_edge := [0.01, 0.03, 0.15, 0.30, 0.50]
 ## The island's edge: opponents are stronger by Locations.TIERS (power) - measured with
 ## tools/power_bot.sh --loc: points won at level 12 against the quarter-final opponent.
 var island_edge := [0.0, -0.31, -0.35, -0.60]
@@ -33,6 +33,7 @@ var sink := 0.2                   # the share of a run's income spent in the sho
 var hardness := 0.0               # the edge shift for harder opponents (stream D): -0.1 = ten points tougher
 var table_total := 0              # --total=N: also report the time to earn N gold
 var rng := RandomNumberGenerator.new()
+var plan := "shop-first"         # --plan=cheap: always the cheapest next level (no saving for the shop)
 var gambles := true               # --no-gambles: no rerolls and strings
 var scale := -1.0                 # --scale=X: Tournament.INCOME_SCALE for this run
 var kinds := {}                   # the run's gold by line, summed over everything (the breakdown)
@@ -56,6 +57,10 @@ func _initialize() -> void:
 			"--total": table_total = int(v)
 			"--scale": scale = float(v)
 			"--no-gambles": gambles = false
+			"--plan": plan = v
+			"--prices":
+				Items.PRICE_SCALE = float(v)  # items, strings, insurance...
+				ClubBuilds.CLUB_PRICE_SCALE = float(v)  # ...and the club's table
 			"--island-edge": island_edge = (v.split(",") as Array).map(func(s): return float(s))
 	if scale > 0.0:
 		Tournament.INCOME_SCALE = scale
@@ -82,6 +87,7 @@ class RunLog:
 	var xp := 0.0
 	var title := false
 	var bank := 0
+	var spent := 0
 	var bought: Array[String] = []
 	var minutes := 0.0
 
@@ -256,7 +262,9 @@ func _build(log: RunLog) -> void:
 	while again:
 		again = false
 		var target := ""
-		if ClubBuilds.level("shop") == 0 and ClubBuilds.is_open("shop"):
+		if plan == "cheap":
+			pass
+		elif ClubBuilds.level("shop") == 0 and ClubBuilds.is_open("shop"):
 			target = "shop"
 		elif ClubBuilds.level("locker") == 0 and ClubBuilds.is_open("locker"):
 			target = "locker"
@@ -310,6 +318,7 @@ func _run() -> void:
 			_shop(roundi(float(lg.income) * sink * 2.0), lg)
 			_build(lg)
 			lg.bank = SaveData.gold
+			lg.spent = int(SaveData.club.get("spent", 0))
 			if _club_done() and not done_at.has(tr):
 				done_at[tr] = run + 1
 			logs.append(lg)
@@ -387,7 +396,7 @@ func _print_milestones(all_logs: Array) -> void:
 			if ClubBuilds.TABLE.has(nm.rstrip("0123456789")) and nm.length() > 1:
 				var id: String = nm.rstrip("0123456789")
 				var lv := int(nm.substr(id.length()))
-				label = "%s %d  «%s» %d" % [ClubBuilds.TABLE[id]["name"], lv, ClubBuilds.TABLE[id]["levels"][lv - 1]["title"], ClubBuilds.TABLE[id]["levels"][lv - 1]["price"]]
+				label = "%s %d  «%s» %d" % [ClubBuilds.TABLE[id]["name"], lv, ClubBuilds.TABLE[id]["levels"][lv - 1]["title"], roundi(float(ClubBuilds.TABLE[id]["levels"][lv - 1]["price"]) * ClubBuilds.CLUB_PRICE_SCALE)]
 			rows.append([runs[runs.size() / 2], hrs[hrs.size() / 2], label])
 	rows.sort_custom(func(a, b): return a[0] < b[0] if a[0] != b[0] else a[1] < b[1])
 	for r in rows:
@@ -412,6 +421,24 @@ func _print_milestones(all_logs: Array) -> void:
 				h += all_logs[tr][i].minutes / 60.0
 			done.append(int(done_at[tr]))
 			done_h.append(h)
+	var half: Array = []
+	var n_levels := 0
+	for id in ClubBuilds.ORDER:
+		n_levels += ClubBuilds.max_level(id)
+	for logs in all_logs:
+		var h2 := 0.0
+		var cnt := 0
+		for i in logs.size():
+			h2 += logs[i].minutes / 60.0
+			for nm in logs[i].bought:
+				if not String(nm).begins_with("item:"):
+					cnt += 1
+			if cnt * 2 >= n_levels:
+				half.append(h2)
+				break
+	if half.size() > 0:
+		half.sort()
+		print("  HALF THE CLUB (%d of %d levels): %.1f h (median)" % [(n_levels + 1) / 2, n_levels, half[half.size() / 2]])
 	if done.size() > 0:
 		done.sort()
 		done_h.sort()
@@ -424,7 +451,7 @@ func _total_now() -> int:
 	var s := 0
 	for id in ClubBuilds.ORDER:
 		for lv in ClubBuilds.TABLE[id]["levels"]:
-			s += int(lv["price"])
+			s += roundi(float(lv["price"]) * ClubBuilds.CLUB_PRICE_SCALE)
 	return s
 
 
