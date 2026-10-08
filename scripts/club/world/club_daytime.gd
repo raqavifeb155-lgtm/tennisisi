@@ -154,9 +154,7 @@ func _build_glows() -> void:
 ## Where the lamps stand now (from ClubScenery's props, after a level changed them).
 func refresh(lamps: Array[ClubProps.Prop]) -> void:
 	var pos: Array[Vector3] = []
-	var mesh := ClubPack.mesh("streetlight")
-	var aabb := mesh.get_aabb() if mesh != null else AABB(Vector3(-0.1, 0, -0.1), Vector3(1.0, 4.2, 0.2))
-	var head_local := Vector3(aabb.end.x - 0.32, aabb.end.y - 0.14, aabb.get_center().z)
+	var head_local := _lamp_head()
 	for p in lamps:
 		if p.tag != "lamp":
 			continue
@@ -167,6 +165,21 @@ func refresh(lamps: Array[ClubProps.Prop]) -> void:
 	for i in pos.size():
 		_glows.multimesh.set_instance_transform(i, Transform3D(Basis.IDENTITY, pos[i]))
 		_pools.multimesh.set_instance_transform(i, Transform3D(Basis.IDENTITY, Vector3(pos[i].x, ClubLayout.gy(Vector2(pos[i].x, pos[i].z)) + 0.08, pos[i].z)))
+
+
+## Where a street light's lamp hangs in the model's own space: the middle of its top slice.
+static func _lamp_head() -> Vector3:
+	var mesh := ClubPack.mesh("streetlight")
+	var arr := mesh.surface_get_arrays(0)
+	var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+	var top := mesh.get_aabb().end.y
+	var sum := Vector3.ZERO
+	var n := 0
+	for v in verts:
+		if v.y > top - 0.3:
+			sum += v
+			n += 1
+	return sum / maxf(float(n), 1.0) - Vector3(0, 0.1, 0) if n > 0 else Vector3(0.4, top - 0.14, 0)
 
 
 func _mm(mesh: Mesh, mat: Material) -> MultiMeshInstance3D:

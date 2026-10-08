@@ -74,7 +74,13 @@ static func open_at(q: Vector2, margin := 0.0) -> bool:
 
 static func yaw_to(from: Vector2, to: Vector2) -> float:
 	var d := to - from
-	return atan2(-d.x, -d.y)
+	return atan2(-d.x, -d.y)    # -z toward `to` (the hero's own heading)
+
+
+## A model's front is +z (glTF): the yaw that turns it to face `to`.
+static func face(from: Vector2, to: Vector2) -> float:
+	var d := to - from
+	return atan2(d.x, d.y)
 
 
 static func _r(a: float, b: float) -> float:
@@ -127,7 +133,7 @@ static func _bushes(p: ClubProps, c: Vector2, n: int, spread: float, big := 0.35
 
 ## A bench seat facing `look`.
 static func _bench(p: ClubProps, x: float, z: float, look: Vector2, owner := "", from := 0) -> ClubProps.Prop:
-	var b := put(p, "bench", x, z, yaw_to(Vector2(x, z), look), 1.35)
+	var b := put(p, "bench", x, z, face(Vector2(x, z), look), 1.35)
 	b.solid = 0.7
 	b.owner = owner
 	b.from = from
@@ -139,8 +145,11 @@ static func _bin(p: ClubProps, x: float, z: float) -> void:
 	b.solid = 0.3
 
 
-## A street light: `lean` tips it over (a ruin), `dead` has no glow at night.
-static func lamp(p: ClubProps, x: float, z: float, yaw: float, owner := "", need := 0, lean := 0.0) -> ClubProps.Prop:
+## A street light, its arm toward `toward` (the model's arm points -x): `lean` tips it over
+## (a ruin).
+static func lamp(p: ClubProps, x: float, z: float, toward: Vector2, owner := "", need := 0, lean := 0.0) -> ClubProps.Prop:
+	var d := toward - Vector2(x, z)
+	var yaw := atan2(d.y, -d.x)
 	var l := put(p, "streetlight", x, z, yaw, 1.0, Vector3(lean * 0.6, 0.0, lean))
 	l.solid = 0.22
 	l.tag = "lamp"
@@ -206,7 +215,7 @@ static func _promenade(p: ClubProps) -> void:
 	var z := SHORE + 3.4
 	var x := -48.0
 	while x <= 48.0:
-		lamp(p, x, z, PI).high = absf(x) > 30.0
+		lamp(p, x, z, Vector2(x, SHORE - 8.0)).high = absf(x) > 30.0
 		x += 16.0
 	for bx in [-40.0, -24.0, 20.0, 36.0, 4.0]:
 		_bench(p, bx, SHORE + 3.0, Vector2(bx, SHORE - 6.0))
@@ -223,11 +232,11 @@ static func _kiosks(p: ClubProps) -> void:
 	for spec in [[Vector3(-30.0, 0.0, -38.6), Vector2(-30.0, -50.0)], [Vector3(30.0, 0.0, -17.0), Vector2(10.0, -17.0)]]:
 		var c: Vector3 = spec[0]
 		var look: Vector2 = spec[1]
-		var yaw := yaw_to(Vector2(c.x, c.z), look)
+		var yaw := face(Vector2(c.x, c.z), look)
 		var k := put(p, "kiosk", c.x, c.z, yaw)
 		k.solid = 1.5
 		k.far = true
-		var fwd := Vector2(-sin(yaw), -cos(yaw))
+		var fwd := Vector2(sin(yaw), cos(yaw))
 		var side := Vector2(fwd.y, -fwd.x)
 		var base := Vector2(c.x, c.z) + fwd * 3.4
 		for sgn: float in [-1.0, 1.0]:
@@ -238,7 +247,7 @@ static func _kiosks(p: ClubProps) -> void:
 			for a in 2:
 				var ca: float = a * PI + 0.8
 				var cq := q + Vector2(cos(ca), sin(ca)) * 0.9
-				var ch := put(p, "bar_chair", cq.x, cq.y, yaw_to(cq, q), 1.0)
+				var ch := put(p, "bar_chair", cq.x, cq.y, face(cq, q), 1.0)
 				ch.high = true
 		var pa := put(p, "parasol", base.x, base.y, 0.0, 1.0)
 		pa.far = true
@@ -250,16 +259,16 @@ static func _kiosks(p: ClubProps) -> void:
 static func _paths(p: ClubProps) -> void:
 	# lamps and benches along the paths (the court's own lamps are level 2 of the court)
 	for lz in [22.0, 35.5]:
-		lamp(p, -2.1, lz, 0.0)
-	lamp(p, 2.1, 27.5, 0.0)
-	lamp(p, -10.0, 33.4, PI)
-	lamp(p, 10.0, 33.4, PI).high = true
+		lamp(p, -2.1, lz, Vector2(0.0, lz))
+	lamp(p, 2.1, 27.5, Vector2(0.0, 27.5))
+	lamp(p, -10.0, 33.4, Vector2(-10.0, 31.0))
+	lamp(p, 10.0, 33.4, Vector2(10.0, 31.0)).high = true
 	for lx in [-18.0, 18.0]:
-		lamp(p, lx, 33.4, PI).high = true
+		lamp(p, lx, 33.4, Vector2(lx, 31.0)).high = true
 	for lz in [-22.0, -6.0]:
-		lamp(p, 17.0, lz, PI * 0.5)
-	lamp(p, 17.0, 10.0, PI * 0.5).high = true
-	lamp(p, -10.5, -14.0, -PI * 0.5)
+		lamp(p, 17.0, lz, Vector2(14.6, lz))
+	lamp(p, 17.0, 10.0, Vector2(14.6, 10.0)).high = true
+	lamp(p, -10.5, -14.0, Vector2(-13.0, -14.0))
 	# benches facing the court and the paths
 	_bench(p, 17.0, -8.0, Vector2(0.0, -8.0))
 	_bench(p, 17.0, 3.4, Vector2(0.0, 3.4))
@@ -277,7 +286,7 @@ static func _paths(p: ClubProps) -> void:
 	# a hydrant by the gate, a few signs
 	var h := put(p, "hydrant", -3.2, 38.5, 0.0, 1.1)
 	h.solid = 0.25
-	put(p, "sign", 3.0, 41.8, PI, 1.2).solid = 0.2
+	put(p, "sign", 3.0, 41.8, 0.0, 1.2).solid = 0.2
 
 
 ## The street behind the gate: kerb, parked cars, shop fronts, a second row far off.
@@ -290,7 +299,7 @@ static func _street(p: ClubProps) -> void:
 	while x < 70.0:
 		var id: String = kinds[i % kinds.size()]
 		var w: float = {"shop_a": 11.0, "shop_wide_a": 17.0, "shop_b": 12.0, "building_a": 11.0, "shop_c": 10.0, "shop_wide_b": 15.0, "building_b": 12.0}[id]
-		var b := p.at(id, Vector3(x + w * 0.5, 0.0, z + _r(-1.0, 1.0)), 0.0, Vector3(1.0, _r(0.9, 1.25), 1.0))
+		var b := p.at(id, Vector3(x + w * 0.5, 0.0, z + _r(-1.0, 1.0)), PI, Vector3(1.0, _r(0.9, 1.25), 1.0))   # fronts to the gate (-z)
 		b.tint = FACADES[_rng.randi() % FACADES.size()]
 		b.high = absf(x) > 40.0
 		b.far = true
@@ -306,7 +315,7 @@ static func _street(p: ClubProps) -> void:
 		c.tint = Color(_r(0.9, 1.1), _r(0.9, 1.1), _r(0.9, 1.1))
 	# street lights and trees on the pavement, bins
 	for sx in [-34.0, -4.0, 22.0, 44.0]:
-		lamp(p, sx, 48.8, 0.0).high = absf(sx) > 30.0
+		lamp(p, sx, 48.8, Vector2(sx, 56.0)).high = absf(sx) > 30.0
 	for tx in [-52.0, -34.0, -18.0, 22.0, 40.0, 56.0]:
 		var q := Vector2(tx, 49.6)
 		var t := put(p, _pick(["tree_round", "tree_oak", "tree_fat"]), tx, q.y, _r(0, TAU), _r(0.8, 1.0))
@@ -389,7 +398,7 @@ static func _ruin(p: ClubProps) -> void:
 	d.owner = "gate"
 	d.need = 1
 	d.solid = 1.0
-	var s := put(p, "armchair", -12.5, 40.2, 0.9, 1.15, Vector3(0.0, 0.0, 0.12))
+	var s := put(p, "armchair", -12.5, 40.2, PI - 0.9, 1.15, Vector3(0.0, 0.0, 0.12))
 	s.owner = "gate"
 	s.need = 2
 	s.high = true
@@ -442,9 +451,9 @@ static func _ruin(p: ClubProps) -> void:
 		t.high = k % 2 == 0
 	# Leaning, half-dead lamps on the court's side (the court's level 2 puts new ones up).
 	for sx in [-1.0, 1.0]:
-		lamp(p, sx * (HX + 4.0), HZ + 3.0, 0.0, "court", 2, sx * 0.14).tag = "lamp_dead"
-	lamp(p, -(HX + 4.0), -HZ - 2.0, 0.0, "court", 2, 0.2).tag = "lamp_dead"
-	lamp(p, -17.0, -9.0, 0.0, "court", 2, -0.1).tag = "lamp_dead"
+		lamp(p, sx * (HX + 4.0), HZ + 3.0, Vector2(0.0, HZ), "court", 2, sx * 0.14).tag = "lamp_dead"
+	lamp(p, -(HX + 4.0), -HZ - 2.0, Vector2(0.0, -HZ), "court", 2, 0.2).tag = "lamp_dead"
+	lamp(p, -17.0, -9.0, Vector2(-13.0, -9.0), "court", 2, -0.1).tag = "lamp_dead"
 
 
 ## What a built place has around it that a ruin doesn't: flowers, planters, a bench.
@@ -468,7 +477,7 @@ static func _tidy(p: ClubProps) -> void:
 	b.owner = "stands"
 	b.from = 1
 	# the bar (level 1+): crates of bottles and a menu board
-	var m := put(p, "menu_board", 23.0, -29.3, PI, 1.6)
+	var m := put(p, "menu_board", 23.0, -29.3, 0.0, 1.6)
 	m.owner = "bar"
 	m.from = 1
 	# the trophy room (level 1+): flower beds before it

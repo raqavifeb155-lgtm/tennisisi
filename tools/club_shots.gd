@@ -14,6 +14,7 @@ var out := ""
 var builds := false
 var stats := false
 var views := false
+var nopack := false     # --nopack: the club as it stands before the model pack arrives (simple forms)
 var census := false
 var hour := -1.0
 var tag := ""          # --tag=X: club_X_<h>_*.png (other worktrees shoot into the same folder)
@@ -33,6 +34,9 @@ func _initialize() -> void:
 			views = true
 		elif a == "--census":
 			census = true
+		elif a == "--nopack":
+			nopack = true
+			ClubPack.state = ClubPack.FAILED
 		elif a.begins_with("--hour="):
 			hour = float(a.get_slice("=", 1))
 		elif a.begins_with("--tag="):

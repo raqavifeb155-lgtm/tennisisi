@@ -47,8 +47,6 @@ PICKS = {
     # the street and the paths (KayKit City Builder Bits)
     "bench": (KC + "bench.gltf", 0.85, 0.5),
     "streetlight": (KC + "streetlight.gltf", 4.2, 0.5),
-    "trash_bin": (KC + "trash_A.gltf", 1.0, 0.5),
-    "trash_bags": (KC + "trash_B.gltf", 0.75, 0.5),
     "dumpster": (KC + "dumpster.gltf", 1.45, 0.5),
     "hydrant": (KC + "firehydrant.gltf", 0.8, 0.4),
     "box_a": (KC + "box_A.gltf", 0.55, 0.5),

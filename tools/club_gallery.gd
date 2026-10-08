@@ -41,7 +41,12 @@ func _run() -> void:
 	floor_mi.material_override = fm
 	root.add_child(floor_mi)
 	var ids: Array = ClubPackInfo.IDS
-	var cols := 8
+	var close := false
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--ids="):
+			ids = a.get_slice("=", 1).split(",")
+			close = true
+	var cols := 8 if not close else maxi(ids.size(), 1)
 	var gap := 3.2
 	var y_of := {}
 	for i in ids.size():
@@ -70,13 +75,19 @@ func _run() -> void:
 		root.add_child(l)
 	var cam := Camera3D.new()
 	var rows := int(ceil(ids.size() / float(cols)))
-	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-	cam.size = rows * gap * 1.05
 	var cx := (cols - 1) * gap * 0.5
 	var cz := (rows - 1) * gap * 0.5
-	cam.position = Vector3(cx, 30.0, cz + 22.0)
-	root.add_child(cam)
-	cam.look_at(Vector3(cx, 0.0, cz + 1.0), Vector3.UP)
+	if close:
+		cam.fov = 40.0
+		cam.position = Vector3(cx + 2.0, 3.2, cz + 7.0 + cols * 0.6)
+		root.add_child(cam)
+		cam.look_at(Vector3(cx, 0.6, cz), Vector3.UP)
+	else:
+		cam.projection = Camera3D.PROJECTION_ORTHOGONAL
+		cam.size = rows * gap * 1.05
+		cam.position = Vector3(cx, 30.0, cz + 22.0)
+		root.add_child(cam)
+		cam.look_at(Vector3(cx, 0.0, cz + 1.0), Vector3.UP)
 	cam.current = true
 	await create_timer(1.0).timeout
 	await process_frame

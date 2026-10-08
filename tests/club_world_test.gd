@@ -195,6 +195,18 @@ func test_in_the_club() -> void:
 	ClubDaytime.force_hour = -1.0
 	# the stick is read against the camera
 	check(is_equal_approx(cam.stick_yaw(), cam.yaw), "the stick follows the camera's heading")
+	# the pack arriving late (the web): the club first stands on simple forms, then is redrawn
+	var verts_pack := _scenery_verts(scenery)
+	var saved: Dictionary = ClubPack._pack.duplicate()
+	ClubPack._pack.clear()
+	ClubPack.generation = 0
+	await _frames(3)
+	var verts_simple := _scenery_verts(scenery)
+	check(verts_simple > 1000 and verts_simple != verts_pack, "without the pack the club stands on simple forms (%d vs %d vertices)" % [verts_simple, verts_pack])
+	ClubPack._pack = saved
+	ClubPack.generation = 1
+	await _frames(3)
+	check(_scenery_verts(scenery) == verts_pack, "and when the pack comes the same club is drawn from it")
 	# the auto-run: along the path, a tap skips it
 	club._travel("court")
 	await _frames(4)
@@ -239,3 +251,13 @@ func test_in_the_club() -> void:
 	check(not club.active and (hero.get("_racket") as Node3D).visible, "in a match he has his racket again")
 	main.queue_free()
 	await _frames(2)
+
+
+func _scenery_verts(scenery: ClubScenery) -> int:
+	var n := 0
+	for key in scenery._cells:
+		for k in scenery._cells[key]:
+			var mi: MeshInstance3D = scenery._cells[key][k]
+			if mi.mesh != null:
+				n += (mi.mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+	return n

@@ -36,7 +36,7 @@ by `tools/club_models.py` (which also lists what is taken from where). The web b
 it as `models/club_props.<version>.glb` and the game downloads it after the start.
 
 - KayKit by Kay Lousberg (kaylousberg.itch.io, github.com/KayKit-Game-Assets), CC0:
-  City Builder Bits 1.0 (bench, street light, bins, bags, dumpster, hydrant, boxes, three cars,
+  City Builder Bits 1.0 (bench, street light, dumpster, hydrant, boxes, three cars,
   water tower, two buildings), Furniture Bits 1.0 (armchair, wooden chair, low table),
   Restaurant Bits 1.0 (round table, chair, stool, crate, menu board).
 - Kenney (kenney.nl), CC0: Nature Kit 2.1 (trees, pines, bushes, flowers, rocks, logs, stump,
