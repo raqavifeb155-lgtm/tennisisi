@@ -254,12 +254,12 @@ static func _hand(bet: int) -> Dictionary:
 # --- Gold rules (shared with Bets) ---------------------------------------------------
 
 ## The biggest main bet: the bar's limit and a quarter of the gold (as at the roulette).
-static func max_bet(gold: int, limit: int) -> int:
-	return mini(limit, Bets.max_stake(gold))
+static func max_bet(gold: int, limit: int, min_chip := 0) -> int:
+	return mini(limit, Bets.max_stake(gold, min_chip))
 
 
 static func chips_for(gold: int, limit: int, set: Array = CHIPS) -> Array:
-	var m := max_bet(gold, limit)
+	var m := max_bet(gold, limit, int(set[0]) if not set.is_empty() else 0)
 	return set.filter(func(c): return c <= m)
 
 

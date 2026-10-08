@@ -521,7 +521,7 @@ func roulette_busy() -> bool:
 
 ## The chips the bar takes now: within its level's limit and a quarter of the gold.
 func chips() -> Array:
-	return ClubBuilds.bar_chips().filter(func(c): return c <= Bets.max_stake(SaveData.gold))
+	return ClubBuilds.bar_chips().filter(func(c): return c <= Bets.max_stake(SaveData.gold, ClubBuilds.bar_chips()[0]))
 
 
 func roulette_open() -> void:
@@ -546,7 +546,7 @@ func _roulette_panel(result := "", won := false) -> void:
 		_chip = allowed.back()
 	var note := ""
 	if allowed.is_empty():
-		note = "Ставка — до четверти золота: нужно хотя бы %d" % ceili(ClubBuilds.bar_chips()[0] / Bets.MAX_SHARE)
+		note = Bets.need_text(ClubBuilds.bar_chips()[0])
 	hud.show_roulette(ClubBuilds.bar_chips(), allowed, _chip, result, won, note)
 
 
