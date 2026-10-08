@@ -20,6 +20,7 @@ const WIDE_X := 2.2               # the player is pulled wide past this ..
 const WIDE_HIT_X := 3.0           # .. or had to hit their last ball from out here
 const WEAK_Q := 0.5               # their last ball was weak below this contact quality
 const WIDTH := 3.7                # how close to the sideline a target may go
+const VARIETY_DROP := 0.08        # a calm rally ball becomes a drop shot with style.drop x this
 const KINDS := ["defend", "volley", "lob", "pass", "drop", "approach", "attack", "neutral", "change"]
 
 
@@ -73,15 +74,10 @@ static func choose(sit: Dictionary, style: Dictionary, rng: RandomNumberGenerato
 	# 4. The player camped far behind the baseline and we are inside: drop shot.
 	var deep := clampf((pl.z - DEEP_Z) / DEEP_SPAN, 0.0, 1.0)
 	if q >= 0.6 and inside and deep > 0.0 and rng.randf() < float(style.get("drop", 0.2)) * deep:
-		plan["kind"] = "drop"
-		plan["tx"] = clampf(open_side * rng.randf_range(0.5, 2.5), -2.5, 2.5)
-		plan["tz"] = rng.randf_range(1.6, 2.6)
-		plan["pace"] = 9.0
-		plan["top"] = -280.0
-		plan["drop"] = true
-		plan["approach"] = rng.randf() < 0.5  # follow it in to cover the reply
-		plan["risk"] = lerpf(0.06, 0.02, s)
-		return plan
+		return _drop(plan, open_side, s, rng)
+	# 4b. Every match has a few: a drop shot out of a calm rally, whoever the player is (D-5).
+	if q >= 0.7 and inside and sit.get("rally", 0) >= 3 and rng.randf() < float(style.get("drop", 0.2)) * VARIETY_DROP:
+		return _drop(plan, open_side, s, rng)
 
 	# 5. A short ball: approach shot deep (to the weaker wing, or down the line) and come in.
 	var net_k: float = sit.get("net_k", 1.0)  # the net stat: how keen it is to come in
@@ -128,6 +124,18 @@ static func choose(sit: Dictionary, style: Dictionary, rng: RandomNumberGenerato
 		plan["kind"] = "approach"
 		plan["tz"] = maxf(plan["tz"], 8.8)
 		plan["approach"] = true
+	return plan
+
+
+static func _drop(plan: Dictionary, open_side: float, s: float, rng: RandomNumberGenerator) -> Dictionary:
+	plan["kind"] = "drop"
+	plan["tx"] = clampf(open_side * rng.randf_range(0.5, 2.5), -2.5, 2.5)
+	plan["tz"] = rng.randf_range(1.6, 2.6)
+	plan["pace"] = 9.0
+	plan["top"] = -280.0
+	plan["drop"] = true
+	plan["approach"] = rng.randf() < 0.5  # follow it in to cover the reply
+	plan["risk"] = lerpf(0.06, 0.02, s)
 	return plan
 
 
