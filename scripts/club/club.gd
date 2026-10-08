@@ -175,6 +175,12 @@ func close() -> void:
 	_move_target = Vector3.INF
 
 
+## Where the hero stands when the club opens next (the ball machine's drill leaves him by
+## the machine, whatever place he left from).
+func stand_at(pos: Vector3) -> void:
+	_hero = pos
+
+
 ## The tournament format just chosen: next time "Турнир" goes straight to the bracket.
 func remember(location: String, format: int) -> void:
 	SaveData.club["last_location"] = location

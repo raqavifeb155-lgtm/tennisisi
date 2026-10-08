@@ -137,7 +137,7 @@ func _build_exit() -> void:
 	_exit.text = "Выйти"
 	_exit.theme_type_variation = "Quiet"
 	_exit.focus_mode = Control.FOCUS_NONE
-	_exit.custom_minimum_size = Vector2(170, 64)
+	_exit.custom_minimum_size = Vector2(170, UiTheme.TAP)
 	_exit.add_theme_stylebox_override("normal", UiTheme.box(Color(UiTheme.SURFACE, 0.9), Color(1, 1, 1, 0.14), 1, 32, 10))
 	_exit.add_theme_stylebox_override("hover", UiTheme.box(Color(UiTheme.SURFACE_HI, 0.95), Color(1, 1, 1, 0.2), 1, 32, 10))
 	_exit.add_theme_stylebox_override("pressed", UiTheme.box(Color(UiTheme.SURFACE_HI, 0.95), Color(1, 1, 1, 0.2), 1, 32, 10))

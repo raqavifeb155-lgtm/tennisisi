@@ -213,7 +213,9 @@ func start(onboarding := false) -> void:
 		return
 	var club = main.club
 	if club.active:
-		club.close()  # remembers where the hero stood: back at the machine afterwards
+		club.close()  # remembers where the hero stood
+	if not onboarding:
+		club.stand_at(ClubPlaces.find("machine")["pos"])  # back by the machine afterwards
 	if main.location_id != "club":
 		main.set_location("club")
 	world = main.scenery if main.scenery != null and main.scenery.has_method("ball_machine") else null
