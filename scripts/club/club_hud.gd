@@ -47,6 +47,8 @@ var _badges := {}                   # place id -> TournamentUI.Badge
 var _bubble: PanelContainer
 var _bubble_label: Label
 var _bubble_t := 0.0
+var _hint: PanelContainer
+var _hint_shown := false
 var _place_id := ""
 var _place_tw: Tween
 var _safe_top := 0.0
@@ -618,13 +620,13 @@ func _build_bubble() -> void:
 	_bubble = PanelContainer.new()
 	var sb := UiTheme.box(Color(UiTheme.SURFACE, 0.96), Color(UiTheme.GOLD, 0.5), 2, 26, 18)
 	_bubble.add_theme_stylebox_override("panel", sb)
-	_bubble.mouse_filter = Control.MOUSE_FILTER_STOP
+	_bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE  # never eats a tap: the first tap walks
 	_bubble.visible = false
 	_bubble.gui_input.connect(func(e: InputEvent) -> void:
 		if (e is InputEventMouseButton or e is InputEventScreenTouch) and e.pressed:
 			_bubble.visible = false)
 	root.add_child(_bubble)
-	buttons.append(_bubble)
+	# Not in `buttons`: a tap through the bubble walks the hero (and hides it).
 	_bubble_label = Label.new()
 	_bubble_label.add_theme_font_override("font", UiTheme.text_bold())
 	_bubble_label.add_theme_font_size_override("font_size", UiTheme.T_BODY)
@@ -639,6 +641,36 @@ func say(text: String, seconds := 3.5) -> void:
 	_bubble.visible = true
 	_bubble.reset_size()
 	_bubble_t = seconds
+
+
+## A one-off hint at the top (how to walk): a quiet plate, gone after a few seconds.
+func show_hint(text: String, seconds := 5.0) -> void:
+	if _hint == null:
+		_hint = PanelContainer.new()
+		_hint.add_theme_stylebox_override("panel", UiTheme.box(Color(UiTheme.SURFACE, 0.92), Color(UiTheme.GOLD, 0.4), 2, 24, 16))
+		_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var l := Label.new()
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.add_theme_font_override("font", UiTheme.text_bold())
+		l.add_theme_font_size_override("font_size", UiTheme.T_SMALL + 2)
+		_hint.add_child(l)
+		root.add_child(_hint)
+	(_hint.get_child(0) as Label).text = text
+	var vp := root.get_viewport_rect().size
+	_hint.custom_minimum_size = Vector2(vp.x - UiTheme.GUTTER * 2.0, 0)
+	_hint.position = Vector2(UiTheme.GUTTER, 120.0 + _safe_top)
+	_hint.visible = true
+	_hint.modulate.a = 1.0
+	_hint_shown = true
+	var tw := _hint.create_tween()
+	tw.tween_interval(seconds)
+	tw.tween_property(_hint, "modulate:a", 0.0, 0.4)
+	tw.tween_callback(func() -> void: _hint.visible = false)
+
+
+func hint_shown() -> bool:
+	return _hint_shown
 
 
 func is_saying() -> bool:
