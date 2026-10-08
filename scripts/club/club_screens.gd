@@ -34,3 +34,25 @@ static func place(ui: TournamentUI, st: Dictionary) -> void:
 	if lv + 1 < levels.size():
 		ui._card({"tag": "Дальше", "title": "Уровень %d" % (lv + 1), "desc": levels[lv + 1].get("note", "")}, "", 1, UiTheme.MUTED)
 	ui._note("Стройка — у прораба на входе в клуб.")
+
+
+## The coach's board: this run's quests with progress and reward (hub spec 5).
+static func quests(ui: TournamentUI) -> void:
+	ui._open(null, true, "menu")
+	ui._title("Задания тренера")
+	ui._sub("Три на турнир. Невыполненные сгорают с забегом")
+	var list := ClubQuests.current()
+	if list.is_empty():
+		ui._note("Начни турнир — тренер даст задания.")
+		return
+	for q in list:
+		if q["claimed"]:
+			continue
+		var have := ClubQuests._num(q["have"])
+		var need := ClubQuests._num(q["need"])
+		var reward := "+%d золота%s" % [int(q["gold"]), " и вещь" if q["item"] else ""]
+		var tag := "Готово — забери у тренера" if q["done"] else "%s / %s" % [have, need]
+		ui._card({"tag": tag, "title": q["text"], "desc": reward}, "", 0, UiTheme.GOLD if q["done"] else UiTheme.MUTED, -1, q["done"])
+	var waiting: Array = SaveData.club.get("quest_items", [])
+	if not waiting.is_empty():
+		ui._note("Вещи за задания ждут шкафчика: %d" % waiting.size())

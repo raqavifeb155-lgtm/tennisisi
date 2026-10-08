@@ -13,11 +13,13 @@ func _initialize() -> void:
 	test_place_levels()
 	test_roulette_physics()
 	test_builds()
+	test_quests()
 	await test_world()
 	await test_flow()
 	await test_places_flow()
 	await test_build_world()
 	await test_foreman_flow()
+	await test_quests_flow()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -183,6 +185,82 @@ func test_builds() -> void:
 	SaveData.club = {}
 	SaveData.played = 0
 	SaveData.titles = 0
+
+
+## The coach's quests (hub spec 5): three a run from a pool of 15, progress by events,
+## rewards by the island, every third one an item.
+func test_quests() -> void:
+	print("quests")
+	SaveData.club = {}
+	SaveData.gold = 0
+	check(ClubQuests.TEMPLATES.size() >= 12, "a pool of at least 12 (%d)" % ClubQuests.TEMPLATES.size())
+	var fine := true
+	for t in ClubQuests.TEMPLATES:
+		fine = fine and (t["n"] as Array).size() == 3 and int(t["gold"]) >= 20 and int(t["gold"]) <= 60 and t["event"] != ""
+	check(fine, "every template: three thresholds, 20..60 gold, an event")
+	ClubQuests.start_run("111", 0)
+	var q: Array = ClubQuests.current()
+	check(q.size() == 3, "three quests a run")
+	check(q[0]["tpl"] != q[1]["tpl"] and q[1]["tpl"] != q[2]["tpl"] and q[0]["tpl"] != q[2]["tpl"], "three different ones")
+	var again := ClubQuests.current().duplicate(true)
+	ClubQuests.start_run("111", 0)
+	check(ClubQuests.current() == again, "the same run: the same quests")
+	SaveData.club = {}
+	ClubQuests.start_run("111", 0)
+	check(ClubQuests.current() == again, "the same run's seed gives the same quests")
+	# Progress: drive the first quest to its end by its own event.
+	var first: Dictionary = ClubQuests.current()[0]
+	var ev: String = first["event"]
+	var need := float(first["need"])
+	if first["kind"] == "max":
+		ClubQuests.note(ev, need - 0.5 if need > 1.0 else 0.0)
+		check(not ClubQuests.progress(0)["done"], "short of the mark: not done")
+		ClubQuests.note(ev, need)
+	else:
+		for k in int(need) - 1:
+			ClubQuests.note(ev, 1.0)
+		check(not ClubQuests.progress(0)["done"], "one short: not done")
+		ClubQuests.note(ev, 1.0)
+	check(ClubQuests.progress(0)["done"], "done when the count is reached (%s)" % ev)
+	check(ClubQuests.claimable_count() == 1, "one to collect")
+	var gold0 := SaveData.gold
+	var reward := ClubQuests.claim(0)
+	check(int(reward["gold"]) >= 20 and SaveData.gold == gold0 + int(reward["gold"]), "the gold comes on 'Забрать' (+%d)" % int(reward["gold"]))
+	check(ClubQuests.claim(0).is_empty() and ClubQuests.claim(1).is_empty(), "no claiming twice, nothing for an unfinished one")
+	# A match-scope count starts again each match.
+	SaveData.club = {"quests": {"run": "x", "issued": 0, "claimed": 0, "list": [
+		{"tpl": "aces", "text": "", "event": "ace", "kind": "count", "scope": "match", "need": 3, "have": 0, "done": false, "claimed": false, "gold": 40, "item": false, "tier": 0}]}}
+	ClubQuests.note("ace")
+	ClubQuests.note("ace")
+	ClubQuests.match_started()
+	check(int(ClubQuests.progress(0)["have"]) == 0, "aces in a match: counted afresh each match")
+	# A new run burns what wasn't done; done-but-not-collected stays.
+	SaveData.club = {}
+	ClubQuests.start_run("A", 0)
+	var l: Array = ClubQuests.current()
+	l[0]["have"] = l[0]["need"]
+	l[0]["done"] = true
+	ClubQuests.start_run("B", 0)
+	check(ClubQuests.current().size() == 4 and ClubQuests.claimable_count() == 1, "a new run: the old unfinished go, the finished one waits to be collected")
+	# Rewards by island; every third quest an item.
+	SaveData.club = {}
+	ClubQuests.start_run("C", 3)
+	var paris: Dictionary = ClubQuests.current()[0]
+	var tpl := ClubQuests.find_template(paris["tpl"])
+	check(int(paris["gold"]) == roundi(int(tpl["gold"]) * ClubQuests.GOLD_MULT[3]), "Paris pays x2")
+	check(not ClubQuests.current()[0]["item"] and not ClubQuests.current()[1]["item"] and ClubQuests.current()[2]["item"], "the third quest carries an item")
+	var third: Dictionary = ClubQuests.current()[2]
+	third["have"] = third["need"]
+	third["done"] = true
+	SaveData.active = null
+	SaveData.run = {}
+	var r3 := ClubQuests.claim(2)
+	var item: Dictionary = r3.get("item", {})
+	check(not item.is_empty() and int(item["rarity"]) >= Gear.RARE, "an item, rare or better")
+	check(r3["to"] == "locker" or (r3["to"] == "club" and (SaveData.club.get("quest_items", []) as Array).size() == 1), "with no run the item goes to the locker (or waits in the club until stream A's locker)")
+	check(ClubQuests.tier_of("park") == 0 and ClubQuests.tier_of("paris") == 3, "islands: New York 0 .. Paris 3")
+	SaveData.club = {}
+	SaveData.gold = 0
 
 
 ## ClubMaterial: one soft toon material per colour, outlines only where they pay.
@@ -491,4 +569,65 @@ func test_foreman_flow() -> void:
 	SaveData.club = {}
 	SaveData.played = 0
 	SaveData.titles = 0
+	SaveData.gold = 0
+
+
+## Quests in play: GameEvents move them, the coach's room shows them, 'Забрать' pays.
+func test_quests_flow() -> void:
+	print("quests flow")
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	root.add_child(main)
+	await _frames(5)
+	SaveData.enabled = false
+	SaveData.club = {"last_location": "park", "last_format": 0}
+	SaveData.active = null
+	SaveData.run = {}
+	SaveData.played = 1
+	SaveData.gold = 0
+	Skills.pending = []
+	Skills.points = 0
+	main._show_menu()
+	await _frames(3)
+	var club = main.club
+	club._on_choice("club_tournament", 0)   # a run starts: its bracket
+	await _frames(2)
+	main.tournament_mode = true
+	var ev: Node = root.get_node("GameEvents")  # by path: the test compiles before autoloads
+	ev.match_started.emit({"tournament": true, "opponent": ""})
+	await _frames(1)
+	var q: Array = ClubQuests.current()
+	check(q.size() == 3 and SaveData.club["quests"]["run"] == str(main.tournament.rng.seed), "the run's first match deals three quests")
+	# Force a known quest in slot 0 and play its events through GameEvents.
+	q[0] = {"tpl": "aces", "text": "Подай 2 эйса за матч", "event": "ace", "kind": "count", "scope": "match", "need": 2, "have": 0, "done": false, "claimed": false, "gold": 40, "item": false, "tier": 0}
+	var got := []
+	ev.quest_done.connect(func(info: Dictionary) -> void: got.append(info))
+	for k in 2:
+		ev.point.emit({"winner": 0, "reason": "ACE", "rally": 1, "server": 0, "close_call": {}, "best": false})
+	await _frames(1)
+	check(ClubQuests.progress(0)["done"] and got.size() == 1, "two aces by GameEvents: done, quest_done fired")
+	q[1] = {"tpl": "streak", "text": "", "event": "streak", "kind": "max", "scope": "run", "need": 3, "have": 0, "done": false, "claimed": false, "gold": 35, "item": false, "tier": 0}
+	ev.point.emit({"winner": 0, "reason": "OUT", "rally": 3, "server": 1, "close_call": {}, "best": false})
+	check(ClubQuests.progress(1)["done"], "points in a row are counted across reasons")
+	main.tournament_mode = false
+	main._show_menu()
+	await _frames(3)
+	club._travel("coach")
+	await _frames(2)
+	var b: Dictionary = club.place_buttons("coach")
+	check(b["action"] == "club_claim" and String(b["label"]).begins_with("ЗАБРАТЬ"), "at the coach's: ЗАБРАТЬ")
+	check(club.badge_counts()["coach"] >= 2, "the badge over the coach's room counts what's to collect")
+	check(club.world.board_text().contains("✓"), "the chalkboard shows the quests")
+	var g0: int = SaveData.gold
+	club._on_choice("club_claim", 0)
+	await _frames(2)
+	check(SaveData.gold >= g0 + 75 and ClubQuests.claimable_count() == 0, "Забрать: all the rewards at once")
+	check(club.place_buttons("coach")["action"] == "character", "then the button is НАВЫКИ again")
+	club._on_choice("club_quests", 0)
+	await _frames(2)
+	check(main.ui.is_open(), "the quests' board screen")
+	main._on_ui("menu", 0)
+	main.queue_free()
+	await _frames(2)
+	SaveData.club = {}
+	SaveData.played = 0
 	SaveData.gold = 0

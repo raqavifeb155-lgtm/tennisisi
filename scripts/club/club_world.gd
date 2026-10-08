@@ -42,6 +42,8 @@ var _stands_sign: Node3D
 var _ghost: Node3D
 var _ghost_id := ""
 var _high := true
+var _board := "Задания — с началом турнира"
+var _chalk: Label3D
 
 
 func _ready() -> void:
@@ -210,6 +212,17 @@ func stands_sign(on: bool, text: String) -> void:
 		_stands_sign.visible = on
 		if text != "":
 			(_stands_sign.get_meta("label") as Label3D).text = text
+
+
+## The coach's chalkboard text (the quests, one a line).
+func set_board(text: String) -> void:
+	_board = text
+	if is_instance_valid(_chalk):
+		_chalk.text = text
+
+
+func board_text() -> String:
+	return _board
 
 
 func high_quality() -> bool:
@@ -514,17 +527,22 @@ func _fill_room(id: String, inside: Node3D, lv: int) -> void:
 				inside.add_child(_mesh_box(Vector3(0.06, 1.6, 1.0), Vector3(2.85, 1.3, -0.6), ClubMaterial.pal(ClubMaterial.GLASS)))
 		"coach":
 			inside.add_child(_mesh_box(Vector3(2.4, 1.3, 0.06), Vector3(0.6, 1.7, -hz + 0.14), ClubMaterial.pal(ClubMaterial.CHALKBOARD)))
+			# The coach's chalkboard: this run's quests (ClubQuests.board_text).
 			var chalk := Label3D.new()
-			chalk.text = "ФОР · БЭК · ПОД\nСЕТ · НОГИ"
+			chalk.text = _board
 			chalk.font = UiTheme.text_bold()
-			chalk.font_size = 48
-			chalk.pixel_size = 0.005
+			chalk.font_size = 40
+			chalk.pixel_size = 0.0042
+			chalk.width = 540
+			chalk.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			chalk.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 			chalk.modulate = Color(0.92, 0.92, 0.88, 0.85)
 			chalk.outline_size = 0
 			chalk.shaded = false
 			chalk.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			chalk.position = Vector3(0.6, 1.7, -hz + 0.18)
 			inside.add_child(chalk)
+			_chalk = chalk
 			var chair := Node3D.new()
 			chair.position = Vector3(-1.4, 0.15, -0.6)
 			inside.add_child(chair)

@@ -18,6 +18,7 @@ var world: ClubWorld
 var cam: ClubCamera
 var hud: ClubHud
 var coach := ClubCoach.new()
+var quests: ClubQuests.Watch          # the coach's quests, counted from the match's events
 var active := false
 var _hero := START
 var _move_target := Vector3.INF
@@ -70,6 +71,9 @@ func setup(m: Node) -> void:
 		main.hud.touch.blocked_controls.append(b)
 	main.hud.touch.tapped.connect(_on_tap)
 	coach.setup(self, main.cpu)
+	quests = ClubQuests.Watch.new()
+	add_child(quests)
+	quests.setup(main)
 
 
 ## Into the club (from the start, a match, a run) or back to it (from a room's screen).
@@ -150,6 +154,8 @@ func remember(location: String, format: int) -> void:
 
 
 func _refresh() -> void:
+	quests.sync_run()
+	world.set_board(ClubQuests.board_text())
 	_open_ids = []
 	var travel: Array = []
 	for p in ClubPlaces.LIST:
@@ -269,7 +275,10 @@ func _update_place() -> void:
 		world.set_inside("")
 	match id:
 		"court":
-			coach.say("court_run" if SaveData.resumable() != null else "court")
+			if ClubQuests.claimable_count() > 0:
+				coach.say("reward")
+			else:
+				coach.say("court_run" if SaveData.resumable() != null else "court")
 		"coach":
 			if Skills.points + Skills.pending.size() > 0:
 				coach.say("coach")
@@ -303,12 +312,23 @@ func place_buttons(id: String) -> Dictionary:
 			return {"label": "НОВАЯ ИГРА  ·  %s" % String(loc["name"]).to_upper(), "action": "club_tournament",
 				"extra": [["Другое место", "start_tournament"]]}
 		return {"label": "НОВАЯ ИГРА", "action": "club_tournament", "extra": []}
+	if id == "coach":
+		if ClubQuests.claimable_count() > 0:
+			return {"label": "ЗАБРАТЬ  ·  +%d ●" % ClubQuests.claimable_gold(), "action": "club_claim",
+				"extra": [["Навыки", "character"]]}
+		return {"label": "НАВЫКИ", "action": "character", "extra": [["Задания", "club_quests"]]}
 	var st := ClubPlaces.state(id)
 	return {"label": String(st["label"]).to_upper(), "action": st["action"], "extra": []}
 
 
+## Red counts over places: skill points and quests to collect at the coach's, what's
+## affordable at the foreman's.
+func badge_counts() -> Dictionary:
+	return {"coach": Skills.points + Skills.pending.size() + ClubQuests.claimable_count(), "gate": ClubBuilds.affordable_count()}
+
+
 func _update_badges() -> void:
-	var counts := {"coach": Skills.points + Skills.pending.size(), "gate": ClubBuilds.affordable_count()}
+	var counts := badge_counts()
 	var screen := {}
 	for id in counts:
 		var pos: Vector3 = ClubPlaces.find(id)["pos"] + Vector3(0, 3.6, 0)
@@ -346,6 +366,27 @@ func ui_action(action: String, _arg: int) -> void:
 			roulette_open()
 		"club_foreman":
 			foreman_open()
+		"club_claim":
+			_claim()
+		"club_quests":
+			ClubScreens.quests(main.ui)
+
+
+## 'Забрать' at the coach's: every finished quest's reward at once.
+func _claim() -> void:
+	if ClubQuests.claimable_count() == 0:
+		return
+	var r := ClubQuests.claim_all()
+	hud.fly_coins(hud.get_viewport().get_visible_rect().size * Vector2(0.5, 0.8))
+	hud.set_gold(SaveData.gold)
+	main.sfx.play("coin" if main.sfx.has("coin") else "point", -4.0)
+	var items: Array = r["items"]
+	var line := "Держи %d золота" % int(r["gold"])
+	if not items.is_empty():
+		line += " и %s" % String(items[0].get("name", "вещь")).to_lower()
+	coach.say(line, true)
+	world.set_board(ClubQuests.board_text())
+	_show_place(_place if _place != "" else "coach")
 
 
 # --- The Totalizator at the bar: a 3D roulette ---------------------------------------
