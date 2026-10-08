@@ -93,4 +93,4 @@ func on_point(info: Dictionary, comeback: bool, boosts := {}) -> Dictionary:
 
 ## The match's style as run gold: a stylish match adds about half the round's prize.
 func gold(reward: float, stage: int) -> int:
-	return roundi(match_points * GOLD_PER_POINT * reward * (1.0 + GOLD_PER_ROUND * stage))
+	return roundi(match_points * GOLD_PER_POINT * reward * (1.0 + GOLD_PER_ROUND * stage) * Tournament.income_scale())

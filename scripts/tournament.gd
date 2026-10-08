@@ -8,6 +8,18 @@ enum State { BRACKET, REWARD, LOST, OVER }
 
 const TIER_NAME := "Клубный турнир"
 const GOLD_PER_WIN := [10, 15, 20, 30, 50]
+## One knob for every prize and style gold of a run (v0.2 A-5, tools/economy_sim.gd): the
+## whole club (B's table, ~16 900 gold) must take 60-80 hours (hub spec 13), so what a run pays
+## is about a fifth of the first design in the long run. A newcomer is paid fully at first
+## and the scale falls to INCOME_SCALE over BEGINNER_RUNS runs, so the first build comes in
+## run 1-2. Item prices, the shop and the club's table are not touched by it.
+static var INCOME_SCALE := 0.22
+const BEGINNER_RUNS := 6
+
+
+static func income_scale() -> float:
+	var k := clampf(1.0 - float(SaveData.played) / BEGINNER_RUNS, 0.0, 1.0)
+	return INCOME_SCALE + (1.0 - INCOME_SCALE) * k
 const CHAMPION_BONUS := 100
 ## Prize money of the round you went out in (v0.2 A economy): like real tennis, a lost run
 ## still pays, so even a beginner who loses the first round earns toward the club. Paid for
@@ -378,7 +390,7 @@ func new_score(first_server: int) -> MatchScore:
 
 ## The island's prize multiplier (Locations.TIERS) times the format's reward.
 func prize_mult() -> float:
-	return float(format_info()["reward"]) * Locations.prize_mult(location)
+	return float(format_info()["reward"]) * Locations.prize_mult(location) * income_scale()
 
 
 func champion_bonus() -> int:

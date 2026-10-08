@@ -33,6 +33,9 @@ var sink := 0.2                   # the share of a run's income spent in the sho
 var hardness := 0.0               # the edge shift for harder opponents (stream D): -0.1 = ten points tougher
 var table_total := 0              # --total=N: also report the time to earn N gold
 var rng := RandomNumberGenerator.new()
+var gambles := true               # --no-gambles: no rerolls and strings
+var scale := -1.0                 # --scale=X: Tournament.INCOME_SCALE for this run
+var kinds := {}                   # the run's gold by line, summed over everything (the breakdown)
 var done_at := {}                 # trial -> the run the last club level was bought in
 
 
@@ -51,7 +54,11 @@ func _initialize() -> void:
 			"--sink": sink = float(v)
 			"--hardness": hardness = float(v)
 			"--total": table_total = int(v)
+			"--scale": scale = float(v)
+			"--no-gambles": gambles = false
 			"--island-edge": island_edge = (v.split(",") as Array).map(func(s): return float(s))
+	if scale > 0.0:
+		Tournament.INCOME_SCALE = scale
 	_run()
 	quit()
 
@@ -107,7 +114,7 @@ func _play_run(xp: float, island: String) -> RunLog:
 		var won := rng.randf() < _win_chance(xp, t.stage, t)
 		xp += Model.XP_PER_MATCH
 		log.matches += 1
-		t.earn("style", roundi(Model.STYLE_GOLD * rng.randf_range(0.5, 1.5)))
+		t.earn("style", roundi(Model.STYLE_GOLD * rng.randf_range(0.5, 1.5) * (1.0 + 0.25 * t.stage) / 1.15 * Tournament.income_scale()))
 		t.record_match(won, "", rng)
 		if not t.pending_loot.is_empty():
 			var loot: Dictionary = t.pending_loot
@@ -127,11 +134,13 @@ func _play_run(xp: float, island: String) -> RunLog:
 	SaveData.gold += t.gold
 	SaveData.played += 1
 	log.income = t.gold
+	for k in t.income:
+		kinds[k] = float(kinds.get(k, 0.0)) + float(t.income[k])
 	if t.champion:
 		SaveData.titles += 1
 		SaveData.note_title(island)
 	# the quests (the coach's board): a few done a run, paid at the coach's
-	var q := quests_done * 35.0 * Locations.prize_mult(island) * (0.7 + 0.6 * float(log.wins) / 4.0)
+	var q := quests_done * 35.0 * Locations.prize_mult(island) * (0.7 + 0.6 * float(log.wins) / 4.0) * (1.0 + float(ClubApi.call_or("quest_gold_bonus", 0.0))) * Tournament.income_scale()  # B scales quest gold by it too
 	SaveData.gold += roundi(q)
 	log.income += q
 	log.quests = q
@@ -175,26 +184,29 @@ func _pick_reward(t: Tournament) -> int:
 	return 0
 
 
-## The island that pays most among the open ones (the expected gold of a run there).
+## The island he goes to: the farthest open one that still pays at least 75% of the best
+## (a player wants the next island for its own sake, not only for the gold).
 func _choose_island(xp: float) -> String:
-	var best := "park"
-	var best_gold := -1.0
+	var pay := {}
+	var best_gold := 0.0
 	for id in Locations.ORDER:
 		if not Locations.unlocked(id):
 			continue
 		var tier := Locations.tier(id)
 		var g := 0.0
 		var alive := 1.0
-		var m := 1.0 + Model.STYLE_GOLD / 10.0
 		for stage in 5:
 			var p := Model.win_chance(xp + stage * 70.0, stage, float(island_edge[tier]) + hardness + _typical_gear_edge())
 			g += alive * (Tournament.PRIZE_ON_LOSS[stage] * (1.0 - p) + float(Tournament.GOLD_PER_WIN[stage]) * p) * Locations.prize_mult(id)
 			alive *= p
 		g += alive * Tournament.CHAMPION_BONUS * Locations.prize_mult(id)
-		if g > best_gold:
-			best_gold = g
-			best = id
-	return best
+		pay[id] = g
+		best_gold = maxf(best_gold, g)
+	var pick := "park"
+	for id in Locations.ORDER:
+		if pay.has(id) and pay[id] >= 0.75 * best_gold:
+			pick = id
+	return pick
 
 
 func _typical_gear_edge() -> float:
@@ -220,9 +232,26 @@ func _shop(budget: int, log: RunLog) -> void:
 		log.bought.append("item:%s" % Gear.RARITIES[int(stock[best]["rarity"])]["id"])
 
 
+## The shop's gambles of a keen player: a reroll of the window a run, strings on the best
+## kept thing every third run - gold out of the bank like any purchase.
+func _gambles(lg: RunLog, run: int) -> void:
+	if not ClubBuilds.is_open("shop"):
+		return
+	if Shop.reroll_price() == 0 or SaveData.gold >= 120 + Shop.reroll_price():
+		Shop.reroll()
+	if Shop.can_restring() and run % 3 == 0 and not Locker.items().is_empty():
+		var best := 0
+		for i in Locker.items().size():
+			if _item_value(Locker.items()[i]) > _item_value(Locker.items()[best]):
+				best = i
+		if SaveData.gold >= 4 * Shop.restring_price(Locker.items()[best]):
+			Shop.restring("items", best, rng)
+
+
 ## Builds: first the shop and the locker (the player saves for them), then the cheapest
 ## next level of anything open. Names go to the log.
 func _build(log: RunLog) -> void:
+	ClubApi.call_or("complete_ready", [])  # scaffolding that has waited its runs comes down
 	var again := true
 	while again:
 		again = false
@@ -276,6 +305,8 @@ func _run() -> void:
 			var lg := _play_run(xp, island)
 			xp = lg.xp
 			lg.bank = SaveData.gold
+			if gambles:
+				_gambles(lg, run)
 			_shop(roundi(float(lg.income) * sink * 2.0), lg)
 			_build(lg)
 			lg.bank = SaveData.gold
@@ -284,6 +315,13 @@ func _run() -> void:
 			logs.append(lg)
 		all_logs.append(logs)
 
+	var total_gold := 0.0
+	for k in kinds:
+		total_gold += kinds[k]
+	var parts: Array[String] = []
+	for k in kinds:
+		parts.append("%s %d%%" % [k, roundi(100.0 * kinds[k] / maxf(total_gold, 1.0))])
+	print("INCOME_SCALE %.2f  ·  the run's gold by line: %s  (+ quests at the coach)" % [Tournament.INCOME_SCALE, ", ".join(parts)])
 	_print_runs(all_logs)
 	_print_milestones(all_logs)
 	_print_income(all_logs, club_total)

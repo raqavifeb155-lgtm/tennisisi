@@ -16,6 +16,7 @@ func _run() -> void:
 	test_item_level()
 	test_drop_chances()
 	test_prize_money()
+	test_income_scale()
 	test_income()
 	test_sell_extra()
 	test_locker()
@@ -280,9 +281,15 @@ func test_shop() -> void:
 	for k in 3:
 		prices.append(Shop.reroll_price())
 		Shop.reroll()
-	check(prices == [20, 30, 45] and SaveData.gold == 5, "reroll 20 -> 30 -> 45 (%s), paid" % [prices])
+	var free := ClubApi.free_rerolls()  # the club's free rerolls first (0 without B's builds), then 20 -> 30 -> 45
+	var want := []
+	var cost := 0
+	for k in 3:
+		want.append(0 if k < free else roundi(20 * pow(1.5, k - free)))
+		cost += want[k]
+	check(prices == want and SaveData.gold == 100 - cost, "reroll %s, paid (%s)" % [want, prices])
 	SaveData.played = 9
-	check(Shop.reroll_price() == 20, "after a run the reroll is 20 again")
+	check(Shop.reroll_price() == (0 if free > 0 else 20), "after a run the rerolls start over")
 	SaveData.gold = 0
 	check(Shop.buy(0).begins_with("ещё"), "no gold: «%s»" % Shop.buy(0))
 	SaveData.gold = 5000
@@ -380,3 +387,16 @@ func test_islands() -> void:
 	check(back.location == "paris" and back.lineup == paris.lineup, "a saved Paris run comes back the same")
 	_reset_save()
 
+
+
+func test_income_scale() -> void:
+	print("income scale")
+	_reset_save()
+	check(is_equal_approx(Tournament.income_scale(), 1.0), "a newcomer is paid in full")
+	SaveData.played = 3
+	check(is_equal_approx(Tournament.income_scale(), Tournament.INCOME_SCALE + (1.0 - Tournament.INCOME_SCALE) * 0.5), "halfway through the first runs")
+	SaveData.played = 6
+	var t := Tournament.new(1, 3)
+	check(is_equal_approx(Tournament.income_scale(), Tournament.INCOME_SCALE), "after %d runs the long-run scale" % Tournament.BEGINNER_RUNS)
+	check(t.prize_on_loss(0) == roundi(20 * Tournament.INCOME_SCALE) and t.gold_for_win(4) == roundi(50 * Tournament.INCOME_SCALE), "prizes follow it (%d, %d)" % [t.prize_on_loss(0), t.gold_for_win(4)])
+	_reset_save()
