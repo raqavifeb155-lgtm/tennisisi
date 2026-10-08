@@ -37,6 +37,11 @@ var model := PlayerModel.new()
 var style: Dictionary = Opponents.PLAY_STYLES[Opponents.DEFAULT_STYLE]
 var style_id := Opponents.DEFAULT_STYLE
 
+## The opponent's stats 1..10 (Opponents.stats; D-5): every stroke, the serve, the legs.
+var ratings: Dictionary = Opponents.stats({}, 0.5)
+var _base_skill := 0.5            # the profile's skill: Tuning.ai_skill above / below it
+                                  # (modifiers, tiredness) shifts every stat a little
+
 ## Decisions this session, for the bot metrics (AiMetrics prints report()).
 var stats := {}
 
@@ -48,6 +53,7 @@ var _at_net := false              # came in after the last shot: volleys the nex
 var _pos_at_player_hit := Vector3(0, 0, -12.6)
 var _stretch := 0.0               # this shot: how far it had to run (0..1)
 var _risk := 0.0                  # this shot: the planner's extra risk
+var _wing_t := 0.5                # this shot: the wing's stat (0..1)
 var _last_player_side := 0        # the wing of the player's last rally ball
 var _player_contact := Vector3(0, 0, 12.6)  # where the player hit their last ball from
 var _player_q := 0.7              # and how well
@@ -82,6 +88,42 @@ func set_profile(opp: Dictionary) -> void:
 	if not Opponents.PLAY_STYLES.has(style_id):
 		style_id = Opponents.DEFAULT_STYLE
 	style = Opponents.PLAY_STYLES[style_id]
+	_base_skill = float(opp.get("skill", skill()))
+	ratings = Opponents.stats(opp, _base_skill)
+
+
+## A stat as 0..1 (1 -> 0, 10 -> 1), moved by how far Tuning.ai_skill is from the
+## profile's skill (a "Железный" modifier, tiredness from the stamina "health").
+func stat(key: String) -> float:
+	return clampf((float(ratings.get(key, 5)) - 1.0) / 9.0 + (skill() - _base_skill), 0.0, 1.0)
+
+
+## The stamina stat as a multiplier of the stamina "health" a ball takes (MatchEffects):
+## a weak tank drains 1.5x faster, the best one at 0.6x.
+func stamina_mult() -> float:
+	return lerpf(1.5, 0.6, stat("stamina"))
+
+
+## The CPU's serve by the serve stat (Main._cpu_serve_hit): a weak server serves slow and
+## to the middle of the box, a strong one hits the corners and the T, hard. `mult`: the
+## "Бомбардир" modifier. Returns tx, tz, pace, top, side_spin.
+func plan_serve(box_side: float, attempt: int, mult := 1.0) -> Dictionary:
+	var t := stat("serve")
+	if attempt == 1:
+		var x: float
+		var side_spin := 0.0
+		var pace := lerpf(30.0, 50.0, t) * rng.randf_range(0.92, 1.04) * mult * serve_mult()
+		if rng.randf() < lerpf(0.15, 0.85, t):
+			var wide := rng.randf() < 0.5
+			x = rng.randf_range(2.9, 3.7) if wide else rng.randf_range(0.35, 0.9)
+			if wide and rng.randf() < 0.5:
+				pace *= 0.88
+				side_spin = 240.0 * -box_side  # slice curving out wide
+		else:
+			x = rng.randf_range(1.2, 2.6)
+		_count("serve_corner" if x < 1.0 or x > 2.8 else "serve_middle")
+		return {"tx": box_side * x, "tz": rng.randf_range(lerpf(4.4, 5.0, t), 5.9), "pace": pace, "top": 120.0, "side_spin": side_spin}
+	return {"tx": box_side * rng.randf_range(0.9, 2.6), "tz": rng.randf_range(4.2, 5.4), "pace": lerpf(25.0, 36.0, t), "top": 320.0, "side_spin": 0.0}
 
 
 ## First serve pace multiplier of the play style (the "bomber" serves bigger).
@@ -123,7 +165,7 @@ func skill() -> float:
 ## Called when the player hits: reaction delay + split step.
 func on_player_hit() -> void:
 	_pos_at_player_hit = me.position
-	_reaction = lerpf(0.30, 0.10, skill())
+	_reaction = lerpf(0.30, 0.09, stat("speed"))
 	_plan_timer = 0.0
 	_prev_rel = INF
 	_swung = false
@@ -174,7 +216,12 @@ func receive_position(box_side: float) -> Vector3:
 
 ## How far the returner can stretch for a serve (a full lunge is the rally's REACH).
 func return_reach() -> float:
-	return lerpf(1.35, 1.55, skill())
+	return lerpf(1.35, 1.6, stat("speed"))
+
+
+## Top run speed by the speed stat (m/s), before the modifiers.
+func run_speed() -> float:
+	return lerpf(4.8, 7.2, stat("speed"))
 
 
 ## Called when the CPU itself hits (or feeds): plan the recovery position, at the net
@@ -182,14 +229,14 @@ func return_reach() -> float:
 func on_cpu_hit(target_x: float, approach := false) -> void:
 	_at_net = approach
 	if approach:
-		_recovery = Vector3(clampf(target_x * 0.35, -2.0, 2.0), 0.0, -lerpf(NET_POS_FAR, NET_POS_NEAR, skill()))
+		_recovery = Vector3(clampf(target_x * 0.35, -2.0, 2.0), 0.0, -lerpf(NET_POS_FAR, NET_POS_NEAR, stat("net")))
 	else:
 		_recovery = Vector3(clampf(target_x * 0.25, -1.5, 1.5), 0.0, -12.4)
 	_goal = _recovery
 
 
 func tick(delta: float, incoming: bool) -> void:
-	me.max_speed = lerpf(5.0, 6.8, skill()) * speed_mult
+	me.max_speed = run_speed() * speed_mult
 	if incoming:
 		if _reaction > 0.0:
 			_reaction -= delta
@@ -326,13 +373,15 @@ func _check_hit() -> void:
 
 
 func _hit(bp: Vector3) -> void:
-	var s := skill()
 	var lateral := me.lateral_of(bp)
 	var side := 1 if lateral >= 0.0 else -1
-	var t_err := rng.randfn(0.0, lerpf(0.10, 0.04, s))
+	# The wing's stat plays this ball (D-5): timing, contact, pace, errors.
+	var s := stat("forehand" if side > 0 else "backhand")
+	_wing_t = s
+	var t_err := rng.randfn(0.0, lerpf(0.095, 0.03, s))
 	var tq: Array = game.timing_quality(t_err)
 	var q: float = tq[0] * game.position_quality(lateral, minf(bp.y, 1.2) if bp.y > 2.2 else bp.y) * game.movement_quality(me.velocity.length())
-	q *= lerpf(0.72, 0.92, s)  # the CPU never plays quite as cleanly as a perfect swipe
+	q *= lerpf(0.72, 0.96, s)  # the CPU never plays quite as cleanly as a perfect swipe
 	if game.rally == 1:
 		# Returning serve: big serves are only blocked back.
 		q *= clampf(1.15 - (game.last_serve_kmh - 120.0) / 130.0, 0.4, 1.0)
@@ -344,12 +393,15 @@ func _hit(bp: Vector3) -> void:
 	# taken early from the back is just a rally ball.
 	var volley: bool = game.bounces == 0 and me.position.z > -FORECOURT_Z
 	var smash := volley and bp.y > 2.2
+	if volley:
+		q = minf(q * lerpf(0.8, 1.08, stat("net")), 1.0)
 	var plan := ShotPlanner.choose({
 		"q": q, "skill": s, "me": me.position, "contact": bp, "player": game.player.position,
 		"player_vel": game.player.velocity, "volley": volley, "rally": game.rally,
 		"player_contact": _player_contact, "player_q": _player_q,
 		"short": not volley and game.rally >= 2 and bp.z > -9.6,
 		"bh_x": -signf(game.player.right().x), "bh_weak": model.backhand_weakness(),
+		"net_k": lerpf(0.4, 1.8, stat("net")),
 	}, style, rng)
 	if smash:
 		plan["kind"] = "smash"
@@ -388,7 +440,7 @@ func _hit(bp: Vector3) -> void:
 ## of what it went for and the play style's appetite for it. q: contact quality;
 ## incoming: the ball's speed (m/s).
 func error_chance(q: float, incoming: float, stretch := -1.0) -> float:
-	var s := skill()
+	var s := _wing_t
 	var st := _stretch if stretch < 0.0 else stretch
 	var heavy := clampf((incoming - 18.0) / 18.0, 0.0, 1.0)
 	var base := lerpf(0.045, 0.008, s) * (1.0 - q * 0.6)          # unforced: rare

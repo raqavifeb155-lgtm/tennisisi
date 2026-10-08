@@ -1697,7 +1697,6 @@ func _player_underarm_serve(dir: Vector3, pace_k: float) -> void:
 
 
 func _cpu_serve_hit() -> void:
-	var s := Tuning.ai_skill
 	var bp := ball.state.pos
 	var q: float = timing_quality(_cpu_toss_offset)[0]
 	var tx: float
@@ -1705,20 +1704,13 @@ func _cpu_serve_hit() -> void:
 	var pace: float
 	var top: float
 	var side_spin := 0.0
-	if serve_attempt == 1:
-		var wide := rng.randf() < 0.5
-		tx = box_side * (rng.randf_range(2.6, 3.6) if wide else rng.randf_range(0.4, 1.2))
-		tz = rng.randf_range(4.6, 5.9)
-		pace = lerpf(32.0, 46.0, s) * rng.randf_range(0.9, 1.05) * _cpu_serve_mult * ai.serve_mult()
-		top = 120.0
-		if wide and rng.randf() < 0.5:
-			pace *= 0.85
-			side_spin = 240.0 * -box_side  # slice curving out wide
-	else:
-		tx = box_side * rng.randf_range(0.9, 2.6)
-		tz = rng.randf_range(4.2, 5.4)
-		pace = lerpf(26.0, 34.0, s)
-		top = 320.0
+	# D-5: where and how hard by the opponent's serve stat (OpponentAI.plan_serve).
+	var sv: Dictionary = ai.plan_serve(box_side, serve_attempt, _cpu_serve_mult)
+	tx = sv["tx"]
+	tz = sv["tz"]
+	pace = sv["pace"]
+	top = sv["top"]
+	side_spin = sv["side_spin"]
 	cpu.swing(1, 0.02, bp, Athlete.Style.SERVE)
 	var r := execute_shot(Who.CPU, cpu, bp, Vector3(tx, BallPhysics.RADIUS, tz), pace, top, q, _cpu_toss_offset, 1, false, side_spin, false, 0.12)
 	last_serve_kmh = r.speed * 3.6

@@ -23,6 +23,7 @@ func _run() -> void:
 		test_pressure_errors,
 		test_net_and_footwork,
 		test_tv_camera,
+		test_opponent_stats,
 	]
 	expected = tests.size()
 	for t in tests:
@@ -410,4 +411,77 @@ func test_tv_camera() -> void:
 	ok = ok and SaveData.camera == "tv" and SaveData._to_config().get_value("view", "camera", "") == "tv"
 	SaveData._apply(ConfigFile.new())
 	check(ok and SaveData.camera == "normal", "the camera choice is saved in the new section [view], default normal")
+	finished += 1
+
+
+func test_opponent_stats() -> void:
+	print("D-5: opponents have stats, and play by them")
+	for o in Opponents.ROSTER:
+		var st := Opponents.stats(o)
+		var ok := st.size() == 6
+		for k in Opponents.STAT_KEYS:
+			ok = ok and int(st[k]) >= 1 and int(st[k]) <= 10
+		check(ok, "%s: six stats 1..10 %s" % [o["id"], str(st)])
+	var lo := Opponents.stats({"skill": 0.1})
+	var hi := Opponents.stats({"skill": 0.9})
+	check(int(hi["forehand"]) > int(lo["forehand"]) + 4, "missing stats come from the tier (%d .. %d)" % [lo["forehand"], hi["forehand"]])
+	check(int(Opponents.stats({"skill": 0.5, "play_style": "bomber"})["serve"]) > int(Opponents.stats({"skill": 0.5})["serve"]), "the style leans them: the bomber serves better")
+	check(Opponents.captions(Opponents.stats(Opponents.find("dzumhur"))).has("Слабая подача"), "Dzumhur's card: weak serve")
+	check(Opponents.captions(Opponents.stats(Opponents.find("djokovic"))).size() >= 1, "Djokovic's card names a strength")
+	check(Opponents.captions({"serve": 5, "forehand": 5, "backhand": 5, "net": 5, "speed": 5, "stamina": 5}).is_empty(), "an average player: no caption")
+
+	var tuning := root.get_node("Tuning")
+	var s0: float = tuning.ai_skill
+	var g := FakeGame.new()
+	var ai: Node = load("res://scripts/opponent_ai.gd").new()
+	ai.game = g
+	ai.rng.seed = 9
+	tuning.ai_skill = 0.4
+	var weak := {"skill": 0.4, "stats": {"serve": 1, "forehand": 9, "backhand": 2, "net": 1, "speed": 1, "stamina": 1}}
+	var strong := {"skill": 0.4, "stats": {"serve": 10, "forehand": 9, "backhand": 9, "net": 10, "speed": 10, "stamina": 10}}
+	var serve_of := func(prof: Dictionary) -> Array:
+		ai.set_profile(prof)
+		var pace := 0.0
+		var corner := 0
+		for i in 200:
+			var sv: Dictionary = ai.plan_serve(-1.0, 1)
+			pace += float(sv["pace"]) / 200.0
+			var x := absf(float(sv["tx"]))
+			if x < 1.0 or x > 2.8:
+				corner += 1
+		return [pace, corner]
+	var sw: Array = serve_of.call(weak)
+	var ss: Array = serve_of.call(strong)
+	check(ss[0] > sw[0] * 1.35, "a strong serve is much faster (%.0f vs %.0f km/h)" % [ss[0] * 3.6, sw[0] * 3.6])
+	check(ss[1] > 140 and sw[1] < 60, "a strong server hits the corners and the T (%d of 200), a weak one the middle (%d)" % [ss[1], sw[1]])
+	ai.set_profile(weak)
+	var slow: float = ai.run_speed()
+	var tired: float = ai.stamina_mult()
+	ai._wing_t = ai.stat("backhand")
+	var bh_err: float = ai.error_chance(0.7, 26.0, 0.2)
+	ai._wing_t = ai.stat("forehand")
+	var fh_err: float = ai.error_chance(0.7, 26.0, 0.2)
+	check(bh_err > fh_err * 1.3, "a weak wing misses more (backhand %.3f vs forehand %.3f)" % [bh_err, fh_err])
+	ai.set_profile(strong)
+	check(ai.run_speed() > slow + 1.5, "speed: %.1f vs %.1f m/s" % [ai.run_speed(), slow])
+	check(ai.stamina_mult() < tired * 0.5, "stamina: the stamina health drains x%.2f vs x%.2f" % [ai.stamina_mult(), tired])
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 4
+	var come := [0, 0]
+	for i in 400:
+		for j in 2:
+			var sit := _sit({"short": true, "me": Vector3(-1, 0, -8.8), "net_k": lerpf(0.4, 1.8, 0.0 if j == 0 else 1.0)})
+			if ShotPlanner.choose(sit, Opponents.PLAY_STYLES["allcourt"], rng)["approach"]:
+				come[j] += 1
+	check(come[1] > come[0] * 2, "the net stat: comes in %d vs %d times of 400" % [come[1], come[0]])
+	tuning.ai_skill = 0.52
+	ai.set_profile(strong)
+	var boosted: float = ai.stat("forehand")
+	tuning.ai_skill = 0.4
+	check(boosted > ai.stat("forehand"), "a modifier on the AI skill still lifts the stats")
+	tuning.ai_skill = s0
+	ai.free()
+	g.player.free()
+	g.cpu.free()
+	g.free()
 	finished += 1

@@ -1,6 +1,8 @@
 class_name Opponents
 ## Tournament roster: one tennis player per level, the boss in the final. Each one
-## teaches a lesson. A profile sets the AI skill (the format is chosen per run) and the
+## teaches a lesson. A profile sets the AI skill (the format is chosen per run), the stats
+## 1..10 ("stats": serve, forehand, backhand, net, speed, stamina; see stats(): missing
+## ones come from the skill tier and the style; OpponentAI plays by them) and the
 ## play style ("play_style", one of PLAY_STYLES: how often the AI attacks, comes to the
 ## net, plays drop shots and lobs, how much it risks; see scripts/ai/shot_planner.gd).
 ## The boss phases come with the opponent profiles step of the roadmap.
@@ -10,30 +12,35 @@ const ROSTER := [
 	{
 		"id": "dzumhur", "name": "Дамир Джумхур", "short": "ДЖУМХУР", "short_en": "DZUMHUR", "title": "Уровень 1",
 		"lesson": "Мягкий темп, прощает ошибки. Обучение", "skill": 0.0, "play_style": "netrusher",
+		"stats": {"serve": 3, "forehand": 5, "backhand": 4, "net": 6, "speed": 5, "stamina": 4},
 		"shirt": Color(0.2, 0.45, 0.8),
 		"look": {"skin": 3, "hair": Looks.Hair.SHORT, "hair_color": 1, "beard": Looks.Beard.STUBBLE, "head": Looks.Head.NONE, "shirt": 5, "shorts": 3, "accent": 5},
 	},
 	{
 		"id": "basilashvili", "name": "Николоз Басилашвили", "short": "БАСИЛАШВИЛИ", "short_en": "BASILASHVILI", "title": "Уровень 2",
 		"lesson": "Лупит всё подряд и ошибается. Урок обороны", "skill": 0.25, "play_style": "attacker",
+		"stats": {"serve": 6, "forehand": 7, "backhand": 5, "net": 4, "speed": 5, "stamina": 4},
 		"shirt": Color(0.85, 0.85, 0.88),
 		"look": {"skin": 3, "hair": Looks.Hair.SHORT, "hair_color": 0, "beard": Looks.Beard.SHORT, "head": Looks.Head.NONE, "shirt": 0, "shorts": 3, "accent": 0},
 	},
 	{
 		"id": "rublev", "name": "Андрей Рублёв", "short": "РУБЛЁВ", "short_en": "RUBLEV", "title": "Уровень 3",
 		"lesson": "Тяжёлый форхенд. Урок терпения", "skill": 0.45, "play_style": "attacker",
+		"stats": {"serve": 7, "forehand": 9, "backhand": 6, "net": 5, "speed": 7, "stamina": 7},
 		"shirt": Color(0.75, 0.2, 0.18),
 		"look": {"skin": 1, "hair": Looks.Hair.MESSY, "hair_color": 8, "beard": Looks.Beard.STUBBLE, "head": Looks.Head.HEADBAND, "shirt": 13, "shorts": 3, "accent": 11},
 	},
 	{
 		"id": "zverev", "name": "Саша Зверев", "short": "ЗВЕРЕВ", "short_en": "ZVEREV", "title": "Уровень 4",
 		"lesson": "Подача за 220 км/ч. Урок приёма", "skill": 0.62, "play_style": "bomber",
+		"stats": {"serve": 10, "forehand": 7, "backhand": 8, "net": 5, "speed": 7, "stamina": 7},
 		"shirt": Color(0.12, 0.12, 0.16),
 		"look": {"skin": 1, "hair": Looks.Hair.BUN, "hair_color": 5, "beard": Looks.Beard.STUBBLE, "head": Looks.Head.HEADBAND, "shirt": 3, "shorts": 3, "accent": 3},
 	},
 	{
 		"id": "djokovic", "name": "Новак Джокович", "short": "ДЖОКОВИЧ", "short_en": "DJOKOVIC", "title": "Босс · Король Корта",
 		"lesson": "Возвращает всё. Финал турнира", "skill": 0.85, "boss": true, "play_style": "counter",
+		"stats": {"serve": 8, "forehand": 9, "backhand": 10, "net": 7, "speed": 10, "stamina": 10},
 		"shirt": Color(0.95, 0.75, 0.2),
 		"look": {"skin": 3, "hair": Looks.Hair.SHORT, "hair_color": 1, "beard": Looks.Beard.STUBBLE, "head": Looks.Head.NONE, "shirt": 10, "shorts": 3, "accent": 10},
 	},
@@ -70,6 +77,59 @@ static func find(id: String) -> Dictionary:
 		if o["id"] == id:
 			return o
 	return {}
+
+
+## The opponent's stats, 1..10 (D-5, hub-economy spec 10). OpponentAI plays by them:
+##   serve     pace and placement (weak: slow, to the middle of the box; strong: corners, the T)
+##   forehand, backhand  per wing: timing, contact, pace and errors
+##   net       how often it comes in, how well it volleys
+##   speed     run speed, reaction, reach on the return
+##   stamina   how fast the stamina "health" (scripts/run) drains
+const STAT_KEYS := ["serve", "forehand", "backhand", "net", "speed", "stamina"]
+const STAT_NAMES := {"serve": "Подача", "forehand": "Форхенд", "backhand": "Бэкхенд", "net": "Сетка", "speed": "Скорость", "stamina": "Выносливость"}
+## A style leans the tier's stats (when the profile does not set them).
+const STYLE_STATS := {
+	"allcourt": {},
+	"attacker": {"forehand": 2, "backhand": -1, "stamina": -1},
+	"counter": {"speed": 2, "backhand": 1, "stamina": 2, "serve": -1, "net": -1},
+	"netrusher": {"net": 3, "serve": 1, "backhand": -1, "stamina": -1},
+	"bomber": {"serve": 3, "forehand": 1, "speed": -1, "net": -1, "stamina": -1},
+}
+## The card's captions: "Слабая подача" at or below WEAK, "Сильный форхенд" at or above STRONG.
+const WEAK := 3
+const STRONG := 8
+const WEAK_WORDS := {"serve": "Слабая подача", "forehand": "Слабый форхенд", "backhand": "Слабый бэкхенд", "net": "Не любит сетку", "speed": "Медленный", "stamina": "Быстро устаёт"}
+const STRONG_WORDS := {"serve": "Сильная подача", "forehand": "Сильный форхенд", "backhand": "Сильный бэкхенд", "net": "Опасен у сетки", "speed": "Быстрые ноги", "stamina": "Железные лёгкие"}
+
+
+## Stats 1..10 of a roster entry. Missing ones: 2 + 7 x skill (the tier; `skill` is used
+## for a profile without one, e.g. practice), leaned by the play style.
+static func stats(opp: Dictionary, skill := 0.5) -> Dictionary:
+	var sk := float(opp.get("skill", skill))
+	var lean: Dictionary = STYLE_STATS.get(String(opp.get("play_style", DEFAULT_STYLE)), {})
+	var given: Dictionary = opp.get("stats", {})
+	var out := {}
+	for k in STAT_KEYS:
+		var v: float = given.get(k, roundf(2.0 + 7.0 * sk) + float(lean.get(k, 0)))
+		out[k] = clampi(roundi(v), 1, 10)
+	return out
+
+
+## "Слабая подача · Сильный форхенд": the weakest and the strongest points worth a word.
+static func captions(st: Dictionary) -> Array[String]:
+	var out: Array[String] = []
+	var lo := ""
+	var hi := ""
+	for k in STAT_KEYS:
+		if int(st[k]) <= WEAK and (lo == "" or int(st[k]) < int(st[lo])):
+			lo = k
+		if int(st[k]) >= STRONG and (hi == "" or int(st[k]) > int(st[hi])):
+			hi = k
+	if lo != "":
+		out.append(WEAK_WORDS[lo])
+	if hi != "":
+		out.append(STRONG_WORDS[hi])
+	return out
 
 
 const ROUND_NAMES := ["Первый круг", "Второй круг", "Четвертьфинал", "Полуфинал", "Финал"]

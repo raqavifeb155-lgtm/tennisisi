@@ -72,7 +72,7 @@ static func choose(sit: Dictionary, style: Dictionary, rng: RandomNumberGenerato
 	var inside := contact.z > -12.2 or me.z > -11.5  # on or inside our baseline
 	# 4. The player camped far behind the baseline and we are inside: drop shot.
 	var deep := clampf((pl.z - DEEP_Z) / DEEP_SPAN, 0.0, 1.0)
-	if q >= 0.6 and inside and deep > 0.0 and rng.randf() < float(style.get("drop", 0.2)) * deep * lerpf(0.6, 1.0, s):
+	if q >= 0.6 and inside and deep > 0.0 and rng.randf() < float(style.get("drop", 0.2)) * deep:
 		plan["kind"] = "drop"
 		plan["tx"] = clampf(open_side * rng.randf_range(0.5, 2.5), -2.5, 2.5)
 		plan["tz"] = rng.randf_range(1.6, 2.6)
@@ -84,7 +84,8 @@ static func choose(sit: Dictionary, style: Dictionary, rng: RandomNumberGenerato
 		return plan
 
 	# 5. A short ball: approach shot deep (to the weaker wing, or down the line) and come in.
-	if sit.get("short", false) and q >= 0.55 and rng.randf() < float(style.get("approach", 0.3)) * lerpf(0.6, 1.0, q):
+	var net_k: float = sit.get("net_k", 1.0)  # the net stat: how keen it is to come in
+	if sit.get("short", false) and q >= 0.55 and rng.randf() < float(style.get("approach", 0.3)) * net_k * lerpf(0.6, 1.0, q):
 		plan["kind"] = "approach"
 		plan["tx"] = _side_to(sit, style, open_side, rng) * rng.randf_range(2.0, 3.4)
 		plan["tz"] = rng.randf_range(8.6, 10.6)
@@ -106,7 +107,7 @@ static func choose(sit: Dictionary, style: Dictionary, rng: RandomNumberGenerato
 		plan["tx"] = away * rng.randf_range(2.6, WIDTH)
 		plan["tz"] = rng.randf_range(7.4, 10.4)
 		plan["pace"] = base_pace * 1.1
-		plan["approach"] = rng.randf() < float(style.get("approach", 0.3)) * 0.5 + float(style.get("net_rush", 0.0))
+		plan["approach"] = rng.randf() < (float(style.get("approach", 0.3)) * 0.5 + float(style.get("net_rush", 0.0))) * net_k
 		plan["risk"] = 0.03 * float(style.get("risk", 1.0))
 		return plan
 
@@ -123,7 +124,7 @@ static func choose(sit: Dictionary, style: Dictionary, rng: RandomNumberGenerato
 		side = float(sit.get("bh_x", -1.0))  # their weaker backhand
 	plan["tx"] = side * lerpf(1.2, 3.6, rng.randf() * (0.4 + s * 0.6))
 	plan["tz"] = lerpf(6.8, 10.8, clampf(rng.randf_range(0.3, 1.0) * (0.55 + 0.45 * s), 0.0, 1.0))
-	if q >= 0.7 and rng.randf() < float(style.get("net_rush", 0.0)):
+	if q >= 0.7 and rng.randf() < float(style.get("net_rush", 0.0)) * net_k:
 		plan["kind"] = "approach"
 		plan["tz"] = maxf(plan["tz"], 8.8)
 		plan["approach"] = true
