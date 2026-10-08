@@ -62,6 +62,11 @@ static func wanted(window_points: int, rest: int) -> Dictionary:
 	return out
 
 
+## The autoload by path: tools and tests compile this script before autoload names exist.
+func _events() -> Node:
+	return get_node("/root/GameEvents")
+
+
 func setup(m: Node) -> void:
 	main = m
 	smash = RacketSmash.new()
@@ -69,7 +74,7 @@ func setup(m: Node) -> void:
 	smash.broken.connect(func(s: float) -> void: _strength = s)
 	smash.finished.connect(_on_done)
 	main.hud.smash_pressed.connect(press)
-	var ev: Node = get_node("/root/GameEvents")
+	var ev := _events()
 	ev.match_started.connect(func(_i: Dictionary) -> void: reset())
 	ev.match_finished.connect(func(_i: Dictionary) -> void: reset())
 
@@ -113,7 +118,7 @@ func point_over(winner: int, reason: String, game_ended: bool) -> void:
 	offer_left = WINDOW
 	main.phase_timer = maxf(main.phase_timer, WINDOW)  # the next serve waits for the window
 	main.hud.show_smash_offer(1.0)
-	GameEvents.racket_smash_offered.emit({"reason": reason, "rally": main.rally, "window": WINDOW})
+	_events().racket_smash_offered.emit({"reason": reason, "rally": main.rally, "window": WINDOW})
 
 
 func _process(delta: float) -> void:
@@ -145,7 +150,7 @@ func press() -> void:
 	main.hud.announcer.set_hint("свайп вверх — замах, вниз — удар")
 	main.hud.show_smash_prompt(0)
 	var stop := func(ms: int) -> void:
-		if Tuning.hitstop and not main.autoplay:
+		if (get_node("/root/Tuning").hitstop as bool) and not main.autoplay:
 			main._hitstop_until_ms = Time.get_ticks_msec() + ms
 	smash.begin(main.player, main, main.cam, main.sfx, stop)
 
@@ -169,7 +174,7 @@ func _on_done(was_broken: bool) -> void:
 		smashed = true
 		main.player.set_racket({})  # the club's spare one: plain, the worn one is mended after the match
 		_grant()
-		GameEvents.racket_smashed.emit({"strength": _strength, "swipes": smash.swipes, "tournament": main.tournament_mode})
+		_events().racket_smashed.emit({"strength": _strength, "swipes": smash.swipes, "tournament": main.tournament_mode})
 		main.hud.announcer.moment("ВЫПУСТИЛ ПАР", UiTheme.GOLD, "восстановление, окно PERFECT · ракетка запасная")
 	if main.phase == main.Phase.SMASH:
 		main.phase = main.Phase.OVER

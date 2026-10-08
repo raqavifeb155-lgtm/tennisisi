@@ -29,6 +29,11 @@ var serve_walk_done := false
 var serve_walk_ok := false
 var _serve_walk_x := 0.0
 var _serve_walk_until := -1
+var smash_state := 0            # 0 waiting for a lost point, 1 pressed, 2 swiping, 3 done
+var smash_last := -99           # frame of the last smash swipe
+var smash_info := {}
+var smash_points := -1
+var smash_ok := false
 var ev := {"stroke": 0, "point": 0, "shot": 0, "bounce": 0}
 
 
@@ -60,6 +65,11 @@ func _process(_delta: float) -> bool:
 	if main == null or not main.is_inside_tree() or main.hud == null:
 		return false
 	var vp := root.get_visible_rect().size
+
+	# «Разбить ракетку»: a point is lost to an error, the button shows beside the ring, a tap
+	# on it starts the mini-game (the match stands), three real swipes (up, down, down) break the
+	# racket, and the next point is played.
+	_smash_step(vp)
 
 	# A fresh TouchInput: a quick flick up from the joystick zone is a shot, a held
 	# drag there is the joystick.
@@ -184,6 +194,39 @@ func _process(_delta: float) -> bool:
 	return false
 
 
+func _smash_step(vp: Vector2) -> void:
+	var hub = main.smash_hub
+	var sm: RacketSmash = hub.smash
+	var btn: Control = main.hud.smash_btn
+	if smash_state == 0 and main.phase == main.Phase.OVER and hub.offer_left > 0.0 and script_steps.is_empty():
+		smash_info["button_visible"] = btn.is_visible_in_tree() and btn.size.x >= 84.0
+		smash_info["tournament"] = main.tournament_mode
+		smash_info["phase_waits"] = main.phase_timer >= hub.offer_left - 0.1  # the next serve waits for the window
+		smash_state = 1
+		btn.pressed.emit()
+		smash_info["match_stands"] = main.phase == main.Phase.SMASH
+		smash_points = main._points_played
+	elif smash_state == 1 and main.phase == main.Phase.SMASH:
+		smash_state = 2
+	if smash_state == 2:
+		if main.phase == main.Phase.SMASH:
+			if script_steps.is_empty() and frame - smash_last > 6:
+				var want := sm.expects()
+				if want < 0 and sm.state == RacketSmash.S.READY:
+					smash_last = frame
+					_swipe(Vector2(vp.x * 0.5, vp.y * 0.62), Vector2(vp.x * 0.5, vp.y * 0.34), 4)
+				elif want > 0 and sm.state == RacketSmash.S.HELD:
+					smash_last = frame
+					_swipe(Vector2(vp.x * 0.5, vp.y * 0.34), Vector2(vp.x * 0.5, vp.y * 0.66), 4)  # from the middle down: no joystick zone
+		else:
+			smash_state = 3
+			smash_info["swipes"] = sm.swipes
+			smash_info["smashed"] = hub.smashed
+			smash_info["stock_racket"] = main.player.gear().get("racket", {}).is_empty()
+			smash_info["bonus"] = Skills.mods_layer.has("forehand_window") and hub.perfect_left == 3
+			smash_info["racket_back"] = main.player.racket_node().visible and not main.player.smashing()
+
+
 func _check_stick_later(before: Vector3) -> void:
 	await create_timer(0.45).timeout
 	if main.player.position.x > before.x + 0.5:
@@ -248,7 +291,11 @@ func _report() -> void:
 	print("tap-to-walk before the serve: %s" % ("OK" if serve_walk_ok else ("FAILED" if serve_walk_done else "NOT RUN")))
 	print("hook before the toss = underarm: %s" % ("OK" if underarm_ok else ("FAILED" if underarm_done else "NOT RUN")))
 	print("flick from the joystick zone = shot: %s, drag there = run: %s" % ["OK" if flick_ok else "FAILED", "OK" if hold_ok else "FAILED"])
+	smash_ok = smash_state == 3 and smash_info.get("button_visible", false) and smash_info.get("match_stands", false) and smash_info.get("phase_waits", false) \
+		and int(smash_info.get("swipes", 0)) == 3 and smash_info.get("smashed", false) and smash_info.get("stock_racket", false) \
+		and smash_info.get("bonus", false) and smash_info.get("racket_back", false) and main._points_played > smash_points
+	print("racket smash (lost point -> button -> up, down, down -> broken -> next point): %s %s, points %d -> %d" % ["OK" if smash_ok else ("FAILED" if smash_state > 0 else "NOT RUN"), str(smash_info), smash_points, main._points_played])
 	print("game events: %s" % str(ev))
 	var events_ok: bool = ev["stroke"] == player_hits and ev["point"] >= 1 and ev["shot"] >= ev["stroke"] and ev["bounce"] >= 1
-	var ok := events_ok and player_hits >= 8 and moved_ok and stick_ok and serve_walk_ok and underarm_ok and flick_ok and hold_ok
+	var ok := events_ok and player_hits >= 8 and moved_ok and stick_ok and serve_walk_ok and underarm_ok and flick_ok and hold_ok and smash_ok
 	print("INPUT TEST %s" % ("PASSED" if ok else "FAILED"))
