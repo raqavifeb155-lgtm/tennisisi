@@ -284,20 +284,29 @@ func _views() -> void:
 	SaveData.club = {"met_coach": true, "walk_hint": true}
 	main.club._refresh()
 	main.club.hud.say("", 0.0)
+	# [name, where the hero stands, which way he looks, runs played]
 	var list := [
-		["v01_gate_south", Vector3(0, 0, 25), PI],
-		["v02_court_east", Vector3(-9.5, 0, 22), -PI * 0.5],
-		["v03_promenade", Vector3(-6, 0, -36), 0.0],
-		["v04_west_arena", Vector3(-8, 0, 3), PI * 0.5],
-		["v05_east_bar", Vector3(10, 0, -24), -PI * 0.5],
-		["v06_gate_path", Vector3(0, 0, 38), 0.0],
-		["v07_trophy", Vector3(-14, 0, -12), 0.0],
-		["v08_east_lawn", Vector3(24, 0, 12), -PI * 0.5],
-		["v09_west_south", Vector3(-26, 0, 30), PI],
-		["v10_shop", Vector3(16, 0, 8), -PI * 0.5],
+		["v01_gate_south", Vector3(0, 0, 25), PI, 1],
+		["v02_court_east", Vector3(-9.5, 0, 22), -PI * 0.5, 1],
+		["v03_promenade", Vector3(-6, 0, -36), 0.0, 1],
+		["v04_west_arena", Vector3(-8, 0, 3), PI * 0.5, 1],
+		["v05_east_bar", Vector3(10, 0, -24), -PI * 0.5, 1],
+		["v06_gate_path", Vector3(0, 0, 38), 0.0, 1],
+		["v07_trophy", Vector3(-14, 0, -12), 0.0, 1],
+		["v08_east_lawn", Vector3(24, 0, 12), -PI * 0.5, 1],
+		["v09_west_south", Vector3(-26, 0, 30), PI, 1],
+		["v10_shop", Vector3(16, 0, 8), -PI * 0.5, 1],
+		["v11_boarded_locker", Vector3(-14, 0, 36), 0.0, 0],
+		["v12_boarded_shop", Vector3(22, 0, 10), 0.0, 0],
+		["v13_arena_yard", Vector3(-20, 0, 8), PI * 0.5, 0],
+		["v14_gate_junk", Vector3(-6, 0, 33), PI, 0],
+		["v15_court_gate", Vector3(0, 0, 21), 0.0, 0],
 	]
 	for v in list:
 		var p: Athlete = main.player
+		SaveData.played = v[3]
+		SaveData.titles = v[3]
+		main.club._refresh()
 		p.position = v[1]
 		p.rotation.y = v[2]
 		p.velocity = Vector3.ZERO

@@ -256,6 +256,19 @@ static func make(id: String) -> ArrayMesh:
 			s.box(Vector3(2.0, 0.06, 0.05), Vector3(0, h * 0.4, 0), WOOD)
 			for x in [-0.95, 0.95]:
 				s.box(Vector3(0.08, h, 0.08), Vector3(x, h * 0.5, 0), TRUNK)
+		"kiosk":
+			# a snack kiosk, its window and striped awning toward -z
+			var body := Color("3fb8af")
+			s.box(Vector3(2.7, 2.1, 1.9), Vector3(0, 1.05, 0), body)
+			s.box(Vector3(2.9, 0.18, 2.1), Vector3(0, 2.2, 0), Color("f2f0ea"))
+			s.box(Vector3(1.9, 0.9, 0.06), Vector3(0, 1.45, -0.97), Color("29392f"))
+			s.box(Vector3(2.1, 0.08, 0.5), Vector3(0, 0.98, -1.2), Color("c08a55"))
+			for k in 6:
+				var c := Color("d9473b") if k % 2 == 0 else Color("f5f5f5")
+				s.box(Vector3(0.48, 0.07, 1.25), Vector3(-1.2 + k * 0.48, 2.0, -1.45), c, 0.0, Vector3(0.38, 0, 0))
+			s.ball(0.28, Vector3(0.0, 2.65, 0.0), Color("ffe27a"), Vector3.ONE, 6, 4)
+			s.cyl(0.0, 0.2, 0.55, Vector3(0.0, 2.35, 0.0), Color("c9a56b"), 6, Vector3(PI, 0, 0))
+			s.box(Vector3(0.7, 0.5, 0.06), Vector3(-0.8, 1.55, -0.98), Color("ede3cc"))
 		"dirt":
 			s.flat(Vector2(1.0, 0.8), Vector3(0, 0.03, 0), Color("8a6a46"), 9)
 			s.flat(Vector2(0.62, 0.5), Vector3(0.1, 0.04, 0.05), Color("7a5a3c"), 7, 0.5)

@@ -37,6 +37,7 @@ static func fill(p: ClubProps) -> void:
 	_park(p)
 	_promenade(p)
 	_paths(p)
+	_kiosks(p)
 	_street(p)
 	_ruin(p)
 	_tidy(p)
@@ -217,6 +218,35 @@ static func _promenade(p: ClubProps) -> void:
 		put(p, "bush", x2, SHORE + 5.0, _r(0, TAU), _r(1.0, 1.4))
 
 
+## Two snack kiosks with a parasol and a couple of tables each.
+static func _kiosks(p: ClubProps) -> void:
+	for spec in [[Vector3(-30.0, 0.0, -38.6), Vector2(-30.0, -50.0)], [Vector3(30.0, 0.0, -17.0), Vector2(10.0, -17.0)]]:
+		var c: Vector3 = spec[0]
+		var look: Vector2 = spec[1]
+		var yaw := yaw_to(Vector2(c.x, c.z), look)
+		var k := put(p, "kiosk", c.x, c.z, yaw)
+		k.solid = 1.5
+		k.far = true
+		var fwd := Vector2(-sin(yaw), -cos(yaw))
+		var side := Vector2(fwd.y, -fwd.x)
+		var base := Vector2(c.x, c.z) + fwd * 3.4
+		for sgn: float in [-1.0, 1.0]:
+			var q := base + side * sgn * 2.6
+			var t := put(p, "bar_table", q.x, q.y, 0.0, 1.1)
+			t.high = true
+			t.solid = 0.55
+			for a in 2:
+				var ca: float = a * PI + 0.8
+				var cq := q + Vector2(cos(ca), sin(ca)) * 0.9
+				var ch := put(p, "bar_chair", cq.x, cq.y, yaw_to(cq, q), 1.0)
+				ch.high = true
+		var pa := put(p, "parasol", base.x, base.y, 0.0, 1.0)
+		pa.far = true
+		pa.high = true
+		pa.solid = 0.2
+		_bin(p, c.x + side.x * 2.2 + fwd.x * 1.2, c.z + side.y * 2.2 + fwd.y * 1.2)
+
+
 static func _paths(p: ClubProps) -> void:
 	# lamps and benches along the paths (the court's own lamps are level 2 of the court)
 	for lz in [22.0, 35.5]:
@@ -342,12 +372,12 @@ static func _ruin(p: ClubProps) -> void:
 		t.need = 1 if k % 2 == 0 else 2
 		t.high = k % 3 != 0
 	for k in 14:
-		var t := p.at("tuft_dry", Vector3(_r(-HX + 1.0, HX - 1.0), 0.03, _r(-HZ + 0.8, -HZ + 2.2) if k % 2 == 0 else _r(HZ - 2.2, HZ - 0.8)), _r(0, TAU), _r(0.7, 1.2))
+		var t := p.at("tuft_dry", Vector3(_r(-HX + 1.0, HX - 1.0), 0.03, _r(-HZ + 0.8, -HZ + 2.2) if k % 2 == 0 else _r(HZ - 2.2, HZ - 0.8)), _r(0, TAU), _r(0.5, 0.9))
 		t.owner = "court"
 		t.need = 1
 	# crack weeds on the court's baselines and service lines
 	for k in 10:
-		var t := p.at("tuft_dry", Vector3(_r(-4.0, 4.0), 0.04, [-Court.SERVICE_LINE, Court.SERVICE_LINE, -Court.HALF_LENGTH + 0.3, Court.HALF_LENGTH - 0.3][k % 4] + _r(-0.6, 0.6)), _r(0, TAU), _r(0.5, 0.9))
+		var t := p.at("tuft_dry", Vector3(_r(-4.0, 4.0), 0.04, [-Court.SERVICE_LINE, Court.SERVICE_LINE, -Court.HALF_LENGTH + 0.3, Court.HALF_LENGTH - 0.3][k % 4] + _r(-0.6, 0.6)), _r(0, TAU), _r(0.3, 0.6))
 		t.owner = "court"
 		t.need = 1
 	# The gate: rubbish heaped by the wall, a dumped sofa, a tipped dumpster.

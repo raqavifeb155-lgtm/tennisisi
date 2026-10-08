@@ -99,6 +99,7 @@ func snap(north := true) -> void:
 
 ## Holds a framing (a room) - eased over `t` seconds.
 func frame(pos: Vector3, look: Vector3, t := 0.4) -> void:
+	yaw = 0.0   # every framing looks north: leaving one starts from there and swings behind the hero as he walks
 	_frame_pos = pos
 	_frame_look = look
 	_glide(pos, look, t)
@@ -110,7 +111,6 @@ func release(t := 0.4) -> void:
 		return
 	_frame_pos = Vector3.INF
 	if target != null:
-		yaw = target.rotation.y
 		_back = _clear_back(target.global_position)
 		_glide(_follow_pos(), _follow_look(), t)
 

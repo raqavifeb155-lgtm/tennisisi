@@ -11,6 +11,7 @@ const LINE := Color("e6e2d6")
 
 var _base: MeshInstance3D       # kerbs, pavement, road
 var _detail: MeshInstance3D     # road markings, joints: High only
+var _extra: MeshInstance3D      # every second lawn patch: High only
 
 
 func _ready() -> void:
@@ -18,13 +19,20 @@ func _ready() -> void:
 	var s := ClubShapes.new()
 	_kerbs(s)
 	_street(s)
-	_lawn_patches(s)
+	var hi := ClubShapes.new()
+	_lawn_patches(s, hi)
 	_base = MeshInstance3D.new()
 	_base.name = "ground"
 	_base.mesh = s.build()
 	_base.material_override = ClubScenery.prop_material()
 	_base.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_base)
+	_extra = MeshInstance3D.new()
+	_extra.name = "patches"
+	_extra.mesh = hi.build()
+	_extra.material_override = ClubScenery.prop_material()
+	_extra.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_extra)
 	var d := ClubShapes.new()
 	_markings(d)
 	_detail = MeshInstance3D.new()
@@ -38,6 +46,7 @@ func _ready() -> void:
 func refresh(_level_of: Callable, high: bool) -> void:
 	if _detail:
 		_detail.visible = high
+		_extra.visible = high
 
 
 ## The club's paving gets its slabs: the world's flat paving colour is replaced by a
@@ -67,6 +76,16 @@ func _slab_texture() -> void:
 					elif rng.randf() < 0.05:
 						c = base.darkened(0.06)
 					img.set_pixel(sx * slab + x, sy * slab + y, c)
+	# cracks: a few dark wandering lines across the slabs
+	for k in 5:
+		var q := Vector2(rng.randf_range(0, n), rng.randf_range(0, n))
+		var a := rng.randf_range(0.0, TAU)
+		for step in rng.randi_range(14, 40):
+			a += rng.randf_range(-0.22, 0.22)
+			q += Vector2.from_angle(a)
+			var xi := posmod(int(q.x), n)
+			var yi := posmod(int(q.y), n)
+			img.set_pixel(xi, yi, img.get_pixel(xi, yi).darkened(0.32))
 	img.generate_mipmaps()
 	mat.albedo_texture = ImageTexture.create_from_image(img)
 	mat.uv1_scale = Vector3(1.0 / 4.0, 1.0 / 4.0, 1.0 / 4.0)   # 4 slabs per texture, 1 m a slab
@@ -112,7 +131,7 @@ func _markings(s: ClubShapes) -> void:
 ## The lawn is one big colour: lighter and darker patches (mown stripes of a park nobody
 ## has mown for a while) and a few bare, yellowed ones break it up. Flat fans, a few
 ## hundred triangles in all.
-func _lawn_patches(s: ClubShapes) -> void:
+func _lawn_patches(s: ClubShapes, hi: ClubShapes) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 31
 	var tones := [Color("7ea14c"), Color("5f8a3a"), Color("8aa84f"), Color("6c9640"), Color("a3a653"), Color("55803a")]
@@ -125,5 +144,5 @@ func _lawn_patches(s: ClubShapes) -> void:
 			continue
 		var r := rng.randf_range(1.8, 5.0)
 		var tone: Color = tones[rng.randi() % tones.size()]
-		s.flat(Vector2(r, r * rng.randf_range(0.5, 0.9)), Vector3(q.x, ClubLayout.LAWN + 0.02 + n * 0.0003, q.y), tone, 7, rng.randf_range(0.0, PI))
+		(s if n % 2 == 0 else hi).flat(Vector2(r, r * rng.randf_range(0.5, 0.9)), Vector3(q.x, ClubLayout.LAWN + 0.02 + n * 0.0003, q.y), tone, 7, rng.randf_range(0.0, PI))
 		n += 1

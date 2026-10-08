@@ -99,6 +99,7 @@ func _ready() -> void:
 	daytime.name = "daytime"
 	add_child(daytime)
 	ClubPack.request(self)
+	_build_signs()
 	_refresh(true)
 
 
@@ -355,3 +356,25 @@ func _draw_distance() -> void:
 		else:
 			continue
 		g.visibility_range_end_margin = 6.0
+
+
+## Shop signs on the facades across the street, readable from the gate.
+func _build_signs() -> void:
+	var specs := [["КАФЕ", -26.0, 4.2, Color("ffe27a")], ["SPORT", 3.0, 5.0, Color("ffffff")], ["ТЕННИС", 24.0, 4.4, Color("ffd642")], ["ОПТИКА", -52.0, 4.0, Color("ffffff")]]
+	for sp in specs:
+		var l := Label3D.new()
+		l.name = "sign_" + String(sp[0])
+		l.text = sp[0]
+		l.font = UiTheme.display()
+		l.font_size = 72
+		l.pixel_size = 0.014
+		l.modulate = sp[3]
+		l.outline_size = 14
+		l.outline_modulate = Color(0.16, 0.1, 0.08)
+		l.shaded = false
+		l.double_sided = false
+		l.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		l.position = Vector3(sp[1], sp[2], 61.4)
+		l.rotation.y = PI    # the street's far side faces the gate (north)
+		l.visibility_range_end = 70.0
+		add_child(l)
