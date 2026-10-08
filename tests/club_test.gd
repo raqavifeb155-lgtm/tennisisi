@@ -15,6 +15,7 @@ func _initialize() -> void:
 	test_builds()
 	test_quests()
 	test_shop_locker()
+	test_long_build()
 	await test_world()
 	await test_flow()
 	await test_transitions()
@@ -139,7 +140,7 @@ func test_builds() -> void:
 	SaveData.gold = 10
 	check(not ClubBuilds.buy("stands") and SaveData.gold == 10 and ClubBuilds.level("stands") == 0, "no gold, no building")
 	SaveData.gold = 100000
-	SaveData.club["levels"] = {"court": 4}
+	SaveData.club["levels"] = {"court": 5}
 	check(not ClubBuilds.buy("court") and ClubBuilds.next_price("court") == 0 and SaveData.gold == 100000, "nothing above the top level")
 	SaveData.club = {"levels": {"court": 2, "gate": 1}, "color": 2, "name": "Клуб Димы", "spent": 220}
 	var cf := SaveData._to_config()
@@ -166,21 +167,25 @@ func test_builds() -> void:
 	check(is_zero_approx(ClubBuilds.gold_win_bonus()), "no perk online")
 	ClubBuilds.utility_enabled = true
 	var limits := []
-	for lv in 4:
+	for lv in 6:
 		SaveData.club = {"levels": {"bar": lv}}
 		limits.append(ClubBuilds.bet_limit())
-	check(limits == [25, 50, 150, 500], "the bar takes bigger bets as it grows %s" % str(limits))
+	check(limits == [25, 50, 100, 150, 300, 500], "the bar takes bigger bets as it grows %s" % str(limits))
 	SaveData.titles = 0
 	SaveData.played = 0
 	SaveData.club = {}
 	SaveData.gold = 100000
 	check(not ClubBuilds.is_open("bar") and not ClubBuilds.can_afford("bar") and not ClubBuilds.can_afford("trophy"), "the bar waits for a title, the trophy room for a run")
-	check(ClubBuilds.affordable_count() == 3, "with plenty of gold: court, stands, gate (%d)" % ClubBuilds.affordable_count())
+	check(ClubBuilds.affordable_count() == 4, "with plenty of gold before a run: court, stands, gate, coach's room (%d)" % ClubBuilds.affordable_count())
 	SaveData.played = 1
 	SaveData.titles = 1
-	check(ClubBuilds.affordable_count() == 7, "all seven after a title (with the shop and the locker room)")
+	check(ClubBuilds.affordable_count() == ClubBuilds.ORDER.size(), "all eight after a title")
 	SaveData.gold = 45
-	check(ClubBuilds.affordable_count() == 1, "45 gold: only the court (%d)" % ClubBuilds.affordable_count())
+	var expect := 0
+	for id in ClubBuilds.ORDER:
+		if ClubBuilds.next_price(id) <= 45:
+			expect += 1
+	check(ClubBuilds.affordable_count() == expect, "45 gold: only the first steps that cheap (%d)" % expect)
 	SaveData.gold = 0
 	check(ClubBuilds.affordable_count() == 0, "no gold: nothing")
 	check(ClubBuilds.clean_name("  ") == "", "an empty name stays empty (the default is used)")
@@ -273,26 +278,76 @@ func test_quests() -> void:
 func test_shop_locker() -> void:
 	print("shop and locker")
 	SaveData.club = {}
-	check(ClubBuilds.max_level("shop") == 2 and ClubBuilds.max_level("locker") == 3, "shop 0..2, locker room 0..3")
-	check(int(ClubBuilds.TABLE["shop"]["levels"][0]["price"]) == 150 and int(ClubBuilds.TABLE["shop"]["levels"][1]["price"]) == 450, "the shop: 150, 450")
-	check(int(ClubBuilds.TABLE["locker"]["levels"][0]["price"]) == 80 and int(ClubBuilds.TABLE["locker"]["levels"][2]["price"]) == 550, "the locker room: 80 .. 550")
+	check(ClubBuilds.max_level("shop") == 5 and ClubBuilds.max_level("locker") == 5, "shop and locker room: 5 levels")
 	var stock := []
 	var rar := []
-	for lv in 3:
+	for lv in 6:
 		SaveData.club = {"levels": {"shop": lv}}
 		stock.append(ClubBuilds.shop_stock())
 		rar.append(ClubBuilds.shop_max_rarity())
-	check(stock == [2, 3, 4] and rar == [Gear.RARE, Gear.EPIC, Gear.LEGENDARY], "the shop shows 2/3/4 things, up to rare/epic/legendary")
+	check(stock == [2, 3, 4, 4, 5, 5] and rar == [Gear.RARE, Gear.EPIC, Gear.LEGENDARY, Gear.LEGENDARY, Gear.LEGENDARY, Gear.LEGENDARY], "the shop's window grows: %s" % str(stock))
 	var slots := []
-	for lv in 4:
+	for lv in 6:
 		SaveData.club = {"levels": {"locker": lv}}
 		slots.append(ClubBuilds.locker_slots())
-	check(slots == [1, 2, 3, 4], "locker slots: 1 + the level, up to 4")
+	check(slots == [1, 2, 2, 3, 3, 4], "locker slots grow to 4: %s" % str(slots))
 	SaveData.club = {}
 	SaveData.played = 0
 	check(not ClubBuilds.is_open("shop") and not ClubBuilds.is_open("locker"), "both after the first run")
 	check(ClubPlaces.find("shop").get("build", "") == "shop" and ClubPlaces.find("locker").get("build", "") == "locker", "the places grow with their constructions")
 	check(ClubPlaces.state("locker", 0)["action"] == "club_locker", "the locker room's button: club_locker (stream A's screen)")
+
+
+## Hub spec 13: 5 levels everywhere, geometric prices, levels 4-5 take runs to build.
+func test_long_build() -> void:
+	print("long build")
+	SaveData.club = {}
+	var total := 0
+	var series := true
+	var first_ok := true
+	for id in ClubBuilds.ORDER:
+		check(ClubBuilds.max_level(id) == 5, "%s has 5 levels" % id)
+		var lv: Array = ClubBuilds.TABLE[id]["levels"]
+		var p0 := float(lv[0]["price"])
+		first_ok = first_ok and p0 >= 30 and p0 <= 60
+		for i in lv.size():
+			var want: float = p0 * ClubBuilds.PRICE_STEPS[i]
+			series = series and absf(float(lv[i]["price"]) - want) <= maxf(5.0, want * 0.03)
+			total += int(lv[i]["price"])
+	check(ClubBuilds.ORDER.has("coach"), "the coach's room is a construction too")
+	check(first_ok, "the first step is cheap (30..60)")
+	check(series, "prices follow p x 1, 2.2, 5, 11.5, 26")
+	check(total >= 16000 and total <= 18000, "the whole club ~17 000 (%d)" % total)
+	check(int(ClubBuilds.TABLE["court"]["levels"][3].get("runs", 0)) == 2 and int(ClubBuilds.TABLE["court"]["levels"][4].get("runs", 0)) == 3, "levels 4 and 5 take 2 and 3 runs")
+	var bon := []
+	for l in 6:
+		SaveData.club = {"levels": {"coach": l}}
+		bon.append(snappedf(ClubBuilds.recovery_bonus(), 0.001))
+	check(bon == [0.0, 0.01, 0.02, 0.03, 0.04, 0.05], "the coach's room: +1..+5% recovery %s" % str(bon))
+	# A level that takes runs: paid now, scaffolding until N more runs are played.
+	SaveData.club = {"levels": {"court": 3}}
+	SaveData.played = 7
+	SaveData.titles = 1
+	SaveData.gold = 100000
+	var price := ClubBuilds.next_price("court")
+	var score0 := SaveData._score(SaveData._to_config())
+	check(ClubBuilds.buy("court") and SaveData.gold == 100000 - price, "level 4 paid at once")
+	check(ClubBuilds.level("court") == 3 and ClubBuilds.runs_left("court") == 2, "scaffolding: still level 3, two runs to go")
+	check(not ClubBuilds.can_afford("court") and not ClubBuilds.buy("court"), "nothing more to buy while it's being built")
+	check(SaveData._score(SaveData._to_config()) >= score0, "the cloud can't undo paid scaffolding (_score counts it)")
+	var cf := SaveData._to_config()
+	SaveData.club = {}
+	SaveData._apply(cf)
+	check(ClubBuilds.runs_left("court") == 2 and ClubBuilds.level("court") == 3, "save and load keep the building in progress")
+	SaveData.played = 8
+	check(ClubBuilds.complete_ready().is_empty() and ClubBuilds.runs_left("court") == 1, "one run later: one to go")
+	SaveData.played = 9
+	check(ClubBuilds.complete_ready() == ["court"] and ClubBuilds.level("court") == 4 and ClubBuilds.runs_left("court") == 0, "two runs later: level 4 is up")
+	check(ClubBuilds.buy("court") and ClubBuilds.runs_left("court") == 3, "level 5 takes three runs")
+	SaveData.club = {}
+	SaveData.played = 0
+	SaveData.titles = 0
+	SaveData.gold = 0
 
 
 ## ClubMaterial: one soft toon material per colour, outlines only where they pay.
@@ -576,6 +631,13 @@ func test_build_world() -> void:
 		ghosts = ghosts and w.ghost_id() == id
 		w.show_ghost("", 0)
 	check(ghosts, "every construction has its ghost (the rooms too)")
+	var scaff := true
+	for id in ClubBuilds.ORDER:
+		w.set_scaffold(id, true)
+		scaff = scaff and w.scaffold_visible(id)
+		w.set_scaffold(id, false)
+		scaff = scaff and not w.scaffold_visible(id)
+	check(scaff, "scaffolding stands at every construction while it's being built")
 	check(fine, "every level of the five constructions builds")
 	w.set_club_color(1)
 	check(true, "the club's colour paints without errors")
@@ -624,7 +686,25 @@ func test_foreman_flow() -> void:
 	club.foreman_close()
 	await _frames(2)
 	check(not club.foreman_on() and club.world.ghost_id() == "", "back: no ghost, the club as it is")
+	# Level 4 takes runs: scaffolding now, the build moment when the club opens after them.
+	SaveData.club["levels"] = {"stands": 3}
+	SaveData.gold = 5000
+	club._refresh()
+	club.foreman_open("stands")
+	check(club.foreman_build() and ClubBuilds.runs_left("stands") == 2, "level 4 of the stands: paid, scaffolding")
+	club.skip_build()
+	await _frames(2)
+	check(club.world.scaffold_visible("stands") and club.world.level_built("stands") == 3, "scaffolding stands, the level not yet")
+	club.foreman_close()
+	SaveData.played += 2
+	club.open()
+	await _frames(2)
+	check(ClubBuilds.level("stands") == 4 and club.building(), "after two runs, entering the club: the build moment")
+	club.skip_build()
+	await _frames(2)
+	check(not club.world.scaffold_visible("stands") and club.world.level_built("stands") == 4, "the scaffolding goes, level 4 stands")
 	SaveData.gold = 500
+	SaveData.club["levels"] = {}
 	club._refresh()
 	club._travel("bar")
 	await _frames(2)
