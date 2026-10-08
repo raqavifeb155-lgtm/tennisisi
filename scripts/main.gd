@@ -1156,6 +1156,7 @@ func _update_player_movement() -> void:
 		# Auto-positioning toward a comfortable contact point.
 		var ideal := _ideal_contact()
 		var side := 1 if player.lateral_of(ideal) >= 0.0 else -1
+		side = Footwork.auto_side(side, player.lateral_of(ideal), player.position.distance_to(player.stance_for(ideal, 1)), t_contact, player.max_speed)  # D-3: run around the backhand
 		var stance := player.stance_for(ideal, side)
 		var d := Vector2(stance.x - player.position.x, stance.z - player.position.z)
 		if d.length() > 0.05:
@@ -1207,6 +1208,8 @@ func movement_quality(speed: float, penalty := 1.0) -> float:
 ## easy ball, much more under a heavy ball or with a poor contact. Stronger players
 ## (CPU skill, the player's levels) miss less. PERFECT contact almost never misses.
 func error_chance(who: int, q: float, incoming_speed: float) -> float:
+	if who == Who.CPU:
+		return ai.error_chance(q, incoming_speed)  # D-3: the AI misses under pressure (OpponentAI)
 	var pressure := clampf((incoming_speed - 16.0) / 22.0, 0.0, 1.0)
 	var steady: float
 	if who == Who.CPU:
@@ -1689,7 +1692,7 @@ func _cpu_serve_hit() -> void:
 		var wide := rng.randf() < 0.5
 		tx = box_side * (rng.randf_range(2.6, 3.6) if wide else rng.randf_range(0.4, 1.2))
 		tz = rng.randf_range(4.6, 5.9)
-		pace = lerpf(32.0, 46.0, s) * rng.randf_range(0.9, 1.05) * _cpu_serve_mult
+		pace = lerpf(32.0, 46.0, s) * rng.randf_range(0.9, 1.05) * _cpu_serve_mult * ai.serve_mult()
 		top = 120.0
 		if wide and rng.randf() < 0.5:
 			pace *= 0.85
