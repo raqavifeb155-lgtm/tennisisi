@@ -697,6 +697,13 @@ func _left(l: Label) -> Label:
 func _title(s: String, c := UiTheme.GOLD) -> Label:
 	var l := _text(s, UiTheme.display(), UiTheme.T_TITLE, c)
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	# A long name ("Клубный турнир · Нью-Йорк") gets smaller to stay on one line instead of
+	# breaking at the hyphen; a still longer one wraps at the smallest size.
+	var font := UiTheme.display()
+	var size := UiTheme.T_TITLE
+	while size > 40 and font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x > 640.0:
+		size -= 2
+	l.add_theme_font_size_override("font_size", size)
 	_box.add_child(l)
 	return l
 

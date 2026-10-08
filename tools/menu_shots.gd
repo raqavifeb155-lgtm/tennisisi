@@ -9,13 +9,16 @@ extends SceneTree
 var main: Node
 var h := 1564
 var out := ""
+var tag := ""  # --tag=X: X_ in the file names (other worktrees shoot into the same folder)
 
 
 func _initialize() -> void:
 	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--tag="):
+			tag = a.get_slice("=", 1) + "_"
 		if a.begins_with("--size="):
 			h = int(a.get_slice("=", 1))
-	out = ProjectSettings.globalize_path("user://menu_%d_" % h)
+	out = ProjectSettings.globalize_path("user://menu_%s%d_" % [tag, h])
 	_run.call_deferred()
 
 

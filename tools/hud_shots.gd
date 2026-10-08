@@ -10,16 +10,19 @@ extends SceneTree
 var main: Node
 var h := 1564
 var out := ""
+var tag := ""  # --tag=X: X_ in the file names (other worktrees shoot into the same folder)
 var safe := false
 
 
 func _initialize() -> void:
 	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--tag="):
+			tag = a.get_slice("=", 1) + "_"
 		if a.begins_with("--size="):
 			h = int(a.get_slice("=", 1))
 		if a == "--safe":
 			safe = true
-	out = ProjectSettings.globalize_path("user://hud_%d%s_" % [h, "_safe" if safe else ""])
+	out = ProjectSettings.globalize_path("user://hud_%s%d%s_" % [tag, h, "_safe" if safe else ""])
 	_run.call_deferred()
 
 
