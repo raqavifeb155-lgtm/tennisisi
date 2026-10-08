@@ -167,23 +167,23 @@ static func lamp(p: ClubProps, x: float, z: float, toward: Vector2, owner := "",
 static func _park(p: ClubProps) -> void:
 	# The lawn north of the court is kept open (the river and the bridge are the view);
 	# trees stand at the edges, bunched, never in rows.
-	_clump(p, Vector2(-44.0, -33.0), 6, 7.0)
+	_clump(p, Vector2(-36.0, -29.0), 5, 5.0)
 	_clump(p, Vector2(-30.0, -36.0), 3, 4.5, ["tree_round", "tree_fat"])
 	_clump(p, Vector2(36.0, -37.0), 4, 5.0)
-	_clump(p, Vector2(50.0, -30.0), 5, 5.5)
+	_clump(p, Vector2(42.0, -29.0), 4, 4.5)
 	_clump(p, Vector2(-10.0, -37.0), 2, 2.5, ["tree_fat"])
 	_clump(p, Vector2(10.0, -38.0), 2, 2.5, ["tree_round"])
 	# the east lawn, around the academy's plot
 	_clump(p, Vector2(46.0, -12.0), 5, 6.0)
 	_clump(p, Vector2(52.0, 4.0), 4, 4.5)
 	_clump(p, Vector2(42.0, 25.0), 6, 7.0)
-	_clump(p, Vector2(32.0, 38.0), 4, 5.0)
-	_clump(p, Vector2(50.0, 36.0), 4, 5.0)
+	_clump(p, Vector2(30.0, 34.0), 4, 4.0)
+	_clump(p, Vector2(42.0, 31.0), 3, 4.0)
 	_tree(p, 36.0, 3.0, "tree_oak", 1.25)
 	# the west lawn, below and above the arena's plot
-	_clump(p, Vector2(-45.0, 30.0), 6, 8.0)
+	_clump(p, Vector2(-40.0, 26.0), 5, 6.0)
 	_clump(p, Vector2(-30.0, 38.0), 4, 6.0)
-	_clump(p, Vector2(-52.0, 40.0), 3, 3.5)
+	_clump(p, Vector2(-42.0, 35.0), 3, 3.5)
 	_clump(p, Vector2(-26.0, 12.0), 2, 2.5, ["tree_round"])
 	_clump(p, Vector2(-25.0, -10.0), 2, 2.5, ["tree_fat"])
 	# between the court and the pavilions, and by the paths
@@ -613,11 +613,11 @@ static func _perimeter(p: ClubProps) -> void:
 		var gp := p.at("gatepost", Vector3(x, LAWN, ClubFence.NORTH), 0.0, 1.0)
 		gp.far = true
 	var spots := []
-	for x in [-48.0, -33.0, -14.0, 14.0, 30.0, 47.0]:
+	for x in [-40.0, -30.0, -14.0, 14.0, 30.0, 40.0]:
 		spots.append([Vector2(x, ClubFence.NORTH + 0.9), Vector2(1, 0)])
-	for x in [-47.0, -30.0, 22.0, 40.0]:
+	for x in [-36.0, -24.0, 22.0, 34.0]:
 		spots.append([Vector2(x, ClubFence.SOUTH - 0.9), Vector2(1, 0)])
-	for z in [-30.0, -14.0, 4.0, 22.0, 34.0]:
+	for z in [-26.0, -14.0, 4.0, 22.0]:
 		spots.append([Vector2(ClubFence.WEST + 0.9, z), Vector2(0, 1)])
 		spots.append([Vector2(ClubFence.EAST - 0.9, z + 6.0), Vector2(0, 1)])
 	var k := 0
