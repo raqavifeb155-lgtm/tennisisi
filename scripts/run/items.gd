@@ -10,6 +10,9 @@ class_name Items
 ##   rules      {"cannon_kmh": 190, "dive_free": 1, "run_dmg": 1.3, "second_wind": 1}
 ##   cond_mods  [{"if": {"tiebreak": true}, "mods": {...}}]
 ##   triggers   [{"on": event, "if": {...}, "do": [[primitive, args...]]}]  (RunEffects)
+##   skin       how it looks on the player (AthleteGear, spec 2026-10-08-v02-gear-skins):
+##              racket {frame, tube, color, accent, grip, wrap, strings, pattern, halo},
+##              shoes {body, sole, stripe, pattern}, band {color, second, pattern}
 ## A saved item keeps id, slot, rarity, name, mods and lines; the rest is read from here.
 
 const STROKES := ["forehand", "backhand", "serve", "net", "touch"]
@@ -17,35 +20,45 @@ const STROKES := ["forehand", "backhand", "serve", "net", "touch"]
 const LIST := [
 	# --- Rackets
 	{"id": "heavy_frame", "slot": "racket", "rarity": 1, "name": "Тяжёлая рама",
+		"skin": {"frame": "wide", "tube": 1.4, "color": "#4a5160", "accent": "#2f6fe0", "grip": "#16161a", "wrap": "#3b3f48", "strings": "#e6eaf0"},
 		"desc": "+10% силы справа и слева, −10% окна PERFECT",
 		"mods": {"forehand_pace": 0.10, "backhand_pace": 0.10, "forehand_window": -0.10, "backhand_window": -0.10}},
 	{"id": "knife_string", "slot": "racket", "rarity": 1, "name": "Струна-нож",
+		"skin": {"frame": "slim", "tube": 0.8, "color": "#c9d1db", "accent": "#3fd0ff", "grip": "#f4f6f8", "wrap": "#3fa0ff", "strings": "#bfe8ff", "pattern": "stripe"},
 		"desc": "Вращение резаного +20%. «Слайс-нож» ×1.5",
 		"mods": {"touch_spin": 0.20}, "style": {"knife": 1.5}},
 	{"id": "cannon_frame", "slot": "racket", "rarity": 1, "name": "Пушечная рама",
+		"skin": {"frame": "round", "tube": 1.35, "color": "#7a6038", "accent": "#e0a83a", "grip": "#5a3a22", "wrap": "#3a2414", "strings": "#f0e6cc", "pattern": "twotone"},
 		"desc": "Подача +8%. «Пушка» уже с 190 км/ч",
 		"mods": {"serve_pace": 0.08}, "rules": {"cannon_kmh": 190.0}},
 	{"id": "twister", "slot": "racket", "rarity": 2, "name": "Выкрутас",
+		"skin": {"frame": "teardrop", "color": "#7b3fd1", "accent": "#a6e22e", "grip": "#a6e22e", "wrap": "#5a2a9a", "strings": "#e8ffc0", "pattern": "spiral"},
 		"desc": "Вращение справа и слева +15%. «Выкрут» ×2",
 		"mods": {"forehand_spin": 0.15, "backhand_spin": 0.15}, "style": {"curl": 2.0}},
 	{"id": "sledgehammer", "slot": "racket", "rarity": 2, "name": "Кувалда",
+		"skin": {"frame": "square", "tube": 1.45, "color": "#3b3f47", "accent": "#b5562a", "grip": "#141414", "wrap": "#c0302a", "strings": "#d8d8d0", "pattern": "twotone"},
 		"desc": "Каждый 4-й удар розыгрыша: −8 выносливости соперника",
 		"triggers": [{"on": "on_hit", "if": {"every_n": 4}, "do": [["opp_stamina", 8.0]]}]},
 	{"id": "lightning_rod", "slot": "racket", "rarity": 2, "name": "Громоотвод",
+		"skin": {"frame": "slim", "color": "#1b2a5c", "accent": "#ffe14a", "grip": "#ffe14a", "wrap": "#141414", "strings": "#fff6c0", "pattern": "segments"},
 		"desc": "Эйс: −20 выносливости соперника",
 		"triggers": [{"on": "on_ace", "do": [["opp_stamina", 20.0]]}]},
 	{"id": "feather", "slot": "racket", "rarity": 2, "name": "Перо",
+		"skin": {"frame": "round", "tube": 0.8, "color": "#f2f0ea", "accent": "#cbb6ff", "grip": "#bfe0ff", "wrap": "#ffffff", "strings": "#ffffff"},
 		"desc": "Окно PERFECT на касании +15%. «Мёртвый мяч» ×2",
 		"mods": {"touch_window": 0.15}, "style": {"dead_ball": 2.0}},
 	{"id": "cutter", "slot": "racket", "rarity": 3, "name": "Резак",
+		"skin": {"frame": "slim", "color": "#2e8f8a", "accent": "#ff8a2a", "grip": "#16403e", "wrap": "#ff8a2a", "strings": "#e0fff8", "pattern": "edge", "halo": "flames"},
 		"desc": "Вращение резаного +40%. Победный слайс: −25 выносливости соперника",
 		"mods": {"touch_spin": 0.40},
 		"triggers": [{"on": "on_point_won", "if": {"type": "SLICE", "reason": "WINNER"}, "do": [["opp_stamina", 25.0]]}]},
 	{"id": "thunderer", "slot": "racket", "rarity": 3, "name": "Громовержец",
+		"skin": {"frame": "wide", "tube": 1.2, "color": "#1a1a1f", "accent": "#f2b632", "grip": "#1a1a1f", "wrap": "#f2b632", "strings": "#fff0c0", "pattern": "veins", "halo": "bolts"},
 		"desc": "Смэш: −30 выносливости соперника. «Молот» ×2",
 		"style": {"smash": 2.0},
 		"triggers": [{"on": "on_hit", "if": {"type": "SMASH"}, "do": [["opp_stamina", 30.0]]}]},
 	{"id": "sun", "slot": "racket", "rarity": 4, "name": "Солнце",
+		"skin": {"frame": "round", "tube": 1.15, "color": "#2a0b08", "accent": "#ff3a1a", "grip": "#ffb020", "wrap": "#c01810", "strings": "#ffd8b0", "pattern": "core", "halo": "rays"},
 		"desc": "Каждый PERFECT: −6 выносливости соперника. Третий PERFECT подряд — «Метеор»: −30 и стиль очка ×2",
 		"triggers": [
 			{"on": "on_perfect", "do": [["opp_stamina", 6.0]]},
