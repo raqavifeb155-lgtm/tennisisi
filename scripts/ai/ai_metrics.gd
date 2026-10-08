@@ -36,6 +36,15 @@ var player_aces := 0
 var endings := [{}, {}]           # per winner: kind -> count
 var cpu := {"shots": 0, "drops": 0, "lobs": 0, "net_shots": 0, "net_rallies": 0}
 
+## The player's drop shots (--bot-drop=): how the CPU answered. n drops; hit = the CPU got a
+## racket on it; arrived = ran up to it (<= ARRIVED m) and did not hit (the "doesn't swing" bug of
+## D-7); far = could not get there; own_err = the drop itself went out or into the net;
+## won = the point ended on the drop in the player's favour; pts / pts_won = points with a drop.
+const ARRIVED := 1.3
+var pdrop := {"n": 0, "hit": 0, "arrived": 0, "far": 0, "own_err": 0, "won": 0, "pts": 0, "pts_won": 0}
+var _cur_drop := {}               # the drop in the air: {"min_d"}
+var _pt_drop := false
+
 var _shots: Array = []            # this point: {who, contact, speed, drop, lob, pos: [player, cpu]}
 var _serve_dir := ""              # this point's player serve direction (last in-box one)
 var _cpu_at_net := false
@@ -52,6 +61,17 @@ func setup(g: Node) -> void:
 		ge.match_finished.connect(func(_i: Dictionary) -> void: print(report()))
 
 
+## While a drop is in the air: how close the CPU gets to the ball.
+func _process(_delta: float) -> void:
+	if _cur_drop.is_empty() or game == null:
+		return
+	var ball = game.get("ball")
+	if ball == null or not ball.active:
+		return
+	var d := Vector2(ball.state.pos.x - game.cpu.position.x, ball.state.pos.z - game.cpu.position.z).length()
+	_cur_drop["min_d"] = minf(float(_cur_drop["min_d"]), d)
+
+
 func _events() -> Node:
 	if not is_inside_tree():
 		return null
@@ -66,6 +86,9 @@ func reset() -> void:
 	player_aces = 0
 	endings = [{}, {}]
 	cpu = {"shots": 0, "drops": 0, "lobs": 0, "net_shots": 0, "net_rallies": 0}
+	pdrop = {"n": 0, "hit": 0, "arrived": 0, "far": 0, "own_err": 0, "won": 0, "pts": 0, "pts_won": 0}
+	_cur_drop = {}
+	_pt_drop = false
 	_shots = []
 	_serve_dir = ""
 	_cpu_at_net = false
@@ -88,6 +111,13 @@ func on_shot(who: int, info: Dictionary) -> void:
 		"pos": [game.player.position, game.cpu.position] if game else [Vector3.ZERO, Vector3.ZERO],
 	}
 	_shots.append(rec)
+	if who == WHO_PLAYER and rec["drop"] and not bool(info.get("serve", false)):
+		pdrop["n"] += 1
+		_pt_drop = true
+		_cur_drop = {"min_d": INF}
+	elif who == WHO_CPU and not _cur_drop.is_empty():
+		pdrop["hit"] += 1  # the CPU answered the drop
+		_cur_drop = {}
 	if who == WHO_CPU and _shots.size() > 1:  # rally shots, not the CPU's serve
 		cpu["shots"] += 1
 		if rec["drop"]:
@@ -142,6 +172,18 @@ func on_point(info: Dictionary) -> void:
 			s["unret"] += 1
 	if server == WHO_PLAYER and winner == WHO_PLAYER and reason == "ACE":
 		player_aces += 1
+	if not _cur_drop.is_empty():  # the point ended with the drop unanswered
+		if winner == WHO_CPU:
+			pdrop["own_err"] += 1
+		else:
+			pdrop["won"] += 1
+			pdrop["arrived" if float(_cur_drop["min_d"]) <= ARRIVED else "far"] += 1
+	if _pt_drop:
+		pdrop["pts"] += 1
+		if winner == WHO_PLAYER:
+			pdrop["pts_won"] += 1
+	_cur_drop = {}
+	_pt_drop = false
 	var kind := ending_kind(reason, _shots)
 	endings[winner][kind] = int(endings[winner].get(kind, 0)) + 1
 	if _cpu_at_net:
@@ -227,6 +269,12 @@ func report() -> String:
 	lines.append("cpu shots %d  drops %d (%.1f%%)  lobs %d (%.1f%%)  from net %d (%.1f%%)  net rallies %d (%.1f%% of points)" % [cpu["shots"],
 		cpu["drops"], 100.0 * cpu["drops"] / cs, cpu["lobs"], 100.0 * cpu["lobs"] / cs, cpu["net_shots"], 100.0 * cpu["net_shots"] / cs,
 		cpu["net_rallies"], 100.0 * cpu["net_rallies"] / maxf(points, 1)])
+	if int(pdrop["n"]) > 0:
+		var n := float(pdrop["n"])
+		lines.append("player drops %d: CPU hit %d (%d%%)  not hit: ran up %d (%d%%), too far %d (%d%%)  own error %d (%d%%)  | drop won outright %d (%d%%)  points with a drop won by YOU %d of %d (%d%%)" % [
+			pdrop["n"], pdrop["hit"], roundi(100.0 * pdrop["hit"] / n), pdrop["arrived"], roundi(100.0 * pdrop["arrived"] / n), pdrop["far"], roundi(100.0 * pdrop["far"] / n),
+			pdrop["own_err"], roundi(100.0 * pdrop["own_err"] / n), pdrop["won"], roundi(100.0 * pdrop["won"] / n),
+			pdrop["pts_won"], pdrop["pts"], roundi(100.0 * pdrop["pts_won"] / maxf(pdrop["pts"], 1))])
 	if game and game.get("ai") and game.ai.has_method("report"):
 		lines.append(game.ai.report())
 	return "\n".join(lines)
