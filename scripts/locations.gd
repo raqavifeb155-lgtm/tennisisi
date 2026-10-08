@@ -63,6 +63,10 @@ static func tier_info(id: String) -> Dictionary:
 	return TIERS[tier(id)]
 
 
+static func power(id: String) -> float:
+	return float(tier_info(id)["power"])
+
+
 static func prize_mult(id: String) -> float:
 	return float(tier_info(id)["prize"])
 

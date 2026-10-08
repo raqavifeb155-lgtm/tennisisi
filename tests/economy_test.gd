@@ -19,6 +19,7 @@ func _initialize() -> void:
 	test_goals()
 	test_shop()
 	test_strings()
+	test_islands()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -319,4 +320,58 @@ func test_strings() -> void:
 	var name0: String = band["name"]
 	Shop.restring("items", 1, _rng(2))
 	check(Locker.items()[1]["mods"] != m0 and Locker.items()[1]["name"] == name0 and Locker.items()[1]["mods"].size() == 2, "a generated rare: new affixes, the same name")
+	_reset_save()
+
+
+# --- A-4: the islands ----------------------------------------------------------------
+
+func test_islands() -> void:
+	print("islands")
+	_reset_save()
+	check(Locations.tier("park") == 0 and Locations.tier("clay") == 1 and Locations.tier("grass") == 2 and Locations.tier("paris") == 3, "tiers: New York, Spain, England, Paris")
+	check(Locations.unlocked("park") and not Locations.unlocked("clay") and not Locations.unlocked("grass") and not Locations.unlocked("paris"), "a new player: New York only")
+	check(Locations.unlock_hint("clay") == "за первый титул" and Locations.unlock_hint("grass") == "за титул в Испании" and Locations.unlock_hint("paris") == "за титул в Англии", "the lock's hints")
+	SaveData.titles = 1  # an old save: a title with no island recorded
+	check(Locations.unlocked("clay") and not Locations.unlocked("grass"), "any title opens Spain (old saves too)")
+	SaveData.note_title("park")
+	check(int(SaveData.titles_by_loc["park"]) == 1 and not Locations.unlocked("grass"), "a title in New York does not open England")
+	SaveData.note_title("clay")
+	check(Locations.unlocked("grass") and not Locations.unlocked("paris"), "a title in Spain opens England")
+	SaveData.note_title("grass")
+	check(Locations.unlocked("paris") and Locations.best_unlocked() == "paris", "a title in England opens Paris")
+	var before := SaveData._score(SaveData._to_config())
+	SaveData.note_title("paris")
+	check(SaveData._score(SaveData._to_config()) >= before, "the save's score never falls with a title")
+	# opponents get stronger, richer, better geared
+	var park := Tournament.new(1, 11)
+	var paris := Tournament.new(1, 11)
+	paris.location = "paris"
+	park.stage = 2
+	paris.stage = 2
+	park.lineup[2]["mods"] = []
+	paris.lineup[2]["mods"] = []
+	check(paris.modifier_value("skill") > park.modifier_value("skill") + 0.15, "Paris: the AI's mastery +0.2 (%.2f vs %.2f)" % [paris.modifier_value("skill"), park.modifier_value("skill")])
+	var sp := paris.modifier_value("speed") / park.modifier_value("speed")
+	check(absf(sp - 1.2) < 0.001 and absf(paris.modifier_value("serve") / park.modifier_value("serve") - 1.2) < 0.001, "Paris: +20%% running and serving (x%.2f)" % sp)
+	check(paris.item_level() == 4 and park.item_level() == 1, "gear levels: 4 in Paris, 1 in New York")
+	var lv_ok := true
+	for l in paris.lineup:
+		for slot in Gear.SLOTS:
+			lv_ok = lv_ok and Items.level(l["gear"][slot]) >= 4
+	check(lv_ok, "every item an opponent wears in Paris is level 4+")
+	check(absf(park.prize_mult() - 1.0) < 0.001 and absf(paris.prize_mult() - 2.0) < 0.001, "prizes x1 / x2 (format 'Сет до 6')")
+	# rarer gear on a higher island, over many lineups
+	var epic := [0, 0]
+	for k in 400:
+		for j in 2:
+			var t := Tournament.new(1, 5000 + k)
+			if j == 1:
+				t.location = "paris"
+			for l in t.lineup:
+				for slot in Gear.SLOTS:
+					if int(l["gear"][slot]["rarity"]) >= Gear.EPIC:
+						epic[j] += 1
+	check(epic[1] > epic[0] * 1.15, "Paris wears more epic+ gear than New York (%d vs %d)" % [epic[1], epic[0]])
+	var back := Tournament.from_dict(paris.to_dict())
+	check(back.location == "paris" and back.lineup == paris.lineup, "a saved Paris run comes back the same")
 	_reset_save()

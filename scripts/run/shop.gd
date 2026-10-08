@@ -71,7 +71,7 @@ static func reroll() -> bool:
 	var p := reroll_price()
 	if SaveData.gold < p:
 		return false
-	SaveData.gold -= p
+	Locker.spend(p)
 	var st := _state()
 	st["rerolls"] = int(st["rerolls"]) + 1
 	st["sold"] = []
@@ -97,7 +97,7 @@ static func buy(i: int) -> String:
 	if why != "":
 		return why
 	var it: Dictionary = stock()[i]
-	SaveData.gold -= Items.price(it)
+	Locker.spend(Items.price(it))
 	Locker.next_items().append(it)
 	(_state()["sold"] as Array).append(i)
 	return ""
@@ -174,6 +174,6 @@ static func restring(where: String, i: int, rng: RandomNumberGenerator = null) -
 	if rng == null:
 		rng = RandomNumberGenerator.new()
 		rng.randomize()
-	SaveData.gold -= p
+	Locker.spend(p)
 	restring_item(list[i], rng)
 	return ""

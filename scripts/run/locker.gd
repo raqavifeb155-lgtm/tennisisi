@@ -16,10 +16,20 @@ const INSURANCE := 0.10
 const CAPS := [Gear.RARE, Gear.RARE, Gear.EPIC, Gear.EPIC, Gear.LEGENDARY, Gear.MYTHIC]
 
 
+static var boarded: Array = []    # names of what the last board() put into the run (the bracket says so)
+
+
 static func _list(key: String) -> Array:
 	if not SaveData.locker.has(key):
 		SaveData.locker[key] = []
 	return SaveData.locker[key]
+
+
+## Gold out of the bank on the locker / shop side. Counted in locker["spent"] so the save's
+## score (SaveData._score) never falls when gold is spent: a spend is progress too.
+static func spend(n: int) -> void:
+	SaveData.gold -= n
+	SaveData.locker["spent"] = int(SaveData.locker.get("spent", 0)) + n
 
 
 static func items() -> Array:
@@ -78,7 +88,7 @@ static func put(item: Dictionary, round_i: int, replace := -1) -> String:
 	if replace >= 0 and replace < items().size():
 		SaveData.gold += Items.sell_price(items()[replace])
 		items().remove_at(replace)
-	SaveData.gold -= insurance(item)
+	spend(insurance(item))
 	items().append(item.duplicate(true))
 	return ""
 
@@ -108,11 +118,14 @@ static func take(i: int) -> Dictionary:
 ## Before the first match: what was bought joins the run (put on into an empty slot, else
 ## into the bag). Called when the bracket first shows.
 static func board(t: Tournament) -> void:
+	boarded = []
 	if not t.can_take_locker():
 		return
 	var bought := next_items()
 	while not bought.is_empty():
-		t.join(bought.pop_front())
+		var it: Dictionary = bought.pop_front()
+		boarded.append(String(it["name"]))
+		t.join(it)
 
 
 ## What the summary offers for the locker: worn first, then the bag.

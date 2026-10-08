@@ -56,11 +56,21 @@ const ROUND_SHIFT := 0.04
 ## sees ~5 epics, ~1.2 legendaries and ~0.3 mythics drop (1 in 2, 1 in 8, 1 in 30 runs).
 ## (Before: 30/20/12/6/3% of what he carried — an epic once in 14 runs, a mythic in 670.)
 const DROP_CHANCE := [0.55, 0.65, 0.85, 0.48, 0.6]
+## How much of the island's strength multiplier the opponent gets (see modifier_value).
+const ISLAND_POWER_SHARE := 0.5
 const BAG_SIZE := 6
 const SKILL_PER_RARITY := 0.01    # his gear makes him a little stronger
 
 var format := 0                   # index into FORMATS
-var location := "park"            # Locations id: scenery, surface and ball physics
+## Locations id: scenery, surface and ball physics. v0.2 A-4: also the island's tier, so
+## choosing it re-rolls the opponents' gear (their level and odds depend on the tier).
+var location := "park":
+	set(v):
+		if v == location:
+			return
+		location = v
+		mythic_rolled = false
+		roll_lineup()
 var lineup: Array = []            # per opponent: {"mods": [ids], "gear": {slot: item}, "racket": gear.racket}
 var equip := {"racket": {}, "shoes": {}, "band": {}}   # what the player wears ({} = the stock one)
 ## The player's racket: equip["racket"] (older code and old saves use this name).
@@ -87,6 +97,7 @@ var perks: Array = []             # ids of the run perks taken
 var results: Array = []           # per match: {"stage", "won", "score"}
 var gold := 0
 var income := {}                  # gold by kind (INCOME_KINDS): adds up to `gold`
+var last_prize := 0               # prize money the last record_match / give_up paid (the result shows it)
 var locker_done := false          # the summary's one item went into the locker (Locker)
 var champion := false
 var offer: Array = []             # reward cards on the REWARD screen
@@ -142,6 +153,7 @@ static func from_dict(d: Dictionary) -> Tournament:
 ## bracket before the match. The first opponent is the tutorial: no modifiers.
 func roll_lineup() -> void:
 	lineup = []
+	var lvl := item_level()
 	for i in rounds():
 		var mods: Array = []
 		if i > 0:
@@ -168,17 +180,29 @@ func roll_lineup() -> void:
 				if mythic_rolled:
 					rar = Gear.LEGENDARY
 				mythic_rolled = true
-			gear[slot] = Gear.roll(rar, rng, slot)
-		# A golden one (1 in 50, never the first): a legendary or better in his hand.
+			gear[slot] = Gear.roll(rar, rng, slot, lvl)
+		# A golden one (1 in 50, never the first): a legendary or better in his hand, a level up.
 		var golden := i > 0 and rng.randf() < Golden.CHANCE
 		if golden and int(gear["racket"]["rarity"]) < Gear.LEGENDARY:
-			gear["racket"] = Gear.roll(Gear.LEGENDARY, rng, "racket")
+			gear["racket"] = Gear.roll(Gear.LEGENDARY, rng, "racket", lvl + 1)
+		elif golden:
+			gear["racket"] = Items.set_level(gear["racket"], lvl + 1)
 		lineup.append({"mods": mods, "gear": gear, "racket": gear["racket"], "golden": golden})
 
 
-## A rarity for an opponent's item: GEAR_CHANCE with `shift` moved from common upward.
+## The level of the gear opponents wear here: 1 + the island's tier (v0.2 A-4).
+func item_level() -> int:
+	return 1 + Locations.tier(location)
+
+
+## A rarity for an opponent's item: GEAR_CHANCE with `shift` moved from common upward;
+## the island's tier adds its own epic / legendary points (Locations.TIERS).
 func _roll_rarity(shift: float) -> int:
 	var c: Array = GEAR_CHANCE.duplicate()
+	var ti := Locations.tier_info(location)
+	c[Gear.EPIC] += float(ti["epic"])
+	c[Gear.LEGENDARY] += float(ti["legendary"])
+	c[0] -= float(ti["epic"]) + float(ti["legendary"])
 	var moved := minf(shift, c[0] - 0.1)
 	c[0] -= moved
 	for k in SHIFT_SPLIT.size():
@@ -198,6 +222,13 @@ func current_lineup() -> Dictionary:
 ## Multiplier / bonus from the current opponent's modifiers ("speed", "serve", "skill").
 func modifier_value(key: String) -> float:
 	var v := 0.0 if key == "skill" else 1.0
+	# v0.2 A-4: the island's strength (Locations.TIERS power: 1 / 1.12 / 1.25 / 1.4) -
+	# half of it into running and serving, half of it into the AI's mastery.
+	var extra := (Locations.power(location) - 1.0) * ISLAND_POWER_SHARE
+	if key == "skill":
+		v += extra
+	else:
+		v *= 1.0 + extra
 	for id in current_lineup()["mods"]:
 		var m: Dictionary = MODIFIERS[id]
 		if m.has(key):
@@ -233,6 +264,8 @@ func _wear(item: Dictionary) -> void:
 func earn(kind: String, n: int) -> void:
 	if n == 0:
 		return
+	if kind == "prize":
+		last_prize += n
 	gold += n
 	income[kind] = int(income.get(kind, 0)) + n
 
@@ -367,6 +400,7 @@ func gold_for_win(i: int) -> int:
 ## Records a finished match and moves the run on.
 func record_match(won: bool, score_text: String, r: RandomNumberGenerator) -> void:
 	results.append({"stage": stage, "won": won, "score": score_text})
+	last_prize = 0
 	missed_loot = ""
 	new_items = []
 	auto_sold = 0
@@ -433,11 +467,12 @@ func _take_drops(r: RandomNumberGenerator) -> void:
 
 ## The gear card of the reward offer: usually common, sometimes rare, any slot.
 func _item_card(r: RandomNumberGenerator) -> Dictionary:
-	var item := Gear.roll(Gear.RARE if r.randf() < 0.3 else Gear.COMMON, r, Gear.SLOTS[r.randi_range(0, Gear.SLOTS.size() - 1)])
+	var item := Gear.roll(Gear.RARE if r.randf() < 0.3 else Gear.COMMON, r, Gear.SLOTS[r.randi_range(0, Gear.SLOTS.size() - 1)], item_level())
 	return {"kind": "item", "item": item, "title": item["name"], "desc": Gear.describe(item)}
 
 
 func give_up() -> void:
+	last_prize = 0
 	if state == State.LOST:
 		earn("prize", prize_on_loss(stage))  # the match was played and lost: its round pays
 	state = State.OVER
