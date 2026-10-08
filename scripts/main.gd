@@ -55,6 +55,7 @@ var scoreboard := MatchScore.new(1, 99, 0)  # practice: one endless set
 # Tournament / menus (TournamentUI) and skills (Skills)
 var ui: TournamentUI
 var run_hub: RunHub
+var club: Club                    # v0.2 B: the club as the main screen (scripts/club)
 var tournament: Tournament
 var tournament_mode := false
 var autoplay_tournament := false
@@ -243,6 +244,9 @@ func _ready() -> void:
 	run_hub = RunHub.new()  # v0.2 A: style, gear effects, opponent stamina, bets (scripts/run)
 	add_child(run_hub)
 	run_hub.setup(self)
+	club = Club.new()  # v0.2 B: the walkable club replaces the menu list (scripts/club)
+	add_child(club)
+	club.setup(self)
 	# UI sounds: a dropped-in coin/reward/click sound if there is one, else a built-in.
 	ui.sfx_request.connect(func(sound: String, db: float, pitch: float) -> void:
 		var alt: String = {"bounce": "coin", "hit": "click"}.get(sound, "")
@@ -407,7 +411,7 @@ func set_location(id: String) -> void:
 	graphics.refresh()
 	court.set_surface(loc["surface"])
 	Athlete.surface = loc["surface"]
-	sfx.set_location(location_id)
+	sfx.set_location(loc.get("sound", location_id))
 
 
 func _build_helpers() -> void:
@@ -514,6 +518,8 @@ func _build_helpers() -> void:
 # --- Main loop --------------------------------------------------------------
 
 func _physics_process(delta: float) -> void:
+	if club.active:
+		return  # the club walks the hero itself
 	game_time += delta
 	match phase:
 		Phase.WAIT:
@@ -567,6 +573,8 @@ func _process(_delta: float) -> void:
 	_update_helpers()
 	_update_safe_area(rd)
 	_update_persistence(rd)
+	if club.active:
+		return
 	sfx.rally = phase == Phase.RALLY or phase == Phase.SERVE
 	player.stance_style = 1 if phase == Phase.SERVE and server == Who.CPU else 0
 	cpu.stance_style = 1 if phase == Phase.SERVE and server == Who.PLAYER else 0
@@ -658,6 +666,8 @@ func _on_ball_crossed() -> void:
 
 
 func _on_tap(pos: Vector2) -> void:
+	if club.active:
+		return
 	if phase == Phase.BONUS:
 		if _bonus_state == 0 and not toss_active:
 			_start_toss()
@@ -677,6 +687,8 @@ func _on_tap(pos: Vector2) -> void:
 
 
 func _on_hold(pos: Vector2) -> void:
+	if club.active:
+		return
 	if phase == Phase.SERVE and server == Who.PLAYER:
 		if Tuning.tap_controls and not toss_active and _is_serve_step_zone(pos):
 			_set_serve_step(pos)  # the finger held low: the server follows it along the line
@@ -758,6 +770,8 @@ func _read_gesture(points: PackedVector2Array, times: PackedInt32Array) -> ShotG
 
 
 func _on_swipe(points: PackedVector2Array, times: PackedInt32Array) -> void:
+	if club.active:
+		return
 	var g := _read_gesture(points, times)
 	var dir := _swipe_world_dir(g.start, g.apex)
 	var pace_k := _pace_from_speed(g.speed)
@@ -863,6 +877,8 @@ func _aim_origin() -> Vector3:
 
 
 func _on_swipe_progress(points: PackedVector2Array) -> void:
+	if club.active:
+		return
 	var times := PackedInt32Array()
 	times.resize(points.size())
 	var g := _read_gesture(points, times)
@@ -1784,7 +1800,7 @@ func _stop_match() -> void:
 func _start_practice() -> void:
 	tournament = null
 	tournament_mode = false
-	set_location(_next_location)
+	set_location("club" if club.active else _next_location)  # from the club: its own court
 	Rewards.restore()
 	cpu.set_look(Looks.from_shirt(Color(0.22, 0.28, 0.42)))
 	_set_opponent_mods(1.0, 1.0, {})
@@ -1890,7 +1906,7 @@ func _update_safe_area(dt: float) -> void:
 func _continue_tournament() -> void:
 	var t := SaveData.resumable()
 	if t == null:
-		ui.show_menu()
+		_open_menu()
 		return
 	tournament = t
 	tournament_mode = true
@@ -1988,6 +2004,7 @@ func _on_ui(action: String, arg: int) -> void:
 			set_location(_next_location)
 			ui.show_formats()
 		"format":
+			club.remember(_next_location, arg)  # the club's "Турнир" goes straight to the bracket next time
 			_start_tournament(arg)
 		"practice":
 			_start_practice()
@@ -2020,7 +2037,7 @@ func _on_ui(action: String, arg: int) -> void:
 			SaveData.save()
 			Tuning.notify_changed()
 			if first:
-				ui.show_menu()
+				_open_menu()
 			else:
 				ui.show_locker()
 		"menu":
@@ -2083,9 +2100,17 @@ func _next_screen(target: String) -> void:
 			ui.show_summary(tournament)
 		_:
 			if SaveData.control_chosen or not SaveData.enabled:
-				ui.show_menu()
+				_open_menu()
 			else:
 				ui.show_controls(true)  # first launch: pick the controls before anything else
+
+
+## The main screen: the club (v0.2 B), or the old list with --old-menu, in autoplay, or if
+## the club can't be built.
+func _open_menu() -> void:
+	if Club.enabled() and not autoplay and club.open():
+		return
+	ui.show_menu()
 
 
 func _levels_text() -> String:
