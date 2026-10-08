@@ -10,12 +10,15 @@ var h := 1564
 var tag := ""
 var out := ""
 var worst := 0
+var wait := 7.0         # --wait=N: the loading screen takes longer on a busy machine
 
 
 func _initialize() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--size="):
 			h = int(a.get_slice("=", 1))
+		elif a.begins_with("--wait="):
+			wait = float(a.get_slice("=", 1))
 		elif a.begins_with("--tag="):
 			tag = a.get_slice("=", 1) + "_"
 	out = ProjectSettings.globalize_path("user://club_%s%d_" % [tag, h])
@@ -66,7 +69,13 @@ func _run() -> void:
 	main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(main)
 	SaveData.enabled = false
-	await create_timer(7.0).timeout
+	await create_timer(wait).timeout
+	# The loading screen (BootLoader) can take long on a busy machine: wait it out.
+	var waited := 0.0
+	while waited < 150.0 and main.get_children().any(func(n): return n is BootLoader):
+		await create_timer(1.0).timeout
+		waited += 1.0
+	await create_timer(1.0).timeout
 	SaveData.control_chosen = true
 	SaveData.played = 1
 	SaveData.titles = 1
