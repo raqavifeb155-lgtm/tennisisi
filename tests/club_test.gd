@@ -789,6 +789,15 @@ func test_places_flow() -> void:
 ## Every level of every construction builds (and its ghost), headless.
 func test_build_world() -> void:
 	print("build world")
+	# An old save with every construction standing: the lots lay themselves out (T-1), so
+	# the rooms have their pavilions and their ghosts.
+	var levels := {}
+	for id in ClubBuilds.ORDER:
+		levels[id] = 1
+	SaveData.played = 5  # every place is open by now (the rooms open by runs and titles)
+	SaveData.titles = 1
+	SaveData.club = {"levels": levels}
+	ClubLots.ensure()
 	var w = load("res://scripts/club/club_world.gd").new()
 	root.add_child(w)
 	await process_frame
