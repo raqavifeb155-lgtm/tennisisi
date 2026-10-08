@@ -38,6 +38,46 @@ func _verdict(text: String, good: bool) -> void:
 	main.hud.show_message(text, main.COLOR_WIN if good else main.COLOR_BAD)
 
 
+## C-7: the three looks of the opponent's stamina bar at the same moment of a tournament
+## match (the serve, the score on, three hits just landed; then calm and tired).
+## godot --path . --rendering-driver opengl3 -s tools/hud_shots.gd -- --tag=c7 [--size=1480]
+func _opp_bar_shots() -> void:
+	var tm := Tournament.new(1)
+	SaveData.active = tm
+	SaveData.enabled = false
+	main.tournament = tm
+	main.tournament_mode = true
+	main._play_match()
+	await create_timer(1.2).timeout
+	main.hud._tutorial.visible = false
+	paused = false
+	main.server = main.Who.PLAYER
+	main._setup_serve()
+	await create_timer(0.5).timeout
+	var s: MatchScore = MatchScore.new(2, 4, 3, 0, "ДЖУМХУР")
+	s.games = [3, 2]
+	s.points = [2, 3]
+	s.server = 0
+	main.hud.show_board(s, ["ВЫ", "ДЖУМХУР"])
+	var view: OppStaminaView = main.run_hub.view
+	view.shown = true
+	for st in [0, 1]:  # was (the old bar) / now; 2 and 3 are the other looks to try
+		root.get_node("Tuning").opp_bar_style = st
+		view.style = st
+		paused = false
+		Engine.time_scale = 1.0
+		view.reset(100.0)
+		view.hit(12.0, "run", 88.0)
+		view.hit(30.0, "heavy", 58.0)
+		view.hit(8.0, "item", 50.0)
+		await _shot("c7_style%d_hits" % st, 0.2)
+		await create_timer(1.2).timeout
+		await _shot("c7_style%d_calm" % st, 0.3)
+		view.hit(20.0, "run", 30.0)
+		await create_timer(1.3).timeout
+		await _shot("c7_style%d_tired" % st, 0.3)
+
+
 func _run() -> void:
 	root.size = Vector2i(720, h)
 	main = load("res://scenes/main.tscn").instantiate()
@@ -49,6 +89,11 @@ func _run() -> void:
 	if safe:
 		main.hud.set_safe_area(180.0, 60.0)
 		main.ui.set_safe_area(180.0, 60.0)
+
+	if tag == "c7_":
+		await _opp_bar_shots()
+		quit()
+		return
 
 	# --- First launch and the Club states the menu shots don't cover -----------
 	main.ui.show_controls(true)

@@ -205,6 +205,38 @@ func _club_screen(ctx: String, action: String, title: String) -> void:
 	await _expect("%s: назад в клуб" % ctx, func() -> bool: return club.active and club.hud.visible and not main.ui.is_open())
 
 
+## The opponent's stamina bar in its three looks (OppStaminaView): where it stands is
+## inside the phone's frame and clear of the timing ring, the ball in play (the serve) is
+## not near it, and a ball on the bar makes it fade and a far ball brings it back.
+func _opp_bar_round() -> void:
+	var view: OppStaminaView = main.run_hub.view
+	var tuning = root.get_node("Tuning")
+	var frame := Rect2(Vector2.ZERO, Vector2(root.size))
+	await _expect("Полоска соперника: показана в турнирном матче", func() -> bool: return view.shown)
+	for st in [1, 2, 3]:
+		tuning.opp_bar_style = st
+		await _wait(0.3)
+		var r := view.bar_rect()
+		var ring: Control = main.hud.ring
+		var tag := "Полоска соперника (вид %d)" % st
+		_check("%s: целиком на экране" % tag, frame.encloses(r))
+		_check("%s: не в кольце тайминга" % tag, not r.intersects(ring.get_global_rect()))
+		_check("%s: мяч в игре не закрыт (рядом — полоска бледная)" % tag, not view.ball_near() or view.bar_alpha() < 0.5)
+		if st == 1:
+			_check("%s: тонкая, 4 px, и короткая" % tag, is_equal_approx(r.size.y, 4.0) and r.size.x <= 110.0)
+		if st == 3:
+			_check("%s: 120x6" % tag, r.size == Vector2(120, 6))
+		main.run_hub.set_process(false)  # the probe places the ball itself
+		view.ball_px = r.get_center()
+		await _wait(0.5)
+		_check("%s: мяч на полоске — она бледнеет" % tag, view.bar_alpha() < 0.4)
+		view.ball_px = r.get_center() + Vector2(0, 400)
+		await _wait(0.5)
+		_check("%s: мяч ушёл — полоска вернулась" % tag, view.bar_alpha() > 0.95)
+		main.run_hub.set_process(true)
+	tuning.opp_bar_style = 1
+
+
 func _run() -> void:
 	root.size = Vector2i(720, 1564)
 	main = load("res://scenes/main.tscn").instantiate()
@@ -361,6 +393,9 @@ func _run() -> void:
 	main.tournament_mode = true
 	main._play_match()
 	await _wait(1.0)
+	# The opponent's stamina bar (C-7), in each look: inside the frame, away from the ring,
+	# and out of the ball's way (it fades while the ball is near it).
+	await _opp_bar_round()
 	await _tap(_gear())
 	await _pause_shape("Турнир → пауза")
 	await _tap(await _find(_pause(), "Выйти в клуб"))
