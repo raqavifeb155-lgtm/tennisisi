@@ -12,6 +12,7 @@ var h := 1564
 var gfx := -1
 var out := ""
 var builds := false
+var tag := ""          # --tag=X: club_X_<h>_*.png (other worktrees shoot into the same folder)
 
 
 func _initialize() -> void:
@@ -22,7 +23,9 @@ func _initialize() -> void:
 			gfx = int(a.get_slice("=", 1))
 		elif a == "--builds":
 			builds = true
-	out = ProjectSettings.globalize_path("user://club_%d_" % h)
+		elif a.begins_with("--tag="):
+			tag = a.get_slice("=", 1) + "_"
+	out = ProjectSettings.globalize_path("user://club_%s%d_" % [tag, h])
 	_run.call_deferred()
 
 
@@ -122,6 +125,33 @@ func _run() -> void:
 	await create_timer(0.6).timeout
 	main.club._on_choice("club_place", 0)
 	await _shot("16_arena_card", 0.8)
+	main._on_ui("menu", 0)
+	# Hub: the coach's quests, collecting, blackjack, the islands.
+	var run := Tournament.new(1)
+	SaveData.active = run
+	SaveData.club["quests"] = {"run": str(run.rng.seed), "issued": 3, "claimed": 0, "list": [
+		ClubQuests._make(ClubQuests.find_template("aces"), 0, false),
+		ClubQuests._make(ClubQuests.find_template("rally"), 0, false),
+		ClubQuests._make(ClubQuests.find_template("wins"), 0, true)]}
+	var ql: Array = ClubQuests.current()
+	ql[0]["have"] = ql[0]["need"]
+	ql[0]["done"] = true
+	ql[1]["have"] = 12
+	ql[2]["have"] = 1
+	main.club.world.set_board(ClubQuests.board_text())
+	_go("coach")
+	await _shot("17_coach_board", 1.0)
+	main.club._on_choice("club_quests", 0)
+	await _shot("18_quests_screen", 0.8)
+	main._on_ui("menu", 0)
+	main.club._on_choice("club_claim", 0)
+	await _shot("19_claimed", 0.6)
+	_go("blackjack")
+	await _shot("20_blackjack", 1.0)
+	_go("court")
+	await create_timer(0.4).timeout
+	main.club._on_choice("club_locations", 0)
+	await _shot("21_islands", 0.8)
 	main._on_ui("menu", 0)
 	quit()
 

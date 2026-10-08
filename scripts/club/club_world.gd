@@ -567,21 +567,20 @@ func _fill_room(id: String, inside: Node3D, lv: int) -> void:
 				inside.add_child(_mesh_box(Vector3(1.0, 2.3, 0.6), Vector3(-2.4, 1.15, 1.4), ClubMaterial.pal(ClubMaterial.WOOD_DARK)))
 				inside.add_child(_mesh_box(Vector3(0.9, 0.05, 0.5), Vector3(-2.4, 2.1, 1.4), ClubMaterial.glow(UiTheme.GOLD, 1.2)))
 		"coach":
-			inside.add_child(_mesh_box(Vector3(2.4, 1.3, 0.06), Vector3(0.6, 1.7, -hz + 0.14), ClubMaterial.pal(ClubMaterial.CHALKBOARD)))
+			inside.add_child(_mesh_box(Vector3(3.6, 1.5, 0.06), Vector3(0.6, 1.75, -hz + 0.14), ClubMaterial.pal(ClubMaterial.CHALKBOARD)))
 			# The coach's chalkboard: this run's quests (ClubQuests.board_text).
 			var chalk := Label3D.new()
 			chalk.text = _board
 			chalk.font = UiTheme.text_bold()
-			chalk.font_size = 40
-			chalk.pixel_size = 0.0042
-			chalk.width = 540
-			chalk.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			chalk.font_size = 46
+			chalk.pixel_size = 0.0045
+			chalk.line_spacing = 6.0
 			chalk.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 			chalk.modulate = Color(0.92, 0.92, 0.88, 0.85)
 			chalk.outline_size = 0
 			chalk.shaded = false
 			chalk.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			chalk.position = Vector3(0.6, 1.7, -hz + 0.18)
+			chalk.position = Vector3(-1.05, 1.75, -hz + 0.18)  # left-aligned text starts here
 			inside.add_child(chalk)
 			_chalk = chalk
 			var chair := Node3D.new()
