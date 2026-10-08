@@ -7,6 +7,8 @@ var failures := 0
 
 ## _initialize, not _init: the autoloads (Tuning, GameEvents) are in the tree by now.
 func _initialize() -> void:
+	Items.PRICE_SCALE = 1.0  # these tests count in base prices; the shipped scale is checked in economy_test
+	ClubBuilds.CLUB_PRICE_SCALE = 1.0
 	SaveData.enabled = false
 	test_style_rules()
 	test_style_meter()

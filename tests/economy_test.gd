@@ -12,6 +12,10 @@ func _initialize() -> void:
 
 
 func _run() -> void:
+	var shipped := Items.PRICE_SCALE
+	test_shipped_scale(shipped)
+	Items.PRICE_SCALE = 1.0  # the rest counts in base prices
+	ClubBuilds.CLUB_PRICE_SCALE = 1.0
 	test_prices()
 	test_item_level()
 	test_drop_chances()
@@ -400,3 +404,11 @@ func test_income_scale() -> void:
 	check(is_equal_approx(Tournament.income_scale(), Tournament.INCOME_SCALE), "after %d runs the long-run scale" % Tournament.BEGINNER_RUNS)
 	check(t.prize_on_loss(0) == roundi(20 * Tournament.INCOME_SCALE) and t.gold_for_win(4) == roundi(50 * Tournament.INCOME_SCALE), "prizes follow it (%d, %d)" % [t.prize_on_loss(0), t.gold_for_win(4)])
 	_reset_save()
+
+
+func test_shipped_scale(scale: float) -> void:
+	print("shipped price scale")
+	check(is_equal_approx(scale, ClubBuilds.CLUB_PRICE_SCALE), "items and the club share one scale (%.2f)" % scale)
+	check(Items.price(_item(Gear.EPIC)) == roundi(120 * scale), "an epic costs 120 x %.2f = %d" % [scale, Items.price(_item(Gear.EPIC))])
+	check(ClubBuilds.next_price("court") == roundi(40 * scale), "the court's first level: 40 x %.2f" % scale)
+	check(is_equal_approx(Tournament.INCOME_SCALE, 0.5), "the long-run income scale is 0.5")
