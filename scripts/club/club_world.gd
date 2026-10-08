@@ -310,7 +310,7 @@ func _make_scaffold(id: String) -> Node3D:
 
 ## Scaffolding of poles, planks and a striped tape around a footprint (also for the build
 ## moment of a lot, ClubLotBuild).
-func make_scaffold_at(node_name: String, at: Vector3, sz: Vector2) -> Node3D:
+func make_scaffold_at(node_name: String, at: Vector3, sz: Vector2, decks := true) -> Node3D:
 	var n := Node3D.new()
 	n.name = node_name
 	n.position = at
@@ -331,8 +331,9 @@ func make_scaffold_at(node_name: String, at: Vector3, sz: Vector2) -> Node3D:
 			n.add_child(_mesh_box(Vector3(0.07, 0.07, sz.y), Vector3(x, y, 0), metal))
 		for z in [-hz, hz]:
 			n.add_child(_mesh_box(Vector3(sz.x, 0.07, 0.07), Vector3(0, y, z), metal))
-	for y in [1.1, 2.2]:
-		n.add_child(_mesh_box(Vector3(sz.x * 0.9, 0.06, sz.y * 0.9), Vector3(0, y + 0.06, 0), wood))
+	if decks:   # a lot's scaffolding is open (the camera looks down into it)
+		for y in [1.1, 2.2]:
+			n.add_child(_mesh_box(Vector3(sz.x * 0.9, 0.06, sz.y * 0.9), Vector3(0, y + 0.06, 0), wood))
 	# A cross brace and a striped tape around the foot of it.
 	var brace := _mesh_box(Vector3(0.05, h * 1.1, 0.05), Vector3(hx, h * 0.5, 0), metal)
 	brace.rotation.x = atan2(sz.y, h) * (1.0 if sz.y > 0 else 0.0)

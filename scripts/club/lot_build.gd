@@ -31,6 +31,7 @@ func play(c: Node, lot_id: String, type: String) -> void:
 	_roots = world.lot_roots(type)
 	for r in _roots:
 		r.scale = Vector3(1.0, 0.001, 1.0)    # it rises later
+		r.visible = false
 	var sz := Vector2(7.6, 5.8)
 	match type:
 		"bar":
@@ -39,7 +40,7 @@ func play(c: Node, lot_id: String, type: String) -> void:
 			sz = Vector2(8.0, 4.2)
 		"stands":
 			sz = Vector2(5.0, 11.0)
-	_scaffold = world.make_scaffold_at("scaffold_lot", _at + Vector3(0, 0, -0.3), sz)
+	_scaffold = world.make_scaffold_at("scaffold_lot", _at + Vector3(0, 0, -0.3), sz, false)
 	_scaffold.scale = Vector3(1.0, 0.001, 1.0)
 	_scaffold.visible = false
 	(_scaffold.get_meta("label") as Label3D).text = "СТРОИТСЯ"
@@ -64,7 +65,8 @@ func play(c: Node, lot_id: String, type: String) -> void:
 
 	var hud = club.hud
 	hud.fly_coins(club.cam.unproject_position(_at))
-	club.cam.frame(_at + Vector3(0, 10.5, 10.5), _at + Vector3(0, 0.0, 0.5), 0.5)
+	var v: Array = club.lot_view(lot_id, type, true)
+	club.cam.frame(v[0], v[1], 0.5)
 	var thud := "club_build" if club.main.sfx.has("club_build") else "bounce"
 	_tw = create_tween()
 	_tw.tween_interval(0.4)
@@ -84,6 +86,8 @@ func play(c: Node, lot_id: String, type: String) -> void:
 		club.main.sfx.play(thud, -1.0, 0.8)
 		TelegramApp.haptic("heavy")
 		burst.emitting = true
+		for r in _roots:
+			r.visible = true
 		_workers.leave())
 	_tw.tween_property(_scaffold, "scale", Vector3(1.0, 0.001, 1.0), 0.2)
 	_tw.parallel().tween_property(ring, "scale", Vector3(4.2, 0.05, 4.2), 0.3)
@@ -112,6 +116,7 @@ func _finish() -> void:
 	for r in _roots:
 		if is_instance_valid(r):
 			r.scale = Vector3.ONE
+			r.visible = true
 	if is_instance_valid(_scaffold):
 		_scaffold.queue_free()
 	if is_instance_valid(_workers):

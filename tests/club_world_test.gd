@@ -148,9 +148,7 @@ func test_in_the_club() -> void:
 	check(not (hero.get("_racket") as Node3D).visible, "no racket in his hand")
 	# ruin: boards on the shut shop and locker room, a sagging net, rusty fence
 	check(not scenery._boards.has("shop") or not (scenery._boards["shop"] as Node3D).visible, "the shop stands open from the start (T), no boards")
-	check(scenery._boards.has("locker") and (scenery._boards["locker"] as Node3D).visible, "so is the locker room")
-	var door := ClubPlaces.find("locker")["pos"] as Vector3
-	check(w.walk.blocked(Vector2(door.x, door.z + ClubWorld.PAVILION.y * 0.5 + 0.1), 0.35), "a boarded door can't be walked through")
+	check(not scenery._boards.has("locker") or not (scenery._boards["locker"] as Node3D).visible, "a locker room that is not built has no door to board up (T-1: its lot has stakes)")
 	var court = main.court
 	var net_root: Node3D = court.get("_net_root")
 	check(net_root.get_node_or_null("sag_net") != null, "the net sags at level 0")
@@ -166,8 +164,9 @@ func test_in_the_club() -> void:
 	SaveData.played = 1
 	club._refresh()
 	await _frames(4)
-	check(not (scenery._boards["locker"] as Node3D).visible, "played once: the boards are off the locker room")
-	check(not w.walk.blocked(Vector2(door.x, door.z + ClubWorld.PAVILION.y * 0.5 + 0.1), 0.2), "and the door is free")
+	check(not scenery._boards.has("locker") or not (scenery._boards["locker"] as Node3D).visible, "played once: no boards")
+	var door := ClubPlaces.find("locker")["pos"] as Vector3
+	check(not w.walk.blocked(Vector2(door.x, door.z + ClubWorld.PAVILION.y * 0.5 + 0.1), 0.2), "and the spot where its door would be is free")
 	# built: the ruin around the construction goes
 	SaveData.club["levels"] = {"court": 3, "gate": 2, "stands": 2, "trophy": 1, "bar": 1, "shop": 1, "locker": 1}
 	club._refresh()

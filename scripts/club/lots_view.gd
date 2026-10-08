@@ -50,7 +50,7 @@ func _ensure_sign(l: Dictionary) -> void:
 	if world.place_node("lot_%s_sign" % id) != null:
 		return
 	var c: Vector3 = l["pos"]
-	var s := world._sign(c + Vector3(4.2, 0, 2.6), ClubLots.sign_text(id))
+	var s := world._sign(c + Vector3(3.4, 0, 2.9), ClubLots.sign_text(id))
 	world._place_nodes["lot_%s_sign" % id] = s
 	world._keep.append(s)
 	var holder := Node3D.new()   # the lot's place node: where a place's node is expected

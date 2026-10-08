@@ -567,11 +567,21 @@ func _lots() -> void:
 	SaveData.titles = 0
 	SaveData.gold = 0
 	SaveData.club = {"met_coach": true, "walk_hint": true}
-	club._refresh()
+	# The world was built from whatever save the game started with: build the club afresh.
+	club.close()
+	main.set_location(Locations.LIST[0]["id"])
+	main._show_menu()
+	await create_timer(0.8).timeout
+	club = main.club
 	club.hud.say("", 0.0)
+	club.hud._bubble.visible = false
+	ClubDaytime.force_hour = 10.0
 	await _shot("01_start", 1.6)
 	_go("lot_n1")
-	await _shot("02_lot_sign", 1.0)
+	await _shot("02_lot_circle", 1.0)
+	club.cam.frame(Vector3(-13, 8.5, 37.0), Vector3(-12.5, 0.0, 26.0), 0.0)
+	await _shot("02b_lot_sign", 0.8)
+	club.cam.release(0.0)
 	club._on_choice("club_lot", 0)
 	await _shot("03_sheet_no_gold", 1.0)
 	SaveData.gold = 200
@@ -586,10 +596,10 @@ func _lots() -> void:
 	club.lot_show("coach")
 	await create_timer(0.3).timeout
 	club.foreman_build()
-	await _shot("08_build_start", 0.7)
-	await _shot("09_build_hammer", 0.5)
-	await _shot("10_build_rise", 0.55)
-	await _shot("11_build_dust", 0.35)
+	await _shot("08_build_start", 0.6)
+	await _shot("09_build_hammer", 0.7)
+	await _shot("10_build_rise", 0.75)
+	await _shot("11_build_dust", 0.2)
 	club.skip_build()
 	await _shot("12_built_coach", 0.9)
 	# The other lot: the stands, turned toward the court.

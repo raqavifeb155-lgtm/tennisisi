@@ -324,8 +324,8 @@ func _physics_process(delta: float) -> void:
 
 ## The hero stepped into a place's circle (or out of it).
 func _update_place() -> void:
-	if _auto != "":
-		return  # running past: the circles of the places on the way stay quiet
+	if _auto != "" or _lot_anim != null and _building:
+		return  # running past, or a lot's build moment: the circles stay quiet
 	var here := ClubPlaces.at(main.player.position)
 	var id: String = here.get("id", "")
 	if id != "" and not _open_ids.has(id):
@@ -430,7 +430,7 @@ func badge_counts() -> Dictionary:
 
 
 func _update_badges() -> void:
-	var counts := badge_counts()
+	var counts := badge_counts() if not _building else {}
 	var screen := {}
 	for id in counts:
 		var pos: Vector3 = ClubPlaces.find(id)["pos"] + Vector3(0, 3.6, 0)
@@ -1077,6 +1077,15 @@ func lot_on() -> bool:
 	return _lot_on
 
 
+## Where the camera looks at a lot from. The phone's frame is narrow: the wide buildings (the
+## bar, the trophy room, the stands) need the camera twice as far as a room does.
+func lot_view(lot_id: String, type: String, building: bool) -> Array:
+	var at: Vector3 = ClubLots.lot(lot_id)["pos"]
+	var wide := type in ["bar", "trophy", "stands", "academy", "arena"]
+	var d := (24.0 if wide else 13.0) + (2.0 if building else 0.0)
+	return [at + Vector3(0, d * 0.78, d * 0.78), at + Vector3(0, 0, 1.0)]
+
+
 func lot_type() -> String:
 	return _lot_type
 
@@ -1117,8 +1126,8 @@ func lot_show(type: String) -> void:
 	card["tag"] = "%s   %s" % [card["tag"], dots]
 	hud.show_foreman(card, sh["build"], i > 0, i < types.size() - 1)
 	hud.set_gold(SaveData.gold)
-	var at: Vector3 = ClubLots.lot(_lot_id)["pos"]
-	cam.frame(at + Vector3(0, 12.5, 12.0), at + Vector3(0, 0, 1.0))
+	var v := lot_view(_lot_id, type, false)
+	cam.frame(v[0], v[1])
 	world.show_lot_ghost(_lot_id, type)
 
 
@@ -1143,6 +1152,9 @@ func lot_build() -> bool:
 	world.show_lot_ghost("", "")
 	_building = true
 	_build_id = type
+	hud.hide_foreman()    # the strip and its «← Назад» step aside (it also brings the place's button back: hidden next)
+	hud.hide_place()
+	hud._bottom.visible = false
 	hud.set_building(true)
 	hud.set_gold(SaveData.gold)
 	_refresh()   # the lot becomes the building's place; the world raises it (hidden at once by the show)
