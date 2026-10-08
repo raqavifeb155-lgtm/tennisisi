@@ -132,4 +132,81 @@ func _run() -> void:
 	await _shot("bracket_locker", 0.7)
 	main._on_ui("bag", 0)
 	await _shot("bag_locker", 0.6)
-	quit()
+	await _flow()
+	print("%s (%d failures)" % ["FLOW OK" if failures == 0 else "FLOW FAILED", failures])
+	quit(1 if failures > 0 else 0)
+
+
+var failures := 0
+
+
+func check(cond: bool, msg: String) -> void:
+	print(("  ok   " if cond else "  FAIL ") + msg)
+	if not cond:
+		failures += 1
+
+
+func _cards() -> int:
+	return main.ui._box.get_child_count()
+
+
+func _flow() -> void:
+	print("flow through the real Main")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 8
+	_reset(0)
+	SaveData.played = 5
+	SaveData.gold = 1000
+	SaveData.club = {"levels": {"shop": 2, "locker": 1}}
+	main._on_ui("club_shop", 0)
+	check(_cards() > 4, "club_shop opens the showcase (%d blocks)" % _cards())
+	check(not RunShop.route(main, "bag_back_x", 0), "the router leaves other actions to Main")
+	main._on_ui("shop_pick", 0)
+	check(RunShop.picked == 0, "a tap picks a card")
+	var g := SaveData.gold
+	var price := Items.price(Shop.stock()[0])
+	main._on_ui("shop_buy", 0)
+	check(SaveData.gold == g - price and Locker.next_items().size() == 1, "a second tap buys (-%d)" % price)
+	main._on_ui("shop_owned", 10)
+	main._on_ui("shop_strings", 10)
+	var before: Dictionary = Locker.next_items()[0].duplicate(true)
+	main._on_ui("shop_strings_go", 10)
+	check(Locker.next_items()[0] != before and SaveData.gold < g - price, "strings: paid, the item changed")
+	main._on_ui("shop_owned", 10)
+	g = SaveData.gold
+	var item_epic: Dictionary = Locker.next_items()[0]
+	main._on_ui("shop_sell", 10)
+	if int(item_epic["rarity"]) >= Gear.EPIC:
+		check(Locker.next_items().size() == 1, "an epic needs a second tap to sell")
+		main._on_ui("shop_sell", 10)
+	check(Locker.next_items().is_empty() and SaveData.gold > g, "sold into the bank")
+	main._on_ui("club_locker", 0)
+	check(_cards() > 2, "the locker room opens")
+	SaveData.club = {"levels": {"shop": 2}}  # one cell
+	SaveData.locker["items"] = [Gear._affix_item(Gear.RARE, rng, "shoes")]
+	main._on_ui("club_locker", 0)
+	# the summary
+	var t := Tournament.new(1, 5)
+	t.equip["racket"] = Gear._affix_item(Gear.RARE, rng, "racket")
+	t.bag = [Gear._affix_item(Gear.COMMON, rng, "band")]
+	t.record_match(false, "1:6", rng)
+	main.tournament = t
+	SaveData.record_run(t)
+	main.ui.show_summary(t)
+	check(_cards() >= 5, "the summary shows income, goal and candidates (%d blocks)" % _cards())
+	main._on_ui("sum_keep", 0)  # the locker (1 slot, 1 used) is full: the replace screen
+	check(not t.locker_done, "full locker: asks what to replace first")
+	main._on_ui("sum_replace", 0)
+	check(t.locker_done and Locker.items().size() == 1 and Locker.items()[0]["slot"] == "racket", "replaced: the racket is kept")
+	main._on_ui("sum_shop", 0)
+	check(RunShop.back_to == "to_summary", "the shop from the summary comes back to it")
+	# the bag with the locker, the bracket row, the islands
+	var t2 := Tournament.new(1, 6)
+	main.tournament = t2
+	main.ui.show_bracket(t2)
+	RunBag.show_bag(main.ui, t2)
+	main._on_ui("locker_take", 0)
+	check(t2.equip["racket"]["slot"] == "racket" and Locker.items().is_empty(), "locker_take: into the run")
+	main.ui.show_locations()
+	check(_cards() >= 5, "the islands screen")
+	_reset(0)

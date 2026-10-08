@@ -8,6 +8,10 @@ var failures := 0
 
 func _initialize() -> void:
 	SaveData.enabled = false
+	_run.call_deferred()
+
+
+func _run() -> void:
 	test_prices()
 	test_item_level()
 	test_drop_chances()
@@ -375,3 +379,4 @@ func test_islands() -> void:
 	var back := Tournament.from_dict(paris.to_dict())
 	check(back.location == "paris" and back.lineup == paris.lineup, "a saved Paris run comes back the same")
 	_reset_save()
+
