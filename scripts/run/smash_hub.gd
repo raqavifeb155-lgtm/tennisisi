@@ -15,6 +15,9 @@ const REASONS := ["OUT", "NET", "DOUBLE FAULT"]   # a point lost to the player's
 ## «Выпустил пар»
 const WINDOW_MODS := {"forehand_window": 0.10, "backhand_window": 0.10, "serve_window": 0.10, "net_window": 0.10, "touch_window": 0.10}
 const REST_MODS := {"stamina_rest": 0.03, "stamina_change": 0.15}
+const CLOSE_HEIGHT := 3.6          # the camera in close on the hero while he smashes
+const CLOSE_BACK := 4.8
+const CLOSE_AHEAD := 2.2
 const WINDOW_POINTS := 3          # the PERFECT window is wider for this many points
 
 var main: Node
@@ -28,6 +31,7 @@ var offers := 0                   # shown (this run of the game: tests)
 var chance_roll := -1.0           # tests: a fixed roll instead of main.rng
 var _applied := {}                # what this hub has added to Skills.mods_layer
 var _strength := 0.0
+var _cam_saved := {}              # the camera's framing before it came in close
 
 
 ## Whether the button is offered (pure: the rules of the spec, section 1). ctx: winner,
@@ -153,6 +157,11 @@ func press() -> void:
 		if (get_node("/root/Tuning").hitstop as bool) and not main.autoplay:
 			main._hitstop_until_ms = Time.get_ticks_msec() + ms
 	smash.begin(main.player, main, main.cam, main.sfx, stop)
+	# The camera comes in close on the hero (the shards would be specks from the game view).
+	_cam_saved = {"height": main.cam.height, "back": main.cam.back, "look_ahead": main.cam.look_ahead}
+	main.cam.height = CLOSE_HEIGHT
+	main.cam.back = CLOSE_BACK
+	main.cam.look_ahead = CLOSE_AHEAD
 
 
 ## Main's touch handlers, in Phase.SMASH.
@@ -168,6 +177,7 @@ func on_progress(points: PackedVector2Array) -> void:
 
 
 func _on_done(was_broken: bool) -> void:
+	_restore_camera()
 	main.hud.announcer.set_hint("")
 	main.hud.show_smash_prompt(-1)
 	if was_broken:
@@ -183,6 +193,15 @@ func _on_done(was_broken: bool) -> void:
 
 ## «Выпустил пар»: the PERFECT window for the next points, the legs' recovery from the next
 ## game on (now, if the game just began).
+func _restore_camera() -> void:
+	if _cam_saved.is_empty():
+		return
+	main.cam.height = _cam_saved["height"]
+	main.cam.back = _cam_saved["back"]
+	main.cam.look_ahead = _cam_saved["look_ahead"]
+	_cam_saved = {}
+
+
 func _grant() -> void:
 	perfect_left = WINDOW_POINTS
 	var fresh: bool = main.scoreboard.points[0] == 0 and main.scoreboard.points[1] == 0

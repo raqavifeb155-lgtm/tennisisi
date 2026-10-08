@@ -34,6 +34,7 @@ var smash_last := -99           # frame of the last smash swipe
 var smash_info := {}
 var smash_points := -1
 var smash_ok := false
+var smash_next := false         # after the smash the next point started (the serve)
 var ev := {"stroke": 0, "point": 0, "shot": 0, "bounce": 0}
 
 
@@ -208,6 +209,8 @@ func _smash_step(vp: Vector2) -> void:
 		smash_points = main._points_played
 	elif smash_state == 1 and main.phase == main.Phase.SMASH:
 		smash_state = 2
+	if smash_state == 3 and not smash_next and (main.phase == main.Phase.SERVE or main.phase == main.Phase.RALLY):
+		smash_next = true
 	if smash_state == 2:
 		if main.phase == main.Phase.SMASH:
 			if script_steps.is_empty() and frame - smash_last > 6:
@@ -293,8 +296,8 @@ func _report() -> void:
 	print("flick from the joystick zone = shot: %s, drag there = run: %s" % ["OK" if flick_ok else "FAILED", "OK" if hold_ok else "FAILED"])
 	smash_ok = smash_state == 3 and smash_info.get("button_visible", false) and smash_info.get("match_stands", false) and smash_info.get("phase_waits", false) \
 		and int(smash_info.get("swipes", 0)) == 3 and smash_info.get("smashed", false) and smash_info.get("stock_racket", false) \
-		and smash_info.get("bonus", false) and smash_info.get("racket_back", false) and main._points_played > smash_points
-	print("racket smash (lost point -> button -> up, down, down -> broken -> next point): %s %s, points %d -> %d" % ["OK" if smash_ok else ("FAILED" if smash_state > 0 else "NOT RUN"), str(smash_info), smash_points, main._points_played])
+		and smash_info.get("bonus", false) and smash_info.get("racket_back", false) and smash_next
+	print("racket smash (lost point -> button -> up, down, down -> broken -> next point): %s %s, next point started: %s" % ["OK" if smash_ok else ("FAILED" if smash_state > 0 else "NOT RUN"), str(smash_info), str(smash_next)])
 	print("game events: %s" % str(ev))
 	var events_ok: bool = ev["stroke"] == player_hits and ev["point"] >= 1 and ev["shot"] >= ev["stroke"] and ev["bounce"] >= 1
 	var ok := events_ok and player_hits >= 8 and moved_ok and stick_ok and serve_walk_ok and underarm_ok and flick_ok and hold_ok and smash_ok

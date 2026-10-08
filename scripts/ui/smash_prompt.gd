@@ -58,7 +58,8 @@ func _draw() -> void:
 		var nudge := (sin(_t * 8.0) * 6.0 if now else 0.0) * dir
 		var p := c + Vector2(0.0, nudge)
 		var s := 18.0
-		# An arrow: a shaft and a head, drawn (no font has the glyphs).
-		draw_line(p + Vector2(0, -s * dir), p + Vector2(0, s * dir), ink, 7.0, true)
-		draw_line(p + Vector2(0, -s * dir), p + Vector2(-s * 0.8, -s * dir + s * 0.9 * dir), ink, 7.0, true)
-		draw_line(p + Vector2(0, -s * dir), p + Vector2(s * 0.8, -s * dir + s * 0.9 * dir), ink, 7.0, true)
+		# An arrow: a shaft and a head, drawn (no font has the glyphs). The tip points the way the finger goes.
+		var tip := p + Vector2(0, s * dir)
+		draw_line(p - Vector2(0, s * dir), tip, ink, 7.0, true)
+		draw_line(tip, tip + Vector2(-s * 0.8, -s * 0.9 * dir), ink, 7.0, true)
+		draw_line(tip, tip + Vector2(s * 0.8, -s * 0.9 * dir), ink, 7.0, true)

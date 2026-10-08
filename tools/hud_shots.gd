@@ -12,6 +12,7 @@ var h := 1564
 var out := ""
 var tag := ""  # --tag=X: X_ in the file names (other worktrees shoot into the same folder)
 var safe := false
+var only := ""  # --only=smash: just the racket smash (the thread R shots)
 
 
 func _initialize() -> void:
@@ -22,6 +23,8 @@ func _initialize() -> void:
 			h = int(a.get_slice("=", 1))
 		if a == "--safe":
 			safe = true
+		if a.begins_with("--only="):
+			only = a.get_slice("=", 1)
 	out = ProjectSettings.globalize_path("user://hud_%s%d%s_" % [tag, h, "_safe" if safe else ""])
 	_run.call_deferred()
 
@@ -38,6 +41,51 @@ func _verdict(text: String, good: bool) -> void:
 	main.hud.show_message(text, main.COLOR_WIN if good else main.COLOR_BAD)
 
 
+## «Разбить ракетку»: the button after an out ball, the three swipes, the wind-up, the blow, the
+## shards in the air and on the court, through SmashHub's own code (a practice match).
+func _smash_shots() -> void:
+	main._start_practice()
+	await create_timer(1.0).timeout
+	main.hud._tutorial.visible = false
+	paused = false
+	main.hud.modals.clear()
+	var hub = main.smash_hub
+	var sm: RacketSmash = hub.smash
+	main.server = main.Who.PLAYER
+	main._setup_serve()
+	await create_timer(0.6).timeout
+	main.phase = main.Phase.RALLY
+	main.last_hitter = main.Who.PLAYER
+	main.rally = 7
+	main.stamina = 0.6
+	main._end_point(main.Who.CPU, "OUT")
+	await _shot("r1_button", 0.5)
+	hub.press()
+	await _shot("r2_ready", 0.45)
+	sm.progress(0.7)
+	await _shot("r3_pulling", 0.3)
+	sm.swipe(-1, 0.9)
+	await _shot("r4_windup", 0.55)
+	sm.swipe(1, 0.9)
+	var guard := 0
+	while sm.state == RacketSmash.S.STRIKE and guard < 200:
+		guard += 1
+		await process_frame
+	await _shot("r5_blow", 0.0)
+	while sm.state != RacketSmash.S.HELD and guard < 600:
+		guard += 1
+		await process_frame
+	await create_timer(0.2).timeout
+	sm.swipe(1, 1.0)
+	while sm.state != RacketSmash.S.BREAK and guard < 900:
+		guard += 1
+		await process_frame
+	await _shot("r6_shards_fly", 0.12)
+	await _shot("r7_shards_fall", 0.35)
+	await _shot("r8_handle_left", 1.6)
+	await create_timer(1.5).timeout
+
+
 func _run() -> void:
 	root.size = Vector2i(720, h)
 	main = load("res://scenes/main.tscn").instantiate()
@@ -49,6 +97,11 @@ func _run() -> void:
 	if safe:
 		main.hud.set_safe_area(180.0, 60.0)
 		main.ui.set_safe_area(180.0, 60.0)
+
+	if only == "smash":
+		await _smash_shots()
+		quit()
+		return
 
 	# --- First launch and the Club states the menu shots don't cover -----------
 	main.ui.show_controls(true)

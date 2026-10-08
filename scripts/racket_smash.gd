@@ -32,6 +32,7 @@ const AFTER_T := 0.62            # the hero lets his breath out and straightens
 const CANCEL_T := 0.45
 const HITSTOP_MS := 60
 const SHAKE := 0.45              # Camera.impulse: ~0.15 s
+const SHARD_SCALE := 1.5         # a little larger than life: from the game camera a real rim is a few pixels
 const SHARD_LIFE := 2.0
 const HANDLE_LIFE := 10.0
 const FADE := 0.45
@@ -450,11 +451,11 @@ func _spawn_shards(t: Transform3D, power: float) -> void:
 		var root := Node3D.new()
 		root.add_child(mi)
 		world.add_child(root)
-		root.global_transform = Transform3D(t.basis, t * centre)
+		root.global_transform = Transform3D(t.basis.orthonormalized() * Basis.from_scale(Vector3.ONE * SHARD_SCALE), t * centre)
 		var kind: String = sm["kind"]
 		# Out from the blow: forward (the hero faces -Z), up and sideways; the handle drops
 		# short and lies near the hero's feet.
-		var v := Vector3(rng.randf_range(-2.4, 2.4), rng.randf_range(2.0, 3.8), rng.randf_range(-3.2, 0.6)) * lerpf(0.7, 1.25, power)
+		var v := Vector3(rng.randf_range(-2.4, 2.4), rng.randf_range(2.6, 4.6), rng.randf_range(-2.2, 0.4)) * lerpf(0.7, 1.25, power)
 		if kind == "handle":
 			v = Vector3(rng.randf_range(-0.8, 0.8), rng.randf_range(1.6, 2.4), rng.randf_range(-1.4, -0.2)) * lerpf(0.8, 1.1, power)
 		var av := Vector3(rng.randf_range(-1, 1), rng.randf_range(-1, 1), rng.randf_range(-1, 1)).normalized() * rng.randf_range(6.0, 14.0)
@@ -480,14 +481,14 @@ func _update_shards(delta: float) -> void:
 			i -= 1
 			continue
 		if age > life:
-			n.scale = Vector3.ONE * maxf(0.0, 1.0 - (age - life) / FADE)
+			n.scale = Vector3.ONE * SHARD_SCALE * maxf(0.0, 1.0 - (age - life) / FADE)
 		_step_shard(s, n, delta)
 		i -= 1
 
 
 func _step_shard(s: Dictionary, n: Node3D, delta: float) -> void:
 	var v: Vector3 = s["v"]
-	var r: float = s["r"]
+	var r: float = float(s["r"]) * SHARD_SCALE
 	if bool(s["rest"]):
 		# Lying: the last bit of roll settles it flat.
 		_lay_flat(s, n, delta)
@@ -530,7 +531,7 @@ func _lay_flat(s: Dictionary, n: Node3D, delta: float) -> void:
 	var q := Quaternion(axis.normalized(), want) if axis.dot(want) > -0.999 else Quaternion(Vector3.RIGHT, PI)
 	var step := Quaternion.IDENTITY.slerp(q, 1.0 - exp(-14.0 * delta))
 	n.global_basis = Basis(step) * n.global_basis
-	n.global_position.y = lerpf(n.global_position.y, float(s["r"]), 1.0 - exp(-14.0 * delta))
+	n.global_position.y = lerpf(n.global_position.y, float(s["r"]) * SHARD_SCALE, 1.0 - exp(-14.0 * delta))
 
 
 ## Frees whatever is left (the match ended, the scene is torn down).
