@@ -32,6 +32,7 @@ func _init() -> void:
 	test_drop_shot()
 	test_stamina_breaks()
 	test_stamina_tank()
+	test_racket_smash_rules()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -687,3 +688,59 @@ func test_stamina_tank() -> void:
 	check(is_equal_approx(Skills.tired_below(), 0.3), "Холодный пот: tired only below 30%")
 	check(Skills.LIST.has("stamina") and Skills.PERKS["stamina"].size() >= 5, "Выносливость is a skill with perks")
 	Skills.reset()
+
+
+## «Разбить ракетку»: when it is offered, how a swipe is read, what the bonus is.
+func test_racket_smash_rules() -> void:
+	print("racket smash rules")
+	var base := {"winner": 1, "reason": "OUT", "rally": 5, "games_since": 3, "roll": 0.0}
+	check(SmashHub.should_offer(base), "a point lost on an out ball is offered")
+	for reason in ["NET", "DOUBLE FAULT"]:
+		var c := base.duplicate()
+		c["reason"] = reason
+		check(SmashHub.should_offer(c), "%s is the player's own error: offered" % reason)
+	for reason in ["WINNER", "ACE"]:
+		var c := base.duplicate()
+		c["reason"] = reason
+		check(not SmashHub.should_offer(c), "%s: the opponent was better, not offered" % reason)
+	var won := base.duplicate()
+	won["winner"] = 0
+	check(not SmashHub.should_offer(won), "a point the player won is never offered")
+	for key in ["match_over", "autoplay", "smashed"]:
+		var c := base.duplicate()
+		c[key] = true
+		check(not SmashHub.should_offer(c), "%s: not offered" % key)
+	var offline := base.duplicate()
+	offline["allowed"] = false
+	check(not SmashHub.should_offer(offline), "online: not offered")
+	var soon := base.duplicate()
+	soon["games_since"] = 2
+	check(not SmashHub.should_offer(soon), "not more often than once in 3 games")
+	var unlucky := base.duplicate()
+	unlucky["roll"] = 0.99
+	check(not SmashHub.should_offer(unlucky), "a bad roll: not offered (sometimes, not always)")
+	var practice := unlucky.duplicate()
+	practice["practice"] = true
+	practice["games_since"] = 0
+	practice["smashed"] = true
+	check(SmashHub.should_offer(practice), "practice: always, whenever, as often as you like")
+	check(is_equal_approx(SmashHub.chance(0), 0.35) and is_equal_approx(SmashHub.chance(99), 0.7) and SmashHub.chance(7) > SmashHub.chance(2), "the chance grows with the rally: 35%..70%")
+	check(SmashHub.WINDOW == 2.5, "the window is 2.5 s")
+	var w := SmashHub.wanted(3, 2)
+	check(is_equal_approx(float(w["forehand_window"]), 0.1) and is_equal_approx(float(w["stamina_change"]), 0.15) and w.has("stamina_rest"), "the bonus: PERFECT window +10%, recovery +15%")
+	check(SmashHub.wanted(0, 1).is_empty() and not SmashHub.wanted(0, 2).has("forehand_window") and not SmashHub.wanted(2, 0).has("stamina_rest"), "the window and the recovery run out separately")
+	# Swipes: only vertical, long enough, up or down; the speed is the strength.
+	var h := 1564.0
+	var up := PackedVector2Array([Vector2(360, 1000), Vector2(362, 800), Vector2(365, 600)])
+	var fast := RacketSmash.classify(up, PackedInt32Array([0, 30, 60]), h)
+	var slow := RacketSmash.classify(up, PackedInt32Array([0, 400, 800]), h)
+	check(fast["dir"] == -1 and slow["dir"] == -1 and float(fast["power"]) > float(slow["power"]) and float(fast["power"]) > 0.7, "a swipe up: the faster the stronger (%.2f vs %.2f)" % [fast["power"], slow["power"]])
+	var down := PackedVector2Array([Vector2(360, 400), Vector2(360, 700)])
+	check(RacketSmash.classify(down, PackedInt32Array([0, 100]), h)["dir"] == 1, "a swipe down is +1")
+	check(RacketSmash.classify(PackedVector2Array([Vector2(300, 800), Vector2(300, 780)]), PackedInt32Array([0, 100]), h)["dir"] == 0, "a short stroke is no swipe")
+	check(RacketSmash.classify(PackedVector2Array([Vector2(200, 800), Vector2(500, 700)]), PackedInt32Array([0, 100]), h)["dir"] == 0, "a sideways swipe is no swipe")
+	# The trick.
+	var plain := StyleRules.evaluate({"won": true, "reason": "WINNER", "last": {"type": "FLAT"}})
+	var vent := StyleRules.evaluate({"won": true, "reason": "WINNER", "last": {"type": "FLAT"}, "vented": true})
+	check(plain["tricks"].is_empty() and vent["tricks"].size() == 1 and vent["tricks"][0]["id"] == "vented" and is_equal_approx(float(vent["mult"]), 1.2), "«Психанул» is x1.2 on the next won point")
+	check(StyleRules.evaluate({"won": false, "reason": "OUT", "vented": true})["tricks"].is_empty(), "...and nothing on a lost one")

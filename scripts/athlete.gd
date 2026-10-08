@@ -75,7 +75,8 @@ var _lean := 0.0
 var _head_yaw := 0.0
 var _head_pitch := 0.0
 
-var _mode := 0                 # 0 ready, 1 prepared, 2 swinging, 3 tossing, 4 holding the ball to serve
+var _mode := 0                 # 0 ready, 1 prepared, 2 swinging, 3 tossing, 4 holding the ball to serve, 5 smashing the racket (RacketSmash)
+var _smash := {}               # mode 5: the pose RacketSmash asks for (smash_set)
 var _side := 1
 var _style := Style.TOPSPIN
 var _clock := 0.0
@@ -203,7 +204,7 @@ func prepare(side: int, style := Style.TOPSPIN) -> void:
 
 ## Before the toss: ball held in the left hand in front, racket ready.
 func serve_ready() -> void:
-	if _mode != 2:
+	if _mode != 2 and _mode != 5:
 		_mode = 4
 
 
@@ -214,7 +215,7 @@ func left_hand_world() -> Vector3:
 
 ## Toss: sideways stance, tossing arm going up.
 func prepare_serve() -> void:
-	if _mode == 2:
+	if _mode == 2 or _mode == 5:
 		return
 	_mode = 3
 	_side = 1
@@ -222,8 +223,54 @@ func prepare_serve() -> void:
 
 
 func relax() -> void:
-	if _mode != 2:
+	if _mode != 2 and _mode != 5:
 		_mode = 0
+
+
+# --- The racket smash (scripts/racket_smash.gd) ---------------------------------------
+# A mini-game mode: the arms, the racket, the shoulders, the knees and the trunk follow the
+# pose a driver sets every frame. Hands travel in the chest's own frame (_carry_hand), the
+# left hand rides on the grip above the right one, and nothing here touches the strokes.
+
+## Takes over the arms until smash_end(). `p` as smash_set().
+func smash_begin(p: Dictionary) -> void:
+	_mode = 5
+	_smash = {"hand": _hand, "rdir": _rdir, "twist": _twist, "hip": _hip_twist, "crouch": 0.0, "pitch": 0.0, "head": 0.0, "k": 14.0}
+	smash_set(p)
+
+
+## The pose, in model space (forward = -Z): "hand" (right hand, the racket's grip), "rdir"
+## (grip to head), "twist" / "hip" (shoulders, hips: rad), "crouch" (m the hips sink), "pitch"
+## (trunk bent forward, rad), "head" (head pitch, + up), "k" (how fast the body follows, 1/s).
+func smash_set(p: Dictionary) -> void:
+	for key in p:
+		_smash[key] = p[key]
+
+
+## Back to the ready stance (the rest follows by itself in a few frames).
+func smash_end() -> void:
+	if _mode == 5:
+		_mode = 0
+
+
+func smashing() -> bool:
+	return _mode == 5
+
+
+## The lowest point of the racket's head in the world (the rim's far edge), for the court
+## contact and for where the shards fly from.
+func racket_tip_world() -> Vector3:
+	return _racket.to_global(Vector3(0.0, RACKET_REACH + 0.16, 0.0)) if _racket else global_position
+
+
+## The centre of the racket's head in the world.
+func racket_head_world() -> Vector3:
+	return _racket.to_global(Vector3(0.0, RACKET_REACH - 0.02, 0.0)) if _racket else global_position
+
+
+## The racket node (hidden when it is smashed, shown again with the next set_gear / smash_end).
+func racket_node() -> Node3D:
+	return _racket
 
 
 ## Start a swing that meets the ball at contact_world after time_to_contact (game seconds).
@@ -926,6 +973,11 @@ func _process(delta: float) -> void:
 				target = [Vector3(0.1, 1.0, -0.4), Vector3(-0.55, 0.45, -0.7).normalized()]
 				t_twist = -SERVE_TURN
 				t_hips = -SERVE_TURN * 0.9
+			5:
+				# The racket smash: the driver's pose.
+				target = [_smash["hand"], (_smash["rdir"] as Vector3).normalized()]
+				t_twist = float(_smash["twist"])
+				t_hips = float(_smash["hip"])
 			_:
 				if _blowing(speed):
 					# Out of breath: bent over, both hands on the knees, the racket hanging.
@@ -944,10 +996,10 @@ func _process(delta: float) -> void:
 					t_hips = t_twist * 0.6
 					var reach: Array = [Vector3(0.62, 1.0, -0.1), Vector3(0.75, 0.45, -0.45).normalized()] if ss > 0.0 else [Vector3(-0.5, 1.0, -0.18), Vector3(-0.7, 0.5, -0.5).normalized()]
 					target = [(target[0] as Vector3).lerp(reach[0], sk), (target[1] as Vector3).slerp(reach[1], sk)]
-		var kk := 1.0 - exp(-9.0 * delta)
+		var kk := 1.0 - exp(-(float(_smash["k"]) if _mode == 5 else 9.0) * delta)
 		var tw_before := _twist
 		_twist = lerpf(_twist, t_twist, kk)
-		if _mode == 1:
+		if _mode == 1 or _mode == 5:
 			# Changing the stance (forehand <-> backhand) turns the chest half a circle: the
 			# hands go with it, round in front of the chest, not straight across the back.
 			_hand = _carry_hand(_hand, target[0], tw_before, _twist, t_twist, kk)
@@ -970,6 +1022,8 @@ func _process(delta: float) -> void:
 			lh += Vector3(0.0, -0.16 * push, -0.04 * push)
 	elif _mode == 3:
 		lh = Vector3(-0.02, 1.98, -0.4)                      # tossing arm up, pointing at the ball
+	elif _mode == 5:
+		attach = 2.0                                         # both hands on the grip (the left one above the right)
 	elif _mode == 2 and _serve_style():
 		# The tossing arm stays up through the trophy, then drops and folds into the
 		# stomach as the racket swings up: it is down well before contact.
@@ -1062,6 +1116,9 @@ func _process(delta: float) -> void:
 			# Knees bend under the toss, deepest as the ball tops out (SV-2/3).
 			target_crouch = lerpf(0.08, 0.26, clampf(_toss_t / 0.6, 0.0, 1.0))
 			stance_t = 1.0
+		5:
+			target_crouch = float(_smash["crouch"])
+			stance_t = 1.0
 		4:
 			target_crouch = 0.05 + (0.04 * sin(clampf(dribble / 0.5, 0.0, 1.0) * PI) if dribble >= 0.0 else 0.0)
 			stance_t = 1.0
@@ -1092,8 +1149,10 @@ func _process(delta: float) -> void:
 		bend_t = 0.55 * _serve_kick()
 	if _blowing(speed):
 		bend_t = 0.5 + 0.03 * sin(_alive_t * TAU * 1.6)  # bent over, heaving with each breath
+	if _mode == 5:
+		bend_t = float(_smash["pitch"])
 	_lunge = lerpf(_lunge, lunge_t, 1.0 - exp(-10.0 * delta))
-	_pitch = lerpf(_pitch, bend_t, 1.0 - exp(-(4.0 if tired else 10.0) * delta))
+	_pitch = lerpf(_pitch, bend_t, 1.0 - exp(-(float(_smash["k"]) * 0.7 if _mode == 5 else (4.0 if tired else 10.0)) * delta))
 	target_crouch += 0.18 * _lunge
 	# A stretch tips the trunk toward the ball from the hips, the feet stay on the court
 	# (Alcaraz LG-4..7).
@@ -1112,7 +1171,7 @@ func _process(delta: float) -> void:
 		target_crouch += 0.08  # knees bent under the hands
 	elif _mode == 0 and speed < 0.4 and _down < 0.0:
 		target_crouch += 0.012 * (0.5 + 0.5 * sin(_alive_t * TAU * (1.4 if stance_style == 1 else 0.7)))
-	_crouch = lerpf(_crouch, target_crouch, k)
+	_crouch = lerpf(_crouch, target_crouch, 1.0 - exp(-float(_smash["k"]) * 0.7 * delta) if _mode == 5 else k)
 	_lean = lerpf(_lean, target_lean, k)
 	_stance = lerpf(_stance, stance_t, 1.0 - exp(-10.0 * delta))
 	_follow = follow_e
@@ -1171,6 +1230,9 @@ func _process(delta: float) -> void:
 	if _serve_gaze():
 		# Serving: the face turns up to the tossed ball (and stays there through the swing).
 		pitch_t = clampf(maxf(pitch_t, SERVE_GAZE), SERVE_GAZE, 0.95)
+	if _mode == 5:
+		yaw_t = 0.0
+		pitch_t = float(_smash["head"])
 	_head_yaw = lerpf(_head_yaw, yaw_t, 1.0 - exp(-8.0 * delta))
 	_head_pitch = lerpf(_head_pitch, pitch_t, 1.0 - exp(-8.0 * delta))
 
@@ -1210,6 +1272,8 @@ func _stance_feet() -> Array:
 			r = r.lerp(l + Vector3(0.16, 0.0, 0.1), air_k)
 			r += Vector3(0.03, 0.62, 0.78) * _serve_kick()
 		return [r, l]
+	if _mode == 5:
+		return [Vector3(0.27, 0.05, 0.04), Vector3(-0.27, 0.05, -0.04)]  # a planted, wide stance
 	if _mode == 0:
 		# Waiting: the feet wider than the shoulders, both toes to the net; a split step
 		# lands them wider still.

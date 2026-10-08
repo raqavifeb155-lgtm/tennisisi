@@ -129,6 +129,16 @@ func on_point(info: Dictionary, result: Dictionary, last_type: String) -> void:
 	_apply_mods()
 
 
+## The player smashed his racket (R): for the rest of the match the gear works as if the racket
+## slot were empty (its mods and its unique item's triggers, tricks and rules). The worn item
+## itself stays in Tournament.equip: it is whole in the next match.
+func break_racket() -> void:
+	var equip := t.equip.duplicate()
+	equip["racket"] = {}
+	fx = RunEffects.new(equip, t.run_mods)
+	_apply_mods()
+
+
 func finish() -> void:
 	main.ai.speed_mult = _base_speed
 	_tuning.ai_skill = _base_skill

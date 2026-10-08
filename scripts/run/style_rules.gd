@@ -21,6 +21,7 @@ const TRICKS := [
 	{"id": "comeback", "name": "Камбэк", "x": 1.3, "hidden": true},
 	{"id": "perfect", "name": "Идеально", "x": 1.5, "hidden": false},
 	{"id": "masterpiece", "name": "Шедевр", "x": 2.0, "hidden": true},
+	{"id": "vented", "name": "Психанул", "x": 1.2, "hidden": true},   # the point after a smashed racket (R)
 ]
 const SERVICE_LINE := 6.4     # m from the net: a drop shot dying inside it is a dead ball
 const LINE_CM := 0.10         # a winner this close inside the line (VAR) is "on the line"
@@ -75,6 +76,8 @@ static func evaluate(ctx: Dictionary, boosts := {}) -> Dictionary:
 			ids.append("dive")
 		if ctx.get("comeback", false):
 			ids.append("comeback")
+		if ctx.get("vented", false):
+			ids.append("vented")
 		var labels: Array = ctx.get("labels", [])
 		if labels.size() >= 3 and labels.all(func(l): return l == "PERFECT"):
 			ids.append("perfect")

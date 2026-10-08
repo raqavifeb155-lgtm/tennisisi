@@ -81,6 +81,14 @@ func setup(m: Node) -> void:
 	ev.bounce.connect(meter.on_bounce)
 	ev.knocked.connect(meter.on_knocked)
 	ev.point.connect(_on_point)
+	ev.racket_smashed.connect(_on_racket_smashed)
+
+
+## R: a smashed racket takes its effects out of the match and makes the next point «Психанул».
+func _on_racket_smashed(_info: Dictionary) -> void:
+	meter.vent_next = true
+	if match_fx:
+		match_fx.break_racket()
 
 
 func in_tournament() -> bool:

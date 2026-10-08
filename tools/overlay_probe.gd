@@ -237,6 +237,52 @@ func _opp_bar_round() -> void:
 	tuning.opp_bar_style = 1
 
 
+## «Разбить ракетку» after a point lost on an out ball (practice: always offered): the button is
+## on screen, a thumb's size, clear of the stamina ring, the ❚❚ button and the joystick zone, a
+## tap on it starts the mini-game (the match stands) and ❚❚ still pauses it.
+func _smash_probe() -> void:
+	var m = main
+	var hub = m.smash_hub
+	for size in [Vector2i(720, 1564), Vector2i(720, 1480)]:
+		root.size = size
+		await _wait(0.5)
+		m.phase = m.Phase.RALLY
+		m.last_hitter = m.Who.PLAYER
+		m.rally = 5
+		m._end_point(m.Who.CPU, "OUT")
+		await _wait(0.4)
+		var ctx := "Кнопка «Разбить ракетку» (%d×%d)" % [size.x, size.y]
+		var b: Control = m.hud.smash_btn
+		await _expect("%s: видна после аута" % ctx, func() -> bool: return b.is_visible_in_tree() and hub.offer_left > 0.0)
+		var r := b.get_global_rect()
+		var frame := Rect2(Vector2.ZERO, Vector2(root.size))
+		_check("%s: целиком на экране, не меньше 84 px" % ctx, frame.grow(2.0).encloses(r) and r.size.x >= 84.0 and r.size.y >= 84.0)
+		var ring_c: Vector2 = m.hud.ring.anchor
+		var nearest := Vector2(clampf(ring_c.x, r.position.x, r.end.x), clampf(ring_c.y, r.position.y, r.end.y)).distance_to(ring_c)
+		_check("%s: не налезает на кольцо выносливости (до него %.0f px, кольцо — 60)" % [ctx, nearest], nearest > 60.0)
+		_check("%s: не налезает на ❚❚" % ctx, not r.intersects(_gear().get_global_rect()))
+		_check("%s: выше зоны джойстика (%.0f < %.0f)" % [ctx, r.end.y, m.hud.touch.stick_zone_top], r.end.y < m.hud.touch.stick_zone_top)
+		var hint: Control = m.hud.announcer._hint
+		_check("%s: не закрывает подсказку и полосу вызовов" % ctx, not r.intersects(hint.get_global_rect()) and r.position.y > 150.0)
+		_check("%s: тап по ней не читается как тап по корту (в blocked_controls)" % ctx, m.hud.touch.blocked_controls.has(b))
+	await _tap(m.hud.smash_btn)
+	await _expect("Кнопка «Разбить ракетку»: тап начинает мини-игру, матч стоит", func() -> bool: return m.phase == m.Phase.SMASH and m.hud.smash_prompt.visible)
+	var pr: SmashPrompt = m.hud.smash_prompt
+	var ok := true
+	for i in 3:
+		var c := pr.centre(i)
+		ok = ok and c.x > 40.0 and c.x < root.size.x - 40.0 and c.y > 330.0 and c.y < m.hud.touch.stick_zone_top - 100.0
+	_check("Три свайпа: подсказки на экране, под полосой вызовов и выше героя", ok)
+	await _tap(_gear())
+	await _expect("Мини-игра → ❚❚: пауза открылась", func() -> bool: return _pause().visible and paused)
+	await _tap(await _find(_pause(), "ПРОДОЛЖИТЬ"))
+	await _expect("Мини-игра → пауза → ПРОДОЛЖИТЬ: игра идёт", func() -> bool: return not paused and m.phase == m.Phase.SMASH)
+	hub.smash.abort()
+	await _expect("Мини-игра прервана: матч идёт дальше", func() -> bool: return m.phase == m.Phase.OVER)
+	await _wait(0.5)
+	root.size = Vector2i(720, 1564)
+
+
 func _run() -> void:
 	root.size = Vector2i(720, 1564)
 	main = load("res://scenes/main.tscn").instantiate()
@@ -393,6 +439,7 @@ func _run() -> void:
 		await _tutorial_round("Первый матч")
 		await _expect("Первый матч: после обучения игра идёт", func() -> bool: return not paused)
 	await _wait(0.3)
+	await _smash_probe()
 	await _expect("Матч: кнопка — пауза ❚❚", func() -> bool: return _gear().kind == IconButton.PAUSE)
 	await _tap(_gear())
 	await _pause_shape("Тренировка → пауза")

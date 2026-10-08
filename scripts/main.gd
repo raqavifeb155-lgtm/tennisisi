@@ -15,7 +15,7 @@ extends Node3D
 ## position errors are what make balls miss.
 
 enum Who { NONE = -1, PLAYER = 0, CPU = 1 }
-enum Phase { WAIT, SERVE, RALLY, OVER, IDLE, BONUS }  # IDLE: menus open; BONUS: trophy mini-game
+enum Phase { WAIT, SERVE, RALLY, OVER, IDLE, BONUS, SMASH }  # IDLE: menus open; BONUS: trophy mini-game; SMASH: «Разбить ракетку»
 enum ShotType { TOPSPIN, FLAT, SLICE, DROP, LOB }
 
 const PLAYER_HOME := Vector3(0.0, 0.0, 12.6)
@@ -57,6 +57,7 @@ var scoreboard := MatchScore.new(1, 99, 0)  # practice: one endless set
 var ui: TournamentUI
 var run_hub: RunHub
 var mods_hub: ModsHub             # v0.2 G: modifiers of the match (scripts/mods)
+var smash_hub: SmashHub           # v0.2 R: «Разбить ракетку» after a point lost to an error (scripts/run)
 var club: Club                    # v0.2 B: the club as the main screen (scripts/club)
 var tournament: Tournament
 var tournament_mode := false
@@ -273,6 +274,9 @@ func _ready() -> void:
 	mods_hub = ModsHub.new()  # v0.2 G: auras, the run's conditions (after RunHub: its match comes first)
 	add_child(mods_hub)
 	mods_hub.setup(self)
+	smash_hub = SmashHub.new()  # v0.2 R: the offer, the mini-game, the bonus (scripts/run/smash_hub.gd)
+	add_child(smash_hub)
+	smash_hub.setup(self)
 	club = Club.new()  # v0.2 B: the walkable club replaces the menu list (scripts/club)
 	add_child(club)
 	club.setup(self)
@@ -702,7 +706,7 @@ func _on_ball_crossed() -> void:
 
 
 func _on_tap(pos: Vector2) -> void:
-	if club.active:
+	if club.active or phase == Phase.SMASH:
 		return
 	if phase == Phase.BONUS:
 		if _bonus_state == 0 and not toss_active:
@@ -723,7 +727,7 @@ func _on_tap(pos: Vector2) -> void:
 
 
 func _on_hold(pos: Vector2) -> void:
-	if club.active:
+	if club.active or phase == Phase.SMASH:
 		return
 	if phase == Phase.SERVE and server == Who.PLAYER:
 		if Tuning.tap_controls and not toss_active and _is_serve_step_zone(pos):
@@ -809,6 +813,9 @@ func _read_gesture(points: PackedVector2Array, times: PackedInt32Array) -> ShotG
 
 func _on_swipe(points: PackedVector2Array, times: PackedInt32Array) -> void:
 	if club.active:
+		return
+	if phase == Phase.SMASH:
+		smash_hub.on_swipe(points, times)  # up, down, down: the hero smashes the racket
 		return
 	var g := _read_gesture(points, times)
 	var dir := _swipe_world_dir(g.start, g.apex)
@@ -916,6 +923,9 @@ func _aim_origin() -> Vector3:
 
 func _on_swipe_progress(points: PackedVector2Array) -> void:
 	if club.active:
+		return
+	if phase == Phase.SMASH:
+		smash_hub.on_progress(points)  # the hand follows the finger
 		return
 	var times := PackedInt32Array()
 	times.resize(points.size())
@@ -1172,6 +1182,9 @@ func _spend_stroke(pace_k: float) -> void:
 func _update_player_movement() -> void:
 	if phase == Phase.BONUS and _bonus_state == 3:
 		return  # running to pick up the trophy (steered by _bonus_pickup)
+	if phase == Phase.SMASH:
+		player.move_input = Vector2.ZERO  # the hero stands and smashes his racket (RacketSmash)
+		return
 	var legs := lerpf(1.0, 0.7, _tired())
 	if stamina <= 0.001:
 		legs = minf(legs, 0.6)  # empty: a jog at best
@@ -1470,6 +1483,7 @@ func _end_point(winner: int, reason: String) -> void:
 		elif winner == Who.PLAYER and (rally >= 6 or reason == "ACE" or reason == "WINNER"):
 			sfx.crowd("applause", -8.0 + minf(rally, 12.0) * 0.4)
 	hud.show_board(scoreboard, ["ВЫ", cpu_label])
+	smash_hub.point_over(winner, reason, ev != MatchScore.Event.POINT)  # v0.2 R: maybe offers «Разбить ракетку»
 
 	_stats["rallies"].append(rally)
 	var srv_key := ("YOU" if server == Who.PLAYER else "CPU") + " serve: "
@@ -2538,8 +2552,8 @@ func _update_timing_ring() -> void:
 	hud.set_stamina(stamina if phase != Phase.IDLE else 1.0)
 	# Everything below the player's feet is the joystick zone for the left thumb.
 	var vh := get_viewport().get_visible_rect().size.y
-	if Tuning.tap_controls:
-		hud.touch.stick_zone_top = INF  # tap mode: no joystick, the whole screen is court
+	if Tuning.tap_controls or phase == Phase.SMASH:
+		hud.touch.stick_zone_top = INF  # tap mode: no joystick, the whole screen is court (so is the smash: swipes down from low)
 	else:
 		hud.touch.stick_zone_top = clampf(cam.unproject_position(player.global_position).y + 28.0, vh * 0.66, vh * 0.9)
 	if autoplay or mods_hub.no_ring:  # v0.2 G: «Без кольца»
