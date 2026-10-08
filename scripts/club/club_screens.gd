@@ -33,7 +33,13 @@ static func place(ui: TournamentUI, st: Dictionary) -> void:
 	ui._card({"tag": "Сейчас", "title": st.get("name", ""), "desc": st.get("note", "")}, "", 0, UiTheme.GOLD)
 	if lv + 1 < levels.size():
 		ui._card({"tag": "Дальше", "title": "Уровень %d" % (lv + 1), "desc": levels[lv + 1].get("note", "")}, "", 1, UiTheme.MUTED)
-	ui._note("Стройка — у прораба на входе в клуб.")
+	var build: String = p.get("build", "")
+	if st.get("soon", false):
+		ui._note("Скоро.")
+	elif ClubBuilds.TABLE.has(build):
+		ui._note("Стройка — у прораба на входе в клуб.")
+	else:
+		ui._note("Построить можно будет в следующем обновлении.")
 
 
 ## The coach's board: this run's quests with progress and reward (hub spec 5).

@@ -39,7 +39,7 @@ func test_places() -> void:
 		check(float(p["r"]) > 0.5, "%s has a circle" % p["id"])
 		var st0 := ClubPlaces.state(p["id"], 0)
 		check(st0.get("action", "") != "" or st0.get("sign", "") != "", "%s has a button or a sign" % p["id"])
-	for id in ["court", "machine", "coach", "gate", "locker", "shop", "trophy", "bar", "arena", "board"]:
+	for id in ["court", "machine", "coach", "gate", "locker", "shop", "trophy", "bar", "blackjack", "arena", "board"]:
 		check(ids.has(id), "place %s exists" % id)
 	var overlap := false
 	for i in ClubPlaces.LIST.size():
@@ -72,6 +72,10 @@ func test_place_levels() -> void:
 	check(ClubPlaces.state("shop", 0)["action"] == "club_shop", "the shop opens its screen")
 	check(ClubPlaces.state("bar", 0)["action"] == "club_roulette", "the bar's button is the roulette")
 	check(ClubPlaces.state("arena", 0)["action"] == "club_place", "the arena site tells what will be there")
+	var bj := ClubPlaces.find("blackjack")
+	check(ClubPlaces.state("blackjack", 0)["action"] == "club_blackjack" and ClubPlaces.state("blackjack", 0)["label"] == "Блэкджек", "the blackjack table: 'Блэкджек' -> club_blackjack")
+	check(bj.get("unlock", "") == "title" and bj.get("build", "") == "bar", "after the first title, like the Totalizator; grows with the bar")
+	check((bj["pos"] as Vector3).distance_to(ClubPlaces.find("bar")["pos"]) < 9.0, "on the bar's terrace, by the roulette")
 	check(int(ClubPlaces.state("bar", 3)["bet_limit"]) > int(ClubPlaces.state("bar", 0)["bet_limit"]), "a bigger bar takes bigger bets")
 	check(ClubPlaces.state("bar", 9)["bet_limit"] == ClubPlaces.state("bar", 3)["bet_limit"], "past the last level the last one holds")
 	var shop := ClubPlaces.find("shop")
@@ -474,6 +478,11 @@ func test_places_flow() -> void:
 	var w = club.world
 	check(not w.walk.route(Vector2(0, 14), Vector2(22, 2)).is_empty(), "a way from the court to the shop")
 	check(not w.walk.route(Vector2(0, 14), Vector2(20, -30)).is_empty(), "a way from the court to the bar")
+	var bjp: Vector3 = ClubPlaces.find("blackjack")["pos"]
+	check(not w.walk.route(Vector2(0, 14), Vector2(bjp.x, bjp.z)).is_empty(), "a way from the court to the blackjack table")
+	var bjt: Transform3D = w.blackjack()
+	check(bjt.origin.distance_to(bjp) < 3.5 and (-bjt.basis.z).z < -0.9, "the blackjack table's marker: by its circle, the dealer's side toward the river")
+	check(w.blackjack_root() != null and w.blackjack_root().name == "blackjack_table", "stream E's scene has a node to stand in")
 	club._travel("shop")
 	await _frames(3)
 	check(club.hud.current_place() == "shop", "quick travel to the shop")
@@ -516,6 +525,14 @@ func test_places_flow() -> void:
 	club.roulette_close()
 	await _frames(2)
 	check(not club.roulette_on() and club.hud.current_place() == "bar", "back from the roulette: at the bar")
+	club._travel("blackjack")
+	await _frames(2)
+	check(club.hud.current_place() == "blackjack", "quick travel to the blackjack table")
+	club._on_choice("club_blackjack", 0)
+	await _frames(2)
+	check(main.ui.is_open() or club.get("blackjack_on") == true, "Блэкджек: stream E's scene, or a 'скоро' card until it comes")
+	main._on_ui("menu", 0)
+	await _frames(2)
 	main.queue_free()
 	await _frames(2)
 	SaveData.played = 0

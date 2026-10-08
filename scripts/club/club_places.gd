@@ -104,6 +104,15 @@ const LIST := [
 		],
 	},
 	{
+		# Blackjack on the bar's terrace, right of the roulette (hub spec 6). The scene and
+		# the game are stream E's (ClubBlackjack.open(club)); until then a 'скоро' card.
+		"id": "blackjack", "name": "Блэкджек", "pos": Vector3(26.5, 0, -29.6), "r": 1.6,
+		"unlock": "title", "sign": "", "build": "bar",
+		"levels": [
+			{"label": "Блэкджек", "action": "club_blackjack", "note": "Стол на террасе бара: 6 колод, блэкджек 3:2, Perfect Pairs и 21+3", "soon": true},
+		],
+	},
+	{
 		"id": "arena", "name": "Площадка арены", "pos": Vector3(-22, 0, 0), "r": 2.0,
 		"unlock": "", "sign": "Арена · скоро",
 		"levels": [

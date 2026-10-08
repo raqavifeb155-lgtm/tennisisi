@@ -21,6 +21,7 @@ const RESERVED := [                      # no trees here: places, the arena site
 	Rect2(-20, 28, 40, 6),                # past the pavilion doors
 	Rect2(16, -4, 14, 14), Rect2(12, 4, 12, 4),        # the shop and the way to it
 	Rect2(14, -38, 13, 14),               # the bar's terrace
+	Rect2(26, -36, 5, 10),                # the blackjack table beside it
 ]
 
 var walk := ClubWalk.new()
@@ -45,6 +46,7 @@ var _high := true
 var _board := "Задания — с началом турнира"
 var _chalk: Label3D
 var _focus_room := ""
+var _blackjack: Node3D
 
 
 func _ready() -> void:
@@ -446,6 +448,7 @@ func _build_paths() -> void:
 	_box(Vector3(2.4, 0.06, 26.0), Vector3(-HX - 4.0, y, -13.0), _paving, false)  # to the trophy room
 	_box(Vector3(9.0, 0.06, 2.4), Vector3(-HX - 8.0, y, -26.0), _paving, false)
 	_box(Vector3(8.6, 0.06, 2.4), Vector3(19.5, y, 6.2), _paving, false)         # east: to the shop
+	_box(Vector3(6.0, 0.06, 2.4), Vector3(25.6, y, -30.0), _paving, false)       # on to the blackjack table
 
 
 func _build_places() -> void:
@@ -463,6 +466,7 @@ func _build_places() -> void:
 	_pavilion("coach", ClubPlaces.find("coach")["pos"])
 	_pavilion("shop", ClubPlaces.find("shop")["pos"])
 	_build_bar_table()
+	_build_blackjack_table()
 	_stands_sign = _sign(Vector3((ClubLevels.STANDS_X0 + ClubLevels.STANDS_X1) * 0.5, 0, -2.6), "Здесь будут трибуны")
 	_keep.append(_stands_sign)
 	for p in ClubPlaces.LIST:
@@ -620,6 +624,61 @@ func _fill_room(id: String, inside: Node3D, lv: int) -> void:
 			sign.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			sign.position = Vector3(0, 2.6, -hz + 0.12)
 			inside.add_child(sign)
+
+
+## Where stream E's blackjack scene stands (hub spec 6): the table's centre; -basis.z
+## points from the player's seat to the dealer (toward the river).
+func blackjack() -> Transform3D:
+	return _blackjack.global_transform if _blackjack.is_inside_tree() else _blackjack.transform
+
+
+## The node stream E's scene goes into (it may hide "placeholder", the table drawn here).
+func blackjack_root() -> Node3D:
+	return _blackjack
+
+
+## A placeholder blackjack table on the terrace: a green half-moon with a wooden rim,
+## the dealer's chip tray and three stools on the player's side.
+func _build_blackjack_table() -> void:
+	var c: Vector3 = ClubPlaces.find("blackjack")["pos"]
+	_blackjack = Node3D.new()
+	_blackjack.name = "blackjack_table"
+	_blackjack.position = Vector3(c.x, 0.0, c.z - 2.4)
+	add_child(_blackjack)
+	_keep.append(_blackjack)
+	var ph := Node3D.new()
+	ph.name = "placeholder"
+	_blackjack.add_child(ph)
+	var top := MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 1.15
+	cyl.bottom_radius = 1.15
+	cyl.height = 0.08
+	cyl.radial_segments = 20
+	cyl.rings = 0
+	top.mesh = cyl
+	top.material_override = ClubMaterial.get_mat(Color(0.12, 0.42, 0.28))
+	top.position = Vector3(0, 0.82, 0.15)
+	top.scale = Vector3(1.0, 1.0, 0.75)
+	ph.add_child(top)
+	var rim := MeshInstance3D.new()
+	var tor := TorusMesh.new()
+	tor.inner_radius = 1.1
+	tor.outer_radius = 1.22
+	tor.rings = 20
+	tor.ring_segments = 4
+	rim.mesh = tor
+	rim.material_override = ClubMaterial.pal(ClubMaterial.WOOD_DARK)
+	rim.position = Vector3(0, 0.86, 0.15)
+	rim.scale = Vector3(1.0, 1.0, 0.75)
+	ph.add_child(rim)
+	ph.add_child(_mesh_box(Vector3(0.5, 0.78, 0.5), Vector3(0, 0.39, 0.15), ClubMaterial.pal(ClubMaterial.WOOD_DARK)))
+	ph.add_child(_mesh_box(Vector3(0.6, 0.06, 0.2), Vector3(0, 0.89, -0.45), ClubMaterial.pal(ClubMaterial.METAL_DARK, false)))
+	for i in 3:
+		var a := deg_to_rad(-35.0 + i * 35.0)
+		var st := Vector3(sin(a) * 1.45, 0.0, 0.15 + cos(a) * 1.1)
+		ph.add_child(_mesh_box(Vector3(0.36, 0.62, 0.36), st + Vector3(0, 0.31, 0), ClubMaterial.pal(ClubMaterial.RED, false)))
+	walk.add_circle(Vector2(_blackjack.position.x, _blackjack.position.z + 0.1), 1.25)
 
 
 ## A racket: a ring of a frame and a handle (stands in shops and on walls).
@@ -817,6 +876,7 @@ func _build_waypoints() -> void:
 		Vector2(14.6, -14), Vector2(14.6, -30), Vector2(-13, 0), Vector2(-13, -26),
 		Vector2(14.6, 6.2), Vector2(22, 6.2), Vector2(22, 3.4),    # the shop's door
 		Vector2(14.6, 19.6), Vector2(14.6, -19.8),
+		Vector2(23.5, -30.0), Vector2(26.5, -29.6),
 	]:
 		walk.waypoints.append(p)
 

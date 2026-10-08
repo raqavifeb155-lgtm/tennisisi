@@ -373,6 +373,9 @@ func ui_action(action: String, arg: int) -> void:
 			foreman_open()
 		"club_claim":
 			_claim()
+		"club_blackjack":
+			if not _open_blackjack():
+				ClubScreens.place(main.ui, ClubPlaces.state("blackjack"))
 		"club_quests":
 			ClubScreens.quests(main.ui)
 
@@ -404,6 +407,19 @@ func _hand_to(cls: String, action: String, arg: int) -> bool:
 			for m in scr.get_script_method_list():
 				if m["name"] == "ui_action":
 					scr.call("ui_action", main, action, arg)
+					return true
+	return false
+
+
+## Stream E's blackjack (hub spec 6): ClubBlackjack.open(club) when it's in the game.
+## Its scene stands on world.blackjack_root(), its limit is ClubBuilds.bet_limit().
+func _open_blackjack() -> bool:
+	for c in ProjectSettings.get_global_class_list():
+		if c["class"] == "ClubBlackjack":
+			var scr: GDScript = load(c["path"])
+			for m in scr.get_script_method_list():
+				if m["name"] == "open":
+					scr.call("open", self)
 					return true
 	return false
 
