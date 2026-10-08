@@ -40,7 +40,7 @@ static func _k(x: float) -> String:
 static func _chips(ui: TournamentUI, action: String) -> bool:
 	var allowed := Bets.chips_for(SaveData.gold)
 	if allowed.is_empty():
-		ui._note("Ставка — до четверти золота: нужно хотя бы %d золота" % ceili(Bets.CHIPS[0] / Bets.MAX_SHARE))
+		ui._note(Bets.need_text(Bets.CHIPS[0]))
 		return false
 	if not allowed.has(chip):
 		chip = allowed.back()
@@ -126,7 +126,7 @@ static func ui_action(m: Node, action: String, arg: int) -> void:
 			show_wheel(m.ui)
 		"spin":
 			var bet: String = BETS[arg]
-			if chip > Bets.max_stake(SaveData.gold):
+			if chip > Bets.max_stake(SaveData.gold, Bets.CHIPS[0]):
 				show_wheel(m.ui)
 				return
 			var field := Bets.spin(m.rng)

@@ -35,13 +35,23 @@ static func payout(bet: String, stake: int, field: int) -> int:
 	return stake * int(PAYS[bet]) if color_of(field) == bet else 0
 
 
-static func max_stake(gold: int) -> int:
-	return floori(gold * MAX_SHARE)
+## The biggest stake: a quarter of the gold, but never less than the table's smallest chip
+## (`min_chip`) while the gold covers that chip: with 10-39 gold one smallest chip can go.
+static func max_stake(gold: int, min_chip := 0) -> int:
+	var q := floori(gold * MAX_SHARE)
+	if min_chip > 0 and gold >= min_chip:
+		return maxi(q, min_chip)
+	return q
+
+
+## The text when not even the smallest chip is affordable.
+static func need_text(min_chip: int) -> String:
+	return "Нужно хотя бы %d золота" % min_chip
 
 
 ## The chips the player may put down with this much gold.
 static func chips_for(gold: int) -> Array:
-	return CHIPS.filter(func(c): return c <= max_stake(gold))
+	return CHIPS.filter(func(c): return c <= max_stake(gold, CHIPS[0]))
 
 
 static func match_odds(stage: int, sweep: bool) -> float:
@@ -76,7 +86,7 @@ static func needs_break(state: Dictionary) -> bool:
 ## A bet on the coming match of the run: the stake leaves the saved gold at once (a reload
 ## can't take it back). One per match; at most a quarter of the gold.
 static func place_match(t: Tournament, stake: int, sweep: bool) -> bool:
-	if not t.bet.is_empty() or stake <= 0 or stake > max_stake(SaveData.gold):
+	if not t.bet.is_empty() or stake <= 0 or stake > max_stake(SaveData.gold, CHIPS[0]):
 		return false
 	SaveData.gold -= stake
 	t.bet = {"stake": stake, "odds": match_odds(t.stage, sweep), "sweep": sweep, "stage": t.stage}

@@ -279,7 +279,7 @@ func _makeable(amount: int) -> bool:
 
 ## The biggest main bet now: the bar's limit and a quarter of the gold.
 func max_main() -> int:
-	return Blackjack.max_bet(SaveData.gold, limit())
+	return Blackjack.max_bet(SaveData.gold, limit(), unit())
 
 
 ## What a spot can still take.
@@ -1709,7 +1709,7 @@ class BlackjackHud extends CanvasLayer:
 		sub.text = ""
 		if t.showing_result():
 			var n := t.round_net()
-			result.text = ("+%d золота" % n) if n > 0 else ("−%d" % -n if n < 0 else "При своих")
+			result.text = ("+%d золота" % n) if n > 0 else ("-%d" % -n if n < 0 else "При своих")
 			result.add_theme_color_override("font_color", UiTheme.WIN if n > 0 else (UiTheme.LOSE if n < 0 else UiTheme.INK))
 		var lines: Array = []
 		if g.phase != Blackjack.Phase.BETTING and (t.showing_result() or playing) and t.view().get("sides", false):
@@ -1729,7 +1729,7 @@ class BlackjackHud extends CanvasLayer:
 		var limit := t.limit()
 		var mx := t.max_main()
 		if mx < t.unit():
-			note.text = "Ставка — до четверти золота: нужно хотя бы %d" % ceili(t.unit() / Bets.MAX_SHARE)
+			note.text = Bets.need_text(t.unit())
 		else:
 			note.text = "Стол до %d  ·  сайд-бет не больше ставки" % mini(limit, mx)
 		for id in spots:
@@ -1781,7 +1781,7 @@ class BlackjackHud extends CanvasLayer:
 						text = "ПЕРЕБОР"
 						col = UiTheme.LOSE
 					_:
-						text = "%s  −%d" % [text, int(h["bet"])]
+						text = "%s  -%d" % [text, int(h["bet"])]
 						col = UiTheme.LOSE
 			elif hands.size() > 1 and i == int(v.get("active", 0)) and t.game.phase == Blackjack.Phase.PLAYER:
 				col = UiTheme.GOLD

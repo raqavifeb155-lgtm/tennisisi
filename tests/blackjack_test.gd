@@ -262,6 +262,7 @@ func test_limits_and_save() -> void:
 	check(g.deal(10, 10, 10), "side bets equal to the main one: fine")
 	check(not g.deal(10, 0, 0) or g.phase == Blackjack.Phase.PLAYER, "no new deal in the middle of a hand")
 	check(Blackjack.max_bet(400, 150) == 100 and Blackjack.max_bet(4000, 150) == 150 and Blackjack.max_bet(10, 25) == 2, "main bet: the bar's limit and a quarter of the gold")
+	check(Blackjack.max_bet(36, 1000, 10) == 10 and Blackjack.max_bet(9, 1000, 10) == 2 and Blackjack.chips_for(36, 25, [10, 25]) == [10], "36 gold, chips from 10: one chip of 10")
 	check(Blackjack.chips_for(400, 150) == [5, 25, 50, 100] and Blackjack.chips_for(60, 25) == [5], "chips that still fit")
 	check(Blackjack.chips_for(100000, 1000, [10, 25, 50, 100, 250, 500, 1000]) == [10, 25, 50, 100, 250, 500, 1000] and Blackjack.chips_for(1000, 1000, [10, 25, 50, 100, 250, 500, 1000]) == [10, 25, 50, 100, 250], "the bar's own set of chips: all the way to 1000, a quarter of the gold")
 	for v in [10, 250, 500, 1000]:
@@ -528,11 +529,17 @@ func test_table() -> void:
 	t.clear_bets()
 	t._refresh()
 	var u: int = t.unit()
-	check(t.max_main() == 7 and t.add_chip(u, "main") == (u <= 7) and not t.add_chip(u, "main"), "30 gold: one smallest chip (%d) if it fits, never two" % u)
-	SaveData.gold = 12
+	check(t.max_main() == maxi(7, u) and t.add_chip(u, "main") and not t.add_chip(u, "main"), "30 gold: one smallest chip (%d) and never two" % u)
+	SaveData.gold = 36
 	t.clear_bets()
 	t._refresh()
-	check(not t.add_chip(u, "main") and t._ui.deal_btn.disabled, "12 gold: no bet at all")
+	check(t.max_main() == maxi(9, u) and t.add_chip(u, "main") and not t._ui.deal_btn.disabled, "36 gold: the smallest chip goes (a quarter is only 9)")
+	t.add_chip(u, "pp")
+	check(int(t.bets["pp"]) <= int(t.bets["main"]), "the side bet is still not over the main one")
+	SaveData.gold = u - 1
+	t.clear_bets()
+	t._refresh()
+	check(not t.add_chip(u, "main") and t._ui.deal_btn.disabled and t._ui.note.text == Bets.need_text(u), "under the smallest chip: no bet, «Нужно хотя бы %d золота»" % u)
 	t.close()
 	await _frames(2)
 	main.queue_free()

@@ -530,7 +530,9 @@ func test_bets() -> void:
 	check(Bets.payout("net", 10, 0) == 350 and Bets.payout("net", 10, 5) == 0, "the net pays x35, a miss pays nothing")
 	check(Bets.payout("red", 10, 0) == 0, "the net is neither color")
 	check(Bets.max_stake(400) == 100 and Bets.chips_for(400) == [10, 25, 50, 100] and Bets.chips_for(150) == [10, 25], "stake up to 25% of the gold")
-	check(Bets.chips_for(30).is_empty(), "too little gold: no chip fits")
+	check(Bets.chips_for(30) == [10] and Bets.chips_for(36) == [10] and Bets.chips_for(9).is_empty(), "10-39 gold: only the smallest chip, under 10 none")
+	check(Bets.max_stake(36, 10) == 10 and Bets.max_stake(9, 10) == 2 and Bets.max_stake(400, 10) == 100 and Bets.max_stake(36) == 9, "max_stake(gold, min_chip): a quarter, or the smallest chip when the gold covers it")
+	check(Bets.need_text(10) == "Нужно хотя бы 10 золота", "the text when a chip is not affordable")
 	check(Bets.match_odds(0, false) == 1.3 and Bets.match_odds(4, false) == 6.0 and is_equal_approx(Bets.match_odds(3, true), 8.75), "match odds by round, a clean sweep x2.5")
 	var sb := MatchScore.new(1, 6, 6, 0)
 	sb.set_scores = [[6, 1]]
