@@ -75,8 +75,32 @@ const TABLE := {
 				"line": "Терраса у воды. Лучшее место в клубе"},
 		],
 	},
+	# The shop (hub spec 2): what the window shows grows with it. stock, max_rarity: for
+	# stream A's Shop.stock() (ClubBuilds.shop_stock / shop_max_rarity).
+	"shop": {
+		"name": "Магазин", "place": "shop", "unlock": "played", "start": "ларёк: 2 вещи, до редкой",
+		"stock0": 2, "rarity0": 1,
+		"levels": [
+			{"title": "Лавка", "now": "лавка: 3 вещи до эпической, струны", "perk": "3 вещи, струны", "price": 150,
+				"stock": 3, "max_rarity": 2, "line": "Лавка! Теперь и струны перетянем"},
+			{"title": "Бутик", "now": "бутик: 4 вещи до легендарной, витрина светится", "perk": "4 вещи, до легендарной", "price": 450,
+				"stock": 4, "max_rarity": 3, "line": "Бутик. Витрина светится — красота"},
+		],
+	},
+	# The locker room (hub spec 1): one more locker slot a level, up to 4.
+	"locker": {
+		"name": "Раздевалка", "place": "locker", "unlock": "played", "start": "скамейка и один шкафчик (1 ячейка)",
+		"levels": [
+			{"title": "Ряд шкафчиков", "now": "ряд шкафчиков и зеркало", "perk": "2 ячейки шкафчика", "price": 80,
+				"line": "Ещё шкафчик. Можно хранить две вещи"},
+			{"title": "Стена ракеток", "now": "стена ракеток: твои вещи висят", "perk": "3 ячейки шкафчика", "price": 250,
+				"line": "Стена ракеток. Есть чем похвастаться"},
+			{"title": "Гардероб", "now": "гардероб с подсветкой", "perk": "4 ячейки шкафчика", "price": 550,
+				"line": "Гардероб с подсветкой. Как у профи"},
+		],
+	},
 }
-const ORDER := ["court", "stands", "gate", "trophy", "bar"]
+const ORDER := ["court", "stands", "gate", "shop", "locker", "trophy", "bar"]
 
 ## A short list of words a club's name can't have (the sign is seen by friends).
 const BAD_WORDS := ["хуй", "хуе", "пизд", "ебат", "ебан", "ёбан", "бляд", "сука", "муда", "пидор", "fuck", "shit", "dick", "cunt"]
@@ -151,6 +175,23 @@ static func gold_win_bonus() -> float:
 		return 0.0
 	var lv := level("stands")
 	return minf(float(TABLE["stands"]["levels"][lv - 1].get("bonus", 0.0)) if lv > 0 else 0.0, 0.10)
+
+
+## Locker slots (hub spec 1): 1 at the start, +1 a level of the locker room, up to 4.
+static func locker_slots() -> int:
+	return mini(1 + level("locker"), 4)
+
+
+## How many things the shop's window shows (hub spec 2): 2 / 3 / 4.
+static func shop_stock() -> int:
+	var lv := level("shop")
+	return int(TABLE["shop"]["stock0"]) if lv == 0 else int(TABLE["shop"]["levels"][lv - 1]["stock"])
+
+
+## The rarest thing the shop sells (Gear.RARE / EPIC / LEGENDARY; never mythic).
+static func shop_max_rarity() -> int:
+	var lv := level("shop")
+	return int(TABLE["shop"]["rarity0"]) if lv == 0 else int(TABLE["shop"]["levels"][lv - 1]["max_rarity"])
 
 
 ## The biggest stake the bar takes (its place's data: ClubPlaces "bar" by level).
