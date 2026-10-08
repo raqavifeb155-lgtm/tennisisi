@@ -23,10 +23,14 @@ var _t := 0.0
 var _boards := {}               # place id -> MeshInstance3D (planks across the door of a shut room)
 var _fence_mats: Array[StandardMaterial3D] = []
 var _net_ok := false
+var windows: MeshInstance3D     # the facades' windows, lit in the evening (their own triangles, nudged out)
+var _window_mat: StandardMaterial3D
 const SHADOW_REACH := 20.0
 const DRAW_RANGE := 80.0
 var _tuning: Node
 var terrain: ClubTerrain
+var fence: ClubFence
+var crowns: Array[Vector3] = []       # x, z, radius of every tree's crown: the camera keeps out of them
 var backdrop: ClubBackdrop
 var crowd: ClubCrowd
 var daytime: ClubDaytime
@@ -89,6 +93,9 @@ func _ready() -> void:
 	terrain = ClubTerrain.new()
 	terrain.name = "terrain"
 	add_child(terrain)
+	fence = ClubFence.new()
+	fence.name = "fence"
+	add_child(fence)
 	backdrop = ClubBackdrop.new()
 	backdrop.name = "backdrop"
 	add_child(backdrop)
@@ -128,7 +135,7 @@ func _reach() -> float:
 ## What the club's state is, as far as scenery is concerned.
 func _signature() -> String:
 	var parts := PackedStringArray()
-	for id in ["court", "stands", "gate", "shop", "locker", "trophy", "bar", "arena"]:
+	for id in ["court", "stands", "gate", "shop", "locker", "trophy", "bar", "arena"]:  # (the fence looks at "gate")
 		parts.append(str(level_of(id)))
 	parts.append(str(int(SaveData.played >= 1)))
 	return ",".join(parts)
@@ -146,7 +153,10 @@ func _refresh(first: bool) -> void:
 	_gen = ClubPack.generation
 	var list := props.visible(level_of, _high)
 	world.walk.clear_tag("props")
+	crowns.clear()
 	for p in list:
+		if p.shadow and p.id.begins_with("tree"):
+			crowns.append(Vector3(p.xf.origin.x, p.xf.origin.z, 1.5 * p.xf.basis.get_scale().x))
 		if p.solid > 0.0:
 			world.walk.add_circle(Vector2(p.xf.origin.x, p.xf.origin.z), p.solid, "props")
 	var baked := ClubProps.bake(list, _high)
@@ -177,8 +187,11 @@ func _refresh(first: bool) -> void:
 	_update_boards()
 	_update_fence()
 	_net_ok = _update_net()
+	_build_windows(list)
 	if daytime:
 		daytime.refresh(list)
+	if fence:
+		fence.refresh(level_of("gate"))
 	if terrain:
 		terrain.refresh(level_of, _high)
 	if backdrop:
@@ -378,3 +391,106 @@ func _build_signs() -> void:
 		l.rotation.y = PI    # the street's far side faces the gate (north)
 		l.visibility_range_end = 44.0
 		add_child(l)
+	# the gate: the tournament on the posters, the club on its pillar, a word on the road
+	for spec in [["ТУРНИР\nВ СУББОТУ", -6.0], ["ЗАПИСЬ\nУ ТРЕНЕРА", 6.0]]:
+		var pl := _text(String(spec[0]), Vector3(float(spec[1]), 2.1, 40.24), 0.0045, Color(0.12, 0.12, 0.2), 30.0)
+		pl.rotation.y = PI
+		pl.position.y = 1.92
+		pl.font_size = 56
+	var plaque := _text("EAST RIVER\nTENNIS CLUB", Vector3(-1.8, 1.55, 40.66), 0.0036, Color("ffd642"), 26.0)
+	plaque.rotation.y = PI
+	plaque.outline_size = 8
+	var road := _text("СТОП", Vector3(2.2, 0.07, 52.4), 0.012, Color(0.95, 0.94, 0.88, 0.85), 46.0)
+	road.rotation = Vector3(-PI * 0.5, PI, 0.0)
+	road.outline_size = 0
+
+
+func _text(text: String, at: Vector3, px: float, col: Color, range_end: float) -> Label3D:
+	var l := Label3D.new()
+	l.text = text
+	l.font = UiTheme.display()
+	l.font_size = 72
+	l.pixel_size = px
+	l.modulate = col
+	l.outline_size = 10
+	l.outline_modulate = Color(0.1, 0.08, 0.06)
+	l.shaded = false
+	l.double_sided = false
+	l.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	l.position = at
+	l.visibility_range_end = range_end
+	add_child(l)
+	return l
+
+
+## The windows of every facade as their own mesh: the triangles of a facade model that are
+## window-coloured (a blue-grey), copied and nudged 3 cm out, in warm colours; shown (lit)
+## in the evening by ClubDaytime.
+func _build_windows(list: Array[ClubProps.Prop]) -> void:
+	if windows == null:
+		windows = MeshInstance3D.new()
+		windows.name = "windows"
+		_window_mat = StandardMaterial3D.new()
+		_window_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_window_mat.vertex_color_use_as_albedo = true
+		windows.material_override = _window_mat
+		windows.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		windows.visible = false
+		add_child(windows)
+	var v := PackedVector3Array()
+	var c := PackedColorArray()
+	var n := PackedVector3Array()
+	var idx := PackedInt32Array()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 12
+	for p in list:
+		if p.tag != "facade":
+			continue
+		var mesh := ClubPack.mesh(p.id)
+		var a := mesh.surface_get_arrays(0)
+		var verts: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
+		var norms: PackedVector3Array = a[Mesh.ARRAY_NORMAL]
+		var cols = a[Mesh.ARRAY_COLOR]
+		var ind: PackedInt32Array = a[Mesh.ARRAY_INDEX]
+		if cols == null:
+			continue
+		var nb := p.xf.basis.inverse().transposed()
+		var house := rng.randf_range(0.55, 1.0)       # some houses are dark
+		for t in range(0, ind.size(), 3):
+			var ok := true
+			for k in 3:
+				var col: Color = (cols as PackedColorArray)[ind[t + k]]
+				if not (col.r < 0.5 and col.b - col.r >= 0.12 and col.g < col.b):
+					ok = false
+					break
+			if not ok:
+				continue
+			var lit := house * (1.0 if rng.randf() < 0.5 else 0.0)
+			var glow := Color(1.0, 0.78, 0.4) * lit
+			for k in 3:
+				var i := ind[t + k]
+				var nn := (nb * norms[i]).normalized()
+				v.append(p.xf * verts[i] + nn * 0.03)
+				n.append(nn)
+				c.append(glow)
+				idx.append(v.size() - 1)
+	if v.is_empty():
+		windows.mesh = null
+		return
+	var arr := []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = v
+	arr[Mesh.ARRAY_NORMAL] = n
+	arr[Mesh.ARRAY_COLOR] = c
+	arr[Mesh.ARRAY_INDEX] = idx
+	var m := ArrayMesh.new()
+	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	windows.mesh = m
+
+
+## ClubDaytime: how lit the windows are (0 = day).
+func window_glow(lit: float) -> void:
+	if windows == null:
+		return
+	windows.visible = lit > 0.01 and windows.mesh != null
+	_window_mat.albedo_color = Color(1, 1, 1) * lerpf(0.4, 1.1, lit)

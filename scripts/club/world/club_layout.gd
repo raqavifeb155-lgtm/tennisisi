@@ -39,6 +39,8 @@ static func fill(p: ClubProps) -> void:
 	_paths(p)
 	_kiosks(p)
 	_street(p)
+	_details(p)
+	_perimeter(p)
 	_ruin(p)
 	_tidy(p)
 
@@ -69,7 +71,7 @@ static func open_at(q: Vector2, margin := 0.0) -> bool:
 		var c: Vector3 = pl["pos"]
 		if Vector2(q.x - c.x, q.y - c.z).length() < float(pl["r"]) + 1.6 + margin:
 			return false
-	return q.y > SHORE + 4.6 and q.y < 46.0 and absf(q.x) < 57.0
+	return q.y > ClubFence.NORTH + 0.9 and q.y < ClubFence.SOUTH - 0.9 and absf(q.x) < ClubFence.EAST - 0.9
 
 
 static func yaw_to(from: Vector2, to: Vector2) -> float:
@@ -165,23 +167,23 @@ static func lamp(p: ClubProps, x: float, z: float, toward: Vector2, owner := "",
 static func _park(p: ClubProps) -> void:
 	# The lawn north of the court is kept open (the river and the bridge are the view);
 	# trees stand at the edges, bunched, never in rows.
-	_clump(p, Vector2(-44.0, -33.0), 6, 7.0)
+	_clump(p, Vector2(-36.0, -29.0), 5, 5.0)
 	_clump(p, Vector2(-30.0, -36.0), 3, 4.5, ["tree_round", "tree_fat"])
 	_clump(p, Vector2(36.0, -37.0), 4, 5.0)
-	_clump(p, Vector2(50.0, -30.0), 5, 5.5)
+	_clump(p, Vector2(42.0, -29.0), 4, 4.5)
 	_clump(p, Vector2(-10.0, -37.0), 2, 2.5, ["tree_fat"])
 	_clump(p, Vector2(10.0, -38.0), 2, 2.5, ["tree_round"])
 	# the east lawn, around the academy's plot
 	_clump(p, Vector2(46.0, -12.0), 5, 6.0)
 	_clump(p, Vector2(52.0, 4.0), 4, 4.5)
 	_clump(p, Vector2(42.0, 25.0), 6, 7.0)
-	_clump(p, Vector2(32.0, 38.0), 4, 5.0)
-	_clump(p, Vector2(50.0, 36.0), 4, 5.0)
+	_clump(p, Vector2(30.0, 34.0), 4, 4.0)
+	_clump(p, Vector2(42.0, 31.0), 3, 4.0)
 	_tree(p, 36.0, 3.0, "tree_oak", 1.25)
 	# the west lawn, below and above the arena's plot
-	_clump(p, Vector2(-45.0, 30.0), 6, 8.0)
+	_clump(p, Vector2(-40.0, 26.0), 5, 6.0)
 	_clump(p, Vector2(-30.0, 38.0), 4, 6.0)
-	_clump(p, Vector2(-52.0, 40.0), 3, 3.5)
+	_clump(p, Vector2(-42.0, 35.0), 3, 3.5)
 	_clump(p, Vector2(-26.0, 12.0), 2, 2.5, ["tree_round"])
 	_clump(p, Vector2(-25.0, -10.0), 2, 2.5, ["tree_fat"])
 	# between the court and the pavilions, and by the paths
@@ -296,15 +298,48 @@ static func _street(p: ClubProps) -> void:
 	var x := -66.0
 	var kinds := ["shop_a", "shop_wide_a", "shop_b", "building_a", "shop_c", "shop_wide_b", "building_b", "shop_a", "shop_b", "shop_c"]
 	var i := 0
-	while x < 70.0:
+	# model sizes (m, as baked: width, height, depth) and the width each is stretched to
+	var dims := {"shop_a": Vector3(3.0, 12.0, 3.0), "shop_wide_a": Vector3(8.2, 9.0, 4.1), "shop_b": Vector3(4.0, 14.0, 4.0),
+		"building_a": Vector3(7.0, 9.0, 8.4), "shop_c": Vector3(2.5, 10.0, 2.5), "shop_wide_b": Vector3(7.8, 9.0, 3.9), "building_b": Vector3(10.4, 10.0, 8.4)}
+	var want := {"shop_a": 9.0, "shop_wide_a": 13.0, "shop_b": 10.0, "building_a": 9.0, "shop_c": 8.0, "shop_wide_b": 12.0, "building_b": 11.0}
+	var cafe_x := []
+	while x < 72.0:
 		var id: String = kinds[i % kinds.size()]
-		var w: float = {"shop_a": 11.0, "shop_wide_a": 17.0, "shop_b": 12.0, "building_a": 11.0, "shop_c": 10.0, "shop_wide_b": 15.0, "building_b": 12.0}[id]
-		var b := p.at(id, Vector3(x + w * 0.5, 0.0, z + _r(-1.0, 1.0)), PI, Vector3(1.0, _r(0.9, 1.25), 1.0))   # fronts to the gate (-z)
+		var d: Vector3 = dims[id]
+		var w: float = want[id]
+		var sx := w / d.x
+		var sy := _r(0.62, 0.8) if d.y > 11.0 else _r(0.85, 1.05)
+		var sz := minf(sx, 2.4) * _r(0.9, 1.0)
+		var fz := z + _r(-0.8, 0.8)
+		var b := p.at(id, Vector3(x + w * 0.5, 0.0, fz), PI, Vector3(sx, sy, sz))   # fronts to the gate (-z)
 		b.tint = FACADES[_rng.randi() % FACADES.size()]
 		b.high = absf(x) > 40.0
 		b.far = true
-		x += w + _r(0.5, 2.5)
+		b.tag = "facade"
+		# an awning over each ground floor, in the street's colours
+		var front := fz - d.z * sz * 0.5
+		var aw := p.at("awning_wide", Vector3(x + w * 0.5, 3.05, front - 0.1), PI, Vector3(w * 0.5 / 1.8, 1.0, 1.4))
+		aw.tint = [Color(1.0, 0.45, 0.4), Color(0.4, 0.8, 0.7), Color(1.0, 0.85, 0.4), Color(0.5, 0.65, 1.0)][i % 4]
+		aw.high = b.high
+		cafe_x.append([x + w * 0.5, front - 1.0])
+		x += w + _r(0.4, 1.6)
 		i += 1
+	# a cafe table with a parasol on the far pavement before two of the fronts
+	for k in [2, 5]:
+		var cx0: float = cafe_x[k][0]
+		var cz0: float = cafe_x[k][1] - 1.2
+		if absf(cx0) > 60.0:
+			continue
+		for dx in [-1.6, 1.6]:
+			var t := p.at("bar_table", Vector3(cx0 + dx, 0.0, cz0), 0.0, 1.0)
+			t.high = true
+			for a in 2:
+				var ang: float = a * PI + 0.6
+				var q := Vector2(cx0 + dx, cz0) + Vector2(cos(ang), sin(ang)) * 0.85
+				p.at("bar_chair", Vector3(q.x, 0.0, q.y), face(q, Vector2(cx0 + dx, cz0)), 1.0).high = true
+		var pb := p.at("parasol_b", Vector3(cx0, 0.0, cz0), 0.0, 1.0)
+		pb.high = true
+		pb.far = true
 	# parked cars along the kerb
 	var cars := ["car_hatch", "car_sedan", "car_wagon"]
 	var cx := [-31.0, -9.0, 27.0]
@@ -496,3 +531,102 @@ static func _tidy(p: ClubProps) -> void:
 	var a := put(p, "flower_patch", -19.5, 3.0, 0.0, 1.8)
 	a.owner = "arena"
 	a.from = 1
+
+
+## The second pass: the little things that make a path a place - people on benches, bicycles,
+## bins, flower beds, a poster at the gate, bunting, traffic lights and manholes in the street.
+static func _details(p: ClubProps) -> void:
+	# somebody sits on the benches once the court is fresh (court level 1)
+	var sitters := ["sitter_a", "sitter_b", "sitter_c"]
+	var n := 0
+	for pr: ClubProps.Prop in p.props.duplicate():
+		if pr.id != "bench":
+			continue
+		n += 1
+		if n % 2 == 0:
+			continue
+		var sid: String = sitters[n % 3]
+		var yaw := pr.xf.basis.get_euler().y
+		var seat := pr.xf.origin + pr.xf.basis * Vector3(_r(-0.35, 0.35), 0.0, 0.02)
+		var sit := p.at(sid, Vector3(seat.x, seat.y + 0.06, seat.z), yaw, 1.0)
+		sit.owner = "court"
+		sit.from = 1
+		sit.high = n % 4 == 1
+	# bicycles on their stands: the gate yard, by each kiosk, at the pavilions
+	for spec in [[Vector2(-3.9, 37.8), 1.4], [Vector2(-4.5, 38.3), 1.5], [Vector2(-27.6, -35.6), 0.2], [Vector2(32.0, -14.4), -0.4], [Vector2(-19.8, 28.4), 1.6], [Vector2(12.4, 28.6), 1.7]]:
+		var q: Vector2 = spec[0]
+		var bike := put(p, "bicycle", q.x, q.y, float(spec[1]), 1.0, Vector3(0.0, 0.0, 0.18))
+		bike.tint = [Color(1, 1, 1), Color(0.5, 0.75, 1.1), Color(1.1, 1.1, 0.55), Color(0.6, 1.0, 0.8)][int(absf(q.x)) % 4]
+		bike.solid = 0.35
+		bike.high = int(absf(q.y)) % 2 == 0
+	# more bins, more beds
+	for q in [Vector2(-21.0, 30.0), Vector2(20.0, 33.0), Vector2(15.5, -20.0), Vector2(-15.0, -20.0), Vector2(30.0, 12.0)]:
+		_bin(p, q.x, q.y)
+	for q in [Vector2(-8.0, -41.0), Vector2(12.0, -41.2), Vector2(-3.4, -39.6), Vector2(26.0, 30.0), Vector2(-26.0, 29.0), Vector2(-10.8, 35.0), Vector2(10.8, 35.4)]:
+		var bed := put(p, "flower_patch", q.x, q.y, _r(0, TAU), _r(1.3, 1.9))
+		bed.high = int(absf(q.x)) % 2 == 0
+	# the gate: tournament posters on posts inside the wall (their text is a Label3D in ClubScenery)
+	for sx in [-6.0, 6.0]:
+		var po := put(p, "poster", sx, 40.3, PI, 1.0)
+		po.solid = 0.5
+	# bunting at each kiosk, between two poles
+	for spec in [[Vector3(-30.0, 0.0, -38.6), Vector2(-30.0, -50.0)], [Vector3(30.0, 0.0, -17.0), Vector2(10.0, -17.0)]]:
+		var c: Vector3 = spec[0]
+		var yaw := face(Vector2(c.x, c.z), spec[1])
+		var fwd := Vector2(sin(yaw), cos(yaw))
+		var side := Vector2(fwd.y, -fwd.x)
+		var mid := Vector2(c.x, c.z) + fwd * 4.6
+		var bn := put(p, "bunting", mid.x, mid.y, atan2(-side.y, side.x), 1.0)
+		bn.high = true
+		for sg: float in [-1.0, 1.0]:
+			var pp := mid + side * 3.0 * sg
+			var pole := put(p, "pole", pp.x, pp.y, 0.0, 1.0)
+			pole.solid = 0.12
+			pole.high = true
+	# at the bar once it is built: bunting between two poles west of the terrace
+	var bar_b := put(p, "bunting", 11.5, -34.0, PI * 0.5, 1.0)
+	bar_b.owner = "bar"
+	bar_b.from = 1
+	bar_b.high = true
+	for z in [-37.0, -31.0]:
+		var bp := put(p, "pole", 11.5, z, 0.0, 1.0)
+		bp.owner = "bar"
+		bp.from = 1
+		bp.high = true
+	# the street: traffic lights at the crossing, manholes and patches
+	for sx in [-4.2, 4.2]:
+		var tl := put(p, "trafficlight", sx, 49.7, PI if sx > 0.0 else 0.0, 1.0)
+		tl.far = true
+		tl.high = true
+	for q in [Vector2(-12.0, 52.5), Vector2(15.0, 56.0), Vector2(-26.0, 55.5), Vector2(34.0, 52.8)]:
+		p.at("manhole", Vector3(q.x, 0.04, q.y), _r(0, TAU), 1.0)
+	# the ball fridge by the players' chairs once the court is fresh
+	var fr := p.at("fridge", Vector3(-HX + 0.9, 0.0, -3.7), PI * 0.5, 1.0)
+	fr.owner = "court"
+	fr.from = 1
+	fr.high = true
+
+
+## The fence's company: the wicket's two posts and the hedges that grow along it in places.
+static func _perimeter(p: ClubProps) -> void:
+	for x in [-4.35, -1.65]:
+		var gp := p.at("gatepost", Vector3(x, LAWN, ClubFence.NORTH), 0.0, 1.0)
+		gp.far = true
+	var spots := []
+	for x in [-40.0, -30.0, -14.0, 14.0, 30.0, 40.0]:
+		spots.append([Vector2(x, ClubFence.NORTH + 0.9), Vector2(1, 0)])
+	for x in [-36.0, -24.0, 22.0, 34.0]:
+		spots.append([Vector2(x, ClubFence.SOUTH - 0.9), Vector2(1, 0)])
+	for z in [-26.0, -14.0, 4.0, 22.0]:
+		spots.append([Vector2(ClubFence.WEST + 0.9, z), Vector2(0, 1)])
+		spots.append([Vector2(ClubFence.EAST - 0.9, z + 6.0), Vector2(0, 1)])
+	var k := 0
+	for sp in spots:
+		var c: Vector2 = sp[0]
+		var along: Vector2 = sp[1]
+		for i in 5:
+			var q := c + along * (i - 2) * 0.95
+			var h := put(p, "bush_large", q.x, q.y, _r(0.0, TAU), _r(1.0, 1.35))
+			h.tint = Color(_r(0.85, 1.0), _r(0.9, 1.05), _r(0.8, 0.95))
+			h.high = (k + i) % 2 == 0
+		k += 1

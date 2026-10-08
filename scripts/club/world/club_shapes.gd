@@ -261,8 +261,22 @@ static func make(id: String) -> ArrayMesh:
 		"parasol":
 			s.cyl(0.03, 0.04, 2.3, Vector3(0, 1.15, 0), METAL)
 			s.cyl(0.02, 1.2, 0.4, Vector3(0, 2.4, 0), Color("d9473b"), 8)
-		"awning":
-			s.box(Vector3(2.4, 0.08, 1.0), Vector3(0, 0.5, 0.5), Color("d9473b"), 0.0, Vector3(0.4, 0, 0))
+		"awning", "awning_wide":
+			var aw := 0.9 if id == "awning" else 1.8
+			s.box(Vector3(aw, 0.05, 0.33), Vector3(0, 0.7, 0.0), Color("d9473b"), 0.0, Vector3(0.4, 0, 0))
+		"parasol_b":
+			s.cyl(0.03, 0.04, 2.3, Vector3(0, 1.15, 0), METAL)
+			s.cyl(0.02, 1.0, 0.4, Vector3(0, 2.4, 0), Color("3fb8af"), 8)
+		"fridge":
+			s.box(Vector3(0.9, 1.0, 0.9), Vector3(0, 0.5, 0), Color("f2f0ea"))
+			s.box(Vector3(0.8, 0.04, 0.02), Vector3(0, 0.62, 0.46), METAL)
+			s.ball(0.12, Vector3(-0.2, 1.1, 0.0), Color("dff23a"), Vector3.ONE, 5, 3)
+		"trafficlight":
+			s.cyl(0.05, 0.07, 3.2, Vector3(0, 1.6, 0), DARK)
+			s.box(Vector3(0.3, 0.8, 0.25), Vector3(0, 3.0, 0), DARK)
+			s.ball(0.07, Vector3(0, 3.25, 0.13), Color("d9473b"), Vector3.ONE, 5, 3)
+			s.ball(0.07, Vector3(0, 3.0, 0.13), Color("ffd642"), Vector3.ONE, 5, 3)
+			s.ball(0.07, Vector3(0, 2.75, 0.13), Color("3d806a"), Vector3.ONE, 5, 3)
 		"fence_low", "fence":
 			var h := 0.6 if id == "fence_low" else 1.0
 			s.box(Vector3(2.0, 0.06, 0.05), Vector3(0, h * 0.8, 0), WOOD)
@@ -282,6 +296,68 @@ static func make(id: String) -> ArrayMesh:
 			s.ball(0.28, Vector3(0.0, 2.65, 0.0), Color("ffe27a"), Vector3.ONE, 6, 4)
 			s.cyl(0.0, 0.2, 0.55, Vector3(0.0, 2.35, 0.0), Color("c9a56b"), 6, Vector3(PI, 0, 0))
 			s.box(Vector3(0.7, 0.5, 0.06), Vector3(-0.8, 1.55, 0.98), Color("ede3cc"))
+		"bicycle":
+			# a bicycle parked: front +z, wheels as discs, a thin frame, a bar and a seat
+			for z in [-0.55, 0.55]:
+				s.cyl(0.33, 0.33, 0.05, Vector3(0, 0.33, z), Color("25272b"), 10, Vector3(0, 0, PI * 0.5))
+				s.cyl(0.08, 0.08, 0.07, Vector3(0, 0.33, z), METAL, 6, Vector3(0, 0, PI * 0.5))
+			var fc := Color("d9473b")
+			s.box(Vector3(0.05, 0.05, 0.95), Vector3(0, 0.72, 0.0), fc)
+			s.box(Vector3(0.05, 0.06, 0.8), Vector3(0, 0.52, -0.1), fc, 0.0, Vector3(0.0, 0, 0))
+			s.box(Vector3(0.05, 0.5, 0.05), Vector3(0, 0.55, -0.42), fc, 0.0, Vector3(0.35, 0, 0))
+			s.box(Vector3(0.05, 0.6, 0.05), Vector3(0, 0.65, 0.5), METAL, 0.0, Vector3(-0.3, 0, 0))
+			s.box(Vector3(0.55, 0.04, 0.04), Vector3(0, 1.0, 0.6), DARK)
+			s.box(Vector3(0.2, 0.06, 0.28), Vector3(0, 0.98, -0.42), DARK)
+		"sitter_a", "sitter_b", "sitter_c":
+			# someone sitting on a bench (seat 0.55 m), facing +z
+			var shirt: Color = {"sitter_a": Color("d9473b"), "sitter_b": Color("2a54a3"), "sitter_c": Color("ffd642")}[id]
+			s.box(Vector3(0.36, 0.16, 0.5), Vector3(0, 0.63, 0.15), Color("2c3a52"))
+			s.box(Vector3(0.3, 0.45, 0.14), Vector3(0, 0.34, 0.4), Color("2c3a52"))
+			s.ball(0.22, Vector3(0, 0.98, -0.02), shirt, Vector3(1.0, 1.35, 0.7), 6, 3)
+			s.ball(0.14, Vector3(0, 1.38, 0.0), Color("e3b48a"), Vector3(1, 1.1, 1), 6, 3)
+			s.ball(0.15, Vector3(0, 1.43, -0.02), Color("3b2a1e"), Vector3(1, 0.7, 1), 5, 2)
+			for x in [-0.25, 0.25]:
+				s.box(Vector3(0.09, 0.09, 0.4), Vector3(x, 0.92, 0.18), shirt, 0.0, Vector3(0.5, 0, 0))
+		"palm":
+			s.cyl(0.16, 0.26, 5.6, Vector3(0, 2.8, 0), Color("8c6a46"), 6, Vector3(0.05, 0, 0.04))
+			for k in 6:
+				var a := k * TAU / 6.0
+				s.cyl(0.0, 0.3, 3.0, Vector3(cos(a) * 1.0, 6.2, sin(a) * 1.0), Color("4d7a33"), 4, Vector3(sin(a) * 1.15, 0.0, -cos(a) * 1.15))
+		"standee_a", "standee_b", "standee_c":
+			# somebody standing, facing +z (a fan at a fence, a ball kid)
+			var shirt: Color = {"standee_a": Color("d9473b"), "standee_b": Color("2a54a3"), "standee_c": Color("f2f0ea")}[id]
+			for x in [-0.1, 0.1]:
+				s.cyl(0.085, 0.07, 0.86, Vector3(x, 0.43, 0), Color("2c3a52"), 5)
+			s.ball(0.23, Vector3(0, 1.2, 0), shirt, Vector3(1.0, 1.35, 0.68), 6, 3)
+			s.ball(0.2, Vector3(0, 1.0, 0), shirt, Vector3(1.0, 1.0, 0.7), 6, 3)
+			for x in [-0.27, 0.27]:
+				s.cyl(0.055, 0.05, 0.5, Vector3(x, 1.12, 0.0), shirt, 4)
+			s.ball(0.15, Vector3(0, 1.7, 0), Color("e3b48a"), Vector3(1, 1.1, 1.0), 6, 3)
+			s.ball(0.158, Vector3(0, 1.75, -0.025), Color("3b2a1e"), Vector3(1, 0.7, 1.0), 5, 2)
+		"poster":
+			# a tournament poster on its two posts, face to +z
+			s.box(Vector3(0.07, 1.9, 0.07), Vector3(-0.5, 0.95, -0.06), TRUNK)
+			s.box(Vector3(0.07, 1.9, 0.07), Vector3(0.5, 0.95, -0.06), TRUNK)
+			s.box(Vector3(1.2, 1.45, 0.05), Vector3(0, 1.35, 0.0), Color("f5f5f5"))
+			s.box(Vector3(1.1, 0.36, 0.06), Vector3(0, 1.8, 0.01), Color("2a54a3"))
+			s.ball(0.26, Vector3(0, 1.32, 0.04), Color("dff23a"), Vector3(1, 1, 0.3), 8, 4)
+			s.box(Vector3(1.1, 0.14, 0.06), Vector3(0, 0.78, 0.01), Color("d9473b"))
+		"bunting":
+			# a string of flags, 6 m along x, sagging in the middle
+			var flags := [Color("d9473b"), Color("ffd642"), Color("f5f5f5"), Color("2a54a3"), Color("3fb8af")]
+			for k in 13:
+				var t := float(k) / 12.0
+				var sag := -0.5 * (1.0 - pow(2.0 * t - 1.0, 2.0))
+				s.cyl(0.0, 0.1, 0.28, Vector3(-3.0 + 6.0 * t, 3.0 + sag - 0.14, 0), flags[k % flags.size()], 3, Vector3(PI, 0, 0))
+			s.box(Vector3(6.0, 0.015, 0.015), Vector3(0, 2.78, 0), DARK)
+		"manhole":
+			s.flat(Vector2(0.45, 0.45), Vector3(0, 0.02, 0), Color("55575c"), 10)
+			s.flat(Vector2(0.3, 0.3), Vector3(0, 0.03, 0), Color("45474c"), 8)
+		"gatepost":
+			s.box(Vector3(0.3, 2.4, 0.3), Vector3(0, 1.2, 0), Color("a0523d"))
+			s.box(Vector3(0.42, 0.14, 0.42), Vector3(0, 2.45, 0), Color("e3d6c3"))
+		"pole":
+			s.cyl(0.05, 0.06, 3.4, Vector3(0, 1.7, 0), TRUNK)
 		"dirt":
 			s.flat(Vector2(1.0, 0.8), Vector3(0, 0.03, 0), Color("8a6a46"), 9)
 			s.flat(Vector2(0.62, 0.5), Vector3(0.1, 0.04, 0.05), Color("7a5a3c"), 7, 0.5)

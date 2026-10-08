@@ -16,7 +16,7 @@ var stats := false
 var views := false
 var nopack := false     # --nopack: the club as it stands before the model pack arrives (simple forms)
 var census := false
-var hour := -1.0
+var hour := 11.0   # shots are of the morning unless --hour= says otherwise (else they depend on the clock)
 var tag := ""          # --tag=X: club_X_<h>_*.png (other worktrees shoot into the same folder)
 
 
@@ -278,6 +278,12 @@ func _run() -> void:
 	main.club._on_choice("club_locations", 0)
 	await _shot("21_islands", 0.8)
 	main._on_ui("menu", 0)
+	# H: running with the stick: a full push, the camera a little farther and lower
+	_go("court")
+	await create_timer(0.4).timeout
+	main.hud.touch._stick_vector = Vector2(0.4, -1.0).normalized()
+	await _shot("21b_stick_run", 1.6)
+	main.hud.touch._stick_vector = Vector2.ZERO
 	# H: quick travel is a run along the path with the camera behind the hero; a tap skips.
 	_go("court")
 	await create_timer(0.4).timeout
@@ -316,6 +322,10 @@ func _views() -> void:
 		["v15_court_gate", Vector3(0, 0, 21), 0.0, 0],
 		["v16_fans", Vector3(-14, 0, 3), -PI * 0.5, 1],
 		["v17_built", Vector3(0, 0, 30), 0.0, 1],
+		["v18_corner_nw", Vector3(-49, 0, -36), PI * 0.25, 0],
+		["v19_corner_ne", Vector3(49, 0, -36), -PI * 0.25, 0],
+		["v20_corner_se", Vector3(49, 0, 37), -PI * 0.75, 0],
+		["v21_corner_sw", Vector3(-49, 0, 37), PI * 0.75, 0],
 	]
 	for v in list:
 		var p: Athlete = main.player

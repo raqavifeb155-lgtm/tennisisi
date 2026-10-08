@@ -72,6 +72,7 @@ func _ready() -> void:
 	_build_bleachers()
 	_build_cloud_shadows()
 	_build_birds()
+	SceneryDetail.apply(self, "park")  # stream H-6: people and props from the club's pack
 
 
 func _process(delta: float) -> void:
