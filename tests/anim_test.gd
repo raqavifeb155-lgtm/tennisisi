@@ -35,6 +35,7 @@ func run_all() -> void:
 	test_serve_kick()
 	test_stances()
 	test_human_arms()
+	test_stance_change()
 	test_lean()
 	test_swing_retarget()
 	test_tired_pose()
@@ -50,13 +51,13 @@ func check(cond: bool, msg: String) -> void:
 		failures += 1
 
 
-func fresh(surface := "hard", at := Vector3(0, 0, 11)) -> Athlete:
+func fresh(surface := "hard", at := Vector3(0, 0, 11), area := Rect2(-9, -14, 18, 30)) -> Athlete:
 	if ath:
 		ath.free()
 	Athlete.surface = surface
 	ath = Athlete.new()
 	root.add_child(ath)
-	ath.setup(-1.0, Color(0.9, 0.3, 0.2), Rect2(-9, -14, 18, 30))
+	ath.setup(-1.0, Color(0.9, 0.3, 0.2), area)
 	ath.position = at
 	for i in 30:
 		step()
@@ -487,6 +488,37 @@ func test_human_arms() -> void:
 					worst_at = "%s hand, %.2f s from contact, mode %d" % [sd, ath._clock - ath._contact_at, ath._mode]
 		check(worst < 0.03, "%s: elbows stay human through the stroke (worst %.3f)" % [c[4], worst])
 		check(hand_back < 0.2, "%s: hands never reach round behind the back (%.2f m, %s)" % [c[4], hand_back, worst_at])
+
+
+## Changing the stance (forehand <-> backhand) while running back, running in, standing
+## and running sideways: the chest turns half a circle and the hands must go round in
+## front of it. Every frame, no hand, elbow or forearm may be inside the trunk or behind
+## the back plane (AthleteProbe), and a hand keeps off the spine (not closer than 0.19 m).
+func test_stance_change() -> void:
+	print("stance change on the move: the arms never pass through the back")
+	for sc in AthleteProbe.SCENARIOS:
+		for first in [1, -1]:
+			fresh("hard", AthleteProbe.start_of(sc), Rect2(-12, -14, 24, 34))
+			var bad := 0
+			var first_bad := ""
+			var closest := 9.0
+			for f in 120:
+				AthleteProbe.drive(ath, sc, f, first)
+				step()
+				var pr := AthleteProbe.problems(ath)
+				if not pr.is_empty():
+					bad += 1
+					if first_bad == "":
+						first_bad = "frame %d %s" % [f, pr]
+				var t := AthleteProbe.torso(ath)
+				for it in AthleteProbe.arm_points(ath):
+					if (it[0] as String).begins_with("hand"):
+						var q := AthleteProbe.in_torso_frame(t, it[1])
+						if q.z < 99.0:
+							closest = minf(closest, Vector2(q.x, q.y).length())
+			var dir := "forehand -> backhand" if first > 0 else "backhand -> forehand"
+			check(bad == 0, "%s, %s: no arm through the trunk or behind the back (%d bad frames %s)" % [sc, dir, bad, first_bad])
+			check(closest > 0.19, "%s, %s: hands keep %.2f m from the spine" % [sc, dir, closest])
 
 
 ## Out of breath between points: bent over with both hands at the knees, the feet
