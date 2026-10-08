@@ -257,6 +257,43 @@ func _run() -> void:
 		_chosen = ""
 		await _tap(await _find(main.ui.root, "Назад"))
 		await _wait(0.8)
+		# T-1: the lot's sheet (the foreman's strip with a card for each building) and the build moment.
+		SaveData.club["lots"] = {}
+		SaveData.gold = 500
+		club._refresh()
+		club._travel("lot_n1")
+		await _wait(0.6)
+		club._on_choice("club_lot", 0)
+		await _wait(1.0)
+		await _expect("Участок: лист выбора открыт", func() -> bool: return club.lot_on() and club.hud.foreman_visible())
+		var lf: Control = club.hud._foreman
+		var lframe := Rect2(Vector2.ZERO, Vector2(root.size))
+		await _expect("Участок: лист целиком на экране", func() -> bool: return lframe.grow(2.0).encloses(lf.get_global_rect()))
+		await _expect("Участок: «Построить» не меньше 84 px", func() -> bool: return club.hud._foreman_build.size.y >= 84.0)
+		await _expect("Участок: ⚙ не закрыта листом", func() -> bool: return not lf.get_global_rect().intersects(club.hud.gear.get_global_rect()))
+		await _tap(club.hud.gear)
+		await _settings_round("Участок → ⚙")
+		await _expect("Участок → ⚙ → ГОТОВО: лист на месте", func() -> bool: return club.lot_on() and club.hud.foreman_visible())
+		for t in ["coach", "stands", "locker", "trophy", "bar", "academy", "arena"]:
+			club.lot_show(t)
+			await _wait(0.1)
+			_check("Участок · %s: карточка в экране, ниже ⚙" % t, lframe.grow(2.0).encloses(lf.get_global_rect()) and lf.get_global_rect().position.y > club.hud.gear.get_global_rect().end.y)
+		club.lot_show("coach")
+		await _wait(0.2)
+		await _tap(club.hud._foreman_build)
+		await _expect("Участок: «Построить» строит (идёт показ)", func() -> bool: return club.building())
+		await _tap_at(Vector2(root.size) * 0.5)
+		await _expect("Участок: тап пропускает показ, тренерская стоит", func() -> bool: return not club.building() and load("res://scripts/club/lots.gd").type_at("n1") == "coach")
+		await _expect("Участок: после стройки клуб на месте, кнопка здания", func() -> bool: return club.active and club.hud.visible and not club.foreman_on())
+		club._travel("lot_n2")
+		await _wait(0.6)
+		club._on_choice("club_lot", 0)
+		await _wait(0.8)
+		_chosen = ""
+		await _tap(club.hud._roulette_back)
+		await _expect("Участок: «Назад» закрывает лист", func() -> bool: return not club.foreman_on() and club.active)
+		SaveData.club["lots"] = {"n1": "locker", "n2": "coach", "n3": "trophy", "n4": "stands", "n5": "bar"}
+		club._refresh()
 		# The foreman: his strip stands over the 3D club, the gear is above it and works.
 		club.foreman_open("court")
 		await _wait(1.0)
