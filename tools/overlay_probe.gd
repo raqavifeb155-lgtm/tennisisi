@@ -268,6 +268,26 @@ func _run() -> void:
 	await _tap(_button(main.ui.root, "НАГРАДУ"))
 	_check("Итог → ⚙ → ГОТОВО: главное действие нажимается", _chosen == "to_reward")
 
+	# --- Gold: the bank on the chip, the run's gold apart until the summary (C-4) ---------
+	var bank0 := SaveData.gold
+	var g := Tournament.new(1)
+	g.gold = 75
+	main.ui.show_bracket(g)
+	await _wait(0.4)
+	_check("Золото: чип — банк, без золота забега", main.ui.chip_values().x == bank0)
+	_check("Золото: забег отдельно «+75»", main.ui.chip_values().y == 75 and main.ui.run_chip_shown())
+	_check("Золото: на сетке сказано, когда забег уйдёт в банк", main.ui.root.find_children("*", "Label", true, false).any(func(l): return (l as Label).is_visible_in_tree() and "в банк" in (l as Label).text))
+	main.ui.show_menu()
+	await _wait(0.4)
+	_check("Золото: в Клубе чип забега не показывается", not main.ui.run_chip_shown() and main.ui.chip_values().x == bank0)
+	g.state = Tournament.State.OVER
+	SaveData.record_run(g)
+	main.ui.show_summary(g)
+	await _wait(0.2)
+	_check("Золото: итоги начинаются с банка до забега", main.ui.chip_values().x == bank0 and main.ui.run_chip_shown())
+	await _wait(2.0)
+	_check("Золото: на итогах забег ушёл в банк", main.ui.chip_values().x == bank0 + 75 and not main.ui.run_chip_shown())
+
 	# --- The trophy mini-game ------------------------------------------------------
 	main.ui.close()
 	r.pending_loot = Gear.roll(Gear.EPIC, rng)
