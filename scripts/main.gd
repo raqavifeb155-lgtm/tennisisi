@@ -2116,6 +2116,8 @@ func _on_ui(action: String, arg: int) -> void:
 			_next_screen("reward")
 		"to_summary":
 			_next_screen("summary")
+		"to_bracket":
+			ui.show_bracket(tournament)  # v0.2 A-7: a win with no chest goes straight on
 		"reward":
 			tournament.take_reward(arg)
 			SaveData.save()
@@ -2130,7 +2132,7 @@ func _on_ui(action: String, arg: int) -> void:
 		"loot":
 			tournament.take_loot(arg == 1)
 			SaveData.save()
-			_next_screen("summary" if tournament.state == Tournament.State.OVER else "reward")
+			_next_screen("summary" if tournament.state == Tournament.State.OVER else ("reward" if tournament.state == Tournament.State.REWARD else "bracket"))
 		"point":
 			Skills.spend_point(Skills.LIST[arg])
 			SaveData.save()
@@ -2161,6 +2163,8 @@ func _next_screen(target: String) -> void:
 			ui.show_reward(tournament)
 		"summary":
 			ui.show_summary(tournament)
+		"bracket":
+			ui.show_bracket(tournament)
 		_:
 			if SaveData.control_chosen or not SaveData.enabled:
 				_open_menu()
@@ -2207,7 +2211,15 @@ func _autoplay_after_match(won: bool, st: String) -> void:
 	if tournament.results.size() > 25:
 		tournament.give_up()
 	match tournament.state:
+		Tournament.State.BRACKET:
+			_play_match()  # v0.2 A-7: a win with no chest
 		Tournament.State.REWARD:
+			if not tournament.chest.is_empty():  # v0.2 A-7: a chest by the net
+				var cc: Dictionary = tournament.chest
+				print("  chest: gold %d%s%s%s" % [int(cc["gold"]), ", " + String(cc["item"]["name"]) if not cc["item"].is_empty() else "", ", perk " + String(cc["perk"]) if String(cc["perk"]) != "" else "", ", wildcard" if cc["wildcard"] else ""])
+				tournament.take_chest()
+				_play_match()
+				return
 			var pick := 2 if tournament.wildcards == 0 else (1 if tournament.racket.is_empty() else 0)
 			print("  reward: %s" % tournament.offer[pick]["title"])
 			tournament.take_reward(pick)
@@ -2217,6 +2229,7 @@ func _autoplay_after_match(won: bool, st: String) -> void:
 			print("  wildcard used, replaying")
 			_play_match()
 		_:
+			tournament.take_chest()  # the final's chest
 			print("\n=== TOURNAMENT ===\n%s  ·  gold %d  ·  matches %d\nskills: %s" % [tournament.finish_text(), tournament.gold, tournament.results.size(), _levels_text()])
 			get_tree().quit()
 

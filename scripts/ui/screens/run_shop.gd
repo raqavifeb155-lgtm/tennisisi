@@ -27,6 +27,9 @@ static func route(m: Node, action: String, arg: int) -> bool:
 	if action == "club_locker" or action.begins_with("locker_"):
 		RunLocker.ui_action(m, action, arg)
 		return true
+	if action.begins_with("chest_"):
+		RunChest.ui_action(m, action, arg)
+		return true
 	if action.begins_with("sum_"):
 		RunResult.ui_action(m, action, arg)
 		return true

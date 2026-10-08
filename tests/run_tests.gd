@@ -6,6 +6,7 @@ var failures := 0
 
 
 func _init() -> void:
+	Tournament.BEGINNER_START = 1.0  # tests count a newcomer's prizes at the plain scale
 	test_drop_bounce()
 	test_topspin_dips()
 	test_topspin_kicks_on_bounce()
@@ -236,9 +237,11 @@ func test_tournament_flow() -> void:
 	var t := Tournament.new(0)
 	check(t.opponent()["id"] == "dzumhur" and t.new_score(0).sets_to_win == 1, "level 1: Джумхур, one tiebreak")
 	t.record_match(true, "7:3", rng)
-	check(t.state == Tournament.State.REWARD and t.offer.size() == 3 and t.offer[2]["kind"] == "wildcard", "win -> 3 rewards incl. wildcard")
+	check(t.offer.is_empty() and t.state == (Tournament.State.REWARD if not t.chest.is_empty() else Tournament.State.BRACKET), "v0.2 A-7: a win leaves a chest or nothing, no 1-of-3")
 	check(t.gold == 4, "quick format pays 40%% gold: %d" % t.gold)
-	t.take_reward(2)
+	t.chest = {"round": 0, "gold": 0, "item": {}, "perk": "", "wildcard": true, "opened": false}
+	t.state = Tournament.State.REWARD
+	t.take_chest()
 	check(t.wildcards == 1 and t.state == Tournament.State.BRACKET and t.stage == 1, "wildcard taken, round 2")
 	t.record_match(false, "5:7", rng)
 	check(t.state == Tournament.State.LOST, "loss with a wildcard can be replayed")
@@ -250,9 +253,8 @@ func test_tournament_flow() -> void:
 		if i == w.rounds() - 1:
 			check(w.opponent()["id"] == "djokovic" and w.new_score(0).sets_to_win == 2 and w.new_score(0).games_per_set == 4, "final: Джокович, best of three short sets")
 		w.record_match(true, "4:2 · 4:1", rng)
-		if w.state == Tournament.State.REWARD:
-			w.take_reward(0)
-	check(w.champion and w.state == Tournament.State.OVER and w.perks.size() == 4, "five wins = champion, perks collected")
+		w.take_chest()
+	check(w.champion and w.state == Tournament.State.OVER and w.stage == 5, "five wins = champion")
 
 
 func test_tournament_save() -> void:
@@ -262,6 +264,8 @@ func test_tournament_save() -> void:
 	var t := Tournament.new(1)
 	t.location = "clay"
 	t.record_match(true, "6:3", rng)
+	t.chest = {"round": 0, "gold": 9, "item": {}, "perk": "", "wildcard": false, "opened": false}
+	t.state = Tournament.State.REWARD
 	var d := t.to_dict()
 	var cf := ConfigFile.new()  # through the same file format the game saves to
 	cf.set_value("run", "data", d)
@@ -269,9 +273,9 @@ func test_tournament_save() -> void:
 	back.parse(cf.encode_to_text())
 	var r := Tournament.from_dict(back.get_value("run", "data"))
 	check(r.state == Tournament.State.REWARD and r.stage == t.stage and r.location == "clay" and r.format == 1, "state, round, place and format come back")
-	check(r.offer.size() == 3 and r.gold == t.gold and r.results.size() == 1, "reward cards, gold and results come back")
+	check(r.chest == t.chest and r.gold == t.gold and r.results.size() == 1, "the chest, gold and results come back")
 	check(r.rng.state == t.rng.state, "the random sequence continues where it was")
-	r.take_reward(0)
+	r.take_chest()
 	check(r.state == Tournament.State.BRACKET and r.stage == 1, "and the run goes on")
 
 
@@ -361,10 +365,11 @@ func test_gear_and_loot() -> void:
 	check(t.pending_loot == leg, "a dropped epic or better goes to the trophy game")
 	t.take_loot(true)
 	check(t.racket == leg and t.pending_loot.is_empty(), "trophy equipped")
-	check(t.offer[1]["kind"] == "item", "reward offer: perk, item, wildcard")
-	var rw: Dictionary = t.offer[1]["item"]
-	t.take_reward(1)
-	check(t.equip[rw["slot"]] == rw or t.bag.has(rw), "a reward item is put on (empty slot) or goes into the bag")
+	var rw := Gear.roll(Gear.RARE, rng, "shoes")  # v0.2 A-7: the reward is a chest's item now
+	t.chest = {"round": 0, "gold": 0, "item": rw, "perk": "", "wildcard": false, "opened": false}
+	t.state = Tournament.State.REWARD
+	t.take_chest()
+	check(t.equip[rw["slot"]] == rw or t.bag.has(rw), "a chest item is put on (empty slot) or goes into the bag")
 	t.lineup[1]["gear"]["racket"] = leg
 	t.record_match(false, "3:7", rng)
 	check(t.state == Tournament.State.OVER and t.pending_loot.is_empty(), "lose and the racket is gone")

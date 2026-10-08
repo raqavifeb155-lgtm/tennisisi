@@ -14,12 +14,13 @@ const GOLD_PER_WIN := [10, 15, 20, 30, 50]
 ## and the scale falls to INCOME_SCALE over BEGINNER_RUNS runs, so the first build comes in
 ## run 1-2. Item prices, the shop and the club's table are not touched by it.
 static var INCOME_SCALE := 0.5
-const BEGINNER_RUNS := 6
+const BEGINNER_RUNS := 8
+static var BEGINNER_START := 2.0      # a newcomer's first run pays x2 and it falls to INCOME_SCALE by run 8
 
 
 static func income_scale() -> float:
 	var k := clampf(1.0 - float(SaveData.played) / BEGINNER_RUNS, 0.0, 1.0)
-	return INCOME_SCALE + (1.0 - INCOME_SCALE) * k
+	return INCOME_SCALE + (BEGINNER_START - INCOME_SCALE) * k
 const CHAMPION_BONUS := 100
 ## Prize money of the round you went out in (v0.2 A economy): like real tennis, a lost run
 ## still pays, so even a beginner who loses the first round earns toward the club. Paid for
@@ -27,7 +28,7 @@ const CHAMPION_BONUS := 100
 ## giving up before playing.
 const PRIZE_ON_LOSS := [20, 25, 35, 50, 75]
 ## The run's gold by where it came from (the summary shows them line by line).
-const INCOME_KINDS := ["prize", "style", "sell", "quests", "bonus"]
+const INCOME_KINDS := ["prize", "chest", "style", "sell", "quests", "bonus"]
 
 ## Match formats, chosen when the tournament starts. Longer matches pay more: the
 ## multipliers scale gold now and skill experience once skills exist.
@@ -70,6 +71,15 @@ const ROUND_SHIFT := 0.04
 const DROP_CHANCE := [0.55, 0.65, 0.85, 0.48, 0.6]
 ## How much of the island's strength multiplier the opponent gets (see modifier_value).
 const ISLAND_POWER_SHARE := 0.5
+## v0.2 A-7 (owner: «призы не после каждого противника»): no «1 из 3» after a win. Instead a
+## win may leave a chest by the net: the chance by the round just won (1-2: 35%, QF/SF: 55%,
+## the final: always), and never more than CHEST_PITY won matches in a row with no prize
+## (a chest or a trophy). Inside: gold and / or an item, sometimes a wildcard.
+const CHEST_CHANCE := [0.35, 0.35, 0.55, 0.55, 1.0]
+const CHEST_PITY := 2
+const CHEST_GOLD := [15, 22, 32, 48, 80]                # x the prize multiplier, 0.7..1.3
+## Item rarity by the round: common, rare, epic, legendary (no mythics from a chest).
+const CHEST_RARITY := [[45.0, 40.0, 13.0, 2.0], [35.0, 42.0, 19.0, 4.0], [22.0, 42.0, 28.0, 8.0], [12.0, 38.0, 36.0, 14.0], [4.0, 30.0, 44.0, 22.0]]
 const BAG_SIZE := 6
 const SKILL_PER_RARITY := 0.01    # his gear makes him a little stronger
 
@@ -113,6 +123,8 @@ var income := {}                  # gold by kind (INCOME_KINDS): adds up to `gol
 var last_prize := 0               # prize money the last record_match / give_up paid (the result shows it)
 var locker_done := false          # the summary's one item went into the locker (Locker)
 var champion := false
+var chest := {}                   # the chest by the net after the last win ({} = none), see make_chest
+var dry := 0                      # won matches in a row without a prize (the pity counter)
 var offer: Array = []             # reward cards on the REWARD screen
 
 
@@ -140,7 +152,7 @@ func _init(format_index := 0, seed_value := 0) -> void:
 const SAVED := ["format", "location", "lineup", "racket", "pending_loot", "missed_loot", "banked",
 	"state", "stage", "wildcards", "perks", "results", "gold", "champion", "offer",
 	"equip", "bag", "new_items", "auto_sold", "run_mods", "mythic_rolled", "drop_bonus", "bet",
-	"income", "locker_done", "run_modifiers"]
+	"income", "locker_done", "run_modifiers", "chest", "dry"]
 
 
 ## The run as plain data, for the save file: a phone that reloads the page (Telegram
@@ -422,25 +434,108 @@ func record_match(won: bool, score_text: String, r: RandomNumberGenerator) -> vo
 	new_items = []
 	auto_sold = 0
 	if won:
+		var round_i := stage
 		_take_drops(r)
 		earn("prize", gold_for_win(stage))
 		stage += 1
+		chest = _roll_chest(round_i)
+		offer = []
 		if stage >= rounds():
 			champion = true
 			earn("prize", champion_bonus())
 			SaveData.note_title(location)  # v0.2 A-4: the islands open title by title
 			state = State.OVER
 		else:
-			offer = Rewards.offer(perks, r)
-			offer.insert(1, _item_card(r))
-			state = State.REWARD
+			state = State.REWARD if not chest.is_empty() else State.BRACKET
 	else:
 		state = State.LOST if wildcards > 0 else State.OVER
 		if state == State.OVER:
 			earn("prize", prize_on_loss(stage))
 
 
+## The chest a win leaves, or {}: the chance by round, the pity, the contents from a seed of
+## the run (the same run and match give the same chest). Counts the trophy as a prize.
+func _roll_chest(round_i: int) -> Dictionary:
+	var cr := RandomNumberGenerator.new()
+	cr.seed = rng.seed * 7919 + results.size() * 104729 + round_i * 31 + 7
+	var prize := not pending_loot.is_empty()
+	var c := {}
+	if dry >= CHEST_PITY or cr.randf() < CHEST_CHANCE[clampi(round_i, 0, CHEST_CHANCE.size() - 1)]:
+		c = make_chest(round_i, cr)
+	dry = 0 if (prize or not c.is_empty()) else dry + 1
+	return c
+
+
+## {"round", "gold", "item", "perk", "wildcard", "opened"}: gold only 40%, an item 30%, both
+## 20%, and 10% a wildcard with a little gold. No run perks (temporary +X%): the owner wants
+## strength to grow only with the skills' levels; the `perk` field stays for old saves.
+func make_chest(round_i: int, cr: RandomNumberGenerator) -> Dictionary:
+	var ri := clampi(round_i, 0, CHEST_GOLD.size() - 1)
+	var c := {"round": round_i, "gold": 0, "item": {}, "perk": "", "wildcard": false, "opened": false}
+	var gold := maxi(1, roundi(CHEST_GOLD[ri] * prize_mult() * cr.randf_range(0.7, 1.3)))
+	var x := cr.randf()
+	if x < 0.40:
+		c["gold"] = gold
+	elif x < 0.70:
+		c["item"] = _chest_item(ri, cr)
+	elif x < 0.90:
+		c["gold"] = gold
+		c["item"] = _chest_item(ri, cr)
+	else:
+		c["gold"] = maxi(1, gold / 3)
+		c["wildcard"] = true  # (no temporary perks any more: owner 08.10, strength only grows with levels)
+	return c
+
+
+func _chest_item(ri: int, cr: RandomNumberGenerator) -> Dictionary:
+	var w: Array = CHEST_RARITY[ri]
+	var total := 0.0
+	for v in w:
+		total += v
+	var y := cr.randf() * total
+	var rar := Gear.LEGENDARY
+	for k in w.size():
+		if y < w[k]:
+			rar = k
+			break
+		y -= w[k]
+	return Gear.roll(rar, cr, Gear.SLOTS[cr.randi_range(0, Gear.SLOTS.size() - 1)], item_level())
+
+
+## Opens the chest: gold, perk and wildcard come at once (the item waits for take_chest).
+func open_chest() -> Dictionary:
+	if chest.is_empty() or chest.get("opened", false):
+		return chest
+	chest["opened"] = true
+	var g := int(chest["gold"])
+	if g > 0:
+		earn("chest", g)
+		if banked:
+			SaveData.gold += g  # the run was banked already (the final's chest): straight into the bank
+	if String(chest["perk"]) != "":
+		perks.append(chest["perk"])
+	if chest["wildcard"]:
+		wildcards += 1
+	return chest
+
+
+## Takes it all and goes on: the item is worn (empty slot) or goes into the bag.
+func take_chest() -> void:
+	if chest.is_empty():
+		return
+	open_chest()
+	var it: Dictionary = chest["item"]
+	if not it.is_empty():
+		join(it)
+	chest = {}
+	if state == State.REWARD:
+		state = State.BRACKET
+
+
 func take_reward(i: int) -> void:
+	if offer.is_empty() and not chest.is_empty():
+		take_chest()  # (the autoplay bot and old callers)
+		return
 	if state != State.REWARD or i < 0 or i >= offer.size():
 		return
 	var card: Dictionary = offer[i]

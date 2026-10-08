@@ -444,17 +444,21 @@ func show_result(t: Tournament, won: bool, score_text: String, stats: Dictionary
 	elif won and t.missed_loot != "":
 		_box.add_child(_text("Трофей упущен: %s" % t.missed_loot, UiTheme.text(), UiTheme.T_SMALL + 2, UiTheme.LOSE))
 	RunResult.extra(self, t)  # v0.2 A: style of the match, the best point's replay
+	if won and not t.chest.is_empty():  # v0.2 A-7: a chest by the net
+		_box.add_child(_text("Сундук у сетки!", UiTheme.display(), UiTheme.T_HEAD, UiTheme.GOLD))
 	if won and not t.pending_loot.is_empty():
 		_primary("ЗАБРАТЬ ТРОФЕЙ", "to_loot")
 		return
 	match t.state:
+		Tournament.State.BRACKET:
+			_primary("ДАЛЬШЕ", "to_bracket")
 		Tournament.State.REWARD:
-			_primary("ВЫБРАТЬ НАГРАДУ", "to_reward")
+			_primary("ОТКРЫТЬ СУНДУК" if not t.chest.is_empty() else "ВЫБРАТЬ НАГРАДУ", "to_reward")
 		Tournament.State.LOST:
 			_primary("ВАЙЛД-КАРД: ПЕРЕИГРАТЬ (%d)" % t.wildcards, "wildcard")
 			_secondary("Закончить турнир", "give_up")
 		_:
-			_primary("ИТОГИ", "to_summary")
+			_primary("ОТКРЫТЬ СУНДУК" if won and not t.chest.is_empty() else "ИТОГИ", "to_summary")
 
 
 func show_skill_perk(skill: String, offer: Array) -> void:
@@ -531,6 +535,9 @@ func _item_card(item: Dictionary, what: String, action := "") -> GameCard:
 ## read), wait a moment, then turn over one after another, 0.15 s apart, each with its win
 ## effect; a tap on a back turns the whole row at once, a tap on an open card takes it.
 func show_reward(t: Tournament) -> void:
+	if not t.chest.is_empty():  # v0.2 A-7: a chest, not «1 из 3»
+		RunChest.show_chest(self, t)
+		return
 	_open(t)
 	show_stash(RunBag.carried(t))
 	_title("Награда")
@@ -560,6 +567,9 @@ func show_reward(t: Tournament) -> void:
 
 
 func show_summary(t: Tournament) -> void:
+	if not t.chest.is_empty() and t.state == Tournament.State.OVER:  # the final's chest comes first
+		RunChest.show_chest(self, t)
+		return
 	RunResult.show_summary(self, t)  # v0.2 A-2: income by lines, the locker, the next goal
 	if t.gold > 0 and t.banked:  # C-4: the run's gold flies into the bank chip
 		_set_run(t.gold, true)

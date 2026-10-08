@@ -132,7 +132,21 @@ func _run() -> void:
 	await _shot("bracket_locker", 0.7)
 	main._on_ui("bag", 0)
 	await _shot("bag_locker", 0.6)
+	# The chest by the net: closed, then opened (gold, an epic, a wildcard).
+	_reset(40)
+	var tc := Tournament.new(1, 21)
+	tc.stage = 2
+	tc.state = Tournament.State.REWARD
+	tc.chest = {"round": 1, "gold": 22, "item": Items.instance(Items.find("cutter")), "perk": "", "wildcard": false, "opened": false}
+	main.tournament = tc
+	main.ui.show_reward(tc)
+	await _shot("chest_closed", 0.9)
+	main._on_ui("chest_open", 0)
+	await _shot("chest_open", 1.2)
+	main._on_ui("chest_next", 0)
+	await _shot("chest_after", 0.6)
 	await _flow()
+	_chest_flow()
 	print("%s (%d failures)" % ["FLOW OK" if failures == 0 else "FLOW FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -210,3 +224,28 @@ func _flow() -> void:
 	main.ui.show_locations()
 	check(_cards() >= 5, "the islands screen")
 	_reset(0)
+
+
+func _chest_flow() -> void:
+	print("chest flow")
+	_reset(0)
+	var t := Tournament.new(1, 31)
+	main.tournament = t
+	main.tournament_mode = true
+	t.dry = 2  # the pity: this win must leave a chest
+	t.record_match(true, "6:2", RandomNumberGenerator.new())
+	check(t.state == Tournament.State.REWARD and not t.chest.is_empty(), "a win after two dry ones leaves a chest")
+	main.ui.show_result(t, true, "6:2", {"perfect": 3, "aces": 1, "best_rally": 7})
+	main._on_ui("to_reward", 0)
+	check(not t.chest.get("opened", true), "the closed chest is on screen")
+	main._on_ui("chest_open", 0)
+	check(t.chest.get("opened", false), "a tap opens it")
+	var gold := t.gold
+	main._on_ui("chest_next", 0)
+	check(t.chest.is_empty() and t.state == Tournament.State.BRACKET and t.gold == gold, "next: the run goes on to the bracket")
+	t.dry = 0
+	t.chest = {}
+	t.state = Tournament.State.BRACKET
+	main.ui.show_result(t, true, "6:2", {"perfect": 0, "aces": 0, "best_rally": 0})
+	main._on_ui("to_bracket", 0)
+	check(main.ui.is_open(), "no chest: «ДАЛЬШЕ» goes straight to the bracket")
