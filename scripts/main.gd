@@ -268,6 +268,7 @@ func _ready() -> void:
 	if SaveData.control_chosen:
 		Tuning.tap_controls = SaveData.tap_controls
 	Tuning.one_handed_bh = SaveData.one_handed_bh
+	Tuning.tv_camera = Tuning.tv_camera or SaveData.camera == "tv"  # D-4: the broadcast camera (--camera=tv too)
 	player.set_look(SaveData.look)
 	Tuning.ambience = SaveData.ambience
 	Tuning.music = SaveData.music
