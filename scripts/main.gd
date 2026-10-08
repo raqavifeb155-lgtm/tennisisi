@@ -70,6 +70,7 @@ var _perk_choice := {}
 var _practice_skill := 0.5
 var _autoplay_format := 0
 var _bot_dive_test := false
+var _bot_drop := 0.0              # --bot-drop=: the bot plays a drop shot this often (D-7)
 var _bot_sd := 0.035
 var _bot_xp := -1.0
 var _bot_measure := 0        # v0.2 G: --measure=N: the bot plays N points against the same opponent (--stage, --seed) and reports its share
@@ -203,6 +204,8 @@ func _ready() -> void:
 			_bot_stage = int(a.get_slice("=", 1))
 		elif a.begins_with("--seed="):
 			_bot_seed = int(a.get_slice("=", 1))
+		elif a.begins_with("--bot-drop="):
+			_bot_drop = float(a.get_slice("=", 1))  # D-7: the share of the bot's strokes that are drop shots (0..1)
 		elif a.begins_with("--adapt-floor="):
 			Opponents.floor_slope = float(a.get_slice("=", 1))  # D-5: how fast the opponents keep up with the player's level
 		elif a.begins_with("--adapt-ease="):
@@ -2599,6 +2602,8 @@ func _autoplay_tick() -> void:
 	var ty := rng.randi_range(0, 2)
 	if rng.randf() < 0.06:
 		ty = ShotType.LOB
+	if _bot_drop > 0.0 and rng.randf() < _bot_drop:
+		ty = ShotType.DROP
 	_curl_k = rng.randf_range(0.9, 1.3) if ty == ShotType.TOPSPIN else 1.0
 	if late_until > 0.0:
 		if game_time - late_cross_time >= _bot_offset:
