@@ -360,7 +360,9 @@ func _update_place() -> void:
 		world.set_inside("")
 	match id:
 		"court":
-			if ClubQuests.claimable_count() > 0:
+			if bool(SaveData.club.get("drills", {}).get("hint", false)):
+				coach.say("drilled")  # the first lesson is done: «Новая игра» is next
+			elif ClubQuests.claimable_count() > 0:
 				coach.say("reward")
 			else:
 				coach.say("court_run" if SaveData.resumable() != null else "court")
@@ -372,6 +374,8 @@ func _update_place() -> void:
 func _show_place(id: String) -> void:
 	var b := place_buttons(id)
 	hud.show_place(id, b["label"], b["action"], b["extra"], upgrade_price(id))
+	# After the first lesson with the ball machine «Новая игра» pulses until a run starts.
+	hud.pulse_primary(id == "court" and bool(SaveData.club.get("drills", {}).get("hint", false)))
 
 
 ## "↑ 340" by a place whose construction's next level is affordable. Not at the gate (its
@@ -402,6 +406,8 @@ func place_buttons(id: String) -> Dictionary:
 			return {"label": "НОВАЯ ИГРА  ·  %s" % String(loc["name"]).to_upper(), "action": "club_tournament",
 				"extra": extra}
 		return {"label": "НОВАЯ ИГРА", "action": "club_tournament", "extra": []}
+	if id == "machine":
+		return {"label": "ПУШКА", "action": "drill", "extra": [["Свободная игра", "practice"]]}
 	if id == "coach":
 		if ClubQuests.claimable_count() > 0:
 			return {"label": "ЗАБРАТЬ  ·  +%d ●" % ClubQuests.claimable_gold(), "action": "club_claim",

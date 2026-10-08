@@ -51,6 +51,7 @@ var _hint: PanelContainer
 var _hint_shown := false
 var _place_id := ""
 var _place_tw: Tween
+var _pulse: Tween
 var _safe_top := 0.0
 var _safe_bottom := 0.0
 
@@ -247,6 +248,22 @@ func show_place(id: String, label: String, action: String, extra: Array = [], up
 		return
 	_place_id = id
 	_slide(true)
+
+
+## A quiet pulse on the place's main button (the first lesson is done: «Новая игра» is next).
+func pulse_primary(on: bool) -> void:
+	if _pulse != null and _pulse.is_valid():
+		_pulse.kill()
+	_primary.self_modulate = Color.WHITE
+	if not on:
+		return
+	_pulse = create_tween().set_loops()
+	_pulse.tween_property(_primary, "self_modulate", Color(1.35, 1.3, 1.0), 0.55).set_trans(Tween.TRANS_SINE)
+	_pulse.tween_property(_primary, "self_modulate", Color.WHITE, 0.55).set_trans(Tween.TRANS_SINE)
+
+
+func pulsing() -> bool:
+	return _pulse != null and _pulse.is_valid() and _pulse.is_running()
 
 
 func hide_place() -> void:
