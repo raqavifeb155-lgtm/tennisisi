@@ -822,7 +822,7 @@ func _swing_input(dir: Vector3, pace_k: float, type: int) -> void:
 ## just inside it; a wider line goes into that deep corner. So with perfect timing the
 ## ball goes where the line points and stays in; errors are what make it miss.
 func rally_target(origin: Vector3, d: Vector3, pace_k: float) -> Vector3:
-	var w := Court.SINGLES_HALF_WIDTH - 0.6
+	var w := Court.half_width() - 0.6
 	var zt := -(Court.HALF_LENGTH - lerpf(2.6, 1.5, pace_k))
 	var p := origin + d * ((zt - origin.z) / d.z)
 	if absf(p.x) > w:
@@ -836,7 +836,7 @@ func rally_target(origin: Vector3, d: Vector3, pace_k: float) -> Vector3:
 ## Lob target: along the aim line, deep behind a player at the net. A clean scoop lands
 ## a couple of metres inside the baseline; a poor one drops short, where it gets smashed.
 func lob_target(origin: Vector3, d: Vector3, q: float) -> Vector3:
-	var w := Court.SINGLES_HALF_WIDTH - 0.8
+	var w := Court.half_width() - 0.8
 	var depth := Court.HALF_LENGTH - lerpf(5.0, 2.0, q)
 	var p := origin + d * ((-depth - origin.z) / d.z)
 	p.x = clampf(p.x, -w, w)
@@ -848,7 +848,7 @@ func lob_target(origin: Vector3, d: Vector3, q: float) -> Vector3:
 ## Drop shot target: along the aim line, just over the net. A clean touch dies close to
 ## the net; a poor one sits up deeper, where the opponent can punish it.
 func drop_target(origin: Vector3, d: Vector3, pace_k: float, q: float) -> Vector3:
-	var w := Court.SINGLES_HALF_WIDTH - 0.6
+	var w := Court.half_width() - 0.6
 	var depth := lerpf(1.3, 2.3, pace_k) + (1.0 - q) * 3.5
 	var p := origin + d * ((-depth - origin.z) / d.z)
 	p.x = clampf(p.x, -w, w)
@@ -864,7 +864,7 @@ func serve_target(origin: Vector3, d: Vector3, pace_k: float) -> Vector3:
 	var zt := -(Court.SERVICE_LINE - lerpf(1.1, 0.6, pace_k))
 	var p := origin + d * ((zt - origin.z) / d.z)
 	var lo := 0.25
-	var hi := Court.SINGLES_HALF_WIDTH - 0.2
+	var hi := Court.half_width() - 0.2
 	var bx := p.x * box_side
 	if bx < lo and bx > lo - 1.5:
 		p.x = box_side * lo
@@ -1256,7 +1256,7 @@ func execute_shot(who: int, hitter: Athlete, contact: Vector3, target: Vector3, 
 	elif err_kind == 3:
 		# Wide: lands past the sideline on the side it was going to.
 		var sx := signf(target.x) if absf(target.x) > 0.3 else (1.0 if rng.randf() < 0.5 else -1.0)
-		target.x = sx * (Court.SINGLES_HALF_WIDTH + rng.randf_range(0.2, 1.1))
+		target.x = sx * (Court.half_width() + rng.randf_range(0.2, 1.1))
 	var flat := target - contact
 	flat.y = 0.0
 	var dist := flat.length()
@@ -1285,7 +1285,7 @@ func execute_shot(who: int, hitter: Athlete, contact: Vector3, target: Vector3, 
 		# Into the net: launched so it reaches the net plane below the tape.
 		var t_net := absf(contact.z) / absf(v.z)
 		var h_net := Court.net_height(contact.x + v.x * t_net) * rng.randf_range(0.35, 0.8)
-		v.y = (h_net - contact.y + 0.5 * BallPhysics.GRAVITY * t_net * t_net) / t_net
+		v.y = (h_net - contact.y + 0.5 * BallPhysics.gravity() * t_net * t_net) / t_net
 	ball.launch(contact, v, r.spin)
 	last_hitter = who as Who
 	bounces = 0
@@ -1353,11 +1353,11 @@ func _line_call(pos: Vector3, half: int) -> void:
 		var x := pos.x * box_side
 		var m_service := Court.SERVICE_LINE + rz - z
 		var m_center := x + rx
-		var m_side := Court.SINGLES_HALF_WIDTH + rx - x
+		var m_side := Court.half_width() + rx - x
 		margin = minf(m_service, minf(m_center, m_side))
 		line_axis = 1 if margin == m_service else 0
 	else:
-		var m_side := Court.SINGLES_HALF_WIDTH + rx - absf(pos.x)
+		var m_side := Court.half_width() + rx - absf(pos.x)
 		var m_base := Court.HALF_LENGTH + rz - z
 		margin = minf(m_side, m_base)
 		line_axis = 1 if m_base < m_side else 0
@@ -1559,8 +1559,8 @@ func _setup_serve() -> void:
 	srv.serve_ready()
 	if server == Who.PLAYER:
 		# Rules: behind the baseline, between the centre mark and the sideline on this side.
-		var x0 := 0.15 if sx > 0.0 else -Court.SINGLES_HALF_WIDTH
-		player.area = Rect2(x0, Court.HALF_LENGTH + 0.08, Court.SINGLES_HALF_WIDTH - 0.15, 1.6)
+		var x0 := 0.15 if sx > 0.0 else -Court.half_width()
+		player.area = Rect2(x0, Court.HALF_LENGTH + 0.08, Court.half_width() - 0.15, 1.6)
 		_move_target = Vector3.INF
 		pass
 	else:
@@ -1602,7 +1602,7 @@ func _start_toss() -> void:
 	var hand := _ball_in_hand(srv)
 	ball.launch(hand, Vector3(0.0, TOSS_SPEED, 0.0), Vector3.ZERO)
 	toss_active = true
-	var g := BallPhysics.GRAVITY
+	var g := BallPhysics.gravity()  # v0.2 G: «Лунная гравитация» slows the toss too
 	var disc := maxf(0.0, TOSS_SPEED * TOSS_SPEED - 2.0 * g * (SERVE_CONTACT_H - hand.y))
 	toss_ideal = game_time + (TOSS_SPEED + sqrt(disc)) / g
 	srv.prepare_serve()
@@ -1677,7 +1677,7 @@ func _player_underarm_serve(dir: Vector3, pace_k: float) -> void:
 	var depth := lerpf(1.4, 2.6, pace_k)
 	var target := origin + dir * ((-depth - origin.z) / dir.z)
 	var lo := 0.4
-	var hi := Court.SINGLES_HALF_WIDTH - 0.4
+	var hi := Court.half_width() - 0.4
 	target.x = box_side * clampf(target.x * box_side, lo, hi)
 	target.z = -depth
 	target.y = BallPhysics.RADIUS
