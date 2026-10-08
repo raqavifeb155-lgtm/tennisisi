@@ -24,6 +24,7 @@ func _run() -> void:
 		test_net_and_footwork,
 		test_tv_camera,
 		test_opponent_stats,
+		test_opponent_card,
 	]
 	expected = tests.size()
 	for t in tests:
@@ -484,4 +485,51 @@ func test_opponent_stats() -> void:
 	g.player.free()
 	g.cpu.free()
 	g.free()
+	finished += 1
+
+
+func test_opponent_card() -> void:
+	print("D-5: the opponent's card before the match")
+	# Loaded at run time: TournamentUI reads the Tuning autoload, which a -s script compiles before.
+	var card: GDScript = load("res://scripts/ui/screens/opponent_card.gd")
+	var t := Tournament.new(1, 5)
+	var inf: Dictionary = card.info(t, 0)
+	check(inf["name"] == "Дамир Джумхур" and inf["style"] == "Сетевик", "name and style: %s, %s" % [inf["name"], inf["style"]])
+	check(inf["stats"].size() == 6 and inf["captions"].has("Слабая подача"), "six stats and the caption: %s" % str(inf["captions"]))
+	check(inf["mods"] is Array and inf["mods"].size() == t.lineup[0]["mods"].size(), "the mods array comes from the lineup (G fills it)")
+	t.lineup[1]["mods"] = ["fast", "ночной-туман"]
+	var m1: Array = card.info(t, 1)["mods"]
+	check(m1.size() == 2 and String(m1[0]).begins_with("Быстрые ноги") and m1[1] == "ночной-туман", "a known mod gets its name, an unknown id (G's) is shown as it is")
+	t.lineup[2]["golden"] = true
+	check(card.info(t, 2)["golden"] and card.info(t, 2)["prize"] == t.gold_for_win(2), "golden: the prize is the golden one")
+	var ui: CanvasLayer = load("res://scripts/tournament_ui.gd").new()
+	root.add_child(ui)
+	ui.show_bracket(t)
+	var taps := 0
+	var stack: Array = [ui._box]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		if n is Button and n.flat:
+			taps += 1
+		stack.append_array(n.get_children())
+	check(taps == t.rounds(), "every opponent of the bracket is a tap target (%d)" % taps)
+	ui.show_opponent_card(t, 0)
+	var bars := 0
+	var labels: Array[String] = []
+	stack = [ui._box, ui._actions]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		if n is ProgressBar:
+			bars += 1
+		if n is Label:
+			labels.append(n.text)
+		stack.append_array(n.get_children())
+	check(bars == 6, "six bars of stats")
+	check(labels.has("Подача") and labels.has("Слабая подача"), "the card names the stat and the caption")
+	var play := false
+	for n in ui._actions.get_children():
+		if n is Button and n.text == "ИГРАТЬ":
+			play = true
+	check(play, "the card ends with the 'Играть' button")
+	ui.queue_free()
 	finished += 1
