@@ -14,6 +14,7 @@ var out := ""
 var builds := false
 var stats := false
 var views := false
+var census := false
 var hour := -1.0
 var tag := ""          # --tag=X: club_X_<h>_*.png (other worktrees shoot into the same folder)
 
@@ -30,6 +31,8 @@ func _initialize() -> void:
 			stats = true
 		elif a == "--views":
 			views = true
+		elif a == "--census":
+			census = true
 		elif a.begins_with("--hour="):
 			hour = float(a.get_slice("=", 1))
 		elif a.begins_with("--tag="):
@@ -76,7 +79,12 @@ func _tri_report() -> void:
 		var t := [0, 0]
 		_count(c, t)
 		if t[1] > 0:
-			rows.append([t[0], t[1], "%s %s" % [c.get_class(), c.name]])
+			var what := ""
+			if c is MultiMeshInstance3D and c.multimesh:
+				what = " x%d %s" % [c.multimesh.instance_count, c.multimesh.mesh.get_class() if c.multimesh.mesh else ""]
+			elif c is MeshInstance3D and c.mesh:
+				what = " " + c.mesh.get_class()
+			rows.append([t[0], t[1], "%s %s%s" % [c.get_class(), c.name, what]])
 	rows.sort_custom(func(a, b) -> bool: return a[1] > b[1])
 	var all_t := 0
 	var all_d := 0
@@ -86,6 +94,18 @@ func _tri_report() -> void:
 	print("scenery total (no culling): %d nodes-with-geometry draws, %.1fk tris" % [all_d, all_t / 1000.0])
 	for r in rows.slice(0, 22):
 		print("  %-40s draws %3d  tris %6.1fk" % [r[2], r[0], r[1] / 1000.0])
+	var cs = main.scenery.get_node_or_null("ClubScenery")
+	if cs:
+		var st: Dictionary = cs.prop_stats()
+		var list: Array = []
+		var total := 0
+		for id in st:
+			list.append([id, st[id][0], st[id][1]])
+			total += st[id][1]
+		list.sort_custom(func(a, b) -> bool: return a[2] > b[2])
+		print("props: %d prop triangles in all" % total)
+		for r in list.slice(0, 18):
+			print("  %-16s x%-3d %6.1fk tris" % [r[0], r[1], r[2] / 1000.0])
 
 
 func _count(n: Node, t: Array) -> void:
@@ -157,6 +177,10 @@ func _run() -> void:
 		ClubDaytime.force_hour = hour
 	if views:
 		await _views()
+		quit()
+		return
+	if census:
+		await _census()
 		quit()
 		return
 	if builds:
@@ -281,6 +305,140 @@ func _views() -> void:
 		main.club.cam.snap(false)
 		main.club._update_place()
 		await _shot(v[0], 0.9)
+
+
+## Which node costs how many draws and triangles from where the hero stands at the gate
+## looking north (the longest view): each top-level node hidden in turn (--census).
+func _census() -> void:
+	SaveData.played = 1
+	SaveData.titles = 1
+	SaveData.club = {"met_coach": true, "walk_hint": true}
+	main.club._refresh()
+	main.club.hud.say("", 0.0)
+	var p: Athlete = main.player
+	p.position = Vector3(0, 0, 38)
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--at="):
+			p.position = Vector3(float(a.get_slice("=", 1).get_slice(",", 0)), 0, float(a.get_slice("=", 1).get_slice(",", 1)))
+	p.rotation.y = 0.0
+	main.club.cam.release(0.0)
+	main.club.cam.snap(false)
+	main.player.visible = false
+	main.cpu.visible = false
+	var base := await _measure()
+	print("census at the gate looking north: world draws %d tris %.1fk" % [base.x, base.y / 1000.0])
+	for g in main.scenery.find_children("*", "GeometryInstance3D", true, false):
+		(g as GeometryInstance3D).visibility_range_end = 0.0
+	for l in main.find_children("*", "Light3D", true, false):
+		print("light: %s %s visible=%s in tree=%s energy=%.2f" % [l.get_class(), l.name, (l as Light3D).visible, (l as Light3D).is_visible_in_tree(), (l as Light3D).light_energy])
+	for k in 4:
+		var mm := await _measure()
+		print("repeat base: draws %d tris %.1fk" % [mm.x, mm.y / 1000.0])
+	var target = null
+	for g in main.scenery.get_children():
+		if str(g.name).begins_with("@MeshInstance3D@1169"):
+			target = g
+	if target:
+		print("target aabb ", (target as MeshInstance3D).get_aabb(), " mat ", (target as MeshInstance3D).material_override, " pos ", (target as Node3D).global_position)
+		for k in 3:
+			target.visible = false
+			var mh := await _measure()
+			target.visible = true
+			var ms := await _measure()
+			print("hidden: draws %d   shown: draws %d" % [mh.x, ms.x])
+	var m_nr := await _measure()
+	print("with the draw ranges taken off: draws %d tris %.1fk" % [m_nr.x, m_nr.y / 1000.0])
+	var sun: DirectionalLight3D = main.scenery.get("_sun")
+	print("shadow distance now %.1f" % sun.directional_shadow_max_distance)
+	for d in [60.0, 40.0, 30.0, 24.0, 18.0, 12.0]:
+		sun.directional_shadow_max_distance = d
+		var m0 := await _measure()
+		print("  shadow distance %.0f: draws %d tris %.1fk" % [d, m0.x, m0.y / 1000.0])
+	sun.shadow_enabled = false
+	var m1 := await _measure()
+	print("  no shadows: draws %d tris %.1fk" % [m1.x, m1.y / 1000.0])
+	sun.directional_shadow_max_distance = 50.0
+	base = await _measure()
+	print("without shadows: draws %d tris %.1fk" % [base.x, base.y / 1000.0])
+	var nodes: Array = []
+	for c in main.scenery.get_children():
+		if c.name == "ClubScenery":
+			for g in c.get_children():
+				if g is Node3D:
+					nodes.append(g)
+		elif c is Node3D:
+			nodes.append(c)
+	nodes.append(main.court)
+	var cam: Camera3D = main.club.cam
+	var kinds := {}
+	for g in main.scenery.find_children("*", "GeometryInstance3D", true, false):
+		var gi := g as GeometryInstance3D
+		if not gi.is_visible_in_tree() or not cam.is_position_in_frustum(gi.global_transform * gi.get_aabb().get_center()):
+			continue
+		if gi is Label3D or (gi is MeshInstance3D and (gi as MeshInstance3D).mesh == null):
+			continue
+		var surfaces := 1
+		if gi is MeshInstance3D and (gi as MeshInstance3D).mesh:
+			surfaces = (gi as MeshInstance3D).mesh.get_surface_count()
+		var par := gi.get_parent()
+		var key := "%s <%s> parent %s" % [gi.get_class(), gi.name.left(18), par.name.left(18)]
+		if gi.name.begins_with("@"):
+			key = "%s anon  parent %s" % [gi.get_class(), par.name.left(22)]
+		var e: Array = kinds.get(key, [0, 0, 0])
+		e[0] += 1
+		e[1] += surfaces
+		if gi is MultiMeshInstance3D and (gi as MultiMeshInstance3D).multimesh.mesh:
+			e[2] += (gi as MultiMeshInstance3D).multimesh.instance_count * _mesh_tris((gi as MultiMeshInstance3D).multimesh.mesh)
+		elif gi is MeshInstance3D and (gi as MeshInstance3D).mesh:
+			e[2] += _mesh_tris((gi as MeshInstance3D).mesh)
+		kinds[key] = e
+	print("the world's own meshes in view:")
+	for g in main.scenery.get_children():
+		var gi := g as GeometryInstance3D
+		if gi == null or not gi.is_visible_in_tree() or gi is Label3D or (gi is MeshInstance3D and (gi as MeshInstance3D).mesh == null) or not cam.is_position_in_frustum(gi.global_transform * gi.get_aabb().get_center()):
+			continue
+		var mat := ""
+		if gi.material_override is StandardMaterial3D:
+			var sm := gi.material_override as StandardMaterial3D
+			mat = "%s tex=%s tr=%d next=%s" % [sm.albedo_color.to_html(false), sm.albedo_texture != null, sm.transparency, sm.next_pass != null]
+		elif gi.material_override != null:
+			mat = gi.material_override.get_class()
+		var what := gi.get_class()
+		if gi is MeshInstance3D:
+			what = (gi as MeshInstance3D).mesh.get_class() if (gi as MeshInstance3D).mesh else "?"
+			if (gi as MeshInstance3D).mesh is BoxMesh:
+				what += " " + str(((gi as MeshInstance3D).mesh as BoxMesh).size)
+		elif gi is MultiMeshInstance3D:
+			what = "MM x%d %s" % [(gi as MultiMeshInstance3D).multimesh.instance_count, (gi as MultiMeshInstance3D).multimesh.mesh.get_class()]
+		print("     %-40s %-44s shadow=%d %s surf=%d" % [what, mat, gi.cast_shadow, gi.name, (gi as MeshInstance3D).mesh.get_surface_count() if gi is MeshInstance3D and (gi as MeshInstance3D).mesh else 0])
+	print("visible geometry by kind (nodes, surfaces) - no shadows:")
+	var kl: Array = []
+	for k in kinds:
+		kl.append([k, kinds[k][0], kinds[k][1], kinds[k][2]])
+	kl.sort_custom(func(a, b) -> bool: return a[3] > b[3])
+	for r in kl.slice(0, 16):
+		print("   %-60s %3d nodes %3d surf %6.1fk tris" % [r[0], r[1], r[2], r[3] / 1000.0])
+	var rows: Array = []
+	for n in nodes:
+		if not is_instance_valid(n) or not (n as Node3D).visible:
+			continue
+		(n as Node3D).visible = false
+		var m := await _measure()
+		(n as Node3D).visible = true
+		var what := ""
+		if n is MultiMeshInstance3D and n.multimesh and n.multimesh.mesh:
+			what = " x%d %s" % [n.multimesh.instance_count, n.multimesh.mesh.get_class()]
+		rows.append([base.x - m.x, base.y - m.y, "%s %s%s" % [n.get_class(), n.name, what]])
+	rows.sort_custom(func(a, b) -> bool: return a[0] > b[0])
+	for r in rows.slice(0, 40):
+		print("  -%3d draws  -%5.1fk tris  %s" % [r[0], r[1] / 1000.0, r[2]])
+
+
+func _measure() -> Vector2:
+	await process_frame
+	await process_frame
+	await process_frame
+	return Vector2(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME), Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))
 
 
 func _builds() -> void:

@@ -70,6 +70,29 @@ func flat(r: Vector2, pos: Vector3, col: Color, segs := 7, yaw := 0.0) -> ClubSh
 	return self
 
 
+## A thin pyramid, no base (a blade of grass): three triangles, flat-shaded.
+func blade(base: Vector3, tip: Vector3, w: float, col: Color) -> ClubShapes:
+	var ring: Array[Vector3] = []
+	for k in 3:
+		var a := TAU * float(k) / 3.0 + 0.5
+		ring.append(base + Vector3(cos(a) * w, 0.0, sin(a) * w))
+	for k in 3:
+		var a: Vector3 = ring[k]
+		var b: Vector3 = ring[(k + 1) % 3]
+		var n := (b - a).cross(tip - a).normalized()
+		if n.y < 0.0 and (a + b).length() >= 0.0:
+			n = -n if n.dot(((a + b) * 0.5 - base)) < 0.0 else n
+		var o := _v.size()
+		for v in [a, tip, b]:
+			_v.append(v)
+			_n.append(Vector3(n.x, absf(n.y) * 0.5 + 0.5, n.z).normalized())
+			_c.append(col)
+		_i.append(o)
+		_i.append(o + 1)
+		_i.append(o + 2)
+	return self
+
+
 func _add(mesh: PrimitiveMesh, xf: Transform3D, col: Color) -> ClubShapes:
 	var a := mesh.get_mesh_arrays()
 	var verts: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
@@ -237,12 +260,12 @@ static func make(id: String) -> ArrayMesh:
 			s.flat(Vector2(1.0, 0.8), Vector3(0, 0.03, 0), Color("8a6a46"), 9)
 			s.flat(Vector2(0.62, 0.5), Vector3(0.1, 0.04, 0.05), Color("7a5a3c"), 7, 0.5)
 		"tuft", "tuft_dry":
-			# weeds: five thin blades leaning out of one spot (three-sided cones)
+			# weeds: five thin blades leaning out of one spot
 			var col: Color = LEAF[1].lightened(0.1) if id == "tuft" else Color("a99a55")
 			for k in 5:
 				var a := k * TAU / 5.0 + 0.4
-				var h := 0.32 + 0.1 * float(k % 3)
-				s.cyl(0.0, 0.035, h, Vector3(cos(a) * 0.05, h * 0.5, sin(a) * 0.05), col.darkened(0.06 * float(k % 2)), 3, Vector3(sin(a) * 0.35, 0.0, -cos(a) * 0.35))
+				var h := 0.34 + 0.12 * float(k % 3)
+				s.blade(Vector3(cos(a) * 0.04, 0.0, sin(a) * 0.04), Vector3(cos(a) * 0.2, h, sin(a) * 0.2), 0.04, col.darkened(0.07 * float(k % 2)))
 		"flower_patch":
 			# a little bed: a mound of soil and a handful of blooms
 			s.cyl(0.55, 0.62, 0.1, Vector3(0, 0.05, 0), Color("6b4a32"), 7)

@@ -62,13 +62,14 @@ func _build_forest(rng: RandomNumberGenerator) -> void:
 	cone.height = 1.0
 	cone.radial_segments = 6
 	cone.rings = 0
+	cone.cap_bottom = false
 	var mat := ClubMaterial.get_mat(Color.WHITE, false).duplicate()
 	mat.vertex_color_use_as_albedo = true
 	mat.vertex_color_is_srgb = true
 	for sector in 3:
 		var xf: Array[Transform3D] = []
 		var cols: Array[Color] = []
-		var n := 54
+		var n := 40
 		for i in n:
 			var side := sector   # 0 east, 1 south, 2 west
 			var pos := Vector3.ZERO

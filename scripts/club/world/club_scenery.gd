@@ -23,6 +23,9 @@ var _t := 0.0
 var _boards := {}               # place id -> MeshInstance3D (planks across the door of a shut room)
 var _fence_mats: Array[StandardMaterial3D] = []
 var _net_ok := false
+const SHADOW_REACH := 26.0
+const DRAW_RANGE := 80.0
+var _tuning: Node
 var terrain: ClubTerrain
 var backdrop: ClubBackdrop
 var crowd: ClubCrowd
@@ -101,6 +104,11 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_t += delta
+	# The camera is low and close: shadows reach as far as the eye cares (the preset's
+	# own reach scales it; Graphics sets the base, this keeps it short).
+	var sun := world.sun()
+	if sun != null and sun.shadow_enabled:
+		sun.directional_shadow_max_distance = SHADOW_REACH * _reach()
 	var high := world.high_quality()
 	if not _net_ok and fmod(_t, 0.5) < delta:
 		_net_ok = _update_net()   # the court may not have been there yet when this was built
@@ -108,6 +116,12 @@ func _process(delta: float) -> void:
 	if s != _sig or ClubPack.generation != _gen or high != _high:
 		_high = high
 		_refresh(false)
+
+
+func _reach() -> float:
+	if _tuning == null:
+		_tuning = get_node_or_null("/root/Tuning")
+	return float(_tuning.get("gfx_reach")) if _tuning != null else 1.0
 
 
 ## What the club's state is, as far as scenery is concerned.
@@ -134,7 +148,7 @@ func _refresh(first: bool) -> void:
 	for p in list:
 		if p.solid > 0.0:
 			world.walk.add_circle(Vector2(p.xf.origin.x, p.xf.origin.z), p.solid, "props")
-	var baked := ClubProps.bake(list)
+	var baked := ClubProps.bake(list, _high)
 	for key in _cells:
 		if not baked.has(key):
 			for k in _cells[key]:
@@ -143,7 +157,7 @@ func _refresh(first: bool) -> void:
 		if not _cells.has(key):
 			_cells[key] = {}
 		var d: Dictionary = baked[key]
-		for k in ["low", "tall"]:
+		for k in ["small", "big", "tall"]:
 			var mi: MeshInstance3D = _cells[key].get(k)
 			if mi == null:
 				if not d.has(k):
@@ -151,10 +165,14 @@ func _refresh(first: bool) -> void:
 				mi = MeshInstance3D.new()
 				mi.name = "props_%d_%d_%s" % [key.x, key.y, k]
 				mi.material_override = prop_material()
+				mi.visibility_range_end = ClubProps.RANGE[k]
+				mi.visibility_range_end_margin = 6.0
 				add_child(mi)
 				_cells[key][k] = mi
 			mi.mesh = d.get(k)
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if (k == "tall" and _high) else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_scenery_detail()
+	_draw_distance()
 	_update_boards()
 	_update_fence()
 	_net_ok = _update_net()
@@ -275,3 +293,65 @@ func _update_net() -> bool:
 static func _sag_height(x: float) -> float:
 	var t := clampf(absf(x) / Court.NET_HALF_WIDTH, 0.0, 1.0)
 	return lerpf(0.8, 1.0, t * t)
+
+
+## What the props cost, by id: {id: [count, triangles]} for what is visible now (budgets).
+func prop_stats() -> Dictionary:
+	var out := {}
+	for p in props.visible(level_of, _high):
+		if not out.has(p.id):
+			out[p.id] = [0, 0]
+		out[p.id][0] += 1
+		out[p.id][1] += ClubPack.tris(p.id)
+	return out
+
+
+## Low: the park's own extras are thinned - no old bushes (the club's own are baked into the
+## props), one cloud in three, one boat in three and no flocks of birds (each bird is two
+## meshes). High keeps them all.
+func _scenery_detail() -> void:
+	for c in world.get_children():
+		var mmi := c as MultiMeshInstance3D
+		if mmi == null or mmi.multimesh == null or not (mmi.multimesh.mesh is SphereMesh):
+			continue
+		var mm := mmi.multimesh
+		if mm.instance_count > 20 and mm.instance_count < 120 and mmi.material_override is StandardMaterial3D and (mmi.material_override as StandardMaterial3D).vertex_color_use_as_albedo:
+			mmi.visible = _high   # the old bushes (72) and flowers (32)
+	var clouds: Array = world.get("_clouds")
+	for i in clouds.size():
+		(clouds[i] as Node3D).visible = _high or i % 3 == 0
+	var boats: Array = world.get("_boats")
+	for i in boats.size():
+		(boats[i] as Node3D).visible = _high or i == 0
+
+
+## Every smallish thing of the world (the places' boards and walls, the park's boats and
+## bridge towers, B's constructions) stops being drawn far off: from the gate looking
+## north the whole club is in view, and what stands 80 m away is a few pixels.
+func _draw_distance() -> void:
+	for n in world.find_children("*", "GeometryInstance3D", true, false):
+		var g := n as GeometryInstance3D
+		if g.visibility_range_end > 0.0 or g is Label3D and false:
+			continue
+		var p := g.get_parent()
+		var mine := false
+		while p != null and p != world:
+			if p == self:
+				mine = true
+			p = p.get_parent()
+		if mine:
+			continue
+		if g is MultiMeshInstance3D:
+			continue   # a MultiMesh's box is the whole spread of its instances
+		var size := g.get_aabb().size.length()
+		if g is Label3D:
+			g.visibility_range_end = 38.0      # a sign's text can't be read from farther
+		elif size < 3.0:
+			g.visibility_range_end = 48.0
+		elif size < 8.0:
+			g.visibility_range_end = 66.0
+		elif size < 16.0:
+			g.visibility_range_end = DRAW_RANGE
+		else:
+			continue
+		g.visibility_range_end_margin = 6.0

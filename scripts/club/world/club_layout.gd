@@ -26,7 +26,7 @@ const PATHS := [
 ]
 
 const FACADES := [Color(1.0, 0.88, 0.7), Color(0.95, 0.62, 0.5), Color(0.75, 0.86, 0.95), Color(1.0, 0.95, 0.82), Color(0.82, 0.9, 0.78), Color(0.98, 0.78, 0.6)]
-const OAKS := ["tree_oak", "tree_round", "tree_fat", "tree_oak", "tree_round", "tree_tall"]
+const OAKS := ["tree_round", "tree_fat", "tree_round", "tree_oak", "tree_fat", "tree_small", "tree_round"]
 
 static var _rng := RandomNumberGenerator.new()
 
@@ -98,6 +98,8 @@ static func _tree(p: ClubProps, x: float, z: float, kind := "", scale := -1.0) -
 	t.tint = Color(g, g * _r(0.97, 1.05), g * _r(0.9, 1.0))
 	t.solid = 0.42
 	t.shadow = true
+	t.far = true
+	t.high = _rng.randf() < 0.4
 
 
 ## A clump of trees around a centre.
@@ -141,6 +143,7 @@ static func lamp(p: ClubProps, x: float, z: float, yaw: float, owner := "", need
 	var l := put(p, "streetlight", x, z, yaw, 1.0, Vector3(lean * 0.6, 0.0, lean))
 	l.solid = 0.22
 	l.tag = "lamp"
+	l.far = true
 	l.owner = owner
 	l.need = need
 	l.shadow = false
@@ -202,8 +205,8 @@ static func _promenade(p: ClubProps) -> void:
 	var z := SHORE + 3.4
 	var x := -48.0
 	while x <= 48.0:
-		lamp(p, x, z, PI)
-		x += 12.0
+		lamp(p, x, z, PI).high = absf(x) > 30.0
+		x += 16.0
 	for bx in [-40.0, -24.0, 20.0, 36.0, 4.0]:
 		_bench(p, bx, SHORE + 3.0, Vector2(bx, SHORE - 6.0))
 	for bx in [-30.0, 0.0, 30.0]:
@@ -216,18 +219,17 @@ static func _promenade(p: ClubProps) -> void:
 
 static func _paths(p: ClubProps) -> void:
 	# lamps and benches along the paths (the court's own lamps are level 2 of the court)
-	for lz in [22.0, 27.0, 35.5]:
+	for lz in [22.0, 35.5]:
 		lamp(p, -2.1, lz, 0.0)
-	for lz in [24.5, 36.5]:
-		lamp(p, 2.1, lz, 0.0)
+	lamp(p, 2.1, 27.5, 0.0)
 	lamp(p, -10.0, 33.4, PI)
-	lamp(p, 10.0, 33.4, PI)
+	lamp(p, 10.0, 33.4, PI).high = true
 	for lx in [-18.0, 18.0]:
-		lamp(p, lx, 33.4, PI)
-	for lz in [-26.0, -14.0, -2.0, 10.0]:
+		lamp(p, lx, 33.4, PI).high = true
+	for lz in [-22.0, -6.0]:
 		lamp(p, 17.0, lz, PI * 0.5)
-	for lz in [-22.0, -10.0]:
-		lamp(p, -10.5, lz, -PI * 0.5)
+	lamp(p, 17.0, 10.0, PI * 0.5).high = true
+	lamp(p, -10.5, -14.0, -PI * 0.5)
 	# benches facing the court and the paths
 	_bench(p, 17.0, -8.0, Vector2(0.0, -8.0))
 	_bench(p, 17.0, 3.4, Vector2(0.0, 3.4))
@@ -261,28 +263,31 @@ static func _street(p: ClubProps) -> void:
 		var b := p.at(id, Vector3(x + w * 0.5, 0.0, z + _r(-1.0, 1.0)), 0.0, Vector3(1.0, _r(0.9, 1.25), 1.0))
 		b.tint = FACADES[_rng.randi() % FACADES.size()]
 		b.high = absf(x) > 40.0
+		b.far = true
 		x += w + _r(0.5, 2.5)
 		i += 1
 	# parked cars along the kerb
-	var cars := ["car_hatch", "car_sedan", "car_wagon", "car_hatch"]
-	var cx := [-31.0, -14.0, 17.0, 33.0]
-	for k in 4:
+	var cars := ["car_hatch", "car_sedan", "car_wagon"]
+	var cx := [-31.0, -9.0, 27.0]
+	for k in 3:
 		var c := p.at(cars[k], Vector3(cx[k], 0.0, 53.2), PI * 0.5 + _r(-0.03, 0.03), 1.0)
-		c.high = k >= 2
+		c.high = k != 1
+		c.far = true
 		c.tint = Color(_r(0.9, 1.1), _r(0.9, 1.1), _r(0.9, 1.1))
 	# street lights and trees on the pavement, bins
-	for sx in [-44.0, -24.0, -4.0, 14.0, 34.0, 52.0]:
-		lamp(p, sx, 48.8, 0.0)
+	for sx in [-34.0, -4.0, 22.0, 44.0]:
+		lamp(p, sx, 48.8, 0.0).high = absf(sx) > 30.0
 	for tx in [-52.0, -34.0, -18.0, 22.0, 40.0, 56.0]:
 		var q := Vector2(tx, 49.6)
 		var t := put(p, _pick(["tree_round", "tree_oak", "tree_fat"]), tx, q.y, _r(0, TAU), _r(0.8, 1.0))
-		t.shadow = false
+		t.far = true
 	_bin(p, -8.0, 48.6)
 	_bin(p, 8.0, 48.6)
 	put(p, "hydrant", 20.0, 48.4, 0.0, 1.1)
 	# the far side's trees and a water tower on a roof
 	var wt := p.at("watertower", Vector3(-20.0, 11.5, 66.0), 0.0, 1.0)
 	wt.high = true
+	wt.far = true
 	# the street ends: forest on both sides
 	for k in 10:
 		var side := -1.0 if k % 2 == 0 else 1.0
@@ -323,6 +328,7 @@ static func _weeds(p: ClubProps, owner: String, area: Rect2, n: int, mask_free :
 		var t := put(p, "tuft" if _rng.randf() < 0.7 else "tuft_dry", q.x, q.y, _r(0.0, TAU), _r(0.8, 1.5))
 		t.owner = owner
 		t.need = 1 if placed % 2 == 0 else 2
+		t.high = placed % 3 != 0
 		placed += 1
 
 
@@ -334,6 +340,7 @@ static func _ruin(p: ClubProps) -> void:
 		var t := p.at("tuft" if k % 3 != 0 else "tuft_dry", Vector3(side * (HX - 0.55), 0.0, zz), _r(0, TAU), _r(0.9, 1.6))
 		t.owner = "court"
 		t.need = 1 if k % 2 == 0 else 2
+		t.high = k % 3 != 0
 	for k in 14:
 		var t := p.at("tuft_dry", Vector3(_r(-HX + 1.0, HX - 1.0), 0.03, _r(-HZ + 0.8, -HZ + 2.2) if k % 2 == 0 else _r(HZ - 2.2, HZ - 0.8)), _r(0, TAU), _r(0.7, 1.2))
 		t.owner = "court"
@@ -345,9 +352,9 @@ static func _ruin(p: ClubProps) -> void:
 		t.need = 1
 	# The gate: rubbish heaped by the wall, a dumped sofa, a tipped dumpster.
 	var gate := Rect2(-15.0, 35.5, 11.5, 8.0)
-	_junk(p, "gate", gate, ["trash_bags", "box_a", "box_b", "crate", "tyre", "cone"], 9)
+	_junk(p, "gate", gate, ["trash_bags", "box_a", "box_b", "crate", "trash_bags"], 8)
 	var east := Rect2(14.0, 35.5, 12.0, 8.0)
-	_junk(p, "gate", east, ["trash_bags", "box_b", "crate", "tyre", "cone", "bumper"], 7)
+	_junk(p, "gate", east, ["trash_bags", "box_b", "crate", "bumper"], 6)
 	var d := put(p, "dumpster", -9.0, 42.4, 0.4, 1.0, Vector3(0.0, 0.0, 0.18))
 	d.owner = "gate"
 	d.need = 1
@@ -379,16 +386,16 @@ static func _ruin(p: ClubProps) -> void:
 	_junk(p, "trophy", Rect2(-27.0, -36.0, 12.0, 7.0), ["rock", "rock", "log", "stump", "box_b"], 6)
 	_weeds(p, "trophy", Rect2(-27.0, -37.0, 22.0, 12.0), 22, true)
 	# The bar's plot: crates, tipped chairs, a heap of rubbish west of the terrace.
-	_junk(p, "bar", Rect2(8.0, -38.0, 5.0, 10.0), ["crate", "bar_chair", "bar_stool", "trash_bags", "tyre", "box_a"], 8)
+	_junk(p, "bar", Rect2(8.0, -38.0, 5.0, 10.0), ["crate", "bar_chair", "bar_stool", "trash_bags", "box_a"], 7)
 	_weeds(p, "bar", Rect2(8.0, -39.0, 24.0, 12.0), 20, true)
 	# The arena's plot: a builder's yard that never got built.
-	_junk(p, "arena", Rect2(-27.0, -22.0, 6.0, 8.0), ["tyre", "cone", "crate", "box_a", "box_b", "bumper", "trash_bags"], 10, 1)
-	_junk(p, "arena", Rect2(-27.0, 16.0, 7.0, 7.0), ["tyre", "cone", "crate", "box_b", "log_stack"], 7, 1)
+	_junk(p, "arena", Rect2(-27.0, -22.0, 6.0, 8.0), ["tyre", "cone", "crate", "box_a", "box_b", "trash_bags"], 8, 1)
+	_junk(p, "arena", Rect2(-27.0, 16.0, 7.0, 7.0), ["cone", "crate", "box_b", "log_stack"], 6, 1)
 	_weeds(p, "arena", Rect2(-56.0, -24.0, 36.0, 48.0), 30, true)
 	# The shop and the locker room while they're shut: weeds at the doors, a pile of boxes.
 	_junk(p, "shop", Rect2(26.0, -2.0, 4.0, 8.0), ["box_a", "box_b", "crate", "trash_bags"], 4)
 	_weeds(p, "shop", Rect2(17.0, -2.0, 14.0, 10.0), 10, true)
-	_junk(p, "locker", Rect2(-22.0, 22.0, 4.0, 8.0), ["box_a", "crate", "trash_bags", "tyre"], 4)
+	_junk(p, "locker", Rect2(-22.0, 22.0, 4.0, 8.0), ["box_a", "crate", "trash_bags"], 4)
 	_weeds(p, "locker", Rect2(-22.0, 21.0, 12.0, 11.0), 10, true)
 	# Bare earth where feet and balls wore the grass: by the court's gate and the benches.
 	for q in [Vector2(-5.5, 22.0), Vector2(5.5, 22.5), Vector2(-15.0, 3.0), Vector2(17.5, -5.0), Vector2(0.0, 44.0), Vector2(-6.0, 41.5), Vector2(8.0, 42.0), Vector2(-20.0, -23.0)]:
@@ -402,6 +409,7 @@ static func _ruin(p: ClubProps) -> void:
 		var t := p.at("tuft_dry" if k % 2 == 0 else "tuft", Vector3(q.x, PATH_TOP, q.y), _r(0, TAU), _r(0.4, 0.8))
 		t.owner = "gate" if q.y > 20.0 else ("trophy" if q.y < -20.0 else "court")
 		t.need = 2
+		t.high = k % 2 == 0
 	# Leaning, half-dead lamps on the court's side (the court's level 2 puts new ones up).
 	for sx in [-1.0, 1.0]:
 		lamp(p, sx * (HX + 4.0), HZ + 3.0, 0.0, "court", 2, sx * 0.14).tag = "lamp_dead"

@@ -11,13 +11,16 @@ extends RefCounted
 ##              tint     multiplied into its vertex colours
 ##              high     true: drawn on High and up only
 ##              shadow   true: casts the sun's shadow (High and up only; tall things)
+##              far      true: seen from far off (trees, lamps, buildings): drawn farther
 ##              solid    > 0: the hero can't walk through (a circle of this radius, m)
 ##              owner    the place whose level cleans it up ("" = always there)
 ##              need     the owner's level at which it is gone (a ruin) - 0 = never goes
 ##              from     the owner's level from which it is there (a tidy-up) - 0 = always
 ##              tag      a name for a group (the evening's lamps, ...)
 
-const CELL := 36.0
+const CELL := 24.0
+## Draw distances (m, to the middle of a square's mesh): small clutter goes first.
+const RANGE := {"small": 62.0, "big": 120.0, "tall": 140.0}
 
 class Prop:
 	var id := ""
@@ -25,6 +28,7 @@ class Prop:
 	var tint := Color.WHITE
 	var high := false
 	var shadow := false
+	var far := false
 	var solid := 0.0
 	var owner := ""
 	var need := 0
@@ -65,21 +69,25 @@ func visible(level_of: Callable, high: bool) -> Array[Prop]:
 	return out
 
 
-## Bakes props into meshes per map square: {cell: {"low": ArrayMesh, "tall": ArrayMesh}}.
+## Bakes props into meshes per map square: {cell: {"small"|"big"|"tall": ArrayMesh}}.
 ## "tall" holds the ones that cast shadows (a mesh of their own, drawn twice on High and
-## once, without the shadow, below it); everything else is "low".
-static func bake(list: Array[Prop]) -> Dictionary:
+## once, without the shadow, below it), "big" what is seen from far off without a shadow,
+## "small" the clutter - each class is drawn out to its own distance (RANGE).
+static func bake(list: Array[Prop], shadows := true) -> Dictionary:
 	var cells := {}
 	for p in list:
 		var key := Vector2i(floori(p.xf.origin.x / CELL), floori(p.xf.origin.z / CELL))
 		if not cells.has(key):
-			cells[key] = {"low": _Acc.new(), "tall": _Acc.new()}
-		var acc: _Acc = cells[key]["tall" if p.shadow else "low"]
+			cells[key] = {"small": _Acc.new(), "big": _Acc.new(), "tall": _Acc.new()}
+		# Without shadows (Low) "tall" is just "big", and near clutter rides along in it too:
+		# one draw call a square.
+		var cls := "tall" if (p.shadow and shadows) else ("big" if (p.far or not shadows) else "small")
+		var acc: _Acc = cells[key][cls]
 		acc.add(ClubPack.mesh(p.id), p.xf, p.tint)
 	var out := {}
 	for key in cells:
 		var d := {}
-		for k in ["low", "tall"]:
+		for k in ["small", "big", "tall"]:
 			var acc: _Acc = cells[key][k]
 			if acc.v.size() > 0:
 				d[k] = acc.build()
