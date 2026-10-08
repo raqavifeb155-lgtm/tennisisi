@@ -259,9 +259,22 @@ func table_chips() -> Array:
 	return out
 
 
-## The smallest chip: every stake is a whole number of them.
+## The smallest chip: no stake under it.
 func unit() -> int:
 	return int(table_chips()[0])
+
+
+## Can `amount` be laid out in the chips on the desk?
+func _makeable(amount: int) -> bool:
+	var ok := PackedByteArray()
+	ok.resize(amount + 1)
+	ok[0] = 1
+	for a in range(1, amount + 1):
+		for c in table_chips():
+			if int(c) <= a and ok[a - int(c)] == 1:
+				ok[a] = 1
+				break
+	return ok[amount] == 1
 
 
 ## The biggest main bet now: the bar's limit and a quarter of the gold.
@@ -309,7 +322,8 @@ func clear_bets() -> void:
 ## The last round's bets again, as far as the gold and the limit allow.
 func _fit_bets() -> void:
 	var m := mini(int(bets["main"]), max_main())
-	m -= m % unit()
+	while m > 0 and not _makeable(m):
+		m -= 1
 	bets["main"] = maxi(m, 0)
 	for k in ["pp", "t3"]:
 		bets[k] = mini(int(bets[k]), int(bets["main"]))
