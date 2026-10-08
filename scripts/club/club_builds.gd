@@ -8,21 +8,30 @@ class_name ClubBuilds
 
 const CLUB_PRICE_SCALE := 1.0
 
+## Hub spec 13 (the long build): every construction has 5 levels and its price row is
+## base x 1 / 2.2 / 5 / 11.5 / 26 (rounded to 5), the base 30-60 gold; the whole club costs
+## about 17 000. Levels 4 and 5 are built over 2 and 3 runs ("runs"): the gold goes at
+## once, scaffolding stands, the level is up after that many played tournaments.
+const PRICE_STEPS := [1.0, 2.2, 5.0, 11.5, 26.0]
+
 ## id -> {name, place (ClubPlaces id where it stands), unlock, start (level 0 as it is),
-## levels: [level 1, 2, ...]}.
-## A level: title, now (what you see), perk ("" = none), price, line (the coach, <= 60).
+## levels: [level 1 .. 5]}.
+## A level: title, now (what you see), perk ("" = none), price, line (the coach, <= 60),
+## runs (levels 4-5: tournaments to wait). Perk numbers live in the arrays below the table.
 const TABLE := {
 	"court": {
 		"name": "Главный корт", "place": "court", "unlock": "", "start": "трещины и выцветшие линии",
 		"levels": [
 			{"title": "Свежий хард", "now": "свежий хард, яркие линии", "perk": "", "price": 40,
 				"line": "Свежая краска! Мяч теперь отскакивает честно"},
-			{"title": "Сетка и фонари", "now": "новая сетка и забор, лавки, фонари", "perk": "", "price": 120,
+			{"title": "Сетка и фонари", "now": "новая сетка и забор, лавки, фонари", "perk": "", "price": 90,
 				"line": "Новая сетка. Теперь не стыдно звать соперников"},
-			{"title": "Цвет клуба", "now": "покрытие в цвет клуба (4 на выбор)", "perk": "", "price": 300,
+			{"title": "Цвет клуба", "now": "покрытие в цвет клуба (4 на выбор)", "perk": "", "price": 200,
 				"line": "Наш цвет! Теперь это точно наш корт"},
-			{"title": "Логотип", "now": "логотип в центре, имя на заднике", "perk": "", "price": 550,
+			{"title": "Логотип", "now": "логотип в центре, имя на заднике", "perk": "", "price": 460, "runs": 2,
 				"line": "Логотип на корте. Как у больших"},
+			{"title": "Ночной корт", "now": "вышка судьи, мачты с прожекторами, табло", "perk": "", "price": 1040, "runs": 3,
+				"line": "Прожекторы и вышка судьи. Это уже турнир!"},
 		],
 	},
 	"stands": {
@@ -30,77 +39,123 @@ const TABLE := {
 		"levels": [
 			{"title": "Две скамейки", "now": "две скамейки у корта", "perk": "+2% золота за победы", "bonus": 0.02, "price": 50,
 				"line": "Две скамейки. Уже кто-то придёт посмотреть"},
-			{"title": "Трибуна", "now": "трибуна вдоль корта", "perk": "+4% золота за победы", "bonus": 0.04, "price": 150,
+			{"title": "Трибуна", "now": "трибуна вдоль корта", "perk": "+4% золота за победы", "bonus": 0.04, "price": 110,
 				"line": "Трибуна! Будет кому хлопать"},
-			{"title": "Болельщики", "now": "вторая трибуна, болельщики в цвете клуба", "perk": "+6% золота за победы", "bonus": 0.06, "price": 300,
+			{"title": "Болельщики", "now": "вторая трибуна, болельщики в цвете клуба", "perk": "+6% золота за победы", "bonus": 0.06, "price": 250,
 				"line": "Трибуны готовы. Теперь тебя слышно с набережной"},
-			{"title": "Козырёк и флаги", "now": "козырёк и флаги клуба", "perk": "+8% золота за победы", "bonus": 0.08, "price": 500,
+			{"title": "Козырёк и флаги", "now": "козырёк и флаги клуба", "perk": "+8% золота за победы", "bonus": 0.08, "price": 575, "runs": 2,
 				"line": "Флаги клуба. Красиво же"},
-			{"title": "Полные трибуны", "now": "полные трибуны, шумят громче", "perk": "+10% золота за победы", "bonus": 0.10, "price": 800,
+			{"title": "Полные трибуны", "now": "полные трибуны, шумят громче", "perk": "+10% золота за победы", "bonus": 0.10, "price": 1300, "runs": 3,
 				"line": "Аншлаг! Слышишь, как шумят?"},
 		],
 	},
 	"gate": {
 		"name": "Вход", "place": "gate", "unlock": "", "start": "калитка и табличка «Public Courts»",
 		"levels": [
-			{"title": "Ворота и вывеска", "now": "ворота с деревянной вывеской с именем клуба", "perk": "", "price": 60,
+			{"title": "Ворота и вывеска", "now": "ворота с деревянной вывеской с именем клуба", "perk": "", "price": 45,
 				"line": "%s. Звучит!"},
-			{"title": "Парковка", "now": "парковка и хэтчбек", "perk": "", "price": 200,
+			{"title": "Парковка", "now": "парковка и хэтчбек", "perk": "", "price": 100,
 				"line": "Своя парковка. Солидно"},
-			{"title": "Неон", "now": "каменные ворота, неоновая вывеска", "perk": "", "price": 450,
+			{"title": "Неон", "now": "каменные ворота, неоновая вывеска", "perk": "", "price": 225,
 				"line": "Неон! Вечером нас видно с моста"},
-			{"title": "Спорткар", "now": "спорткар на парковке", "perk": "", "price": 800,
+			{"title": "Спорткар", "now": "спорткар на парковке", "perk": "", "price": 520, "runs": 2,
 				"line": "Спорткар. Ну ты даёшь"},
+			{"title": "Красная дорожка", "now": "красная дорожка, флаги и золотые шары на воротах", "perk": "", "price": 1170, "runs": 3,
+				"line": "Красная дорожка. Встречаем как чемпиона!"},
+		],
+	},
+	# The shop (hub spec 2): what the window shows grows with it (SHOP_STOCK, SHOP_RARITY
+	# for stream A's Shop.stock(); free rerolls and cheaper strings come from the arrays).
+	"shop": {
+		"name": "Магазин", "place": "shop", "unlock": "played", "start": "ларёк: 2 вещи, до редкой",
+		"levels": [
+			{"title": "Лавка", "now": "лавка: 3 вещи до эпической, струны", "perk": "3 вещи, струны", "price": 60,
+				"line": "Лавка! Теперь и струны перетянем"},
+			{"title": "Бутик", "now": "бутик: до легендарной, витрина светится", "perk": "до легендарной", "price": 130,
+				"line": "Бутик. Витрина светится — красота"},
+			{"title": "Салон", "now": "салон: 4 вещи, один переброс витрины бесплатно", "perk": "4 вещи, 1 бесплатный переброс", "price": 300,
+				"line": "Салон. Первый переброс витрины за мой счёт"},
+			{"title": "Пассаж", "now": "пассаж: второй зал и мастерская струн", "perk": "струны на 10% дешевле", "price": 690, "runs": 2,
+				"line": "Пассаж! Мастерская перетянет дешевле"},
+			{"title": "Универмаг", "now": "универмаг: два зала, неон и стойка струн", "perk": "струны на 20% дешевле, 2 переброса", "price": 1560, "runs": 3,
+				"line": "Универмаг. Таких в городе больше нет"},
+		],
+	},
+	# The locker room (hub spec 1): lockers grow with it, up to 4; a better room insures
+	# the legendary things cheaper (INSURANCE_DISCOUNT).
+	"locker": {
+		"name": "Раздевалка", "place": "locker", "unlock": "played", "start": "скамейка и один шкафчик (1 ячейка)",
+		"levels": [
+			{"title": "Ряд шкафчиков", "now": "ряд шкафчиков и зеркало", "perk": "2 ячейки шкафчика", "price": 40,
+				"line": "Ещё шкафчик. Можно хранить две вещи"},
+			{"title": "Стена ракеток", "now": "стена ракеток: твои вещи висят", "perk": "3 ячейки, страховка −10%", "price": 90,
+				"line": "Стена ракеток. Есть чем похвастаться"},
+			{"title": "Гардероб", "now": "гардероб с подсветкой", "perk": "3 ячейки, страховка −10%", "price": 200,
+				"line": "Гардероб с подсветкой. Как у профи"},
+			{"title": "Душевая", "now": "душевая, вторая стена шкафчиков", "perk": "4 ячейки, страховка −25%", "price": 460, "runs": 2,
+				"line": "Душевая и ещё шкафчики. Живём!"},
+			{"title": "VIP-раздевалка", "now": "кожаные диваны, зеркала, золотые ручки", "perk": "4 ячейки, страховка −25%", "price": 1040, "runs": 3,
+				"line": "VIP-раздевалка. Даже полотенца с вышивкой"},
+		],
+	},
+	# The coach's room (new): rest between points and the quests' gold.
+	"coach": {
+		"name": "Тренерская", "place": "coach", "unlock": "", "start": "стул и доска с мелом",
+		"levels": [
+			{"title": "Коврик и гантели", "now": "коврик и гантели", "perk": "отдых +1%, задания +5% золота", "price": 40,
+				"line": "Гантели и коврик. Дыхание восстановим быстрее"},
+			{"title": "Тренажёры", "now": "беговая дорожка и тренажёр", "perk": "отдых +2%, задания +10% золота", "price": 90,
+				"line": "Тренажёры. Выносливость скажет спасибо"},
+			{"title": "Видеоразбор", "now": "экран с видеоразбором матчей", "perk": "отдых +3%, задания +15% золота", "price": 200,
+				"line": "Видеоразбор. Теперь видно каждую ошибку"},
+			{"title": "Массажный стол", "now": "массажный стол и аптечка", "perk": "отдых +4%, задания +20% золота", "price": 460, "runs": 2,
+				"line": "Массажный стол. Ноги как новые"},
+			{"title": "Штаб", "now": "штаб: тактическая доска, кубки тренера", "perk": "отдых +5%, задания +25% золота", "price": 1040, "runs": 3,
+				"line": "Штаб. Тут решаются турниры"},
 		],
 	},
 	"trophy": {
 		"name": "Трофейная", "place": "trophy", "unlock": "played", "start": "пустое место",
 		"levels": [
-			{"title": "Полка", "now": "полка: кубок за каждый титул", "perk": "Кодекс (скоро)", "price": 60,
+			{"title": "Полка", "now": "полка: кубок за каждый титул", "perk": "Кодекс (скоро)", "price": 45,
 				"line": "Полка для кубков. Давай её заполним"},
-			{"title": "Витрина", "now": "витрина: лучшие вещи светятся", "perk": "счётчик удачи (скоро)", "price": 220,
+			{"title": "Витрина", "now": "витрина: лучшие вещи светятся", "perk": "счётчик удачи (скоро)", "price": 100,
 				"line": "Витрина. Пусть все видят, чем играешь"},
-			{"title": "Зал кубков", "now": "зал кубков, прожектор на лучшую вещь", "perk": "", "price": 550,
+			{"title": "Зал кубков", "now": "зал кубков, прожектор на лучшую вещь", "perk": "", "price": 225,
 				"line": "Зал кубков. Тут и музей открыть можно"},
+			{"title": "Стена славы", "now": "стена с фото чемпионов и колонны с кубками", "perk": "", "price": 520, "runs": 2,
+				"line": "Стена славы. Здесь будет твоё лицо"},
+			{"title": "Зал славы", "now": "золотая статуя игрока под прожектором", "perk": "", "price": 1170, "runs": 3,
+				"line": "Твоя статуя. Только не зазнавайся"},
 		],
 	},
 	"bar": {
 		"name": "Бар", "place": "bar", "unlock": "title", "start": "стол с рулеткой под зонтом",
 		"levels": [
-			{"title": "Ларёк", "now": "ларёк с газировкой", "perk": "ставка до 50", "price": 100,
+			{"title": "Ларёк", "now": "ларёк с газировкой", "perk": "ставка до 50", "price": 50,
 				"line": "Газировка есть. Ставки покрупнее"},
-			{"title": "Бар", "now": "бар с зонтиками и стульями", "perk": "ставка до 150", "price": 300,
+			{"title": "Бар", "now": "бар с зонтиками и стульями", "perk": "ставка до 150", "price": 110,
 				"line": "Бар с зонтиками. Курорт!"},
-			{"title": "Терраса", "now": "терраса у воды, неон", "perk": "ставка до 500", "price": 650,
+			{"title": "Терраса", "now": "терраса у воды, неон", "perk": "ставка до 300", "price": 250,
 				"line": "Терраса у воды. Лучшее место в клубе"},
-		],
-	},
-	# The shop (hub spec 2): what the window shows grows with it. stock, max_rarity: for
-	# stream A's Shop.stock() (ClubBuilds.shop_stock / shop_max_rarity).
-	"shop": {
-		"name": "Магазин", "place": "shop", "unlock": "played", "start": "ларёк: 2 вещи, до редкой",
-		"stock0": 2, "rarity0": 1,
-		"levels": [
-			{"title": "Лавка", "now": "лавка: 3 вещи до эпической, струны", "perk": "3 вещи, струны", "price": 150,
-				"stock": 3, "max_rarity": 2, "line": "Лавка! Теперь и струны перетянем"},
-			{"title": "Бутик", "now": "бутик: 4 вещи до легендарной, витрина светится", "perk": "4 вещи, до легендарной", "price": 450,
-				"stock": 4, "max_rarity": 3, "line": "Бутик. Витрина светится — красота"},
-		],
-	},
-	# The locker room (hub spec 1): one more locker slot a level, up to 4.
-	"locker": {
-		"name": "Раздевалка", "place": "locker", "unlock": "played", "start": "скамейка и один шкафчик (1 ячейка)",
-		"levels": [
-			{"title": "Ряд шкафчиков", "now": "ряд шкафчиков и зеркало", "perk": "2 ячейки шкафчика", "price": 80,
-				"line": "Ещё шкафчик. Можно хранить две вещи"},
-			{"title": "Стена ракеток", "now": "стена ракеток: твои вещи висят", "perk": "3 ячейки шкафчика", "price": 250,
-				"line": "Стена ракеток. Есть чем похвастаться"},
-			{"title": "Гардероб", "now": "гардероб с подсветкой", "perk": "4 ячейки шкафчика", "price": 550,
-				"line": "Гардероб с подсветкой. Как у профи"},
+			{"title": "Лаундж", "now": "стойка с табуретами, полка с бутылками", "perk": "ставка до 500", "price": 575, "runs": 2,
+				"line": "Лаундж. Ставки по-крупному"},
+			{"title": "VIP-зал", "now": "VIP-диваны, пальмы и прожекторы", "perk": "ставка до 1000", "price": 1300, "runs": 3,
+				"line": "VIP-зал. Здесь делают большие ставки"},
 		],
 	},
 }
-const ORDER := ["court", "stands", "gate", "shop", "locker", "trophy", "bar"]
+const ORDER := ["court", "stands", "gate", "shop", "locker", "coach", "trophy", "bar"]
+
+## What a level of a construction gives, indexed by the level 0..5.
+const SHOP_STOCK := [2, 3, 3, 4, 4, 4]                 # things in the window
+const SHOP_RARITY := [1, 2, 3, 3, 3, 3]                # Gear.RARE / EPIC / LEGENDARY
+const SHOP_FREE_REROLLS := [0, 0, 0, 1, 1, 2]
+const RESTRING_DISCOUNT := [0.0, 0.0, 0.0, 0.0, 0.10, 0.20]
+const LOCKER_SLOTS := [1, 2, 3, 3, 4, 4]
+const INSURANCE_DISCOUNT := [0.0, 0.0, 0.10, 0.10, 0.25, 0.25]
+const RECOVERY_BONUS := [0.0, 0.01, 0.02, 0.03, 0.04, 0.05]  # added to the rest between points
+const QUEST_GOLD := [0.0, 0.05, 0.10, 0.15, 0.20, 0.25]
 
 ## A short list of words a club's name can't have (the sign is seen by friends).
 const BAD_WORDS := ["хуй", "хуе", "пизд", "ебат", "ебан", "ёбан", "бляд", "сука", "муда", "пидор", "fuck", "shit", "dick", "cunt"]
@@ -142,7 +197,7 @@ static func next_price(id: String) -> int:
 
 
 static func can_afford(id: String) -> bool:
-	return is_open(id) and not next(id).is_empty() and SaveData.gold >= next_price(id)
+	return is_open(id) and not is_building(id) and not next(id).is_empty() and SaveData.gold >= next_price(id)
 
 
 static func affordable_count() -> int:
@@ -153,20 +208,75 @@ static func affordable_count() -> int:
 	return n
 
 
-## Buys the next level: the gold goes and the save is written now, before any show.
+## Buys the next level: the gold goes and the save is written now, before any show. A
+## level that takes runs (4 and 5) only puts the scaffolding up: it is ready after that
+## many played tournaments (complete_ready, at the next visit to the club).
 static func buy(id: String) -> bool:
 	if not TABLE.has(id) or not can_afford(id):
 		return false
 	var price := next_price(id)
+	var runs := int(next(id).get("runs", 0))
 	SaveData.gold -= price
+	SaveData.club["spent"] = int(SaveData.club.get("spent", 0)) + price
+	if runs > 0:
+		var b: Dictionary = building().duplicate()
+		b[id] = {"level": level(id) + 1, "until": SaveData.played + runs}
+		SaveData.club["building"] = b
+		SaveData.save()
+		return true
 	var levels: Dictionary = SaveData.club.get("levels", {}).duplicate()
 	levels[id] = level(id) + 1
 	SaveData.club["levels"] = levels
-	SaveData.club["spent"] = int(SaveData.club.get("spent", 0)) + price
 	if id == "gate" and levels[id] == 1 and String(SaveData.club.get("name", "")) == "":
 		SaveData.club["name"] = default_name()
 	SaveData.save()
 	return true
+
+
+# --- The long build (hub spec 13) ----------------------------------------------------
+
+## The constructions on scaffolding: {id: {level, until}} (until: the SaveData.played
+## value at which the level is ready). Paid already; saved with the club.
+static func building() -> Dictionary:
+	var b = SaveData.club.get("building", {})
+	return b if b is Dictionary else {}
+
+
+static func is_building(id: String) -> bool:
+	return building().has(id)
+
+
+## Tournaments still to play before the scaffolding comes down (0: ready, or not building).
+static func runs_left(id: String) -> int:
+	if not is_building(id):
+		return 0
+	return maxi(int(building()[id].get("until", 0)) - SaveData.played, 0)
+
+
+## Takes the scaffolding down where the runs are played: the level goes up. Returns the
+## ids done; the club shows the build moment for each when it opens.
+static func complete_ready() -> Array:
+	var done := []
+	var b: Dictionary = building().duplicate()
+	for id in ORDER:
+		if b.has(id) and SaveData.played >= int(b[id].get("until", 0)):
+			done.append(id)
+	if done.is_empty():
+		return done
+	var levels: Dictionary = SaveData.club.get("levels", {}).duplicate()
+	for id in done:
+		levels[id] = maxi(int(levels.get(id, 0)), int(b[id].get("level", 0)))
+		b.erase(id)
+	SaveData.club["levels"] = levels
+	SaveData.club["building"] = b
+	SaveData.save()
+	return done
+
+
+# --- What the levels give -------------------------------------------------------------
+
+static func _at(arr: Array, id: String):
+	return arr[clampi(level(id), 0, arr.size() - 1)]
 
 
 ## The stands' perk: more gold for a won match (0.02 a level, at most 0.10).
@@ -177,21 +287,53 @@ static func gold_win_bonus() -> float:
 	return minf(float(TABLE["stands"]["levels"][lv - 1].get("bonus", 0.0)) if lv > 0 else 0.0, 0.10)
 
 
-## Locker slots (hub spec 1): 1 at the start, +1 a level of the locker room, up to 4.
+## The coach's room: extra rest between points (added to Skills.stamina_rest "point").
+static func recovery_bonus() -> float:
+	return float(_at(RECOVERY_BONUS, "coach")) if utility_enabled else 0.0
+
+
+## The coach's room: the quests pay this much more gold (0.05 a level).
+static func quest_gold_bonus() -> float:
+	return float(_at(QUEST_GOLD, "coach"))
+
+
+## Locker slots (hub spec 1): 1 at the start, growing to 4.
 static func locker_slots() -> int:
-	return mini(1 + level("locker"), 4)
+	return int(_at(LOCKER_SLOTS, "locker"))
 
 
-## How many things the shop's window shows (hub spec 2): 2 / 3 / 4.
+## The locker room cuts the insurance of a legendary thing (0.10 / 0.25).
+static func insurance_discount() -> float:
+	return float(_at(INSURANCE_DISCOUNT, "locker"))
+
+
+## How many things the shop's window shows (hub spec 2): 2 / 3 / 3 / 4.
 static func shop_stock() -> int:
-	var lv := level("shop")
-	return int(TABLE["shop"]["stock0"]) if lv == 0 else int(TABLE["shop"]["levels"][lv - 1]["stock"])
+	return int(_at(SHOP_STOCK, "shop"))
 
 
 ## The rarest thing the shop sells (Gear.RARE / EPIC / LEGENDARY; never mythic).
 static func shop_max_rarity() -> int:
-	var lv := level("shop")
-	return int(TABLE["shop"]["rarity0"]) if lv == 0 else int(TABLE["shop"]["levels"][lv - 1]["max_rarity"])
+	return int(_at(SHOP_RARITY, "shop"))
+
+
+## Free window rerolls a run gives (the salon and above).
+static func shop_free_rerolls() -> int:
+	return int(_at(SHOP_FREE_REROLLS, "shop"))
+
+
+## The strings cost this much less (0.10 / 0.20 at the top of the shop).
+static func restring_discount() -> float:
+	return float(_at(RESTRING_DISCOUNT, "shop"))
+
+
+## The chips the bar puts on the desk at its level: the bigger the bar, the bigger the chips.
+const BAR_CHIPS := [10, 25, 50, 100, 250, 500, 1000]
+
+
+static func bar_chips() -> Array:
+	var limit := bet_limit()
+	return BAR_CHIPS.filter(func(c): return c <= limit)
 
 
 ## The biggest stake the bar takes (its place's data: ClubPlaces "bar" by level).

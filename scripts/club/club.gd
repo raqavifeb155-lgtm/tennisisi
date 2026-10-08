@@ -108,8 +108,10 @@ func open() -> bool:
 		hud.hide_place()
 	main.ui.close()
 	world.set_props_visible(true)
+	_finish_builds()
 	_refresh()
 	hud.visible = true
+	_next_finished()
 	if not SaveData.club.get("met_coach", false):
 		SaveData.club["met_coach"] = true
 		SaveData.save()
@@ -179,11 +181,51 @@ func _refresh() -> void:
 			travel.append({"id": id, "name": p["name"]})
 	if world.level_built("stands") != ClubBuilds.level("stands"):
 		world.set_level("stands", ClubBuilds.level("stands"))
+	_sync_scaffolds()
 	world.set_open(_open_ids)
 	hud.set_places(travel)
 	hud.set_gold(SaveData.gold)
 	if _place != "":
 		_show_place(_place)
+
+
+## Scaffolding stands at every construction whose level is being built over runs.
+func _sync_scaffolds() -> void:
+	for id in ClubBuilds.ORDER:
+		var on := ClubBuilds.is_building(id)
+		world.set_scaffold(id, on, scaffold_text(id) if on else "")
+
+
+## "СТРОИТСЯ · ещё 2 забега" over the scaffolding.
+static func scaffold_text(id: String) -> String:
+	var n := ClubBuilds.runs_left(id)
+	if n <= 0:
+		return "ГОТОВО"
+	return "СТРОИТСЯ · ещё %d %s" % [n, runs_word(n)]
+
+
+static func runs_word(n: int) -> String:
+	if n % 10 == 1 and n % 100 != 11:
+		return "забег"
+	if n % 10 >= 2 and n % 10 <= 4 and (n % 100 < 10 or n % 100 >= 20):
+		return "забега"
+	return "забегов"
+
+
+## The runs are played: scaffolding comes down, the levels go up (the saved data now, the
+## build moment one by one in _next_finished).
+func _finish_builds() -> void:
+	for id in ClubBuilds.complete_ready():
+		if not _finished.has(id):
+			_finished.append(id)
+
+
+func _next_finished() -> void:
+	if _building or _finished.is_empty() or _foreman_on or _roulette_on:
+		return
+	var id: String = _finished.pop_front()
+	hud.hide_place()
+	_play_build(id, ClubBuilds.level(id))
 
 
 func _process(delta: float) -> void:
@@ -230,7 +272,7 @@ func _physics_process(delta: float) -> void:
 	var c := coach.body
 	var cat := world.walk.resolve(Vector2(c.position.x, c.position.z), Vector2(c.position.x, c.position.z))
 	c.position = Vector3(cat.x, 0.0, cat.y)
-	if main.ui.is_open() or _roulette_on or _foreman_on:
+	if main.ui.is_open() or _roulette_on or _foreman_on or _building:
 		p.move_input = Vector2.ZERO
 		return
 	var mv: Vector2 = main.hud.touch.move_vector
@@ -456,8 +498,7 @@ func roulette_busy() -> bool:
 
 ## The chips the bar takes now: within its level's limit and a quarter of the gold.
 func chips() -> Array:
-	var limit := int(ClubPlaces.state("bar").get("bet_limit", 0))
-	return Bets.chips_for(SaveData.gold).filter(func(c): return c <= limit)
+	return ClubBuilds.bar_chips().filter(func(c): return c <= Bets.max_stake(SaveData.gold))
 
 
 func roulette_open() -> void:
@@ -482,8 +523,8 @@ func _roulette_panel(result := "", won := false) -> void:
 		_chip = allowed.back()
 	var note := ""
 	if allowed.is_empty():
-		note = "Ставка — до четверти золота: нужно хотя бы %d" % ceili(Bets.CHIPS[0] / Bets.MAX_SHARE)
-	hud.show_roulette(Bets.CHIPS, allowed, _chip, result, won, note)
+		note = "Ставка — до четверти золота: нужно хотя бы %d" % ceili(ClubBuilds.bar_chips()[0] / Bets.MAX_SHARE)
+	hud.show_roulette(ClubBuilds.bar_chips(), allowed, _chip, result, won, note)
 
 
 func roulette_close() -> void:
@@ -562,6 +603,9 @@ func _on_tap(screen_pos: Vector2) -> void:
 		return
 	if _foreman_on:
 		return
+	if _building:
+		skip_build()
+		return
 	var o := cam.project_ray_origin(screen_pos)
 	var d := cam.project_ray_normal(screen_pos)
 	if d.y > -0.01:
@@ -607,10 +651,13 @@ const BUILD_VIEW := {
 	"shop": [Vector3(22.0, 11.0, 13.0), Vector3(22.0, 0.0, 4.6)],
 	"locker": [Vector3(-14.0, 11.0, 37.0), Vector3(-14.0, 0.0, 28.6)],
 	"bar": [Vector3(20.0, 17.0, -9.0), Vector3(20.0, 0.0, -27.5)],
+	"coach": [Vector3(16.0, 11.0, 37.0), Vector3(16.0, 0.0, 28.6)],
 }
 const BUILD_TIME := 2.0
 
 var _foreman_on := false
+var _finished: Array = []   # constructions done after their runs, waiting for the build moment
+var _build_id := ""
 var _foreman_id := ""
 var _color_pick := -1
 var _building := false
@@ -650,7 +697,7 @@ func _cheapest_gap() -> String:
 	var best := ""
 	var gap := 1 << 30
 	for id in ClubBuilds.ORDER:
-		if ClubBuilds.is_open(id) and not ClubBuilds.next(id).is_empty():
+		if ClubBuilds.is_open(id) and not ClubBuilds.is_building(id) and not ClubBuilds.next(id).is_empty():
 			var g := ClubBuilds.next_price(id) - SaveData.gold
 			if g > 0 and g < gap:
 				gap = g
@@ -682,6 +729,12 @@ func foreman_show(id: String) -> void:
 	elif lv >= mx:
 		card["title"] = "Максимум"
 		card["desc"] = "Сейчас: %s" % t["levels"][mx - 1]["now"]
+	elif ClubBuilds.is_building(id):
+		var nb: Dictionary = t["levels"][lv]
+		var left := ClubBuilds.runs_left(id)
+		card["title"] = "Идёт стройка: %s" % nb["title"]
+		card["desc"] = "Сейчас: %s\nБудет: %s\n%s" % [String(t["levels"][lv - 1]["now"]) if lv > 0 else String(t.get("start", "ничего")), nb["now"], ("Леса стоят: ещё %d %s" % [left, runs_word(left)]) if left > 0 else "Готово — зайди в клуб заново"]
+		build = {"text": "Леса стоят · ещё %d" % left if left > 0 else "Готово", "can": false}
 	else:
 		var nx: Dictionary = t["levels"][lv]
 		card["title"] = nx["title"]
@@ -691,6 +744,9 @@ func foreman_show(id: String) -> void:
 		if String(nx.get("perk", "")) != "":
 			card["desc"] += "\nПольза: %s" % (("%s → %s" % [perk_now, nx["perk"]]) if perk_now != "" else nx["perk"])
 		var price := ClubBuilds.next_price(id)
+		var runs := int(nx.get("runs", 0))
+		if runs > 0:
+			card["desc"] += "\nСтройка: %d %s после оплаты" % [runs, runs_word(runs)]
 		if ClubBuilds.can_afford(id):
 			build = {"text": "ПОСТРОИТЬ  ·  %d ●" % price, "can": true}
 		else:
@@ -705,7 +761,7 @@ func foreman_show(id: String) -> void:
 	var view: Array = BUILD_VIEW[id]
 	cam.frame(view[0], view[1])
 	world.focus_room(id)
-	if lv < mx and ClubBuilds.is_open(id):
+	if lv < mx and ClubBuilds.is_open(id) and not ClubBuilds.is_building(id):
 		world.show_ghost(id, lv + 1)
 	else:
 		world.show_ghost("", 0)
@@ -735,6 +791,18 @@ func foreman_build() -> bool:
 		SaveData.save()
 	var lv := ClubBuilds.level(id)
 	world.show_ghost("", 0)
+	if ClubBuilds.is_building(id):
+		# A level that takes runs: the scaffolding goes up now, the level comes later.
+		_refresh()
+		hud.set_gold(SaveData.gold)
+		var view: Array = BUILD_VIEW[id]
+		hud.fly_coins(cam.unproject_position(view[1]))
+		main.sfx.play("club_build" if main.sfx.has("club_build") else "bounce", -2.0, 0.8)
+		TelegramApp.haptic("heavy")
+		var n := ClubBuilds.runs_left(id)
+		coach.say("Леса стоят. Будет готово через %d %s" % [n, runs_word(n)], true)
+		foreman_show(id)
+		return true
 	world.set_level(id, lv)
 	_refresh()
 	_play_build(id, lv)
@@ -743,6 +811,7 @@ func foreman_build() -> bool:
 
 func _play_build(id: String, lv: int) -> void:
 	_building = true
+	_build_id = id
 	hud.set_building(true)
 	hud.set_gold(SaveData.gold)
 	var view: Array = BUILD_VIEW[id]
@@ -809,7 +878,7 @@ func skip_build() -> void:
 		return
 	if _build_tw:
 		_build_tw.kill()
-	_end_build(_foreman_id, ClubBuilds.level(_foreman_id))
+	_end_build(_build_id, ClubBuilds.level(_build_id))
 
 
 func _end_build(id: String, lv: int) -> void:
@@ -829,6 +898,14 @@ func _end_build(id: String, lv: int) -> void:
 	coach.say(ClubBuilds.line(id, lv), true)
 	if _foreman_on:
 		foreman_show(id)
+	else:
+		# The build moment of a level finished after its runs: back to the hero (or on to
+		# the next one done).
+		if _finished.is_empty():
+			cam.release()
+			_update_place()
+		else:
+			_next_finished()
 
 
 func foreman_close() -> void:

@@ -271,7 +271,7 @@ static func stamina_rest(kind: String) -> float:
 		"set":
 			return lerpf(0.50, 0.70, t)
 		_:
-			return lerpf(0.10, 0.20, t) + mod("stamina_rest")
+			return lerpf(0.10, 0.20, t) + mod("stamina_rest") + ClubBuilds.recovery_bonus()  # + the coach's room (v0.2 B)
 
 
 ## Below this much stamina the player is tired: slower, wilder, softer.

@@ -79,7 +79,7 @@ func test_place_levels() -> void:
 	check(bj.get("unlock", "") == "title" and bj.get("build", "") == "bar", "after the first title, like the Totalizator; grows with the bar")
 	check((bj["pos"] as Vector3).distance_to(ClubPlaces.find("bar")["pos"]) < 9.0, "on the bar's terrace, by the roulette")
 	check(int(ClubPlaces.state("bar", 3)["bet_limit"]) > int(ClubPlaces.state("bar", 0)["bet_limit"]), "a bigger bar takes bigger bets")
-	check(ClubPlaces.state("bar", 9)["bet_limit"] == ClubPlaces.state("bar", 3)["bet_limit"], "past the last level the last one holds")
+	check(ClubPlaces.state("bar", 9)["bet_limit"] == ClubPlaces.state("bar", 5)["bet_limit"], "past the last level the last one holds")
 	var shop := ClubPlaces.find("shop")
 	check(not ClubPlaces.is_open(shop, 0, 0) and ClubPlaces.is_open(shop, 1, 0), "the shop opens after the first run")
 	var bar := ClubPlaces.find("bar")
@@ -170,7 +170,7 @@ func test_builds() -> void:
 	for lv in 6:
 		SaveData.club = {"levels": {"bar": lv}}
 		limits.append(ClubBuilds.bet_limit())
-	check(limits == [25, 50, 100, 150, 300, 500], "the bar takes bigger bets as it grows %s" % str(limits))
+	check(limits == [25, 50, 150, 300, 500, 1000], "the bar takes bigger bets as it grows %s" % str(limits))
 	SaveData.titles = 0
 	SaveData.played = 0
 	SaveData.club = {}
@@ -285,12 +285,12 @@ func test_shop_locker() -> void:
 		SaveData.club = {"levels": {"shop": lv}}
 		stock.append(ClubBuilds.shop_stock())
 		rar.append(ClubBuilds.shop_max_rarity())
-	check(stock == [2, 3, 4, 4, 5, 5] and rar == [Gear.RARE, Gear.EPIC, Gear.LEGENDARY, Gear.LEGENDARY, Gear.LEGENDARY, Gear.LEGENDARY], "the shop's window grows: %s" % str(stock))
+	check(stock == [2, 3, 3, 4, 4, 4] and rar == [Gear.RARE, Gear.EPIC, Gear.LEGENDARY, Gear.LEGENDARY, Gear.LEGENDARY, Gear.LEGENDARY], "the shop's window grows: %s" % str(stock))
 	var slots := []
 	for lv in 6:
 		SaveData.club = {"levels": {"locker": lv}}
 		slots.append(ClubBuilds.locker_slots())
-	check(slots == [1, 2, 2, 3, 3, 4], "locker slots grow to 4: %s" % str(slots))
+	check(slots == [1, 2, 3, 3, 4, 4], "locker slots grow to 4: %s" % str(slots))
 	SaveData.club = {}
 	SaveData.played = 0
 	check(not ClubBuilds.is_open("shop") and not ClubBuilds.is_open("locker"), "both after the first run")
@@ -323,7 +323,7 @@ func test_long_build() -> void:
 	for l in 6:
 		SaveData.club = {"levels": {"coach": l}}
 		bon.append(snappedf(ClubBuilds.recovery_bonus(), 0.001))
-	check(bon == [0.0, 0.01, 0.02, 0.03, 0.04, 0.05], "the coach's room: +1..+5% recovery %s" % str(bon))
+	check(bon == [0.0, 0.01, 0.02, 0.03, 0.04, 0.05], "the coach's room: +1..+5%% recovery %s" % str(bon))
 	# A level that takes runs: paid now, scaffolding until N more runs are played.
 	SaveData.club = {"levels": {"court": 3}}
 	SaveData.played = 7
@@ -708,7 +708,7 @@ func test_foreman_flow() -> void:
 	club._refresh()
 	club._travel("bar")
 	await _frames(2)
-	check(club.upgrade_price("bar") == 100, "an affordable upgrade shows by its place (↑ 100)")
+	check(club.upgrade_price("bar") == 50, "an affordable upgrade shows by its place (↑ 50)")
 	check(club.upgrade_price("court") == 0, "never on the main screen: Новая игра / Продолжить stay alone")
 	main.queue_free()
 	await _frames(2)

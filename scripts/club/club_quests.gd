@@ -111,7 +111,7 @@ static func _make(tpl: Dictionary, tier: int, item: bool) -> Dictionary:
 		text = text % int(n)
 	return {"tpl": tpl["id"], "text": text, "event": tpl["event"], "kind": tpl["kind"], "scope": tpl["scope"],
 		"need": n, "have": 0, "done": false, "claimed": false, "item": item, "tier": tier,
-		"gold": roundi(int(tpl["gold"]) * float(GOLD_MULT[clampi(tier, 0, GOLD_MULT.size() - 1)]))}
+		"gold": roundi(int(tpl["gold"]) * float(GOLD_MULT[clampi(tier, 0, GOLD_MULT.size() - 1)]) * (1.0 + ClubBuilds.quest_gold_bonus()))}
 
 
 ## Something happened in a match. Returns the indexes of the quests it finished.
