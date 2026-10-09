@@ -88,10 +88,12 @@ static func show_pick(ui: TournamentUI, t: Tournament) -> void:
 	var left := Locker.take_left(t)
 	ui._open(t, true)
 	ui._title("Что берёшь в забег")
-	ui._sub("%s из %d  ·  остальное ждёт в шкафчике" % ["Одну вещь" if left == 1 else "Ещё %d" % left, li.size()])
+	var verb := "Выбери " if t.locker_taken == 0 else "Выбери ещё "
+	ui._sub("%s%s из %d  ·  остальное ждёт в шкафчике" % [verb, "1" if left == 1 else "до %d" % left, li.size()])
 	for i in li.size():
-		RunShop.item_card(ui, li[i], "Застрахована" if Locker.is_insured(li[i]) else "Шкафчик", "", "locker_pick", i)
-	ui._note("%s. Взятую вещь на итоге нужно сохранить заново (застрахованную — бесплатно)" % Locker.take_text())
+		RunShop.item_card(ui, li[i], "", "", "locker_pick", i)  # the card itself says «застрахована»
+	ui._note(Locker.take_text())
+	ui._note("Взятую вещь на итоге нужно сохранить заново (застрахованную — бесплатно)")
 	ui._secondary("Идти без вещей из шкафчика", "locker_pick_skip")
 
 
