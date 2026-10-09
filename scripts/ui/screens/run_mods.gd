@@ -254,7 +254,8 @@ static func bracket_extra(ui: TournamentUI, t: Tournament) -> void:
 		var names: Array[String] = []
 		for id in shown:
 			names.append(Modifiers.name(id))
-		line = "Условия забега: %s   ·   %s   ·   награда ×%s" % [", ".join(names), line.replace("Модификаторы соперников", "модификаторы"), _k(Modifiers.run_mult(t))]
+		var fr: String = Modifiers.FREQS[clampi(t.freq, 0, Modifiers.FREQS.size() - 1)]["name"]
+		line = "Условия забега: %s   ·   модификаторы: %s   ·   награда ×%s" % [", ".join(names), fr.to_lower(), _k(Modifiers.run_mult(t))]
 	elif t.freq == 0 and SaveData.played == 0:
 		return  # a new player's first run: nothing was chosen, nothing to say
 	ui._note(line)

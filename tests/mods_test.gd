@@ -559,7 +559,7 @@ func _run_screen() -> void:
 		"opponents a tier up and the prize multiplied")
 	main.ui.show_bracket(t)
 	await process_frame
-	check(main.ui._box.find_children("*", "Label", true, false).any(func(l): return (l as Label).text.contains("Часто")), "the bracket says the rate")
+	check(main.ui._box.find_children("*", "Label", true, false).any(func(l): return (l as Label).text.to_lower().contains("часто")), "the bracket says the rate")
 	RM.open(main, 1)
 	check(RM.freq == 2, "the screen opens on the remembered rate")
 	RM.ui_action(main, "mods_freq", 0)
