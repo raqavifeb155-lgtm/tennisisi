@@ -438,7 +438,7 @@ func new_score(first_server: int) -> MatchScore:
 
 ## The island's prize multiplier (Locations.TIERS) times the format's reward.
 func prize_mult() -> float:
-	return float(format_info()["reward"]) * Locations.prize_mult(location) * income_scale()
+	return float(format_info()["reward"]) * Locations.prize_mult(location) * income_scale() * Career.prize_mult(self)  # L1: season final, farewell
 
 
 ## The title pays by the same conditions as the matches did (the final's auras and the run's
