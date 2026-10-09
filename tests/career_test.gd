@@ -438,8 +438,46 @@ func test_screens() -> void:
 	screens.show_heirs(ui)
 	var cards: Array = ui._box.get_children().filter(func(c): return c is GameCard)
 	check(cards.size() == 3, "three heir cards")
+	# The hero's name: the row of the look editor, the rename screen, the price on «СОХРАНИТЬ».
+	_fresh()
+	SaveData.gold = 0
+	var row: Control = screens.name_row(ui, 1)
+	ui._box.add_child(row)
+	check(_has_text(ui, "Имя:  " + Career.hero_name()) and _has_text(ui, "первая смена бесплатно"), "the look editor's name row: the name, the first change is free")
+	screens._draft = "Рома"
+	screens.show_rename(ui)
+	var ok := _button(ui, "СОХРАНИТЬ")
+	check(ok != null and not ok.disabled and ok.size.y >= 0.0 and ok.custom_minimum_size.y >= UiTheme.TAP, "the free change can be saved, the button is a tap high")
+	check(ui.root.find_children("*", "LineEdit", true, false).size() == 1, "the rename screen has the input")
+	Career.rename("Рома")  # the free one is gone
+	var row2: Control = screens.name_row(ui, 1)
+	var b2: Button = row2.find_children("*", "Button", true, false)[0]
+	check(b2.disabled and _has_text_in(row2, "нужно %d" % Career.RENAME_COST), "no gold: the button is off, «нужно 100»")
+	screens._draft = "Тимур"
+	screens.show_rename(ui)
+	ok = _button(ui, "СОХРАНИТЬ")
+	check(ok.disabled and "нужно" in ok.text, "no gold: «СОХРАНИТЬ» is off and says what is needed")
+	SaveData.gold = 130
+	screens.show_rename(ui)
+	ok = _button(ui, "СОХРАНИТЬ")
+	check(not ok.disabled and "100" in ok.text, "with gold: «СОХРАНИТЬ  100»")
+	check(SaveData.gold == 130 and Career.hero_name() == "Рома", "opening the screen charges nothing; leaving it (cancel) neither")
 	ui.queue_free()
 	finished += 1
+
+
+func _button(ui: CanvasLayer, prefix: String) -> Button:
+	for b in ui.root.find_children("*", "Button", true, false):
+		if (b as Button).text.begins_with(prefix):
+			return b
+	return null
+
+
+func _has_text_in(n: Node, s: String) -> bool:
+	for l in n.find_children("*", "Label", true, false):
+		if s in (l as Label).text:
+			return true
+	return false
 
 
 func _has_text(ui: CanvasLayer, s: String) -> bool:

@@ -10,13 +10,20 @@ class_name CareerUi
 ## Main._start_tournament asks gate() first (a due retirement comes before any new run).
 ##
 ## Actions: career_season, career_retire, career_relic_go, career_relic i (-1 = none),
-## career_heir i, career_heir_go, career_early, career_early_yes, career_done.
+## career_heir i, career_heir_go, career_early, career_early_yes, career_done,
+## career_rename from (0 the Раздевалка, 1 the look editor), career_rename_ok, career_rename_back.
+##
+## The hero's name: name_row() sits on top of the look editor, show_rename() is the screen
+## behind its button (an input, «Случайное», «Из Telegram», the web's system prompt). The price
+## (Career.RENAME_COST, the first hero's first change free) is taken only on «СОХРАНИТЬ».
 
 const CELL_H := 112.0
 const ISLAND_SHORT := {"park": "Нью-Йорк", "clay": "Испания", "grass": "Англия", "paris": "Париж", "club": "Свой клуб"}
 
 static var _relic := -1            # the relic option picked (-1 = none)
 static var _heir := -1             # the heir card picked (-1 = none yet)
+static var _from := 0              # where the rename screen was opened from (0 locker, 1 look editor)
+static var _draft := ""            # the name typed so far
 
 
 ## Main._on_ui calls this first: true = the action was ours.
@@ -53,7 +60,27 @@ static func route(m: Node, action: String, arg: int) -> bool:
 			show_retire(ui, t)
 		"career_done":
 			m._on_ui("menu", 0)
+		"career_rename":
+			_from = arg
+			if arg == 1:  # the look being edited is kept, like «← Назад» of the editor
+				SaveData.look = ui.editing_look()
+				SaveData.save()
+				_preview(m, {})
+			_draft = Career.hero_name()
+			show_rename(ui)
+		"career_rename_ok":
+			if Career.rename(_draft) == "":
+				ui.sfx_request.emit("hit", -10.0, 1.2)
+				_leave_rename(m)
+			else:
+				show_rename(ui, false)
+		"career_rename_back":
+			_leave_rename(m)
 	return true
+
+
+static func _leave_rename(m: Node) -> void:
+	m._on_ui("look" if _from == 1 else "locker", 0)
 
 
 ## Main._start_tournament: a due retirement first. true = the start is held (the ceremony
@@ -374,3 +401,153 @@ static func show_welcome(ui: TournamentUI) -> void:
 		RunShop.item_card(ui, relic, "Реликвия", "Приедет с тобой на первый турнир")
 	ui._note("Опыт навыков ×%s  ·  стартовые очки: %d — в Тренерской" % [_x(Career.xp_mult()), Skills.points])
 	ui._primary("В КЛУБ", "career_done")
+
+
+# --- The hero's name ----------------------------------------------------------------------
+
+## A drawn die (no textures): a rounded square with five pips.
+class Dice extends Control:
+	func _draw() -> void:
+		draw_rect(Rect2(-13, -13, 26, 26), UiTheme.INK, true)
+		for p in [Vector2(-7, -7), Vector2(7, -7), Vector2.ZERO, Vector2(-7, 7), Vector2(7, 7)]:
+			draw_circle(p, 2.6, UiTheme.BASE)
+
+
+## The caption's right edge gets a coin: the button's text is centred, the coin follows it.
+static func _coin_after(b: Button, shown := true) -> void:
+	if not shown:
+		return
+	var coin := TournamentUI.Coin.new()
+	coin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_child(coin)
+	var place := func() -> void:
+		var f := b.get_theme_font("font")
+		var w := f.get_string_size(b.text, HORIZONTAL_ALIGNMENT_LEFT, -1, b.get_theme_font_size("font_size")).x
+		coin.position = Vector2((b.size.x + w) * 0.5 + 24.0, b.size.y * 0.5)
+		coin.modulate.a = 0.4 if b.disabled else 1.0
+	b.resized.connect(place)
+	place.call()
+
+
+## The name's line for the look editor: «Имя: Дима» and the button that opens the rename screen.
+## from: career_rename's argument.
+static func name_row(ui: TournamentUI, from: int) -> Control:
+	var cost := Career.rename_cost()
+	var poor := SaveData.gold < cost
+	var p := PanelContainer.new()
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.add_theme_stylebox_override("panel", UiTheme.box(Color(UiTheme.SURFACE, 0.9), UiTheme.LINE, 2, UiTheme.RADIUS, 12))
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 12)
+	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.add_child(h)
+	var v := VBoxContainer.new()
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	v.add_theme_constant_override("separation", 0)
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.add_child(v)
+	var nm := ui._left(ui._text("Имя:  " + Career.hero_name(), UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.GOLD))
+	nm.clip_text = true
+	nm.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	v.add_child(nm)
+	var hint := "первая смена бесплатно" if cost == 0 else ("нужно %d золота" % cost if poor else "смена — %d золота" % cost)
+	v.add_child(ui._left(ui._text(hint, UiTheme.text(), UiTheme.T_SMALL - 2, UiTheme.LOSE if poor else (UiTheme.WIN if cost == 0 else UiTheme.MUTED))))
+	var b := Button.new()
+	b.text = "Изменить" if cost == 0 else "Изменить  %d" % cost
+	b.focus_mode = Control.FOCUS_NONE
+	b.custom_minimum_size = Vector2(220.0 if cost == 0 else 270.0, UiTheme.TAP)
+	b.disabled = poor
+	b.pressed.connect(func() -> void: ui._press(b, "career_rename", from))
+	h.add_child(b)
+	_coin_after(b, cost > 0)
+	return p
+
+
+## The rename screen: an input, the dice, Telegram's name; the price is taken on «СОХРАНИТЬ».
+static func show_rename(ui: TournamentUI, animate := true) -> void:
+	ui._open(null, animate, "career_rename_back")
+	ui._title("Имя героя")
+	var cost := Career.rename_cost()
+	ui._sub("Первая смена бесплатно" if cost == 0 else "Новое имя стоит %d золота, оно спишется при сохранении" % cost)
+	var edit := LineEdit.new()
+	edit.text = _draft
+	edit.max_length = Career.NAME_MAX
+	edit.placeholder_text = "Как тебя зовут?"
+	edit.custom_minimum_size = Vector2(0, 104)
+	edit.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	edit.select_all_on_focus = true
+	edit.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_DEFAULT
+	edit.add_theme_font_override("font", UiTheme.text_bold())
+	edit.add_theme_font_size_override("font_size", UiTheme.T_HEAD)
+	edit.add_theme_color_override("font_color", UiTheme.INK)
+	edit.add_theme_color_override("caret_color", UiTheme.GOLD)
+	edit.add_theme_color_override("font_placeholder_color", Color(UiTheme.INK, 0.35))
+	edit.add_theme_stylebox_override("normal", UiTheme.box(UiTheme.SURFACE, UiTheme.LINE, 2, UiTheme.RADIUS, 18))
+	edit.add_theme_stylebox_override("focus", UiTheme.box(UiTheme.SURFACE_HI, UiTheme.GOLD, 3, UiTheme.RADIUS, 18))
+	ui._box.add_child(edit)
+	var status := ui._note("")
+	var tools := HBoxContainer.new()
+	tools.add_theme_constant_override("separation", 12)
+	tools.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ui._box.add_child(tools)
+	var ok := ui._primary("СОХРАНИТЬ", "career_rename_ok")
+	_coin_after(ok, cost > 0)
+	var refresh := func() -> void:
+		var why := Career.rename_problem(_draft)
+		ok.disabled = why != ""
+		ok.text = "СОХРАНИТЬ" if cost == 0 else ("СОХРАНИТЬ  ·  нужно %d" % cost if why == "poor" else "СОХРАНИТЬ  %d" % cost)
+		ok.resized.emit()  # the coin follows the caption
+		status.text = {"empty": "Имя не может быть пустым", "same": "Это уже твоё имя", "poor": "Не хватает золота: нужно %d" % cost}.get(why, "Будет: %s" % Career.clean_name(_draft))
+		status.add_theme_color_override("font_color", UiTheme.LOSE if why in ["empty", "poor"] else UiTheme.MUTED)
+	var set_draft := func(s: String) -> void:
+		_draft = Career.clean_name(s) if s.strip_edges() != "" else ""
+		edit.text = _draft
+		edit.caret_column = _draft.length()
+		refresh.call()
+	edit.text_changed.connect(func(s: String) -> void:
+		_draft = s
+		refresh.call())
+	var dice := _tool(ui, "Случайное", true)
+	dice.pressed.connect(func() -> void:
+		ui.sfx_request.emit("hit", -16.0, 1.4)
+		set_draft.call(Career.random_name()))
+	tools.add_child(dice)
+	if Career.telegram_name() != "":
+		var tg := _tool(ui, "Из Telegram", false)
+		tg.pressed.connect(func() -> void:
+			ui.sfx_request.emit("hit", -16.0, 1.6)
+			set_draft.call(Career.telegram_name()))
+		tools.add_child(tg)
+	if OS.has_feature("web"):
+		# The page's own input is the reliable way to get a keyboard in some phone webviews.
+		var pr := _tool(ui, "Ввести окном", false)
+		pr.pressed.connect(func() -> void:
+			var r = JavaScriptBridge.eval("window.prompt('Имя героя', %s)" % JSON.stringify(_draft), true)
+			if r != null and String(r).strip_edges() != "":
+				set_draft.call(String(r)))
+		tools.add_child(pr)
+	ui._secondary("Отмена", "career_rename_back")
+	refresh.call()
+	if not OS.has_feature("web"):
+		(func() -> void:
+			if is_instance_valid(edit) and edit.is_inside_tree():
+				edit.grab_focus()).call_deferred()  # on the web a tap opens the keyboard (a focus without a tap does not)
+
+
+## A tool button of the rename screen (a tap's height; the dice is drawn on the first).
+static func _tool(ui: TournamentUI, text: String, dice: bool) -> Button:
+	var b := Button.new()
+	b.text = ("      " if dice else "") + text
+	b.focus_mode = Control.FOCUS_NONE
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b.custom_minimum_size = Vector2(0, UiTheme.TAP)
+	b.add_theme_font_size_override("font_size", UiTheme.T_BODY - 2)
+	if dice:
+		var d := Dice.new()
+		d.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		b.add_child(d)
+		b.resized.connect(func() -> void:
+			var w := b.get_theme_font("font").get_string_size(b.text, HORIZONTAL_ALIGNMENT_LEFT, -1, b.get_theme_font_size("font_size")).x
+			d.position = Vector2((b.size.x - w) * 0.5 + 20.0, b.size.y * 0.5))
+	return b
