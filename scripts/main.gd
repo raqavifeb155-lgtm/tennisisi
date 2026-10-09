@@ -112,6 +112,8 @@ var _tap_marker_hold := 0.0
 # Player hitting state
 var incoming: BallPhysics.Prediction
 var t_contact := INF            # predicted game seconds until the ball reaches the contact plane
+var _slot_type := ShotType.TOPSPIN  # the stroke the racket drops into the slot for (the last one played)
+var _split_done := false        # the waiting side has split-stepped for the ball in flight
 var contact_pred := Vector3.ZERO
 var pending_swing := {}
 var late_until := -1.0
@@ -613,8 +615,29 @@ func _physics_process(delta: float) -> void:
 	else:
 		ai.tick(delta, phase == Phase.RALLY and last_hitter == Who.PLAYER and ball.active)
 	_update_player_movement()
+	_update_split_steps()
 	if autoplay:
 		_autoplay_tick()
+
+
+## The side waiting for the ball split-steps as the other one hits: off the court a beat
+## before their contact, landing ~0.15 s after it, loaded to push off (the expert timing,
+## docs/MOVEMENT_REALISM.md). Only the look: the run itself starts as before.
+func _update_split_steps() -> void:
+	if _split_done or phase != Phase.RALLY or not ball.active:
+		return
+	if last_hitter == Who.CPU:
+		if t_contact <= Athlete.SPLIT_LEAD:
+			_split_done = true
+			cpu.split_step()
+	elif last_hitter == Who.PLAYER:
+		var v := ball.state.vel
+		if v.z >= -0.5:
+			return
+		var t := (ball.state.pos.z - (cpu.position.z + Athlete.CONTACT_FORWARD)) / -v.z
+		if t <= Athlete.SPLIT_LEAD:
+			_split_done = true
+			player.split_step()
 
 
 func _process(_delta: float) -> void:
@@ -667,6 +690,7 @@ func _update_player_hitting() -> void:
 		t_contact = INF
 		incoming = null
 		_prev_rel = rel
+		player.unslot()
 		return
 
 	incoming = BallPhysics.predict(ball.state, 2.5, 1.0 / 120.0, 2)
@@ -686,6 +710,7 @@ func _update_player_hitting() -> void:
 
 	if t_contact < 1.2 and pending_swing.is_empty():
 		player.prepare(1 if player.lateral_of(contact_pred) >= 0.0 else -1)
+	_update_racket_slot()
 
 	# Out of reach but within a dive, with a swing on the way: throw the body at it.
 	if not pending_swing.is_empty() and not player.is_down() and t_contact < Athlete.DIVE_TIME * 0.8 and contact_pred.y < 1.7:
@@ -702,6 +727,20 @@ func _update_player_hitting() -> void:
 	if late_until > 0.0 and game_time > late_until:
 		late_until = -1.0
 		ball_used = true
+
+
+## No swipe yet and the ball is close: the racket drops into the slot by itself, so the
+## swipe plays only the whip through the ball (Athlete.slot). The stroke it guesses is the
+## last one played; the swipe still decides the shot.
+func _update_racket_slot() -> void:
+	if not pending_swing.is_empty() or player.is_swinging() or player.is_down() or serve_flight:
+		return
+	var reach := Vector2(contact_pred.x - player.position.x, contact_pred.z - player.position.z).length()
+	var ok := t_contact <= Athlete.SWING_TO_CONTACT and t_contact > 0.0 and reach <= Athlete.REACH and contact_pred.y > 0.15 and contact_pred.y <= SMASH_MIN_H
+	if ok:
+		player.slot(1 if player.lateral_of(contact_pred) >= 0.0 else -1, t_contact, contact_pred, _swing_style(_slot_type, contact_pred.y))
+	elif player.is_slotted() and t_contact != INF and reach > Athlete.REACH + 0.3:
+		player.unslot()  # the ball moved out of reach: back to the ready position
 
 
 func _on_ball_crossed() -> void:
@@ -860,6 +899,7 @@ func _on_swipe(points: PackedVector2Array, times: PackedInt32Array) -> void:
 func _swing_input(dir: Vector3, pace_k: float, type: int) -> void:
 	if not _player_can_hit():
 		return
+	_slot_type = type as ShotType
 	if late_until > 0.0:
 		_player_hit(game_time - late_cross_time, dir, pace_k, type)
 		return
@@ -1354,6 +1394,7 @@ func execute_shot(who: int, hitter: Athlete, contact: Vector3, target: Vector3, 
 		v.y = (h_net - contact.y + 0.5 * BallPhysics.gravity() * t_net * t_net) / t_net
 	ball.launch(contact, v, r.spin)
 	last_hitter = who as Who
+	_split_done = false
 	bounces = 0
 	net_touched = false
 	if who == Who.CPU:

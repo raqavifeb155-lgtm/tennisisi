@@ -136,6 +136,10 @@
 # физические тесты (отскок по нормам ITF, topspin/slice, точность решателя, сетка)
 godot --headless --path . -s tests/run_tests.gd
 
+# замеры движения (скорости, торможение, сплит-степ, замах, скольжение стоп) — docs/MOVEMENT_REALISM.md
+godot --headless --path . --fixed-fps 60 -s tools/move_probe.gd -- --points=80 --location=hard
+godot --headless --path . --fixed-fps 60 -s tools/gait_probe.gd
+
 # бот играет 40 очков против CPU и печатает статистику розыгрышей
 godot --headless --path . --fixed-fps 60 -- --autoplay --points=40
 

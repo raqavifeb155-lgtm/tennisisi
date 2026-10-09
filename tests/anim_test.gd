@@ -36,6 +36,7 @@ func run_all() -> void:
 	test_stances()
 	test_human_arms()
 	test_stance_change()
+	test_racket_slot()
 	test_lean()
 	test_swing_retarget()
 	test_tired_pose()
@@ -520,6 +521,99 @@ func test_stance_change() -> void:
 			var dir := "forehand -> backhand" if first > 0 else "backhand -> forehand"
 			check(bad == 0, "%s, %s: no arm through the trunk or behind the back (%d bad frames %s)" % [sc, dir, bad, first_bad])
 			check(closest > 0.19, "%s, %s: hands keep %.2f m from the spine" % [sc, dir, closest])
+
+
+## The racket slot (Athlete.slot): no swipe yet and the ball close, the racket drops into
+## the slot by itself and waits; the swipe whips it through the ball from there. Standing,
+## backing off and shuffling sideways, released at contact, released early, released into
+## another stroke (slice), never released, or the ball switching wings: the arms never go
+## through the trunk or behind the back, the hands keep off the spine, the hand never jumps
+## more than a real whip moves in a frame (~15 m/s), and the swing still meets the ball.
+const ENDINGS := ["legacy", "whip", "early", "slice", "none", "switch"]
+
+
+func test_racket_slot() -> void:
+	print("racket slot: drop by itself, whip on the swipe, no arm through the body")
+	var moves := {"still": Vector2.ZERO, "back": Vector2(0.0, 1.0), "sideways": Vector2(1.0, 0.0)}
+	for mv_name in moves:
+		for side in [1, -1]:
+			for ending in ENDINGS:
+				fresh("hard", Vector3(0, 0, 9), Rect2(-12, -14, 24, 34))
+				var bad := 0
+				var first_bad := ""
+				var closest := 9.0
+				var jump := 0.0
+				var jump_at := ""
+				var closest_at := ""
+				var met := 9.0
+				ath.prepare(side)
+				for f in 30:
+					ath.move_input = moves[mv_name] * 0.5
+					step()
+				var ttc := Athlete.SWING_TO_CONTACT
+				var cur_side: int = side
+				var released := false
+				var prev_hand := ath._hand
+				for f in 70:
+					ath.move_input = moves[mv_name] * 0.5
+					var contact := ath.global_position + ath.right() * cur_side * 0.75 + ath.forward() * 0.45 + Vector3(0, 0.95, 0)
+					if not released:
+						if ending == "switch" and ttc < 0.1 and cur_side == side:
+							cur_side = -side
+							contact = ath.global_position + ath.right() * cur_side * 0.75 + ath.forward() * 0.45 + Vector3(0, 0.95, 0)
+						var go := ttc <= 0.0 if ending != "early" else ttc <= 0.15
+						if ending == "legacy":
+							if go:  # the old way: no slot, the whole swing starts at the swipe
+								ath.swing(cur_side, 0.0, contact)
+								released = true
+						elif ending == "none":
+							if ttc < -0.1:
+								ath.unslot()
+								released = true
+							else:
+								ath.slot(cur_side, maxf(ttc, 0.0), contact)
+						elif go or (ending == "switch" and cur_side != side and ttc <= 0.0):
+							ath.swing(cur_side, maxf(ttc, 0.0), contact, Athlete.Style.SLICE if ending == "slice" else Athlete.Style.TOPSPIN)
+							released = true
+						else:
+							ath.slot(cur_side, ttc, contact)
+					else:
+						ath.update_contact(contact) if ath.is_swinging() and ath._clock < ath._contact_at else null
+					step()
+					ttc -= DT
+					if (ath._hand - prev_hand).length() > jump:
+						jump = (ath._hand - prev_hand).length()
+						jump_at = "f%d mode %d clock %.3f contact %.3f len %.3f" % [f, ath._mode, ath._clock, ath._contact_at, ath._swing_len]
+					prev_hand = ath._hand
+					if ath.is_swinging() and absf(ath._clock - ath._contact_at) < DT * 0.6:
+						met = (ath.racket_head_world() - contact).length()
+					var pr := AthleteProbe.problems(ath)
+					if not pr.is_empty():
+						bad += 1
+						if first_bad == "":
+							first_bad = "frame %d %s" % [f, pr]
+					var t := AthleteProbe.torso(ath)
+					for it in AthleteProbe.arm_points(ath):
+						if (it[0] as String).begins_with("hand"):
+							var q := AthleteProbe.in_torso_frame(t, it[1])
+							if q.z < 99.0 and Vector2(q.x, q.y).length() < closest:
+								closest = Vector2(q.x, q.y).length()
+								closest_at = "f%d %s mode %d hold %s q %s" % [f, it[0], ath._mode, ath._slot_hold, q]
+				var tag := "%s, %s, %s" % [mv_name, "FH" if side > 0 else "BH", ending]
+				check(bad == 0, "%s: no arm through the trunk or behind the back (%d bad frames %s)" % [tag, bad, first_bad])
+				# Both hands on the racket in the ready stance hold it ~0.18 m in front of the
+				# chest (as before the slot), so the margin here is that, not the takeback's.
+				check(closest > 0.17, "%s: hands keep %.2f m from the spine (%s)" % [tag, closest, closest_at])
+				if ending == "legacy" or ending == "switch":
+					# The whole swing squeezed into the frames after the swipe (the old way,
+					# and still the way when the ball switches wings at the last moment).
+					print("  info %s: the hand moves up to %.2f m in a frame (%s)" % [tag, jump, jump_at])
+				else:
+					# A real forehand whip: the hand ~12-17 m/s near contact, 0.2-0.3 m a frame.
+					check(jump < 0.32, "%s: the hand moves at most %.2f m in a frame (%s)" % [tag, jump, jump_at])
+				if ending != "none":
+					check(met < 0.35, "%s: the racket meets the ball (%.2f m off at contact)" % [tag, met])
+				check(not ath.is_slotted(), "%s: nothing left waiting in the slot" % tag)
 
 
 ## Out of breath between points: bent over with both hands at the knees, the feet

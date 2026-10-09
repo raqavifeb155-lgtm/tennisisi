@@ -54,6 +54,13 @@ const UNIT_TURN_TIME := 0.42     # the shoulder turn is gradual, 0.5-0.7 s, done
 const SPLIT_TIME := 0.5          # a split step is a low wide load, not a hop
 const LEAN_MAX := 0.26           # ~15 deg: the most a body leans into a sprint start
 const SLIDE_DECEL := 9.0         # clay: a hard stop glides (measured 6-8 m/s2, 0.85-1.6 m)
+# Gait (docs/MOVEMENT_REALISM.md): quick short steps at low speed, ~4.5 steps/s and
+# ~1.35 m steps at a sprint; a planted foot does not slide over the court.
+const STEP_RATE_0 := 3.0         # steps per second when just starting to move...
+const STEP_RATE_K := 0.25        # ...plus this per m/s of speed
+const GALLOP_LAG := 0.4 * PI     # sideways shuffle: the trailing foot follows this far behind
+const SPLIT_LEAD := 0.07         # the split step takes off this long before the other's contact,
+                                 # landing ~0.15 s after it (experts: -40..+34 ms, +130..160 ms)
 
 var facing := -1.0             # -1 faces -Z (near player), +1 faces +Z (opponent)
 var velocity := Vector3.ZERO
@@ -120,6 +127,11 @@ var _toss_t := 0.0             # seconds into the toss (racket arm low, then up 
 var _stretch := false          # the ball is out wide: a reaching shot with a short, low finish
 var _swing_e := 0.0           # 0..1 through the forward swing (for the arm poles)
 var _tilt := 0.0               # trunk tipped sideways from the hips toward a wide ball (rad, + = right)
+var _slot_hold := false        # the racket waits in the slot for the swipe (slot())
+var _slot_released := false    # the swing goes on from the slot: the second half starts at the hand
+var _swing_len := -1.0         # forward swing length for this stroke when re-timed from the slot
+var _swing_from_twist := 0.0   # shoulders and hips when the swing started (a late start blends
+var _swing_from_hips := 0.0    # from them instead of snapping to the full turn)
 
 # Visual nodes
 var look: Dictionary = Looks.DEFAULT.duplicate()
@@ -189,7 +201,46 @@ func stance_for(p: Vector3, side: int) -> Vector3:
 
 
 func is_swinging() -> bool:
-	return _mode == 2
+	return _mode == 2 and not _slot_hold
+
+
+## Racket in the slot (see slot()): dropped under the ball, waiting for the stroke.
+func is_slotted() -> bool:
+	return _mode == 2 and _slot_hold
+
+
+## The racket drops into the slot ahead of a stroke the player has not swiped yet: the
+## first half of the forward swing (takeback -> racket below the ball, hips starting)
+## runs by itself, then holds there. The swipe (swing()) plays the second half, drop ->
+## contact, in whatever time is left, so a swipe made at the moment of contact is a quick
+## whip from the slot and not the whole stroke squeezed into a frame or two (real forward
+## swings take ~0.16-0.24 s, most of the racket speed in the last ~0.1 s). Only the look:
+## the shot is still played by the swipe. Call it every frame while the ball comes in.
+func slot(side: int, time_to_contact: float, contact_world: Vector3, style := Style.TOPSPIN) -> void:
+	if _mode == 2 and not _slot_hold:
+		return
+	if _mode == 2 and side != _side:
+		unslot()  # the ball went to the other wing: the swipe will swing from the ready stance
+		return
+	if _mode != 2 and time_to_contact < _swing_time() * 0.5:
+		return    # too late to drop into the slot for this ball
+	if _mode == 2:
+		_contact = to_local(contact_world)
+		_contact_at = _clock + maxf(time_to_contact, _swing_time() * 0.5)
+		_stretch = _is_stretch()
+		return
+	swing(side, time_to_contact, contact_world, style)
+	_slot_hold = true
+	_slot_released = false
+
+
+## The ball went by without a swipe (or switched wings): the racket comes back up into the
+## takeback the way it dropped, and from there to the ready position (relax()).
+func unslot() -> void:
+	if _mode == 2 and _slot_hold:
+		_slot_hold = false
+		_mode = 1
+		_prep_t = UNIT_TURN_TIME
 
 
 ## Unit turn toward the side the ball is coming to.
@@ -275,6 +326,26 @@ func racket_node() -> Node3D:
 
 ## Start a swing that meets the ball at contact_world after time_to_contact (game seconds).
 func swing(side: int, time_to_contact: float, contact_world: Vector3, style := Style.TOPSPIN) -> void:
+	if _mode == 2 and _slot_hold:
+		_slot_hold = false
+		if side == _side:
+			# Released: the rest of the forward swing in the time left, from where it is
+			# now. From the slot itself (drop -> contact) it starts at the hand, in the
+			# stroke the swipe asked for.
+			var left := maxf(time_to_contact, 0.05)
+			var swing_t := _swing_time()
+			var u := clampf((_clock - (_contact_at - swing_t)) / swing_t, 0.0, 0.98)
+			_style = style
+			_contact = to_local(contact_world)
+			_stretch = _is_stretch()
+			_contact_at = _clock + left
+			_swing_len = left / (1.0 - u)
+			if u >= 0.49:
+				_swing_from_hand = _hand
+				_swing_from_dir = _rdir
+				_slot_released = true
+			return
+		_mode = 0  # the other wing after all: a fresh swing below
 	if _mode == 2 and side == _side and not _serve_style() and _clock <= _contact_at + 0.08:
 		# Already swinging at this ball (the swing was started ahead of contact so the
 		# racket comes through): keep the motion, only correct where and when it meets
@@ -291,12 +362,17 @@ func swing(side: int, time_to_contact: float, contact_world: Vector3, style := S
 	_side = side
 	_style = style
 	_volley = _at_net(style)
+	_slot_hold = false
+	_slot_released = false
+	_swing_len = -1.0
 	_clock = 0.0
 	_contact_at = maxf(time_to_contact, 0.05)
 	_contact = to_local(contact_world)
 	_stretch = _is_stretch()
 	_swing_from_hand = _hand
 	_swing_from_dir = _rdir
+	_swing_from_twist = _twist
+	_swing_from_hips = _hip_twist
 
 
 ## Refine where the strings meet the ball once the real contact point is known.
@@ -312,7 +388,30 @@ func _is_stretch() -> bool:
 
 
 func split_step() -> void:
+	if _hop < 0.4:
+		return  # already in the air for this ball (Main starts it a beat before contact)
 	_hop = 0.0
+
+
+## Steps per second at a run speed (m/s).
+static func _step_rate(v: float) -> float:
+	return STEP_RATE_0 + STEP_RATE_K * v
+
+
+## Share of a foot's cycle it spends on the court: about half when jogging, a third in a
+## sprint (the rest is the flight of a running stride).
+static func _stance_share(v: float) -> float:
+	return clampf(0.55 - 0.035 * v, 0.33, 0.5)
+
+
+## One foot through its cycle: x from +1 (put down in front) to -1 (pushed off behind) at
+## an even pace while on the court, then a smooth swing forward; y is the lift 0..1.
+static func _gait(phase: float, duty: float) -> Vector2:
+	var c := fposmod(phase, TAU) / TAU
+	if c < duty:
+		return Vector2(1.0 - 2.0 * c / duty, 0.0)
+	var s := (c - duty) / (1.0 - duty)
+	return Vector2(-cos(PI * s), sin(PI * s))
 
 
 static func speed_of(v: Vector3) -> float:
@@ -345,6 +444,8 @@ func _serve_kick() -> float:
 
 ## Forward swing (racket drop -> contact) and follow-through lengths for the stroke.
 func _swing_time() -> float:
+	if _swing_len > 0.0:
+		return _swing_len
 	return VOLLEY_SWING if _volley else SWING_TO_CONTACT
 
 
@@ -823,6 +924,8 @@ func _process(delta: float) -> void:
 	if _mode == 2:
 		_clock += delta
 		var swing_t := _swing_time()
+		if _slot_hold:
+			_clock = minf(_clock, _contact_at - swing_t * 0.5)  # waiting in the slot
 		var start := _contact_at - swing_t
 		var prep: Array = _key(_style, "prep", _side)
 		var drop: Array = _key(_style, "drop", _side)
@@ -837,8 +940,8 @@ func _process(delta: float) -> void:
 			_hip_twist = lerpf(_hip_twist, -turn * HIP_RATIO, k)
 		elif _clock < _contact_at:
 			var u := clampf((_clock - start) / swing_t, 0.0, 1.0)
-			var from_h: Vector3 = prep[0] if start > 0.0 else _swing_from_hand
-			var from_d: Vector3 = prep[1] if start > 0.0 else _swing_from_dir
+			var from_h: Vector3 = prep[0] if start > 0.0 and _swing_len < 0.0 else _swing_from_hand
+			var from_d: Vector3 = prep[1] if start > 0.0 and _swing_len < 0.0 else _swing_from_dir
 			var e := u * u * (3.0 - 2.0 * u)
 			swing_e = e
 			if e < 0.5:
@@ -847,8 +950,10 @@ func _process(delta: float) -> void:
 				_rdir = from_d.lerp(drop[1], w).normalized()
 			else:
 				var w := (e - 0.5) * 2.0
-				_hand = (drop[0] as Vector3).cubic_interpolate(con[0], from_h, fol[0], w)
-				_rdir = (drop[1] as Vector3).lerp(con[1], w).normalized()
+				var mid_h: Vector3 = _swing_from_hand if _slot_released else drop[0]
+				var mid_d: Vector3 = _swing_from_dir if _slot_released else drop[1]
+				_hand = mid_h.cubic_interpolate(con[0], from_h, fol[0], w)
+				_rdir = mid_d.lerp(con[1], w).normalized()
 			# Kinetic chain: the hips fire first, the shoulders stay turned while the
 			# racket drops (FH-4, BH-4) and unwind late, into the ball. A slice keeps
 			# the body side-on through the ball.
@@ -867,6 +972,14 @@ func _process(delta: float) -> void:
 			else:
 				_twist = lerpf(-turn, 0.0, sh_e)
 				_hip_twist = lerpf(-turn * HIP_RATIO, turn * 0.15, hip_e)
+			if start <= 0.0 and e < 0.5:
+				# Started late (from the ready stance or on the run, not from a full
+				# takeback): the shoulders come round from where they were by the time
+				# the racket drops, instead of snapping there (and the left arm with them).
+				var b := e * 2.0
+				b = b * b * (3.0 - 2.0 * b)
+				_twist = lerpf(_swing_from_twist, _twist, b)
+				_hip_twist = lerpf(_swing_from_hips, _hip_twist, b)
 		else:
 			var u := clampf((_clock - _contact_at) / _follow_time(), 0.0, 1.0)
 			var e := 1.0 - (1.0 - u) * (1.0 - u)
@@ -905,8 +1018,10 @@ func _process(delta: float) -> void:
 				# (Alcaraz 7.75-8.07 s): never out to the side behind the shoulder.
 				var w := (e - 0.5) / 0.5
 				w = w * w * (3.0 - 2.0 * w)
-				_hand = (fol[0] as Vector3).lerp(Vector3(0.3, 1.22, -0.34), w)
-				_rdir = (fol[1] as Vector3).slerp(Vector3(-0.25, 0.75, -0.6).normalized(), w).normalized()
+				# From where the finish has the hand now (not from the finish key: that
+				# jumped the hand ~0.8 m in one frame half way through the finish).
+				_hand = _hand.lerp(Vector3(0.3, 1.22, -0.34), w)
+				_rdir = _rdir.slerp(Vector3(-0.25, 0.75, -0.6).normalized(), w).normalized()
 				_elbow_up = e * (1.0 - w)
 			# The one-hander keeps the chest mostly sideways (the arm does the travelling);
 			# everything else turns through.
@@ -1090,7 +1205,7 @@ func _process(delta: float) -> void:
 		_attach = lerpf(minf(_attach, 1.0), attach, 1.0 - exp(-14.0 * delta))
 
 	# --- Body: crouch, hop, lean, stance ---
-	_run_phase += delta * (5.0 + speed * 2.2)
+	_run_phase += delta * PI * _step_rate(speed)  # two steps per turn of the phase
 	var amt := clampf(speed / 4.0, 0.0, 1.0)
 	var target_crouch := 0.06 - amt * 0.03
 	if _mode == 0 and stance_style == 1:
@@ -1334,12 +1449,22 @@ func _pose(local_v: Vector3, amt: float, near_contact: float) -> void:
 	# shuffles, higher in a sprint); for a stroke they take that stroke's stance; a
 	# stretched ball spreads them toward it and a slide spreads them along the slide. The
 	# hips then sit as low as it takes for both feet to reach the court.
-	var stride := Vector3(local_v.x, 0, local_v.z).normalized() * 0.4 * amt if amt > 0.05 else Vector3.ZERO
-	var sideways := absf(local_v.x) / maxf(Vector2(local_v.x, local_v.z).length(), 0.01)
+	# A planted foot stays put on the court: through the stance it travels back under the
+	# body exactly as fast as the body runs on (stride half-length = speed x stance share /
+	# step rate, see _step_rate), then swings forward in the air (docs/MOVEMENT_REALISM.md).
+	var spd := Vector2(local_v.x, local_v.z).length()
+	var duty := _stance_share(spd)
+	var stride := Vector3(local_v.x, 0, local_v.z) / maxf(spd, 0.01) * (spd * duty / _step_rate(spd)) if amt > 0.05 else Vector3.ZERO
+	var sideways := absf(local_v.x) / maxf(spd, 0.01)
 	# Sideways the feet shuffle (apart, together) on a wider base and never cross: a
-	# crossover only comes in a real sprint (Alcaraz's 5 m run, 3.7 m/s and up).
+	# crossover only comes in a real sprint (Alcaraz's 5 m run, 3.7 m/s and up). In the
+	# shuffle the lead foot steps out first and the trailing one follows close behind
+	# (a gallop), so the feet stay apart while both keep their grip.
 	var shuffle := clampf(1.0 - (local_v.length() - 3.6) / 1.0, 0.0, 1.0) * sideways
-	stride.x *= lerpf(1.0, 0.32, shuffle)
+	var lead_x := 0 if local_v.x >= 0.0 else 1   # the foot on the side it runs to
+	var foot_lag := lerpf(PI, GALLOP_LAG, clampf((sideways - 0.3) / 0.5, 0.0, 1.0))
+	# The base is just wide enough that the stepping feet never meet.
+	var gait_w := 0.08 + absf(stride.x) * foot_lag / PI
 	var sl := _slide * _slide * (3.0 - 2.0 * _slide)
 	var lead := 1.0 if _slide_dir.x >= 0.0 else -1.0  # the foot on the slide's side leads
 	var ball_side := signf(_lunge_dir.x) if absf(_lunge_dir.x) > 0.2 else float(_side)
@@ -1354,13 +1479,14 @@ func _pose(local_v: Vector3, amt: float, near_contact: float) -> void:
 	var hip_off: Array[Vector3] = []
 	for i in 2:
 		var sgn := 1.0 if i == 0 else -1.0
-		var phase := _run_phase + (0.0 if i == 0 else PI)
+		var phase := _run_phase + (foot_lag if i == lead_x else 0.0)
 		var ho := th * Vector3(0.11 * sgn, 0, 0)
-		var neutral := Vector3((0.17 + 0.07 * shuffle * amt) * sgn, 0.05, 0.0)
+		var neutral := Vector3(maxf(0.17 + 0.07 * shuffle * amt, gait_w) * sgn, 0.05, 0.0)
 		var base: Vector3 = neutral.lerp(stance[i], _stance)
-		var foot := base + stride * sin(phase)
-		foot.y += maxf(0.0, cos(phase)) * lerpf(0.18, 0.09, sideways) * amt
-		foot = foot.lerp(stance[i], planted * 0.5)
+		base = base.lerp(stance[i], planted * 0.5)
+		var g := _gait(phase, duty)
+		var foot := base + stride * g.x
+		foot.y += g.y * lerpf(0.18, 0.09, sideways) * amt
 		if sl > 0.0:
 			# Slide: the legs spread wide along it, the lead leg bent, the trailing one
 			# straight, both feet flat on the clay (~1.4 m apart).
