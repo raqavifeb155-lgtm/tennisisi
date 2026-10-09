@@ -37,6 +37,11 @@ static func booth(ui: TournamentUI) -> void:
 		var m: Dictionary = q[i]
 		var inf := info(m)
 		ui._card({"tag": "Ждёт в будке", "title": "%s  ·  %d" % [inf["name"], inf["rating"]], "desc": "против %s  ·  %s" % [inf["opp"], inf["style"]]}, "club_match_pick", i, UiTheme.GOLD)
+	if not Academy.students().is_empty():
+		var bonus := JuniorMatch.gold_bonus_pct()
+		var rl := ui._text("Рейтинг академии: %d  (три лучших ученика)%s" % [JuniorMatch.academy_rating(), ("  ·  +%d%% золота за победы" % bonus) if bonus > 0 else ""], UiTheme.text_bold(), UiTheme.T_SMALL + 2, UiTheme.GOLD)
+		rl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		ui._box.add_child(rl)
 	var log_: Array = JuniorMatch.data()["log"]
 	if not log_.is_empty():
 		ui._sub("Последние матчи")

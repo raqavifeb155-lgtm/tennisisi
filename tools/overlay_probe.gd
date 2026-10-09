@@ -256,6 +256,122 @@ func _no_code_words(ctx: String) -> void:
 	await _expect("%s: на экране нет кодовых слов вида snake_case %s" % [ctx, str(found)], func() -> bool: return found.is_empty())
 
 
+## T-4: the booth (list, card), the student's match watched (the buttons, the camera, the
+## coach's pause with four setups, the plate, «Итог» and its result screen, «← В клуб»), the
+## button of the coach's office. The student of the hiring round above stands in the academy.
+func _junior_round(club) -> void:
+	var frame := Rect2(Vector2.ZERO, Vector2(root.size))
+	var skills_before := Skills.to_profile()
+	JuniorMatch.sync()
+	_check("Будка: после забега матч ждёт ученика", JuniorMatch.queue().size() == 1)
+	await _club_screen("Клуб 3D → Будка", "club_booth", "Будка тренера")
+	club.ui_action("club_students", 0)
+	await _wait(0.8)
+	await _screen_shape("Кабинет с кнопкой «Матчи»")
+	await _expect("Кабинет: кнопка «Матчи в будке» есть", func() -> bool: return _button(main.ui.root, "Матчи в будке") != null)
+	await _tap(await _find(main.ui.root, "Матчи в будке"))
+	await _expect("Кабинет → Будка: экран открылся", func() -> bool: return _label_has("Будка тренера"))
+	_chosen = ""
+	await _tap_until(func() -> Control: return await _find(main.ui.root, "Назад"), func() -> bool: return _chosen == "club_students")
+	await _expect("Будка из кабинета: «Назад» ведёт в кабинет", func() -> bool: return _chosen == "club_students")
+	club.ui_action("club_match_pick", 0)
+	await _wait(0.8)
+	await _screen_shape("Будка → Карточка матча")
+	await _expect("Карточка матча: «СМОТРЕТЬ» и «Итог сразу» есть", func() -> bool: return _button(main.ui.root, "СМОТРЕТЬ") != null and _button(main.ui.root, "Итог сразу") != null)
+	await _no_code_words("Карточка матча")
+	# The match is watched: Main plays the near side with the student, the controls are ours.
+	await _tap(await _find(main.ui.root, "СМОТРЕТЬ"))
+	await _wait(2.0)
+	var w: JuniorWatch = main.get_node_or_null("JuniorWatch")
+	await _expect("Матч ученика: идёт, spectate включён", func() -> bool: return w != null and w.active and main.spectate == w and not main.ui.is_open())
+	if w == null or not w.active:
+		return
+	var btns: Array = w._layer.find_children("*", "Button", true, false)
+	var small := 0
+	var outside := 0
+	for b in btns:
+		if (b as Button).size.y < 84.0:
+			small += 1
+		if not frame.grow(2.0).encloses((b as Button).get_global_rect()):
+			outside += 1
+	_check("Матч ученика: кнопок не меньше четырёх (камера, ×2, советы, Итог, В клуб)", btns.size() >= 5)
+	_check("Матч ученика: кнопки не меньше 84 px", small == 0)
+	_check("Матч ученика: кнопки целиком на экране", outside == 0)
+	var gear_hit := false
+	for b in btns:
+		gear_hit = gear_hit or ((b as Button).get_global_rect().intersects(club.hud.gear.get_global_rect()) and club.hud.gear.is_visible_in_tree())
+	_check("Матч ученика: ⚙ не закрыта кнопками", not gear_hit)
+	var was: String = w.cam_mode
+	await _tap(await _find(w._layer, "Камера"))
+	await _expect("Матч ученика: «Камера» переключает Будку и Матч", func() -> bool: return w.cam_mode != was and main.cam.booth == (w.cam_mode == "booth"))
+	await _tap(await _find(w._layer, "Скорость"))
+	await _expect("Матч ученика: «×2» ускоряет", func() -> bool: return is_equal_approx(Engine.time_scale, 2.0))
+	await _tap(await _find(w._layer, "Скорость"))
+	await _expect("Матч ученика: ещё раз «×2» возвращает ход", func() -> bool: return is_equal_approx(Engine.time_scale, 1.0))
+	# The coach's pause: four setups, each a thumb's size, inside the screen; a pick starts four points.
+	var options := JuniorBot.options_for("behind", true)
+	w._ask("behind", options)
+	await _wait(0.9)
+	var sheet: AcademyAdvice = w._advice_sheet
+	var four := 0
+	var sm := 0
+	var out := 0
+	for id in options:
+		var b := sheet.button_for(id)
+		if b != null and b.is_visible_in_tree():
+			four += 1
+			if b.size.y < 84.0:
+				sm += 1
+			if not frame.grow(2.0).encloses(b.get_global_rect()):
+				out += 1
+	_check("Пауза-совет: четыре установки на экране", four == 4)
+	_check("Пауза-совет: кнопки не меньше 84 px", sm == 0)
+	_check("Пауза-совет: кнопки целиком на экране", out == 0)
+	await _screen_shape_of(sheet, "Пауза-совет")
+	await _tap(sheet.button_for(String(options[1])))
+	await _expect("Пауза-совет: выбор закрывает лист, установка на четыре очка", func() -> bool: return not w._advice_open and w.stance_id == String(options[1]) and w.left == JuniorBot.POINTS_PER_STANCE)
+	await _wait(0.5)
+	_check("Пауза-совет: плашка «Установка» над учеником", w._plate != null and ("Установка" in w._plate_label.text or main.phase == main.Phase.IDLE))
+	# «Итог»: the rest at once, the result screen.
+	await _tap(await _find(w._layer, "Итог"))
+	await _expect("Итог: экран результата", func() -> bool: return main.ui.is_open() and (_label_has("Победа") or _label_has("Поражение")) and not w.active)
+	await _screen_shape("Итог матча")
+	await _no_code_words("Итог матча")
+	_check("Итог: навыки героя вернулись", Skills.to_profile() == skills_before)
+	_check("Итог: матч снят с очереди, результат записан", JuniorMatch.queue().is_empty() and (JuniorMatch.data()["log"] as Array).size() >= 1)
+	_chosen = ""
+	await _tap(await _find(main.ui.root, "В КЛУБ"))
+	await _expect("Итог: «В КЛУБ» ведёт в клуб", func() -> bool: return club.active and not main.ui.is_open() and main.spectate == null)
+	# «← В клуб» in the middle of a match: the rest by the sim, back in the club, the coach says it.
+	SaveData.played += 1
+	JuniorMatch.sync()
+	_check("Будка: после ещё одного забега снова матч", JuniorMatch.queue().size() == 1)
+	club.ui_action("club_match_pick", 0)
+	await _wait(0.8)
+	club.ui_action("club_match_watch", 0)
+	await _wait(2.0)
+	w = main.get_node_or_null("JuniorWatch")
+	await _tap(await _find(w._layer, "В клуб"))
+	await _expect("«← В клуб»: мы в клубе, матч доигран счётом", func() -> bool: return club.active and not w.active and main.spectate == null and JuniorMatch.queue().is_empty())
+	_check("«← В клуб»: навыки героя вернулись", Skills.to_profile() == skills_before)
+	await _expect("«← В клуб»: время идёт обычное", func() -> bool: return is_equal_approx(Engine.time_scale, 1.0))
+	main.ui.close()
+	await _wait(0.4)
+
+
+## Every visible button under a sheet is a thumb's size and inside the screen.
+func _screen_shape_of(sheet: Control, ctx: String) -> void:
+	var small := 0
+	var outside := 0
+	var frame := Rect2(Vector2.ZERO, Vector2(root.size))
+	for c in sheet.find_children("*", "Button", true, false):
+		var b := c as Button
+		if b.is_visible_in_tree():
+			small += 1 if b.size.y < 84.0 else 0
+			outside += 0 if frame.grow(2.0).encloses(b.get_global_rect()) else 1
+	await _expect("%s: все кнопки листа не меньше 84 px и в экране" % ctx, func() -> bool: return small == 0 and outside == 0)
+
+
 ## A club screen on TournamentUI's frame (the coach's board, the islands, a shop, a place's
 ## card): opens with its title, is shaped for a thumb, has the gear over it that opens the
 ## settings (no exit outside a match), and "Назад" comes back to the walkable club.
@@ -769,6 +885,7 @@ func _run() -> void:
 		await _screen_shape("Ученик → Отпустить?")
 		await _tap(await _find(main.ui.root, "Назад"))
 		await _expect("Отпустить?: «Назад» — ученик остаётся", func() -> bool: return acad.students().size() == 1 and _label_has("Отпустить"))
+		await _junior_round(club)
 		main._on_ui("menu", 0)
 		await _wait(0.6)
 		SaveData.academy = {}
