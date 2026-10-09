@@ -75,7 +75,7 @@ static func item_card(ui: TournamentUI, item: Dictionary, what: String, slot: St
 	var r := int(item["rarity"])
 	var tag := "%s  ·  %s  ·  %s" % [what, Gear.slot_name(String(item["slot"])), UiTheme.RARITY_NAMES[r]] if what != "" \
 		else "%s  ·  %s" % [Gear.slot_name(String(item["slot"])), UiTheme.RARITY_NAMES[r]]
-	return ui._card({"tag": tag, "title": item["name"], "desc": Gear.describe(item), "item": item if thumb else {}}, action, arg, Color(0, 0, 0, 0), r)
+	return ui._card({"tag": tag, "title": item["name"], "desc": Gear.describe(item), "item": item if thumb else {}, "uniform": true}, action, arg, Color(0, 0, 0, 0), r)
 
 
 # --- Hooks into the tournament screens ------------------------------------------

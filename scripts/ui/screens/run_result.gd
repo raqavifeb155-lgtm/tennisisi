@@ -104,14 +104,7 @@ static func summary_quests(ui: TournamentUI) -> void:
 
 ## The island this title opened (the next one in the order, if it is open now), or "".
 static func new_island(t: Tournament) -> String:
-	if not t.champion:
-		return ""
-	var i := Locations.ORDER.find(t.location)
-	if i < 0 or i + 1 >= Locations.ORDER.size():
-		return ""
-	var nxt: String = Locations.ORDER[i + 1]
-	# The first title on an island opens the next one (Spain: the first title anywhere).
-	return nxt if Locations.unlocked(nxt) and int(SaveData.titles_by_loc.get(t.location, 0)) == 1 else ""
+	return Locations.opened_by_title(t.location) if t.champion else ""
 
 
 # --- The run's summary (v0.2 A-2, spec 1 and 9.2) -------------------------------------

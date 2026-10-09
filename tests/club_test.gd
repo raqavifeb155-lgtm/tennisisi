@@ -1260,8 +1260,14 @@ func test_lots_flow() -> void:
 	club._foreman_step(1)
 	club._foreman_step(1)
 	club._foreman_step(1)
-	check(club.lot_type() == "arena", "the last card is the arena")
+	check(club.lot_type() == "bar" and not ClubLots.sheet_types().has("arena") and not ClubLots.sheet_types().has("academy"), "a newcomer's sheet ends with the bar: no «Скоро» cards of what is not in the game")
+	var played_was := SaveData.played
+	SaveData.played = 5
+	check(ClubLots.sheet_types().size() == 7 and ClubLots.sheet_types().back() == "arena", "after five runs the academy and the arena join the sheet")
+	club.lot_show("arena")
+	check(club.lot_type() == "arena", "the arena's card")
 	check(not club.foreman_build() and not club.building(), "«Скоро» builds nothing")
+	SaveData.played = played_was
 	club.lot_show("coach")
 	check(not club.foreman_build() and SaveData.gold == 0, "no gold: nothing is built, the chip shakes")
 	SaveData.gold = 100

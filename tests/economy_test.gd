@@ -39,6 +39,7 @@ func _run() -> void:
 	test_shop()
 	test_strings()
 	test_islands()
+	test_loop_review()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -552,4 +553,45 @@ func test_chest() -> void:
 	t3.chest = {"round": 0, "gold": 5, "item": {}, "perk": "", "wildcard": false, "opened": false}
 	t3.dry = 1
 	check(Tournament.from_dict(t3.to_dict()).chest == t3.chest and Tournament.from_dict(t3.to_dict()).dry == 1, "a chest waiting survives a save")
+	_reset_save()
+
+
+# --- Loop review 10.10: the places where the cycle leaked ------------------------------
+
+func test_loop_review() -> void:
+	print("loop review")
+	_reset_save()
+	# The run's end sells what is extra (it used to vanish) before the gold goes to the bank.
+	var t := Tournament.new(1, 21)
+	_plain(t)
+	t.bag = [_item(Gear.COMMON, 1, "shoes"), _item(Gear.EPIC, 1, "racket")]
+	t.state = Tournament.State.OVER
+	var before := SaveData.gold
+	SaveData.record_run(t)
+	check(int(t.income.get("sell", 0)) == Items.sell_price(_item(Gear.COMMON, 1, "shoes")) and t.bag.size() == 1, "record_run: the common is sold on the 'sell' line, the epic stays")
+	check(SaveData.gold == before + t.gold and t.gold >= int(t.income.get("sell", 0)), "...and it is in the bank with the rest")
+	# The title pays by the conditions (a hardcore run's bonus is x2.5, like its matches).
+	var plain := Tournament.new(1, 22)
+	_plain(plain)
+	var hard := Tournament.new(1, 22, true)
+	_plain(hard)
+	Modifiers.set_run(hard, [])
+	_plain(hard)  # (set_run dealt the final's auras again)
+	check(hard.champion_bonus() == roundi(plain.champion_bonus() * Modifiers.find("hardcore")["reward"]) or absi(hard.champion_bonus() - roundi(float(plain.champion_bonus()) * float(Modifiers.find("hardcore")["reward"]))) <= 1, "a hardcore title pays x2.5 (%d vs %d)" % [hard.champion_bonus(), plain.champion_bonus()])
+	check(Modifiers.reward_raw(["hardcore", "tier_up", "short_ring"]) >= Modifiers.reward(["hardcore", "tier_up", "short_ring"]), "reward_raw is the pay before the cap")
+	# The horizon: the bracket counts the run's gold that is not in the bank yet.
+	SaveData.played = 1
+	SaveData.gold = 0
+	check(Goals.line(100000).begins_with("По карману"), "Goals.line(extra): the bank plus the run's gold buys things")
+	check(not Goals.line(0).begins_with("По карману"), "...and without it the bank buys nothing")
+	# The island a title opens.
+	var champ := Tournament.new(1, 23)
+	champ.champion = true
+	champ.location = "park"
+	SaveData.titles_by_loc = {"park": 1}
+	check(Locations.opened_by_title(champ.location) == "clay", "the first title in New York opens Spain")
+	SaveData.titles_by_loc = {"park": 2}
+	check(Locations.opened_by_title(champ.location) == "", "...and it is news only once")
+	champ.location = "paris"
+	check(Locations.opened_by_title(champ.location) == "", "Paris is the last island")
 	_reset_save()

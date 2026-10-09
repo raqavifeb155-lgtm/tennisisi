@@ -42,7 +42,7 @@ func _run() -> void:
 	SaveData.enabled = false
 	main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(main)
-	await create_timer(7.0).timeout
+	await create_timer(12.0).timeout
 	SaveData.control_chosen = true
 	main._stop_match()
 	var rng := RandomNumberGenerator.new()

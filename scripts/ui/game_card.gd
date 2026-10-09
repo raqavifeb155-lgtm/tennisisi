@@ -44,13 +44,14 @@ var _tilt := 0.0
 
 
 const THUMB := 132.0               # the picture of a thing on its card
-## Cards of things (bag, locker, shop, rewards, loot) are all this tall: tag one line, the
-## name two, the stats three, then the price / state line. What does not fit ends in «…»
+## Cards of things (bag, locker, shop, rewards, loot) are compact and all this tall: a 64 px
+## picture, the tag, the name with the price / state on its line, two lines of stats. What does not fit ends in «…»
 ## and a long press (LONG_PRESS s) opens the whole text (loop review 10.10: the cards were
 ## as tall as their text, so a shelf of three looked ragged).
-const ITEM_H := 296.0
-const DESC_LINES := 3
-const TITLE_LINES := 2
+const ITEM_H := 156.0
+const DESC_LINES := 2
+const THUMB_ITEM := 64.0
+const PAD := 12.0
 const LONG_PRESS := 0.45
 
 
@@ -61,6 +62,8 @@ func _init() -> void:
 
 
 func _ready() -> void:
+	uniform = uniform or not item.is_empty() or item_slot != ""
+	var thumb_px := THUMB_ITEM if uniform else THUMB
 	_content = VBoxContainer.new()
 	_content.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_content.offset_left = 30
@@ -72,46 +75,60 @@ func _ready() -> void:
 	_content.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_content)
 	if not item.is_empty() or item_slot != "":
-		_thumb = ItemThumb.view(item, item_slot, THUMB)
+		_thumb = ItemThumb.view(item, item_slot, thumb_px)
 		(_thumb as ItemThumb.ThumbView).dim = item.is_empty()
 		_thumb.set_anchors_preset(Control.PRESET_CENTER_LEFT)
-		_thumb.offset_left = 18
-		_thumb.offset_right = 18 + THUMB
-		_thumb.offset_top = -THUMB * 0.5
-		_thumb.offset_bottom = THUMB * 0.5
+		_thumb.offset_left = 18 if not uniform else PAD
+		_thumb.offset_right = _thumb.offset_left + thumb_px
+		_thumb.offset_top = -thumb_px * 0.5
+		_thumb.offset_bottom = thumb_px * 0.5
 		add_child(_thumb)
-		_content.offset_left = 30 + THUMB + 6
-	uniform = uniform or not item.is_empty() or item_slot != ""
+		_content.offset_left = _thumb.offset_right + (6 if not uniform else PAD)
 	var cut_labels: Array[Label] = []
+	var long_extra := uniform and extra.length() > 22   # a long state line gets a row of its own, the stats one line
 	if uniform:
-		_content.offset_top = 14
-		_content.offset_bottom = -14
-		_content.add_theme_constant_override("separation", 4)
+		_content.offset_top = PAD
+		_content.offset_bottom = -PAD
+		_content.offset_right = -PAD - 4
+		_content.add_theme_constant_override("separation", 2)
+	var small := UiTheme.T_SMALL - 3 if uniform else UiTheme.T_SMALL
 	if tag != "":
-		var tl := _line(tag, UiTheme.text_bold(), UiTheme.T_SMALL, _frame_color() if _frame_color().a > 0.2 else UiTheme.MUTED)
+		var tl := _line(tag, UiTheme.text_bold(), small, _frame_color() if _frame_color().a > 0.2 else UiTheme.MUTED)
 		if uniform:
 			tl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 			cut_labels.append(tl)
 		_content.add_child(tl)
-	var tt := _line(title, UiTheme.display(), UiTheme.T_HEAD, UiTheme.INK)
-	tt.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	var tt := _line(title, UiTheme.display(), UiTheme.T_SMALL + 3 if uniform else UiTheme.T_HEAD, UiTheme.INK)
+	var e: Label = null
 	if uniform:
-		tt.max_lines_visible = TITLE_LINES
+		# One line: the name and, to its right, the price / state (never cut off).
 		tt.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		tt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		cut_labels.append(tt)
-	_content.add_child(tt)
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(tt)
+		if extra != "" and not long_extra:
+			e = _line(extra, UiTheme.text_bold(), UiTheme.T_SMALL - 1, UiTheme.GOLD)
+			e.size_flags_horizontal = Control.SIZE_SHRINK_END
+			row.add_child(e)
+		_content.add_child(row)
+	else:
+		tt.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_content.add_child(tt)
 	if desc != "":
-		var d := _line(desc, UiTheme.text(), UiTheme.T_SMALL + 2, UiTheme.MUTED)
+		var d := _line(desc, UiTheme.text(), UiTheme.T_SMALL - 1 if uniform else UiTheme.T_SMALL + 2, UiTheme.MUTED)
 		d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		if uniform:
-			d.max_lines_visible = DESC_LINES
-			d.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+			d.max_lines_visible = 1 if long_extra else DESC_LINES   # (a wrapped Label with the ellipsis flag collapses: _check_cut adds the «…»)
 			cut_labels.append(d)
 		_content.add_child(d)
-	if extra != "":
-		var e := _line(extra, UiTheme.text_bold(), UiTheme.T_SMALL + 2, UiTheme.INK)
-		e.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		cut_labels.append(e)
+	if extra != "" and e == null:
+		e = _line(extra, UiTheme.text_bold(), UiTheme.T_SMALL - 1 if uniform else UiTheme.T_SMALL + 2, UiTheme.GOLD if uniform else UiTheme.INK)
+		if uniform:
+			e.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+			cut_labels.append(e)
 		_content.add_child(e)
 	if uniform:
 		_check_cut.call_deferred(cut_labels)
@@ -152,17 +169,25 @@ func _fit() -> void:
 ## After the layout: was any line of the card cut? Then it wears a small «i» and a long press
 ## opens the full text.
 func _check_cut(labels: Array[Label]) -> void:
-	await get_tree().process_frame
-	await get_tree().process_frame
+	for i in 2:
+		if not is_inside_tree():
+			return
+		await get_tree().process_frame
+	if not is_inside_tree():
+		return
 	for l in labels:
 		if not is_instance_valid(l):
 			continue
-		var wrapped := l.autowrap_mode != TextServer.AUTOWRAP_OFF
-		if (wrapped and l.max_lines_visible > 0 and l.get_line_count() > l.max_lines_visible) \
-				or (not wrapped and l.get_minimum_size().x > l.size.x + 1.0) \
-				or (wrapped and l.get_line_count() > l.get_visible_line_count()):
-			_cut = true
-	if _cut and _info == null and not face_down:
+		if l.autowrap_mode != TextServer.AUTOWRAP_OFF:
+			if l.max_lines_visible > 0 and l.get_line_count() > l.max_lines_visible:
+				_cut = true
+				_ellipsize(l)
+		else:
+			var f := l.get_theme_font("font")
+			var w := f.get_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1, l.get_theme_font_size("font_size")).x
+			if w > l.size.x + 1.0:
+				_cut = true
+	if _cut and _info == null:
 		_info = InfoDot.new()
 		_info.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_info.set_anchors_preset(Control.PRESET_TOP_RIGHT)
@@ -172,9 +197,29 @@ func _check_cut(labels: Array[Label]) -> void:
 		_info.offset_bottom = 48
 		(_info as InfoDot).color = _frame_color() if _frame_color().a > 0.2 else UiTheme.MUTED
 		add_child(_info)
-		move_child(_info, _shine.get_index() if _shine else -1)
 	if _info:
 		_info.visible = _cut and not face_down
+
+
+## The text up to the label's last visible line, that line shortened to make room for «…».
+func _ellipsize(l: Label) -> void:
+	var f := l.get_theme_font("font")
+	var fs := l.get_theme_font_size("font_size")
+	var tp := TextParagraph.new()
+	tp.width = l.size.x
+	tp.break_flags = TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND | TextServer.BREAK_ADAPTIVE
+	tp.add_string(l.text, f, fs)
+	var n := l.max_lines_visible
+	if tp.get_line_count() <= n:
+		return
+	var r := tp.get_line_range(n - 1)
+	var head := l.text.substr(0, r.x)
+	var last := l.text.substr(r.x, r.y - r.x).strip_edges()
+	while last.length() > 1 and f.get_string_size(last + "…", HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > l.size.x:
+		last = last.left(last.length() - 1)
+	while last.length() > 1 and last[last.length() - 1] in [" ", ",", ".", ";", ":", "·", "-", "—"]:
+		last = last.left(last.length() - 1)
+	l.text = head + last + "…"
 
 
 ## The full text of the card, from the bottom (a tap on the veil closes it).
@@ -249,6 +294,8 @@ func _apply_face() -> void:
 		_back.visible = face_down
 	if _shine:
 		_shine.visible = not face_down
+	if _info:
+		_info.visible = _cut and not face_down
 
 
 ## Turns a face-down card over: it narrows to an edge, swaps sides, opens. `delay` waits

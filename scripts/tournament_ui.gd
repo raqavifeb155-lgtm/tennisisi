@@ -864,10 +864,12 @@ func _card(c: Dictionary, action: String, i: int, accent: Color, rarity := -1, s
 	card.selected = selected
 	card.item = c.get("item", {})        # v0.2 L: a thing's card wears its picture...
 	card.item_slot = String(c.get("slot", ""))  # ...an empty slot's card the stock one
+	card.extra = String(c.get("extra", ""))     # a thing's price / state line, never cut off
+	card.uniform = bool(c.get("uniform", false))  # a thing's card even without its picture
 	card.face_down = bool(c.get("face_down", false))
-	if action == "":
-		card.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	else:
+	if action == "" and not card.uniform and card.item.is_empty() and card.item_slot == "":
+		card.mouse_filter = Control.MOUSE_FILTER_IGNORE   # (a thing's card stays touchable: a long press shows it all)
+	elif action != "":
 		card.pressed.connect(func() -> void:
 			if card.face_down:
 				_reveal_all()  # a tap on a back turns the whole row at once
