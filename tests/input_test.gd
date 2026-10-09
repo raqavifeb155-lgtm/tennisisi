@@ -199,6 +199,10 @@ func _smash_step(vp: Vector2) -> void:
 	var hub = main.smash_hub
 	var sm: RacketSmash = hub.smash
 	var btn: Control = main.hud.smash_btn
+	if smash_state == 0 and frame > 60 * 25 and main.phase == main.Phase.RALLY and script_steps.is_empty():
+		# The bot-like swipes may not throw a point away on their own in the time given (a better
+		# returner, F-E): the flow under test starts from a point lost to an error, so lose one.
+		main._end_point(main.Who.CPU, "OUT")
 	if smash_state == 0 and main.phase == main.Phase.OVER and hub.offer_left > 0.0 and script_steps.is_empty():
 		smash_info["button_visible"] = btn.is_visible_in_tree() and btn.size.x >= 84.0
 		smash_info["tournament"] = main.tournament_mode
