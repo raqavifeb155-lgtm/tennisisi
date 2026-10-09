@@ -151,6 +151,8 @@ func _signature() -> String:
 	var parts := PackedStringArray()
 	for id in ["court", "stands", "gate", "shop", "locker", "trophy", "bar", "arena"]:  # (the fence looks at "gate")
 		parts.append(str(level_of(id)))
+	for id in ClubLots.ORDER:   # what the ruins see: the state of each type's home lot
+		parts.append(str(site_level(id)))
 	parts.append(str(int(SaveData.played >= 1)))
 	return ",".join(parts)
 
@@ -161,11 +163,21 @@ func level_of(owner: String) -> int:
 	return ClubPlaces.level(owner)
 
 
+## The level the props of `owner` see. A ruin (and the tidy-up of a built place) belongs to
+## the SITE: for the type of a lot it is whatever stands on that type's home lot - nothing
+## (0), or a building of any type (>= 1) - not the level of the type, which may stand elsewhere
+## (ClubLots.ruin_level, docs/superpowers/specs/2026-10-09-tycoon.md 7). Court, gate and shop:
+## their own level.
+func site_level(owner: String) -> int:
+	var s := ClubLots.ruin_level(owner)
+	return s if s >= 0 else level_of(owner)
+
+
 ## Redraws what depends on a level, the pack or the preset.
 func _refresh(first: bool) -> void:
 	_sig = _signature()
 	_gen = ClubPack.generation
-	var list := props.visible(level_of, _high)
+	var list := props.visible(site_level, _high)
 	world.walk.clear_tag("props")
 	crowns.clear()
 	for p in list:
@@ -327,7 +339,7 @@ static func _sag_height(x: float) -> float:
 ## What the props cost, by id: {id: [count, triangles]} for what is visible now (budgets).
 func prop_stats() -> Dictionary:
 	var out := {}
-	for p in props.visible(level_of, _high):
+	for p in props.visible(site_level, _high):
 		if not out.has(p.id):
 			out[p.id] = [0, 0]
 		out[p.id][0] += 1

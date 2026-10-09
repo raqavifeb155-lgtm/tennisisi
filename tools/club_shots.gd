@@ -16,6 +16,7 @@ var stats := false
 var views := false
 var nopack := false     # --nopack: the club as it stands before the model pack arrives (simple forms)
 var census := false
+var ruins := false      # --ruins: H-8, the ruin of a lot (weeds, junk) and what a building on someone else's lot leaves
 var npcs := false       # --npc: T-2, the coach's offer, the hire screens, the students, the visitor
 var academy := false    # --academy: T-3, the academy's five levels on its lot, the office, a card, the focus
 var lots := false       # --lots: T-1, the empty lots, the sheet, the build moment
@@ -41,6 +42,8 @@ func _initialize() -> void:
 			lots = true
 		elif a == "--npc":
 			npcs = true
+		elif a == "--ruins":
+			ruins = true
 		elif a == "--academy":
 			academy = true
 		elif a == "--nopack":
@@ -198,6 +201,10 @@ func _run() -> void:
 		return
 	if lots:
 		await _lots()
+		quit()
+		return
+	if ruins:
+		await _ruins()
 		quit()
 		return
 	if npcs:
@@ -662,6 +669,42 @@ func _lots() -> void:
 	club.hud.visible = true
 	_go("lot_n6")
 	await _shot("18_open_lot_north", 1.0)
+
+
+## H-8: the ruin belongs to the lot. Empty lots (weeds, junk, the tape), then a bar on the locker
+## room's lot and a coach on the academy's: those sites are clean, the bar's own corner is not.
+func _ruins() -> void:
+	var club = main.club
+	SaveData.played = 8
+	SaveData.titles = 2
+	SaveData.gold = 0
+	SaveData.club = {"met_coach": true, "walk_hint": true, "lots": {}, "levels": {}}
+	club.close()
+	main.set_location(Locations.LIST[0]["id"])
+	main._show_menu()
+	await create_timer(0.8).timeout
+	club = main.club
+	club.hud.visible = false
+	ClubDaytime.force_hour = 10.0
+	main.player.position = Vector3(0, 0, 14)
+	club._place = ""
+	club._update_place()
+	# [name, camera, target]
+	var views := [
+		["n1_locker_lot", Vector3(-14, 12, 41), Vector3(-14, 0, 26)],
+		["n2_coach_lot", Vector3(16, 12, 41), Vector3(16, 0, 26)],
+		["n7_academy_lot", Vector3(32, 12, 30), Vector3(32, 0, 14)],
+		["n6_bar_lot", Vector3(20, 13, -14), Vector3(20, 0, -30)],
+	]
+	for stage in 2:
+		if stage == 1:
+			SaveData.club["lots"] = {"n1": "bar", "n7": "coach"}
+			SaveData.club["levels"] = {"bar": 2, "coach": 2}
+			club._refresh()
+			await create_timer(0.5).timeout
+		for v in views:
+			club.cam.frame(v[1], v[2], 0.0)
+			await _shot("r%d_%s" % [stage, v[0]], 0.9)
 
 
 ## T-2: after the first run the coach offers newcomers; the list, a candidate's card, the

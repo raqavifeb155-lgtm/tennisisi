@@ -256,6 +256,47 @@ func test_in_the_club() -> void:
 	for m in scenery._fence_mats:
 		green = green or m.albedo_color.r < 0.3
 	check(green, "and a new fence")
+	# The ruin belongs to the lot, not to the type (ClubLots.ruin_level): a type on somebody else's
+	# lot neither leaves a ruin on its own home nor drags the ruin of its old corner along.
+	SaveData.played = 1
+	SaveData.titles = 1
+	SaveData.club["levels"] = {}
+	SaveData.club["lots"] = {}
+	club._refresh()
+	await _frames(4)
+	var home := {}
+	for t in ClubLots.ORDER:
+		home[t] = [_site_props(scenery, t, true), _site_props(scenery, t, false)]
+	for t in ["coach", "stands", "locker", "trophy", "bar", "academy", "arena"]:
+		check(home[t][0] > 0 and home[t][1] == 0, "empty lots, a ruin at the home of the %s (%d junk and weeds, no tidy-up)" % [t, home[t][0]])
+	SaveData.club["lots"] = {"n1": "bar"}
+	SaveData.club["levels"] = {"bar": 2}
+	club._refresh()
+	await _frames(4)
+	check(_site_props(scenery, "locker", true) == 0 and _site_props(scenery, "locker", false) > 0, "a bar on the locker room's lot: the old corner there is clean and tidy")
+	check(_site_props(scenery, "bar", true) == home["bar"][0] and _site_props(scenery, "bar", false) == 0, "and the bar's own home is still a ruin, no tidy-up (%d)" % home["bar"][0])
+	check(_site_props(scenery, "trophy", true) == home["trophy"][0] and _site_props(scenery, "stands", true) == home["stands"][0], "the other lots keep their ruin")
+	SaveData.club["lots"] = {"n6": "bar", "n7": "coach"}
+	SaveData.club["levels"] = {"bar": 1, "coach": 2}
+	club._refresh()
+	await _frames(4)
+	var bar_junk := 0
+	for pr in scenery.props.visible(scenery.site_level, true):
+		if pr.owner == "bar" and pr.need == 1:
+			bar_junk += 1
+	check(bar_junk == 0 and _site_props(scenery, "bar", false) > 0, "the bar at home, level 1: the junk is gone, the menu board is up")
+	check(_site_props(scenery, "academy", true) == 0 and _site_props(scenery, "coach", true) == home["coach"][0], "a coach's room on the academy's lot clears that lot, not his own")
+	SaveData.club["levels"] = {"bar": 2, "coach": 2}
+	club._refresh()
+	await _frames(4)
+	check(_site_props(scenery, "bar", true) == 0, "the bar's weeds are gone at level 2")
+	var in_site := true
+	for pr in scenery.props.visible(scenery.site_level, true):
+		if pr.owner in ["coach", "academy"]:
+			var lot_pos: Vector3 = ClubLots.lot(String(ClubLots.TYPES[pr.owner]["home"]))["pos"]
+			in_site = in_site and Rect2(lot_pos.x - ClubLots.HALF.x, lot_pos.z - ClubLots.HALF.y, ClubLots.HALF.x * 2.0, ClubLots.HALF.y * 2.0).has_point(Vector2(pr.xf.origin.x, pr.xf.origin.z))
+	check(in_site, "the ruin of the coach's and the academy's lots lies on the lots")
+	SaveData.club.erase("lots")
 	SaveData.club["levels"] = {}
 	club._refresh()
 	await _frames(4)
@@ -526,6 +567,15 @@ func test_in_the_club() -> void:
 	check(not club.active and (hero.get("_racket") as Node3D).visible, "in a match he has his racket again")
 	main.queue_free()
 	await _frames(2)
+
+
+## How many props of `owner` there are now: its ruin (junk and weeds) or its tidy-up (flowers...).
+func _site_props(scenery: ClubScenery, owner: String, ruin: bool) -> int:
+	var n := 0
+	for pr in scenery.props.visible(scenery.site_level, true):
+		if pr.owner == owner and ((pr.need > 0) if ruin else (pr.from > 0)):
+			n += 1
+	return n
 
 
 func _scenery_verts(scenery: ClubScenery) -> int:

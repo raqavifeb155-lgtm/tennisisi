@@ -34,6 +34,7 @@ static func fill(p: ClubProps) -> void:
 	_perimeter(p)
 	_ruin(p)
 	_tidy(p)
+	_lot_sites(p)
 
 
 # --- Helpers ------------------------------------------------------------------------
@@ -48,11 +49,11 @@ static func gy(pos: Vector2) -> float:
 
 ## Whether a prop may stand here: off the court, the reserved squares (places, the arena
 ## site, the gate), the paths and the circles of the places.
-static func open_at(q: Vector2, margin := 0.0) -> bool:
+static func open_at(q: Vector2, margin := 0.0, on_lot := false) -> bool:
 	if absf(q.x) < HX + 2.0 + margin and absf(q.y) < HZ + 2.0 + margin:
 		return false
 	for r in ClubWorld.RESERVED:
-		if (r as Rect2).grow(margin).has_point(q):
+		if not on_lot and (r as Rect2).grow(margin).has_point(q):   # (a lot's own site is reserved: that is where its ruin lies)
 			return false
 	if ClubPaths.near(q, margin + 0.5):
 		return false
@@ -498,9 +499,10 @@ static func _tidy(p: ClubProps) -> void:
 		var f := put(p, "flower_patch", -18.0 + s * 4.2, -24.0, 0.0, 1.8)
 		f.owner = "trophy"
 		f.from = 1
-	# the shop and the locker room once open: a planter at each door, a bench
+	# the shop and the locker room once open: a planter at each door, a bench (at the place's home
+	# site, which is a lot's: find() would give where the building stands now)
 	for id in ["shop", "locker"]:
-		var pos: Vector3 = ClubPlaces.find(id)["pos"]
+		var pos: Vector3 = ClubPlaces.base(id)["pos"]
 		var q := put(p, "planter", pos.x + 3.6, pos.z + 3.4, 0.0, 1.2)
 		q.owner = id
 		q.from = 1
@@ -509,6 +511,35 @@ static func _tidy(p: ClubProps) -> void:
 	var a := put(p, "flower_patch", -19.5, 3.0, 0.0, 1.8)
 	a.owner = "arena"
 	a.from = 1
+
+
+## The site of every lot: weeds and a little junk around the gravel patch of its tape, gone
+## when anything at all is built on that lot (ClubLots.ruin_level) - the ruin belongs to the
+## lot, not to the type that used to stand there. Tagged with the lot's home type (the owner
+## ClubScenery.site_level reads). The coach's room and the academy had no ruin before this
+## (a building stood there from the start); the others add it to their old yard.
+static func _lot_sites(p: ClubProps) -> void:
+	for t in ClubLots.ORDER:
+		var c: Vector3 = ClubLots.lot(String(ClubLots.TYPES[t]["home"]))["pos"]
+		var area := Rect2(c.x - ClubLots.HALF.x + 0.5, c.z - ClubLots.HALF.y + 0.5, ClubLots.HALF.x * 2.0 - 1.0, ClubLots.HALF.y * 2.0 - 1.0)
+		var want := 20 if t in ["coach", "academy"] else 12
+		var tries := 0
+		var placed := 0
+		while placed < want and tries < want * 12:
+			tries += 1
+			var q := Vector2(_r(area.position.x, area.end.x), _r(area.position.y, area.end.y))
+			# (not on the gravel patch of the lot's tape: 9 x 7 m, ClubLotsView)
+			if not open_at(q, 0.1, true) or absf(q.x - c.x) < 5.1 and absf(q.y - c.z) < 4.1:
+				continue
+			var junk := placed % 4 == 0
+			var id: String = _pick(["crate", "box_b", "trash_bags", "tyre"]) if junk else ("tuft" if _rng.randf() < 0.7 else "tuft_dry")
+			var pr := put(p, id, q.x, q.y, _r(0.0, TAU), _r(0.85, 1.2) if junk else _r(0.8, 1.5))
+			pr.owner = t
+			pr.need = 1 if (junk or placed % 2 == 0) else 2
+			pr.high = not junk and placed % 3 != 0
+			if junk:
+				pr.solid = 0.4
+			placed += 1
 
 
 ## The second pass: the little things that make a path a place - people on benches, bicycles,
