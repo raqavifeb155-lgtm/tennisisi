@@ -309,6 +309,38 @@ static func serve_edge_margin(lv := -1) -> float:
 	return 0.2 * (1.0 - early(level("serve") if lv < 0 else lv))
 
 
+## F-E: the risk of a hard FIRST serve (the owner's complaint: a swipe into the corner at 220 km/h
+## was an ace every time, a one-shot win). Even a PERFECT toss does not make it safe: the harder
+## and nearer a line it is aimed, the likelier it goes into the net or out (Main._player_serve
+## rolls it with the match's seeded rng and shows the chance). Training and serve perks take
+## part of it off, never all of it at full speed on a line.
+##   kmh        the serve's speed (before the solver), kick and slice are slow, so ~0
+##   lat_edge   metres from the aim to the nearest sideline / centre line (a body serve is far from both)
+##   attempt    1 or 2: the second serve carries SERVE_RISK_SECOND of the risk (else everyone hits the second one flat out)
+const SERVE_RISK_FROM := 165.0     # km/h: no extra risk at or below this
+const SERVE_RISK_FULL := 235.0     # km/h: the full risk
+const SERVE_RISK_MAX := 0.52       # the chance at full speed on a line with no training
+const SERVE_RISK_SECOND := 0.35
+const SERVE_EDGE_SPAN := 1.5       # metres: further than this from a line the aim adds only half the risk
+
+
+## The share of the risk the serve skill takes off, 0..0.6: levels (0.35 at the cap), the
+## scatter perks (Снайпер −25 % → 0.15) and the window perks. lv: -1 = the current level.
+static func serve_relief(lv := -1) -> float:
+	var n := level("serve") if lv < 0 else lv
+	var r := 0.35 * k(n) + clampf(-mod("serve_scatter") * 0.6, 0.0, 0.3) + clampf(mod("serve_window") * 0.3, 0.0, 0.1)
+	return clampf(r, 0.0, 0.6)
+
+
+static func serve_risk(kmh: float, lat_edge: float, attempt := 1, lv := -1) -> float:
+	var v := clampf((kmh - SERVE_RISK_FROM) / (SERVE_RISK_FULL - SERVE_RISK_FROM), 0.0, 1.25)
+	if v <= 0.0:
+		return 0.0
+	var aim := 0.5 + 0.5 * (1.0 - clampf(lat_edge / SERVE_EDGE_SPAN, 0.0, 1.0))
+	var p := SERVE_RISK_MAX * pow(v, 1.2) * aim * (1.0 - serve_relief(lv))
+	return p * (SERVE_RISK_SECOND if attempt >= 2 else 1.0)
+
+
 static func run_speed_mult(lv := -1) -> float:
 	var n := level("feet") if lv < 0 else lv
 	return lerpf(0.75, 1.15, k(n)) * (1.0 - 0.10 * early(n)) * (1.0 + mod("run_speed"))
