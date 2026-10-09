@@ -834,6 +834,8 @@ func _npc_views() -> void:
 			if best >= 0:
 				var wp2: Vector3 = crowd.walker_pos(best)
 				hero.position = Vector3(wp2.x + 0.8, world_floor(wp2.x + 0.8, wp2.z + 3.0), wp2.z + 3.0)
+				hero.rotation.y = 0.0
+				hero.velocity = Vector3.ZERO
 				club._place = ""
 				club._update_place()
 				club.cam.release(0.0)
