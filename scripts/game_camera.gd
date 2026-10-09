@@ -18,6 +18,7 @@ var look_ahead := 9.0
 
 var booth := false
 var booth_wide := false           # between the points: the whole court (the TV frame)
+var spectate := false             # T-4: watching a student's match: `booth_wide` pulls back in the match view too
 
 var _shake := 0.0
 var _fov_kick := 0.0
@@ -82,7 +83,7 @@ func snap() -> void:
 
 
 func _wide() -> bool:
-	return tv() or (booth and booth_wide)
+	return tv() or ((booth or spectate) and booth_wide)
 
 
 func _desired_position() -> Vector3:
