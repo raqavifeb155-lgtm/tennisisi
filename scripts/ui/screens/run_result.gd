@@ -260,7 +260,7 @@ static func _locker_block(ui: TournamentUI, t: Tournament) -> void:
 		var line := ""
 		var ok := why == ""
 		if ok:
-			line = "В шкафчик" + ("  ·  страховка %d" % ins if ins > 0 else "  ·  бесплатно")
+			line = "В шкафчик" + ("  ·  страховка %d, один раз" % ins if ins > 0 else ("  ·  застрахована, бесплатно" if Locker.is_insured(it) else "  ·  бесплатно"))
 		elif full:
 			line = "Шкафчик полон: выбери, что заменить"
 		elif why.begins_with("нужно ещё"):

@@ -75,6 +75,8 @@ static func item_tag(item: Dictionary, what := "") -> String:
 	parts.append(UiTheme.RARITY_NAMES[clampi(int(item.get("rarity", 0)), 0, 4)])
 	if Items.level(item) > 1:
 		parts.append("ур. %d" % Items.level(item))
+	if Locker.is_insured(item):
+		parts.append("застрахована")  # hub spec 15
 	return "  ·  ".join(parts)
 
 
