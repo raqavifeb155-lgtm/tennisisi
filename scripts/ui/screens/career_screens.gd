@@ -216,7 +216,7 @@ static func character_extra(ui: TournamentUI) -> void:
 	if Career.retire_due():
 		ui._primary("ПРОЩАНИЕ С КАРЬЕРОЙ", "career_retire")
 	elif Career.can_retire_early():
-		ui._quiet("Завершить карьеру сейчас", "career_early")
+		ui._quiet("Завершить карьеру сейчас", "career_early").custom_minimum_size = Vector2(0, UiTheme.TAP)  # quiet, but a thumb's size
 
 
 static func show_early(ui: TournamentUI) -> void:
