@@ -112,8 +112,12 @@ func _play_run(xp: float, island: String) -> RunLog:
 	var t := Tournament.new(1, rng.randi() | 1)
 	t.location = island
 	Locker.board(t)
-	while Locker.items().size() > 0 and t.can_take_locker():
-		t.take_from_locker(0)
+	while Locker.items().size() > 0 and t.can_take_locker() and Locker.take_left(t) > 0:  # hub spec 16: the limit; the best first
+		var best := 0
+		for k in Locker.items().size():
+			if int(Locker.items()[k].get("rarity", 0)) > int(Locker.items()[best].get("rarity", 0)):
+				best = k
+		t.take_from_locker(best)
 	var guard := 0
 	while t.state != Tournament.State.OVER and guard < 30:
 		guard += 1

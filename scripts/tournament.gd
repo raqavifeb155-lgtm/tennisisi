@@ -132,6 +132,7 @@ var results: Array = []           # per match: {"stage", "won", "score"}
 var gold := 0
 var income := {}                  # gold by kind (INCOME_KINDS): adds up to `gold`
 var last_prize := 0               # prize money the last record_match / give_up paid (the result shows it)
+var locker_taken := 0             # things taken from the locker into this run (Locker.take_limit, hub spec 16)
 var locker_done := false          # the summary's one item went into the locker (Locker)
 var champion := false
 var chest := {}                   # the chest by the net after the last win ({} = none), see make_chest
@@ -179,7 +180,7 @@ func _init(format_index := 0, seed_value := 0, hardcore_run := false) -> void:
 const SAVED := ["format", "location", "field", "lineup", "racket", "pending_loot", "missed_loot", "banked",
 	"state", "stage", "wildcards", "perks", "results", "gold", "champion", "offer",
 	"equip", "bag", "new_items", "auto_sold", "run_mods", "mythic_rolled", "drop_bonus", "bet",
-	"income", "locker_done", "run_modifiers", "chest", "dry", "hardcore", "freq", "disqualified"]
+	"income", "locker_done", "locker_taken", "run_modifiers", "chest", "dry", "hardcore", "freq", "disqualified"]
 
 
 ## The run as plain data, for the save file: a phone that reloads the page (Telegram
@@ -367,9 +368,13 @@ func can_take_locker() -> bool:
 	return results.is_empty() and stage == 0 and state == State.BRACKET
 
 
-func take_from_locker(i: int) -> void:
-	if can_take_locker():
-		join(Locker.take(i))
+## False once the run took as many as the locker room allows (hub spec 16).
+func take_from_locker(i: int) -> bool:
+	if not can_take_locker() or Locker.take_left(self) <= 0 or i < 0 or i >= Locker.items().size():
+		return false
+	join(Locker.take(i))
+	locker_taken += 1
+	return true
 
 
 func equip_from_bag(i: int) -> void:

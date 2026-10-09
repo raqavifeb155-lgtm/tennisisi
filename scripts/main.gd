@@ -1958,7 +1958,7 @@ func _start_tournament(format_index: int, run_conditions: Array = [], hardcore :
 	if autoplay:
 		_play_match()
 	else:
-		ui.show_bracket(tournament)
+		RunLocker.pre_run(ui, tournament)  # hub spec 16: more in the locker than the run may take = pick first, else the bracket
 
 
 ## Stamina is a short tank: a beginner sprinting flat out is empty in ~15 s, and a long
