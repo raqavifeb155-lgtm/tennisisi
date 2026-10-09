@@ -45,6 +45,14 @@ var pdrop := {"n": 0, "hit": 0, "arrived": 0, "far": 0, "own_err": 0, "won": 0, 
 var _cur_drop := {}               # the drop in the air: {"min_d"}
 var _pt_drop := false
 
+## D-10: the CPU's short balls (a drop, an echo; the first bounce on the player's half less than
+## SHORT_Z from the net): n; back = the player got a racket on it; lost = the point ended on it in
+## the CPU's favour (the ball was not played - the auto-positioning must run it down).
+const SHORT_Z := 6.0
+var short := {"n": 0, "back": 0, "lost": 0}
+var _cur_short := false
+var _cpu_bounced := false
+
 var _shots: Array = []            # this point: {who, contact, speed, drop, lob, pos: [player, cpu]}
 var _serve_dir := ""              # this point's player serve direction (last in-box one)
 var _cpu_at_net := false
@@ -89,6 +97,9 @@ func reset() -> void:
 	pdrop = {"n": 0, "hit": 0, "arrived": 0, "far": 0, "own_err": 0, "won": 0, "pts": 0, "pts_won": 0}
 	_cur_drop = {}
 	_pt_drop = false
+	short = {"n": 0, "back": 0, "lost": 0}
+	_cur_short = false
+	_cpu_bounced = false
 	_shots = []
 	_serve_dir = ""
 	_cpu_at_net = false
@@ -111,6 +122,12 @@ func on_shot(who: int, info: Dictionary) -> void:
 		"pos": [game.player.position, game.cpu.position] if game else [Vector3.ZERO, Vector3.ZERO],
 	}
 	_shots.append(rec)
+	if who == WHO_CPU:
+		_cpu_bounced = false
+		_cur_short = false
+	elif _cur_short:
+		short["back"] += 1
+		_cur_short = false
 	if who == WHO_PLAYER and rec["drop"] and not bool(info.get("serve", false)):
 		pdrop["n"] += 1
 		_pt_drop = true
@@ -132,6 +149,13 @@ func on_shot(who: int, info: Dictionary) -> void:
 ## A bounce while a serve is in the air: a fault is forgotten (the point starts with the
 ## next serve); the player's serve is counted by direction, in or out.
 func on_bounce(info: Dictionary) -> void:
+	if game != null and not game.serve_flight and int(info.get("last_hitter", -1)) == WHO_CPU and not _cpu_bounced:
+		var bz := (info.get("pos", Vector3.ZERO) as Vector3).z
+		if bz > 0.0:
+			_cpu_bounced = true
+			if bz < SHORT_Z:
+				short["n"] += 1
+				_cur_short = true
 	if game == null or not game.serve_flight:
 		return
 	var hitter := int(info.get("last_hitter", -1))
@@ -182,6 +206,9 @@ func on_point(info: Dictionary) -> void:
 		pdrop["pts"] += 1
 		if winner == WHO_PLAYER:
 			pdrop["pts_won"] += 1
+	if _cur_short and winner == WHO_CPU:
+		short["lost"] += 1
+	_cur_short = false
 	_cur_drop = {}
 	_pt_drop = false
 	var kind := ending_kind(reason, _shots)
@@ -269,6 +296,8 @@ func report() -> String:
 	lines.append("cpu shots %d  drops %d (%.1f%%)  lobs %d (%.1f%%)  from net %d (%.1f%%)  net rallies %d (%.1f%% of points)" % [cpu["shots"],
 		cpu["drops"], 100.0 * cpu["drops"] / cs, cpu["lobs"], 100.0 * cpu["lobs"] / cs, cpu["net_shots"], 100.0 * cpu["net_shots"] / cs,
 		cpu["net_rallies"], 100.0 * cpu["net_rallies"] / maxf(points, 1)])
+	if int(short["n"]) > 0:
+		lines.append("cpu short balls %d: the player hit %d (%d%%)  point lost on it %d (%d%%)" % [short["n"], short["back"], roundi(100.0 * short["back"] / short["n"]), short["lost"], roundi(100.0 * short["lost"] / short["n"])])
 	if int(pdrop["n"]) > 0:
 		var n := float(pdrop["n"])
 		lines.append("player drops %d: CPU hit %d (%d%%)  not hit: ran up %d (%d%%), too far %d (%d%%)  own error %d (%d%%)  | drop won outright %d (%d%%)  points with a drop won by YOU %d of %d (%d%%)" % [

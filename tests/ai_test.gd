@@ -28,6 +28,7 @@ func _run() -> void:
 		test_adapt,
 		test_ai_profile,
 		test_drop_return,
+		test_hanging_drop,
 		test_top100,
 		test_random_players,
 		test_island_draw,
@@ -699,6 +700,93 @@ func test_drop_return() -> void:
 	check(good["hit"] >= 285, "good net stat: hit %d of %d (ran up and did not swing %d, too far %d)" % [good["hit"], good["n"], good["ran_up"], good["far"]])
 	check(weak["hit"] >= 270, "weak net stat: hit %d of %d (ran up and did not swing %d, too far %d)" % [weak["hit"], weak["n"], weak["ran_up"], weak["far"]])
 	check(good["ran_up"] <= 3 and weak["ran_up"] <= 6, "getting there means hitting: no run-ups without a swing (%d / %d)" % [good["ran_up"], weak["ran_up"]])
+	finished += 1
+
+
+## D-10: the CPU's drop shot (mirrored: lands 1.3-2.7 m past the net on the player's half) hangs
+## there and never crosses the contact plane. A micro-simulation of the player's auto-positioning
+## (Main._update_player_movement): prediction, the plane crossing, `Footwork.hanging_contact`
+## when the plane is not reached. Returns {"hit", "late" (second bounce first), "n"}.
+func _hanging_runs(n: int, seed_v: int, chase: bool) -> Dictionary:
+	var ball := Ball.new()
+	root.add_child(ball)
+	var me := Athlete.new()
+	root.add_child(me)
+	me.setup(-1.0, Color(0.9, 0.3, 0.2), Rect2(-9.0, 0.6, 18.0, 17.0))
+	var bounces := [0]
+	ball.bounced.connect(func(p: Vector3, _s: float) -> void:
+		if p.z > 0.0:
+			bounces[0] += 1)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_v
+	var out := {"hit": 0, "late": 0, "n": n}
+	for i in n:
+		var cx := rng.randf_range(-3.0, 3.0)
+		var contact := Vector3(cx, 1.0, -12.4)
+		var depth := rng.randf_range(1.3, 2.7)
+		var target := Vector3(signf(rng.randf() - 0.5) * rng.randf_range(0.5, 3.5), BallPhysics.RADIUS, depth)
+		var r := ShotSolver.solve_drop(contact, target, -rng.randf_range(260.0, 320.0) * rng.randf_range(1.3, 1.9))
+		me.position = Vector3(rng.randf_range(-2.0, 2.0), 0.0, rng.randf_range(11.0, 12.6))
+		me.velocity = Vector3.ZERO
+		me.move_input = Vector2.ZERO
+		bounces[0] = 0
+		ball.launch(contact, r.velocity, r.spin)
+		var prev_rel := -1.0
+		var done := false
+		for step in 420:
+			var zp := me.position.z - Athlete.CONTACT_FORWARD
+			var rel := ball.state.pos.z - zp
+			var pred := BallPhysics.predict(ball.state, 2.5, 1.0 / 120.0, 2)
+			var t_contact := INF
+			var contact_pred := Vector3.INF
+			var last_i: int = pred.points.size() - 1
+			if pred.bounce_indices.size() >= 2:
+				last_i = pred.bounce_indices[1]
+			for k in range(1, last_i + 1):
+				var za: float = pred.points[k - 1].z - zp
+				var zb: float = pred.points[k].z - zp
+				if za < 0.0 and zb >= 0.0:
+					t_contact = lerpf(pred.times[k - 1], pred.times[k], -za / (zb - za))
+					contact_pred = pred.points[k - 1].lerp(pred.points[k], -za / (zb - za))
+					break
+			var aim := contact_pred
+			if t_contact >= 2.5 and chase:
+				aim = Footwork.hanging_contact(pred, zp, ball.state)
+			if aim != Vector3.INF:
+				var stance := me.stance_for(aim, 1)
+				var d := Vector2(stance.x - me.position.x, stance.z - me.position.z)
+				me.move_input = d.normalized() * clampf(d.length() / 0.6, 0.0, 1.0) if d.length() > 0.05 else Vector2.ZERO
+			me._physics_process(1.0 / 60.0)
+			ball.step(1.0 / 60.0)
+			if prev_rel < 0.0 and rel >= 0.0 and ball.state.vel.z > 0.0 and ball.state.pos.y > 0.04 and ball.state.pos.y < 3.4:
+				var flat := Vector2(ball.state.pos.x - me.position.x, ball.state.pos.z - me.position.z).length()
+				if flat <= Athlete.REACH:
+					out["hit"] += 1
+					done = true
+					break
+			prev_rel = rel
+			if bounces[0] >= 2:
+				break
+		if not done:
+			out["late"] += 1
+		ball.park()
+	ball.free()
+	me.free()
+	return out
+
+
+func test_hanging_drop() -> void:
+	print("D-10: a short drop shot is run down by the auto-positioning")
+	var still: Dictionary = _hanging_runs(200, 31, false)
+	var run: Dictionary = _hanging_runs(200, 31, true)
+	check(still["hit"] <= 120, "without the chase the baseline player is beaten by many of them (%d of %d reached)" % [still["hit"], still["n"]])
+	check(run["hit"] >= 190, "with the chase he gets to the plane in time: %d of %d (late %d)" % [run["hit"], run["n"], run["late"]])
+	# the predicate: a ball that sails past, or one still on the other side, is not "hanging"
+	var far := BallPhysics.State.new()
+	far.pos = Vector3(0.0, 1.0, -12.0)
+	far.vel = Vector3(0.0, 2.0, 35.0)
+	check(Footwork.hanging_contact(BallPhysics.predict(far, 2.5, 1.0 / 120.0, 2), 11.0) == Vector3.INF, "a drive is not a hanging ball")
+	check(Footwork.hanging_contact(null, 11.0) == Vector3.INF, "no prediction, no target")
 	finished += 1
 
 
