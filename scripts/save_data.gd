@@ -42,6 +42,7 @@ static var golden: Array = []          # golden opponents beaten (v0.2 A): roste
 ## Club-side, not the character's (v0.2 A; a retired player keeps them, ACADEMY_LEGACY_TZ):
 static var locker := {}                # the locker: "items" kept, "next" bought for the next run, "shop" the shop's state
 static var titles_by_loc := {}         # titles won per location id (the islands open by them)
+static var academy := {}               # the school (T-2): students, the candidates on offer, the visitor (scripts/academy/academy.gd)
 static var lifetime_xp := 0.0          # every bit of skill experience ever earned (never reset)
 static var camera := "normal"          # the match camera (v0.2 D): "normal" | "tv" (section "view")
 static var career := {}                # the hero's career (L1, Career): season, age, retired heroes (section "career")
@@ -81,6 +82,8 @@ static func _score(cf: ConfigFile) -> float:
 	var base := float(cf.get_value("meta", "played", 0)) * 1000.0 + float(cf.get_value("meta", "titles", 0)) * 500.0 \
 		+ xp + float(cf.get_value("meta", "gold", 0)) * 0.1 + (1.0 if cf.get_value("settings", "control_chosen", false) else 0.0) \
 		+ float((cf.get_value("club", "data", {}) as Dictionary).get("spent", 0)) * 0.1  # v0.2 B: gold built into the club still counts
+	# T-2: a student hired locally must not lose to a cloud copy from before
+	base += float(((cf.get_value("academy", "data", {}) as Dictionary).get("students", []) as Array).size()) * 50.0
 	# v0.2 A: the shop's and the locker's spending counts too, and experience that was
 	# earned and then reset by a retirement (lifetime_xp) - the score only ever grows.
 	return base + float((cf.get_value("locker", "data", {}) as Dictionary).get("spent", 0)) * 0.1 \
@@ -114,6 +117,7 @@ static func _apply(cf: ConfigFile) -> void:
 	locker = cf.get_value("locker", "data", {})
 	titles_by_loc = cf.get_value("titles_by_loc", "data", {})
 	lifetime_xp = cf.get_value("lifetime", "xp", 0.0)
+	academy = cf.get_value("academy", "data", {})
 	camera = cf.get_value("view", "camera", "normal")
 	career = Career.migrate(cf.get_value("career", "data", {}), played)  # L1: a save from before the career starts season 1 here
 	mods_freq = cf.get_value("mods", "freq", 0)
@@ -231,6 +235,8 @@ static func _to_config() -> ConfigFile:
 		cf.set_value("lifetime", "xp", lifetime_xp)
 	if not career.is_empty():
 		cf.set_value("career", "data", career)
+	if not academy.is_empty():
+		cf.set_value("academy", "data", academy)
 	if mods_freq != 0:
 		cf.set_value("mods", "freq", mods_freq)
 	if active != null and not active.banked and active.state != Tournament.State.OVER:
@@ -264,6 +270,7 @@ static func record_run(t: Tournament) -> void:
 	t.sell_extra()  # the commons and what is below the worn thing go for run gold (before: they just vanished)
 	t.banked = true
 	played += 1
+	Academy.on_run()   # T-2: the students train after every run of the hero
 	gold += t.gold
 	if t.champion:
 		titles += 1

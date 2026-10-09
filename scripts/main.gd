@@ -2094,6 +2094,9 @@ func _on_ui(action: String, arg: int) -> void:
 		return
 	if CareerUi.route(self, action, arg):  # L1: the season's summary, the farewell, the heir
 		return
+	if action.begins_with("club_") and club != null:  # T-2: the club's own screens (hiring a student)
+		club.ui_action(action, arg)
+		return
 	match action:
 		"start_tournament":
 			ui.show_locations()

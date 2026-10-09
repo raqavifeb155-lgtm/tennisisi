@@ -13,7 +13,11 @@ extends RefCounted
 ##             (and `acted(id, action)` here); "" = a line and nothing else
 ##   lines     3-5 lines, said in turn round and round, in a bubble over the person's head
 ##   opts      "auto": a line comes by itself when the hero walks by (a stroller's greeting,
-##             no button); "radius": how big the body is for the hero (default 0.4 m, a capsule)
+##             no button); "radius": how big the body is for the hero (default 0.4 m, a capsule);
+##             "head": the bubble's height; T-2 (the academy's people): "kind" (coach | student |
+##             guest | passer), "name", "line" (a Callable giving the next line, "" = from `lines`),
+##             "extra" ([[label, action]]: a quiet button above the main one, e.g. «Поговорить»
+##             as "club_say_<id>")
 ##
 ## Every registered body is an obstacle for the hero (ClubWalk agents): he doesn't walk
 ## through people, and people stop for him.
@@ -38,7 +42,19 @@ func setup(c: Node) -> void:
 func register(id: String, where: Variant, label := "", action := "", lines: Array = [], opts := {}) -> void:
 	_list[id] = {"id": id, "where": where, "label": label, "action": action, "lines": lines, "next": 0,
 		"auto": bool(opts.get("auto", false)), "radius": float(opts.get("radius", BODY)),
-		"head": float(opts.get("head", 2.1)), "cool": 0.0}
+		"head": float(opts.get("head", 2.1)), "cool": 0.0, "kind": String(opts.get("kind", "passer")),
+		"name": String(opts.get("name", "")), "line": opts.get("line", Callable()), "extra": opts.get("extra", [])}
+
+
+## A new button for somebody already here (T-2: the coach has newcomers to choose from):
+## the text, the action and the quiet buttons; his lines and his body stay.
+func set_button(id: String, label: String, action: String, extra: Array = []) -> void:
+	if not _list.has(id):
+		return
+	var e: Dictionary = _list[id]
+	e["label"] = label
+	e["action"] = action
+	e["extra"] = extra
 
 
 func unregister(id: String) -> void:
@@ -122,21 +138,30 @@ func tick(hero: Vector3, delta: float) -> String:
 
 
 func _next_line(e: Dictionary) -> String:
+	var fn: Callable = e.get("line", Callable())
+	if fn.is_valid():
+		var said := String(fn.call())
+		if said != "":
+			return said
 	var lines: Array = e["lines"]
+	if lines.is_empty():
+		return ""
 	var line: String = lines[int(e["next"]) % lines.size()]
 	e["next"] = int(e["next"]) + 1
 	return line
 
 
-## The context button was pressed: the next line in a bubble and the action, if any.
-func talk(id: String) -> void:
+## The context button was pressed: the next line in a bubble and the action, if any
+## (`act` false: only the line - a quiet «Поговорить»).
+func talk(id: String, act := true) -> void:
 	var e: Dictionary = _list.get(id, {})
 	if e.is_empty():
 		return
-	if not (e["lines"] as Array).is_empty():
-		say(id, _next_line(e))
+	var line := _next_line(e)
+	if line != "":
+		say(id, line)
 	var action: String = e["action"]
-	if action != "":
+	if act and action != "":
 		acted.emit(id, action)
 		club.hud.chosen.emit(action, 0)
 

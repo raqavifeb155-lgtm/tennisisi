@@ -367,6 +367,20 @@ static func lot_badges() -> Dictionary:
 	return out
 
 
+# --- For the ruins of stream H ---------------------------------------------------------------------
+
+## The level a RUIN prop of a building's home site should see (ClubScenery.level_of for
+## `owner`): the ruins belong to the SITE, not to the type that used to stand there. -1: not a
+## lot type (use the construction's own level); else 0 while whatever lot is that building's
+## home is empty, and the level of whatever was built on it once something is (>= 1: the ruin
+## goes). So a bar built on the western lot clears the western junk, not the bar's old corner.
+static func ruin_level(owner: String) -> int:
+	if not TYPES.has(owner):
+		return -1
+	var t := type_at(String(TYPES[owner]["home"]))
+	return 0 if t == "" else maxi(1, ClubBuilds.level(t))
+
+
 # --- The sheet ---------------------------------------------------------------------------------
 
 ## The card and the button of the sheet for a type on a lot:
