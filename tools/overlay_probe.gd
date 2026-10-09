@@ -189,7 +189,7 @@ func _screen_shape(ctx: String) -> void:
 ## A club screen on TournamentUI's frame (the coach's board, the islands, a shop, a place's
 ## card): opens with its title, is shaped for a thumb, has the gear over it that opens the
 ## settings (no exit outside a match), and "Назад" comes back to the walkable club.
-func _club_screen(ctx: String, action: String, title: String) -> void:
+func _club_screen(ctx: String, action: String, title: String, back := "menu") -> void:
 	var club = main.get("club")
 	club.ui_action(action, 0)
 	await _wait(0.8)
@@ -200,9 +200,111 @@ func _club_screen(ctx: String, action: String, title: String) -> void:
 	await _settings_round("%s → ⚙" % ctx)
 	_chosen = ""
 	await _tap(await _find(main.ui.root, "Назад"))
-	await _expect("%s: «Назад» нажимается" % ctx, func() -> bool: return _chosen == "menu")
+	await _expect("%s: «Назад» нажимается" % ctx, func() -> bool: return _chosen == back)
 	await _wait(0.8)
 	await _expect("%s: назад в клуб" % ctx, func() -> bool: return club.active and club.hud.visible and not main.ui.is_open())
+
+
+## «Условия забега» from the club's link (hub-economy 14): shaped for a thumb, the gear over it,
+## the rate's three plates in a row inside the screen, a tap picks a rate (the total moves),
+## «Назад» comes back to the club.
+func _run_mods_round(club) -> void:
+	var rm = load("res://scripts/ui/screens/run_mods.gd")
+	var played := SaveData.played
+	var mf := SaveData.mods_freq
+	SaveData.played = 3
+	SaveData.mods_freq = 0
+	club.ui_action("club_mods", 0)
+	await _wait(0.8)
+	var ctx := "Клуб 3D → Условия забега"
+	await _expect("%s: экран открылся" % ctx, func() -> bool: return main.ui.is_open() and main.ui.root.find_children("*", "Label", true, false).any(func(l): return (l as Label).is_visible_in_tree() and "Условия забега" in (l as Label).text))
+	# The list scrolls (6..8 conditions): rows below the fold are cut by the scroll, not by the
+	# screen, so they only must fit the width; everything else fits whole.
+	var frame := Rect2(Vector2.ZERO, Vector2(root.size))
+	var bad := 0
+	for c in main.ui.root.find_children("*", "Button", true, false):
+		var b := c as Button
+		if not b.is_visible_in_tree():
+			continue
+		var r := b.get_global_rect()
+		var scrolled: bool = main.ui._scroll.is_ancestor_of(b)
+		if r.size.y < 84.0 or (scrolled and (r.position.x < -2.0 or r.end.x > frame.end.x + 2.0)) or (not scrolled and not frame.grow(2.0).encloses(r)):
+			bad += 1
+	_check("%s: кнопки не меньше 84 px, в ширину экрана (список прокручивается)" % ctx, bad == 0)
+	await _expect("%s: ⚙ видна над экраном" % ctx, func() -> bool: return _gear().is_visible_in_tree())
+	var fb: Array = rm.freq_buttons(main.ui)
+	await _expect("%s: частота — три плашки в ряд, целиком на экране, не налезают" % ctx, func() -> bool:
+		if fb.size() != 3:
+			return false
+		for k in 3:
+			var r: Rect2 = (fb[k] as Control).get_global_rect()
+			if not frame.encloses(r) or r.size.y < 84.0 or (k > 0 and r.intersects((fb[k - 1] as Control).get_global_rect())):
+				return false
+		return true)
+	await _expect("%s: частота не под ⚙ и «Назад»" % ctx, func() -> bool: return fb.all(func(b): return not (b as Control).get_global_rect().intersects(_gear().get_global_rect())))
+	var x0: float = rm.total()
+	await _tap(fb[2] if fb.size() == 3 else null)
+	await _expect("%s: тап по «Часто» выбирает её, награда растёт" % ctx, func() -> bool: return rm.freq == 2 and rm.total() > x0 + 0.3)
+	fb = rm.freq_buttons(main.ui)
+	await _tap(fb[1] if fb.size() == 3 else null)
+	await _expect("%s: тап по «Обычно» — обычно" % ctx, func() -> bool: return rm.freq == 1)
+	await _tap(_gear())
+	await _settings_round("%s → ⚙" % ctx)
+	_chosen = ""
+	await _tap(await _find(main.ui.root, "Назад"))
+	await _expect("%s: «Назад» нажимается" % ctx, func() -> bool: return _chosen == "mods_back")
+	await _wait(0.8)
+	await _expect("%s: назад в клуб" % ctx, func() -> bool: return club.active and club.hud.visible and not main.ui.is_open())
+	SaveData.played = played
+	SaveData.mods_freq = mf
+
+
+## The visible cards (GameCard) of the screen. By the script's name: the class needs the autoloads.
+func _cards() -> Array:
+	return main.ui.root.find_children("*", "Control", true, false).filter(func(c): return c.is_visible_in_tree() and c.get_script() != null and (c.get_script() as Script).get_global_name() == &"GameCard")
+
+
+## E-5: the bookmaker at the bar. Without a run: a word and the history; with a run in the
+## bracket: two sides (for and against yourself) that do not overlap, a tap on a side places
+## the bet and the screen shows it; «Назад» comes back to the walkable club.
+func _bookie_round(club) -> void:
+	var titles0: int = SaveData.titles
+	var gold0: int = SaveData.gold
+	var active0 = SaveData.active
+	var run0: Dictionary = SaveData.run
+	var tour0 = main.tournament
+	SaveData.titles = maxi(titles0, 1)
+	SaveData.gold = 1000
+	SaveData.run = {}
+	SaveData.active = null
+	main.tournament = null
+	await _club_screen("Клуб 3D → Букмекер (нет забега)", "club_bookie", "Букмекер", "bet_back")
+	var bt := Tournament.new(1, 7)
+	SaveData.active = bt
+	await _club_screen("Клуб 3D → Букмекер (забег)", "club_bookie", "Букмекер", "bet_back")
+	club.ui_action("club_bookie", 0)
+	await _wait(0.8)
+	var sides := _cards()
+	await _expect("Букмекер: две стороны — на себя и против себя", func() -> bool: return sides.size() == 2)
+	if sides.size() == 2:
+		var frame := Rect2(Vector2.ZERO, Vector2(root.size))
+		_check("Букмекер: стороны не наезжают друг на друга", not (sides[0] as Control).get_global_rect().intersects((sides[1] as Control).get_global_rect()))
+		_check("Букмекер: стороны целиком на экране", sides.all(func(c): return frame.grow(2.0).encloses((c as Control).get_global_rect())))
+		var against: Array = sides.filter(func(c): return String(c.tag) == "Против себя")
+		if not against.is_empty():
+			await _tap(against[0])
+		await _expect("Букмекер: тап по «Против себя» ставит", func() -> bool: return String(bt.bet.get("side", "")) == "against")
+		await _expect("Букмекер: ставка видна на экране", func() -> bool: return main.ui.root.find_children("*", "Label", true, false).any(func(l): return (l as Label).is_visible_in_tree() and "против себя" in (l as Label).text and "Ставка" in (l as Label).text))
+		await _screen_shape("Букмекер (ставка сделана)")
+	_chosen = ""
+	await _tap(await _find(main.ui.root, "Назад"))
+	await _wait(0.8)
+	await _expect("Букмекер → Назад: клуб", func() -> bool: return club.active and club.hud.visible and not main.ui.is_open())
+	SaveData.titles = titles0
+	SaveData.gold = gold0
+	SaveData.run = run0
+	SaveData.active = active0
+	main.tournament = tour0
 
 
 ## The opponent's stamina bar in its three looks (OppStaminaView): where it stands is
@@ -412,6 +514,10 @@ func _run() -> void:
 			club._place = pl[0]
 			await _club_screen("Клуб 3D → место: %s" % pl[1], "club_place", pl[1])
 		club._place = ""
+		await _run_mods_round(club)
+
+
+		await _bookie_round(club)
 		# The locked island: a row that can't be pressed, with a hint.
 		load("res://scripts/club/club_screens.gd").locations(main.ui, func(id: String) -> bool: return id == "newyork", func(_id: String) -> String: return "за титул в Нью-Йорке")
 		await _wait(0.6)
@@ -517,6 +623,17 @@ func _run() -> void:
 	_chosen = ""
 	await _tap(await _find(main.ui.root, "НА КОРТ"))
 	await _expect("Сетка → ⚙ → ГОТОВО: «НА КОРТ» нажимается (откроет карточку соперника)", func() -> bool: return _chosen == "opponent_card")
+	# E-5: the opponent's card carries the bookmaker's line, above «ИГРАТЬ», not under it.
+	var titles1: int = SaveData.titles
+	SaveData.titles = maxi(titles1, 1)
+	main.ui.show_opponent_card(t, t.stage)
+	await _wait(0.8)
+	var play := await _find(main.ui.root, "ИГРАТЬ")
+	var odds_l: Array = main.ui.root.find_children("*", "Label", true, false).filter(func(l): return (l as Label).is_visible_in_tree() and (l as Label).text.begins_with("Коэф."))
+	await _expect("Карточка соперника: строка «Коэф.» есть", func() -> bool: return odds_l.size() == 1)
+	await _expect("Карточка соперника: «Коэф.» выше «ИГРАТЬ» и не под ней", func() -> bool: return play != null and odds_l.size() == 1 and (odds_l[0] as Label).get_global_rect().end.y <= play.get_global_rect().position.y)
+	await _screen_shape("Карточка соперника")
+	SaveData.titles = titles1
 
 	# --- A practice match and its pause ------------------------------------------------
 	main.tournament = null

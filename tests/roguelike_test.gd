@@ -534,7 +534,6 @@ func test_bets() -> void:
 	check(Bets.chips_for(30) == [10] and Bets.chips_for(36) == [10] and Bets.chips_for(9).is_empty(), "10-39 gold: only the smallest chip, under 10 none")
 	check(Bets.max_stake(36, 10) == 10 and Bets.max_stake(9, 10) == 2 and Bets.max_stake(400, 10) == 100 and Bets.max_stake(36) == 9, "max_stake(gold, min_chip): a quarter, or the smallest chip when the gold covers it")
 	check(Bets.need_text(10) == "Нужно хотя бы 10 золота", "the text when a chip is not affordable")
-	check(Bets.match_odds(0, false) == 1.3 and Bets.match_odds(4, false) == 6.0 and is_equal_approx(Bets.match_odds(3, true), 8.75), "match odds by round, a clean sweep x2.5")
 	var sb := MatchScore.new(1, 6, 6, 0)
 	sb.set_scores = [[6, 1]]
 	sb.winner = 0
@@ -555,30 +554,140 @@ func test_bets() -> void:
 	check(not Bets.needs_break(state) and int(state["placed"]) == 4 and int(state["won"]) == 1, "a win resets the streak")
 
 
+func _score(winner: int, ours := 6, theirs := 3) -> MatchScore:
+	var sb := MatchScore.new(1, 6, 6, 0)
+	sb.set_scores = [[ours, theirs] if winner == 0 else [theirs, ours]]
+	sb.winner = winner
+	return sb
+
+
+## E-5: the bookmaker. Odds from the chance (0.92 / p), both sides, against yourself with
+## the risk of a disqualification (a seeded roll), the trait «Ушлый» takes the risk away.
 func test_match_bet() -> void:
-	print("match bet")
+	print("match bet (the bookmaker)")
+	# The odds from p: margin 8%, steps of 0.01, 1.05..9.0.
+	check(Bets.odds_from_p(0.5) == 1.84 and Bets.odds_from_p(0.9) == 1.05 and Bets.odds_from_p(0.05) == 9.0 and Bets.odds_from_p(0.55) == 1.67, "k = 0.92 / p: 0.5 -> 1.84, 0.55 -> 1.67, clamped to 1.05..9.0")
+	var mk := Bets.market({"p": 0.5})
+	check(mk["you"] == 1.84 and mk["opp"] == 1.84 and is_equal_approx(float(mk["overround"]), 2.0 / 1.84), "an even match: 1.84 / 1.84, the house keeps its margin (overround %.3f)" % float(mk["overround"]))
+	mk = Bets.market({"p": 0.7, "name": "Ученик"})
+	check(is_equal_approx(float(mk["you"]), 1.31) and is_equal_approx(float(mk["opp"]), 3.07) and mk["name"] == "Ученик" and float(mk["overround"]) > 1.0, "market() takes any match as data: p 0.7 -> 1.31 / 3.07, extras carried")
+	check(Bets.market({"level": 8.0, "rating": 5.0})["you"] < Bets.market({"level": 4.0, "rating": 5.0})["you"], "a stronger player: shorter odds on him")
+	# The chance of the five roster opponents by level (D-5 bot at level 8: .80 .83 .57 .92 .35).
+	var ps := []
+	for o in Opponents.ROSTER:
+		ps.append(Bets.p_win(8.0, Bets.rating(o)))
+	check(ps[0] > 0.8 and ps[0] > ps[1] and ps[1] > ps[2] and ps[2] > ps[3] and ps[3] > ps[4] and ps[4] > 0.15 and ps[4] < 0.4, "level 8: Джумхур .. Джокович %s" % [ps.map(func(x): return snappedf(x, 0.01))])
+	check(Bets.p_win(0.43, Bets.rating(Opponents.ROSTER[0])) < 0.35, "a new player is an outsider even against the first round")
+	check(Bets.p_win(8.0, 6.0, 1.0, 10) > Bets.p_win(8.0, 6.0, 0.5, 10) and Bets.p_win(8.0, 6.0, 1.0, 2) == Bets.p_win(8.0, 6.0, 0.5, 10), "form (history) moves the chance, but not before 3 matches")
+	var fstate := {}
+	for i in 14:
+		Bets.note_form(fstate, i % 2 == 0)
+	check((fstate["form"] as Array).size() == Bets.FORM_KEEP and Bets.form_of(fstate)[1] == Bets.FORM_KEEP, "the form keeps the last 10 matches")
+	# A bet on yourself.
 	SaveData.gold = 200
 	SaveData.bets = {}
 	var t := Tournament.new(1, 5)
 	t.stage = 3
-	check(not Bets.place_match(t, 100, false), "100 is more than a quarter of 200")
-	check(Bets.place_match(t, 50, false) and SaveData.gold == 150 and int(t.bet["stake"]) == 50, "the stake leaves the gold at once")
-	check(not Bets.place_match(t, 10, false), "one bet a match")
+	var mt := Bets.match_market(t)
+	check(not Bets.place_match(t, 100, "self"), "100 is more than a quarter of 200")
+	check(not Bets.place_match(t, 10, "sideways"), "only for or against yourself")
+	check(Bets.place_match(t, 50, "self") and SaveData.gold == 150 and int(t.bet["stake"]) == 50 and t.bet["odds"] == mt["you"] and t.bet["side"] == "self", "the stake leaves the gold at once, the odds are written down")
+	check(not Bets.place_match(t, 10, "self"), "one bet a match")
 	var back := Tournament.from_dict(t.to_dict())
-	check(int(back.bet.get("stake", 0)) == 50, "the bet survives a reload")
-	var sb := MatchScore.new(1, 6, 6, 0)
-	sb.set_scores = [[6, 3]]
-	sb.winner = 0
-	var paid := Bets.settle_match(t, sb)
-	check(paid == 175 and SaveData.gold == 325 and t.bet.is_empty(), "won at x3.5: 50 -> 175 (%d)" % paid)
-	Bets.place_match(t, 25, true)
-	paid = Bets.settle_match(t, sb)
-	check(paid == 0 and SaveData.gold == 300 and int(SaveData.bets["loss_streak"]) == 1, "a sweep bet lost on 6:3")
+	check(int(back.bet.get("stake", 0)) == 50 and back.bet["side"] == "self", "the bet survives a reload")
+	var paid := Bets.settle_match(t, _score(0))
+	check(paid == roundi(50.0 * float(mt["you"])) and SaveData.gold == 150 + paid and t.bet.is_empty() and not t.disqualified, "won on himself: 50 -> %d" % paid)
+	# Against yourself: the bet wins when you lose; the dice are the run's seed and the round.
+	var seeds_dq := 0
+	var seeds_clean := 0
+	var dq_seed := 0
+	var ok_seed := 0
+	for sd in range(1, 400):
+		var d := Bets.dq_roll(sd, 3, Bets.DQ_ON_LOSS)
+		check(d == Bets.dq_roll(sd, 3, Bets.DQ_ON_LOSS), "the roll is fixed by the seed") if sd < 3 else null
+		if d:
+			seeds_dq += 1
+			dq_seed = sd if dq_seed == 0 else dq_seed
+		else:
+			seeds_clean += 1
+			ok_seed = sd if ok_seed == 0 else ok_seed
+	check(absf(seeds_dq / 399.0 - Bets.DQ_ON_LOSS) < 0.07, "the disqualification chance is 35%% on a lost match (%d of 399)" % seeds_dq)
+	Skills.perks = []
+	check(Bets.dq_chance("against", false) == 0.35 and Bets.dq_chance("against", true) == 0.10 and Bets.dq_chance("self", false) == 0.0, "35% after a loss, 10% after a win, none on a bet for yourself")
+	# Not disqualified: the bet pays by the opponent's odds.
+	SaveData.gold = 400
+	SaveData.bets = {}
+	var t2 := Tournament.new(1, ok_seed)
+	t2.stage = 3
+	var m2 := Bets.match_market(t2)
+	check(Bets.place_match(t2, 50, "against") and t2.bet["odds"] == m2["opp"] and t2.bet["side"] == "against", "against yourself: the opponent's odds")
+	paid = Bets.settle_match(t2, _score(1))
+	check(paid == roundi(50.0 * float(m2["opp"])) and not t2.disqualified and SaveData.gold == 350 + paid and int(SaveData.bets.get("loss_streak", 9)) == 0, "lost the match, won the bet: 50 -> %d" % paid)
+	# Disqualified by the dice: the stake burns even if the match is won, a fine, the run ends.
+	SaveData.gold = 400
+	SaveData.bets = {}
+	var t3 := Tournament.new(1, dq_seed)
+	t3.stage = 3
+	Bets.place_match(t3, 50, "against")
+	paid = Bets.settle_match(t3, _score(1))
+	check(t3.disqualified and paid == 0 and Bets.last_result["dq"] and Bets.last_result["fine"] == 70 and SaveData.gold == 280, "a seed that disqualifies: no payout, the fine is 20%% of 350 = 70 (gold %d)" % SaveData.gold)
+	check((SaveData.bets["codex"] as Array).size() == 1 and SaveData.bets["codex"][0]["kind"] == "dq" and int(SaveData.bets["loss_streak"]) == 1, "a line in the codex, the streak counts a loss")
+	t3.record_match(false, "6:3 3:6", RandomNumberGenerator.new())
+	check(t3.state == Tournament.State.OVER and t3.last_prize == 0 and t3.results.back()["dq"] and t3.finish_text().begins_with("Дисквалификация"), "the run is over without the prize of the match")
+	var t3b := Tournament.from_dict(t3.to_dict())
+	check(t3b.disqualified, "the disqualification is saved with the run")
+	# The trait takes the risk away: the same seed, no disqualification.
+	Skills.perks = ["tc_shady"]
+	check(Bets.is_shady() and Bets.dq_chance("against", false) == 0.0, "«Ушлый»: no risk")
+	SaveData.gold = 400
+	SaveData.bets = {}
+	var t4 := Tournament.new(1, dq_seed)
+	t4.stage = 3
+	Bets.place_match(t4, 50, "against")
+	paid = Bets.settle_match(t4, _score(1))
+	check(not t4.disqualified and paid > 0 and not Bets.last_result["dq"], "the same seed with the trait: no disqualification, the bet pays")
+	Skills.perks = []
+	# A lost bet on yourself, the desk's history and its record.
+	SaveData.gold = 300
+	var t5 := Tournament.new(1, ok_seed)
+	t5.stage = 3
+	Bets.place_match(t5, 25, "self")
+	paid = Bets.settle_match(t5, _score(1))
+	check(paid == 0 and int(SaveData.bets["loss_streak"]) == 1, "a bet on himself lost with the match")
+	var h: Array = SaveData.bets["history"]
+	check(h.size() == 2 and h.back()["side"] == "self" and not h.back()["won"], "the bets' history keeps who, which side, how it ended")
+	var rh := Bets.run_history(t5)
+	check(rh.size() == 1 and int(rh[0]["stage"]) == 3 and RunBets.history_line(rh[0]).ends_with("· 25 · мимо"), "the run's summary lists this run's bets only: «%s»" % (RunBets.history_line(rh[0]) if rh.size() > 0 else ""))
 	var cf := SaveData._to_config()
 	SaveData.bets = {}
 	SaveData._apply(cf)
-	check(int(SaveData.bets.get("placed", 0)) == 2, "the desk's record is saved")
+	check(int(SaveData.bets.get("placed", 0)) == 2 and (SaveData.bets["history"] as Array).size() == 2, "the desk's record and history are saved")
+	# After the D-8/G-6/G-7 merge: the odds are of the drawn opponent of the round, pulled up by
+	# the round, with his traits and auras and the run's conditions (hardcore) on top.
+	var td := Tournament.new(1, 21)
+	var same := true
+	for i in td.rounds():
+		same = same and Bets.match_for(td, i)["name"] == td.opp(i)["name"]
+	check(same, "the bookmaker prices the drawn field (%s)" % [range(td.rounds()).map(func(i): return td.opp(i)["name"])])
+	var weak := {"skill": 0.1}
+	check(Bets.round_pull(weak, 8.0, 0) == 0.0 and Bets.round_pull(weak, 8.0, 3) > 2.0 and Bets.round_pull(weak, 0.0, 3) == 0.0,
+		"the D-8 pull-up by the round: a veteran's semi-final asks +%.1f levels of a weak player, a newcomer's none" % Bets.round_pull(weak, 8.0, 3))
+	var any_trait := true
+	for lu in td.lineup:
+		any_trait = any_trait and Bets.mods_levels(lu["mods"]) >= 0.29
+	check(any_trait and Bets.mods_levels([]) == 0.0, "every opponent's trait counts in his rating")
+	var p_plain := float(Bets.match_market(td, 2)["p"])
+	td.run_modifiers = ["hardcore"]
+	var p_hard := float(Bets.match_market(td, 2)["p"])
+	check(p_hard < p_plain * 0.5, "hardcore makes the player much more of an outsider: %.2f -> %.2f" % [p_plain, p_hard])
+	# The card of the opponent shows the line; the bracket row too.
+	SaveData.titles = 1
+	var tc := Tournament.new(1, 11)
+	var inf := OpponentCard.info(tc, 0)
+	check(OpponentCard.odds_line(inf["odds"]) == "Коэф. %.2f / %.2f" % [inf["odds"]["you"], inf["odds"]["opp"]] and float(inf["odds"]["you"]) >= 1.05, "the opponent's card: «%s»" % OpponentCard.odds_line(inf["odds"]))
+	SaveData.titles = 0
 	SaveData.gold = 0
+	SaveData.bets = {}
 
 
 # --- A-4: golden opponents ----------------------------------------------------------

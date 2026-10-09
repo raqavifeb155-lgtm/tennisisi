@@ -498,7 +498,10 @@ func _place_buttons(id: String) -> Dictionary:
 				"extra": [["Навыки", "character"]]}
 		return {"label": "НАВЫКИ", "action": "character", "extra": [["Задания", "club_quests"]]}
 	var st := ClubPlaces.state(id)
-	return {"label": String(st["label"]).to_upper(), "action": st["action"], "extra": []}
+	var extra := []
+	if id == "bar" and Bets.unlocked():
+		extra.append(["Букмекер", "club_bookie"])  # E-5: odds for and against yourself
+	return {"label": String(st["label"]).to_upper(), "action": st["action"], "extra": extra}
 
 
 ## Red counts over places: skill points and quests to collect at the coach's, what's
@@ -563,6 +566,8 @@ func ui_action(action: String, arg: int) -> void:
 			ClubScreens.place(main.ui, ClubPlaces.state(id))
 		"club_roulette":
 			roulette_open()
+		"club_bookie":
+			RunBets.club_open(main)  # E-5: the bookmaker at the bar
 		"club_foreman":
 			foreman_open()
 		"club_lot":

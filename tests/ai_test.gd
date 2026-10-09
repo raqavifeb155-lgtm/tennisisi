@@ -510,6 +510,10 @@ func test_opponent_card() -> void:
 	t.lineup[1]["mods"] = ["fast", "ночной-туман"]
 	var m1: Array = card.info(t, 1)["mods"]
 	check(m1.size() == 2 and String(m1[0]).begins_with("Быстрые ноги") and m1[1] == "ночной-туман", "a known mod gets its name, an unknown id (G's) is shown as it is")
+	t.lineup[1]["mods"] = ["net_rusher", "fog"]
+	t.lineup[1]["hidden"] = ["fog"]
+	m1 = card.info(t, 1)["mods"]
+	check(String(m1[0]).begins_with("Атакует сетку · ") and String(m1[1]).begins_with("???"), "a trait (G-7) by its name, not its id; a hidden aura stays ??? (%s)" % [m1])
 	t.lineup[2]["golden"] = true
 	check(card.info(t, 2)["golden"] and card.info(t, 2)["prize"] == t.gold_for_win(2), "golden: the prize is the golden one")
 	var ui: CanvasLayer = load("res://scripts/tournament_ui.gd").new()
