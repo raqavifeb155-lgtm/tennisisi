@@ -1505,6 +1505,11 @@ func _pose(local_v: Vector3, amt: float, near_contact: float) -> void:
 	elbow = _human_elbow(r_sh, hand_t, elbow, tw, chest, pelvis, head)
 	var hand := _reach(elbow, hand_t, FOREARM)
 	var rdir := _rdir
+	if _mode == 0 and _slide_dir.x > 0.3 and _slide > 0.2:
+		# Sliding to the forehand side: the racket carries on from the forearm, the wrist
+		# only a little cocked up, never snapped at a right angle to the arm.
+		var along := ((hand - elbow).normalized() + Vector3(0, 0.35, 0)).normalized()
+		rdir = rdir.slerp(along, 0.9 * clampf((_slide - 0.2) / 0.4, 0.0, 1.0))
 	if near_contact > 0.0:
 		var to_ball := _contact_model() - hand
 		if to_ball.length() > 0.05:
