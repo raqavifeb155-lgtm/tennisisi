@@ -44,6 +44,26 @@ const PRESETS := [
 	{"id": "pro", "name": "Про", "desc": "Узкое окно PERFECT и соперники на тир сильнее", "mods": ["short_ring", "tier_up"]},
 ]
 
+## Spec hub-economy 14: the conditions on the screen rotate from run to run (a seed by the
+## run's number): this many of the run pool, the «Про» preset's two always among them.
+const ROTATION_MIN := 6
+const ROTATION_MAX := 8
+
+## The rate of the opponents' modifiers, picked before a run (hub-economy 14): the auras'
+## chance x and the second trait's chance x; more of them, more pay (in the one gold_mult
+## with its cap). «Редко» is the density the game always had (x1, the default): a run that
+## never saw the choice rolls the same opponents and pays the same.
+const FREQS := [
+	{"id": "rare", "name": "Редко", "reward": 1.0, "aura": 1.0, "second": 1.0,
+		"desc": "Как всегда: аура у одного соперника из 10, вторая черта — у одного из 4"},
+	{"id": "normal", "name": "Обычно", "reward": 1.15, "aura": 2.0, "second": 1.8,
+		"desc": "Аура у одного из 6, вторая черта — почти у половины. Награда ×1.15"},
+	{"id": "often", "name": "Часто", "reward": 1.35, "aura": 4.0, "second": 2.6,
+		"desc": "Аура у каждого третьего, две черты — у двух из трёх. Награда ×1.35"},
+]
+const FREQ_DEFAULT := 0
+const SECOND_CAP := 0.9           # the second trait's chance at most, whatever the rate
+
 ## Off where the rules must be equal (online, when it comes): nothing rolls, nothing applies.
 static var enabled := true
 ## --mods=a,b (bot runs and tests): these apply to every match, and no aura is rolled.
@@ -279,14 +299,48 @@ static func add_auras(t: Tournament) -> void:
 		for f in find(id).get("fx", []):
 			if f[0] == "aura_rate":
 				elite *= float(f[1])
+	var fr: Dictionary = FREQS[clampi(t.freq, 0, FREQS.size() - 1)]
+	elite *= float(fr["aura"])
 	var newbie := SaveData.played == 0
 	for i in t.lineup.size():
 		var lu: Dictionary = t.lineup[i]
 		var keep: Array = lu["mods"].filter(func(id): return find(id).get("legacy", false) or find(id).is_empty())
-		keep += Traits.roll(t.rng.seed, i, t.opp(i))  # G-7: his traits first, then the rare auras
+		var tr := Traits.roll(t.rng.seed, i, t.opp(i))  # G-7: his traits first, then the rare auras
+		keep += tr + extra_trait(t.rng.seed, i, t.opp(i), tr, float(fr["second"]))
 		var a := roll_auras(t.rng.seed, i, t.opp(i).get("boss", false), elite, newbie)
 		lu["mods"] = keep + a["mods"]
 		lu["hidden"] = a["hidden"]
+
+
+## The rate's second trait (hub-economy 14), on top of Traits.roll and with its own generator,
+## so «Редко» (x1) keeps the old rolls: Traits.roll gives a second trait with chance p; this
+## adds one with the chance that lifts p to min(p x second, SECOND_CAP). The pick follows
+## Traits' own rule (fits his stats and style, those that fit weigh NEED_WEIGHT, never a named one).
+static func extra_trait(seed_value: int, i: int, opp: Dictionary, have: Array, second: float) -> Array:
+	if second <= 1.0 or i < 1 or have.size() >= 2 or not enabled or not forced.is_empty():
+		return []
+	var p := minf(Traits.SECOND_BASE + Traits.SECOND_STEP * float(i - 1), Traits.SECOND_MAX)
+	var q := (minf(p * second, SECOND_CAP) - p) / (1.0 - p)
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([seed_value, i, "trait_rate"])
+	if r.randf() >= q:
+		return []
+	var stats := Opponents.stats(opp)
+	var style := String(opp.get("play_style", ""))
+	var cands: Array = []
+	var total := 0.0
+	for e in Traits.all():
+		if e.has("named") or have.has(e["id"]) or not Traits.fits(e, stats) or (e.has("style") and e["style"] != style):
+			continue
+		var w: float = Traits.NEED_WEIGHT if (e.has("needs") or e.has("style")) else 1.0
+		cands.append([e["id"], w])
+		total += w
+	var x := r.randf() * total
+	for c in cands:
+		x -= float(c[1])
+		if x <= 0.0:
+			return [c[0]]
+	return []
 
 
 ## Loot shift an aura (or an old modifier) gives his gear.
@@ -314,12 +368,62 @@ static func reward_raw(list: Array) -> float:
 	return x
 
 
-## What beating opponent i pays on top: his auras x the run's conditions.
+## What beating opponent i pays on top: his auras x the run's conditions x the rate.
 static func gold_mult(t: Tournament, i: int) -> float:
 	if not enabled:
 		return 1.0
 	var auras: Array = t.lineup[i]["mods"] if i < t.lineup.size() else []
-	return minf(reward(auras) * reward(t.run_modifiers), MAX_HARD if t.hardcore else MAX_REWARD)
+	return minf(reward(auras) * run_mult(t), MAX_HARD if t.hardcore else MAX_REWARD)
+
+
+## The run's own pay: its conditions x the rate of the opponents' modifiers, capped.
+static func run_mult(t: Tournament) -> float:
+	return total(t.run_modifiers, t.freq)
+
+
+## The same for a list and a rate (the conditions screen, before the run exists).
+static func total(list: Array, f: int) -> float:
+	return minf(total_raw(list, f), MAX_HARD if list.has("hardcore") else MAX_REWARD)
+
+
+static func total_raw(list: Array, f: int) -> float:
+	return reward_raw(list) * float(FREQS[clampi(f, 0, FREQS.size() - 1)]["reward"])
+
+
+## The bracket's words for the rate: "Модификаторы соперников: Часто ×1.35".
+static func freq_line(t: Tournament) -> String:
+	var fr: Dictionary = FREQS[clampi(t.freq, 0, FREQS.size() - 1)]
+	var x := float(fr["reward"])
+	return "Модификаторы соперников: %s%s" % [fr["name"], ("  ·  ×%s" % _k(x)) if x > 1.001 else ""]
+
+
+## This run's conditions on the screen (hub-economy 14): run_no seeds a shuffle of the run pool;
+## the first ROTATION_MIN..MAX of it are shown, «Про»'s two always (not in hardcore: it holds them),
+## in hardcore what it holds is skipped. The same number, the same set.
+static func rotation(run_no: int, hardcore := false) -> Array:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([run_no, "rotation"])
+	var n := r.randi_range(ROTATION_MIN, ROTATION_MAX)
+	var fixed: Array = PRESETS[0]["mods"]
+	var rest: Array = pool("run").map(func(e): return e["id"]).filter(func(id): return not fixed.has(id))
+	for k in range(rest.size() - 1, 0, -1):
+		var j := r.randi_range(0, k)
+		var tmp = rest[k]
+		rest[k] = rest[j]
+		rest[j] = tmp
+	var out: Array = [] if hardcore else fixed.duplicate()
+	for id in rest:
+		if out.size() >= n:
+			break
+		if hardcore and HARD_HAS.has(id):
+			continue
+		out.append(id)
+	return out
+
+
+## The rate a run starts at: the one picked, or (-1) the one the player picked last time.
+static func start_freq(f: int) -> int:
+	return clampi(SaveData.mods_freq if f < 0 else f, 0, FREQS.size() - 1)
 
 
 ## «Хардкор»: the match's style gold x.
@@ -328,8 +432,10 @@ static func style_mult(t: Tournament) -> float:
 
 
 ## The run's conditions: picked before the run (0..MAX_RUN), they pay for every match and
-## add to the drop chances. "Элитные чаще" rolls the auras again.
-static func set_run(t: Tournament, list: Array) -> void:
+## add to the drop chances. "Элитные чаще" and the rate (freq >= 0) roll the auras again.
+static func set_run(t: Tournament, list: Array, freq := -1) -> void:
+	if freq >= 0:
+		t.freq = clampi(freq, 0, FREQS.size() - 1)
 	var picked: Array = []
 	for id in list:
 		var e := find(id)

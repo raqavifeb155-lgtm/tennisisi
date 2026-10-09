@@ -44,6 +44,7 @@ static var locker := {}                # the locker: "items" kept, "next" bought
 static var titles_by_loc := {}         # titles won per location id (the islands open by them)
 static var lifetime_xp := 0.0          # every bit of skill experience ever earned (never reset)
 static var camera := "normal"          # the match camera (v0.2 D): "normal" | "tv" (section "view")
+static var mods_freq := 0              # the rate of the opponents' modifiers picked last (section "mods", Modifiers.FREQS)
 static var source := "none"            # where the progress came from: local, old, cloud (telemetry)
 static var _cloud_checked := false
 static var _last_cloud := ""
@@ -107,6 +108,7 @@ static func _apply(cf: ConfigFile) -> void:
 	titles_by_loc = cf.get_value("titles_by_loc", "data", {})
 	lifetime_xp = cf.get_value("lifetime", "xp", 0.0)
 	camera = cf.get_value("view", "camera", "normal")
+	mods_freq = cf.get_value("mods", "freq", 0)
 	active = null
 	Skills.xp = cf.get_value("skills", "xp", {})
 	Skills.perks = cf.get_value("skills", "perks", [])
@@ -219,6 +221,8 @@ static func _to_config() -> ConfigFile:
 		cf.set_value("titles_by_loc", "data", titles_by_loc)
 	if lifetime_xp > 0.0:
 		cf.set_value("lifetime", "xp", lifetime_xp)
+	if mods_freq != 0:
+		cf.set_value("mods", "freq", mods_freq)
 	if active != null and not active.banked and active.state != Tournament.State.OVER:
 		run = active.to_dict()
 	else:
