@@ -335,6 +335,7 @@ func show_character(animate := true) -> void:
 	_open(null, animate, "menu")
 	_title("Тренерская")
 	_sub("Навык растёт от того, чем бьёшь. Каждые %d уровней — перк навыка." % Skills.PERK_EVERY)
+	CareerUi.character_extra(self)  # L1: the career's card, «Завершить карьеру» from the 3rd season
 	if Skills.points > 0:
 		var pts := _text("Стартовые очки: %d — нажми +1 у навыка" % Skills.points, UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.GOLD)
 		pts.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -348,7 +349,6 @@ func show_character(animate := true) -> void:
 		_note("Билд: " + ", ".join(names))
 	if not SaveData.golden.is_empty():
 		_note(Golden.collection_text())  # v0.2 A: golden opponents beaten
-	CareerUi.character_extra(self)  # L1: the career's card, «Завершить карьеру» from the 3rd season
 	_gap(24)
 
 
