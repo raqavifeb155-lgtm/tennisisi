@@ -591,7 +591,7 @@ func _physics_process(delta: float) -> void:
 	var speed := velocity.length()
 	var decel := (_prev_speed - speed) / maxf(delta, 0.0001)
 	var slide_from := 3.8 if surface == "clay" else 4.6
-	if _down < 0.0 and _slide < 0.2 and _prev_speed > slide_from and (decel > 20.0 or (_mode == 2 and _prev_speed > slide_from + 0.6)):
+	if _down < 0.0 and _slide < 0.2 and _prev_speed > slide_from and (decel > 20.0 or (is_swinging() and _prev_speed > slide_from + 0.6)):
 		_slide = 1.0
 		if surface == "grass" and _prev_speed > 5.4 and _slip_rng.randf() < GRASS_SLIP_CHANCE:
 			_slip()
