@@ -328,7 +328,8 @@ func test_cap_and_exit() -> void:
 	main._gain_xp("forehand", "GOOD")
 	drill.paying = false
 	var full := _xp_total() - xp0
-	check(is_equal_approx(full, 0.5) and is_equal_approx(small, 0.1), "a GOOD ball: 0.5 experience, 0.1 after the cap (%.2f / %.2f)" % [full, small])
+	var age := Career.xp_mult()  # L1: the hero's age scales every experience, the drill's too
+	check(is_equal_approx(full, 0.5 * age) and is_equal_approx(small, 0.1 * age), "a GOOD ball: 0.5 experience, 0.1 after the cap, x%.2f by age (%.2f / %.2f)" % [age, full, small])
 	xp0 = _xp_total()
 	main._gain_xp("forehand", "GOOD")
 	check(is_equal_approx(_xp_total(), xp0), "outside the drill's own payments Main's per-hit experience is held")
