@@ -106,6 +106,46 @@ static func reset() -> void:
 	gear = {}
 
 
+## The player's skills as one dictionary (ACADEMY_LEGACY_TZ 8.6): a snapshot of the static
+## state, deep-copied, so a retired hero, a junior, a ghost or the bot of AI-against-AI can
+## carry their own. {"xp": {skill: total}, "perks": [ids], "pending": [skills], "points": n}.
+## The static xp / perks / pending / points stay what the match reads: a profile is saved
+## and loaded, it does not replace them.
+static func to_profile() -> Dictionary:
+	return {"xp": xp.duplicate(true), "perks": perks.duplicate(), "pending": pending.duplicate(), "points": points}
+
+
+## Puts a profile into play ({} = a beginner). The run's gear and the match's layer stay.
+static func load_profile(p: Dictionary) -> void:
+	xp = (p.get("xp", {}) as Dictionary).duplicate(true)
+	perks = (p.get("perks", []) as Array).duplicate()
+	pending = (p.get("pending", []) as Array).duplicate()
+	points = int(p.get("points", START_POINTS))
+
+
+## A profile that has exactly these levels ({skill: level}), with no perks: a new player of
+## the club (a free agent, an academy graduate). pts: starting points to place.
+static func profile_from_levels(levels: Dictionary, pts := START_POINTS) -> Dictionary:
+	var x := {}
+	for id in levels:
+		var total := 0.0
+		for n in range(1, clampi(int(levels[id]), 0, MAX_LEVEL) + 1):
+			total += cost(n)
+		if total > 0.0:
+			x[id] = total + 0.001
+	return {"xp": x, "perks": [], "pending": [], "points": pts}
+
+
+## A skill's level inside a profile (not the one in play): the cards of heirs and coaches.
+static func level_of(p: Dictionary, id: String) -> int:
+	var total := float((p.get("xp", {}) as Dictionary).get(id, 0.0))
+	var n := 0
+	while n < MAX_LEVEL and total >= cost(n + 1) - 0.001:
+		total -= cost(n + 1)
+		n += 1
+	return n
+
+
 ## Spends a starting point: the skill goes straight to its next level.
 static func spend_point(id: String) -> bool:
 	if points <= 0 or level(id) >= MAX_LEVEL:
