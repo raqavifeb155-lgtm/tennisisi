@@ -35,11 +35,15 @@ func _run() -> void:
 	test_sell_extra()
 	test_locker()
 	test_locker_in_run()
+	test_insured_once()
 	test_goals()
 	test_shop()
 	test_strings()
 	test_islands()
 	test_loop_review()
+	test_newcomer_quests()
+	test_sell_rest()
+	test_one_scale()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -216,12 +220,12 @@ func test_locker() -> void:
 	for r in 6:
 		caps.append(Locker.cap(r))
 	check(caps == [Gear.RARE, Gear.RARE, Gear.EPIC, Gear.EPIC, Gear.LEGENDARY, Gear.MYTHIC], "the ceiling by the round of exit %s" % [caps])
-	check(Locker.insurance(_item(Gear.LEGENDARY)) == 36 and Locker.insurance(_item(Gear.MYTHIC)) == 120, "insurance 36 / 120")
-	check(Locker.insurance(_item(Gear.LEGENDARY, 3)) == 47 and Locker.insurance(_item(Gear.EPIC)) == 0, "the level counts (360 x 1.3 x 10%% = 47), an epic needs none")
+	check(Locker.insurance(_item(Gear.LEGENDARY)) == 90 and Locker.insurance(_item(Gear.MYTHIC)) == 300, "insurance a quarter, once: 90 / 300")
+	check(Locker.insurance(_item(Gear.LEGENDARY, 3)) == 117 and Locker.insurance(_item(Gear.EPIC)) == 0, "the level counts (360 x 1.3 x 25%% = 117), an epic needs none")
 	check(Locker.put(_item(Gear.EPIC), 1) != "", "an epic out in the second round: above the ceiling")
-	check(Locker.put(_item(Gear.LEGENDARY), 5) == "нужно ещё 36", "a legendary with no gold: «%s»" % Locker.put(_item(Gear.LEGENDARY), 5))
-	SaveData.gold = 50
-	check(Locker.put(_item(Gear.LEGENDARY), 5) == "" and SaveData.gold == 14 and Locker.items().size() == 1, "...with gold: kept, 36 paid")
+	check(Locker.put(_item(Gear.LEGENDARY), 5) == "нужно ещё 90", "a legendary with no gold: «%s»" % Locker.put(_item(Gear.LEGENDARY), 5))
+	SaveData.gold = 104
+	check(Locker.put(_item(Gear.LEGENDARY), 5) == "" and SaveData.gold == 14 and Locker.items().size() == 1, "...with gold: kept, 90 paid")
 	check(Locker.put(_item(Gear.RARE), 0).begins_with("шкафчик полон"), "full: «%s»" % Locker.put(_item(Gear.RARE), 0))
 	var g := SaveData.gold
 	check(Locker.put(_item(Gear.RARE, 1, "band"), 0, 0) == "" and SaveData.gold == g + 120 and Locker.items()[0]["slot"] == "band", "replace: the old one is sold into the bank (+120)")
@@ -258,6 +262,68 @@ func test_locker_in_run() -> void:
 	check(Locker.save_from(t, 1) != "", "only one per run")
 	var back := Tournament.from_dict(t.to_dict())
 	check(back.locker_done, "the choice survives a save")
+	_reset_save()
+
+
+# --- Hub spec 15: the locker's insurance is paid once ----------------------------------
+
+func test_insured_once() -> void:
+	print("insurance once (hub spec 15)")
+	_reset_save()
+	SaveData.club = {"levels": {"locker": 1}}
+	SaveData.gold = 100
+	check(Locker.put(_item(Gear.LEGENDARY), 5) == "" and SaveData.gold == 10, "the first time a legendary goes in: 90 paid")
+	check(bool(Locker.items()[0].get("insured", false)), "...and it is insured")
+	check(Locker.insurance(Locker.items()[0]) == 0, "an insured thing owes no insurance")
+	check(Locker.put(_item(Gear.EPIC, 1, "band"), 5) == "" and not Locker.items()[1].has("insured"), "an epic needs none and is not marked")
+	# a run with it: under risk like any taken thing, but kept again for free
+	var t := Tournament.new(1, 31)
+	_plain(t)
+	t.take_from_locker(0)
+	check(bool(t.equip["racket"].get("insured", false)) and Locker.items().size() == 1, "taken into the run, still insured")
+	var back := Tournament.from_dict(t.to_dict())
+	check(bool(back.equip["racket"].get("insured", false)), "the flag survives a run's save")
+	t.stage = 4
+	t.record_match(false, "1:6", _rng(1))
+	SaveData.gold = 0
+	var gold := SaveData.gold
+	SaveData.record_run(t)
+	var ci := -1
+	var cands := Locker.candidates(t)
+	for i in cands.size():
+		if bool(cands[i]["item"].get("insured", false)):
+			ci = i
+	check(ci >= 0 and Locker.check(cands[ci]["item"], Locker.exit_round(t)) == "", "on the summary it is one of the picks, and with no gold it can go back")
+	check(Locker.save_from(t, ci) == "" and SaveData.gold == gold + t.gold and Locker.items().size() == 2, "kept again: nothing paid")
+	check(bool(Locker.items()[1]["insured"]), "...still insured in the locker")
+	# bought legendaries come insured (the full price is ten insurances)
+	_reset_save()
+	SaveData.club = {"levels": {"shop": 2}}
+	SaveData.gold = 100000
+	var bought := false
+	for k in 40:
+		var st := Shop.stock()
+		for i in st.size():
+			if not (st[i] as Dictionary).is_empty() and int(st[i]["rarity"]) >= Gear.LEGENDARY and Shop.buy(i) == "":
+				bought = true
+				break
+		if bought:
+			break
+		SaveData.played += 1
+	check(bought and bool(Locker.next_items().back().get("insured", false)), "a legendary bought in the shop is insured")
+	# an old save: locker items with no flag load, pay once, then carry it
+	_reset_save()
+	var cf := ConfigFile.new()
+	cf.set_value("meta", "gold", 500)
+	cf.set_value("locker", "data", {"items": [_item(Gear.LEGENDARY)]})
+	SaveData._apply(cf)
+	check(Locker.items().size() == 1 and not Locker.items()[0].has("insured") and Locker.insurance(Locker.items()[0]) == 90, "an old save's legendary: no flag, owes 90 once")
+	var old: Dictionary = Locker.take(0)
+	check(Locker.put(old, 5) == "" and SaveData.gold == 410 and bool(Locker.items()[0]["insured"]), "...paid once on the next keep, insured from then on")
+	var cf2 := SaveData._to_config()
+	SaveData.locker = {}
+	SaveData._apply(cf2)
+	check(bool(Locker.items()[0].get("insured", false)), "the flag survives the save file")
 	_reset_save()
 
 
@@ -535,6 +601,15 @@ func test_chest() -> void:
 	check(perks_seen == 0, "1000 chests: no temporary perks")
 	check(levels_ok, "every chest item in Paris is level 4")
 	check(float(epics) / items_n > 0.45 and float(epics) / items_n < 0.65, "quarter-final chests: epic+ in %d of %d items" % [epics, items_n])
+	# loop review P1: a legendary from a chest is rare even in the final (<= 8%), the boutique still matters
+	var legs := 0
+	var fin_items := 0
+	for k in 2000:
+		var fc := holder.make_chest(4, cr)
+		if not fc["item"].is_empty():
+			fin_items += 1
+			legs += 1 if int(fc["item"]["rarity"]) == Gear.LEGENDARY else 0
+	check(float(legs) / fin_items <= 0.10 and Tournament.CHEST_RARITY[4][3] <= 8.0, "final chests: a legendary in %d of %d items (<= 8%%)" % [legs, fin_items])
 	# taking it: gold into the run's lines, the item worn or in the bag, state goes on
 	var t2 := Tournament.new(1, 12)
 	_plain(t2)
@@ -594,4 +669,87 @@ func test_loop_review() -> void:
 	check(Locations.opened_by_title(champ.location) == "", "...and it is news only once")
 	champ.location = "paris"
 	check(Locations.opened_by_title(champ.location) == "", "Paris is the last island")
+	_reset_save()
+
+
+# --- Loop review P1: the first runs' quests fit one match --------------------------------
+
+func test_newcomer_quests() -> void:
+	print("quests for a newcomer")
+	_reset_save()
+	var one_match := true
+	var easier := true
+	for run in ClubQuests.NEWCOMER_RUNS:
+		SaveData.played = run
+		for k in 20:
+			SaveData.club = {}
+			ClubQuests.start_run("new%d_%d" % [run, k], 0)
+			for q in ClubQuests.current():
+				var tpl := ClubQuests.find_template(q["tpl"])
+				one_match = one_match and tpl.has("first")
+				easier = easier and float(q["need"]) <= float(tpl["n"][0]) and not String(q["text"]).contains("%")
+	check(one_match, "the first %d runs deal only quests a single match can finish" % ClubQuests.NEWCOMER_RUNS)
+	check(easier, "...at the newcomer's threshold (never above the first island's)")
+	SaveData.played = ClubQuests.NEWCOMER_RUNS
+	var wide := {}
+	for k in 40:
+		SaveData.club = {}
+		ClubQuests.start_run("old%d" % k, 0)
+		for q in ClubQuests.current():
+			wide[q["tpl"]] = true
+	check(wide.has("wins") or wide.has("bagel"), "from run %d the whole pool (wins, bagel...)" % (ClubQuests.NEWCOMER_RUNS + 1))
+	SaveData.played = 0
+	SaveData.club = {}
+	ClubQuests.start_run("n1", 0)
+	var aces := ClubQuests.find_template("aces")
+	check(int(aces["first"]) == 1 and ClubQuests._make(aces, 0, false, true)["text"] == "Подай эйс за матч", "a newcomer's text reads right: «%s»" % ClubQuests._make(aces, 0, false, true)["text"])
+	_reset_save()
+
+
+# --- Loop review P1: «Продать остальное» on the summary ----------------------------------
+
+func test_sell_rest() -> void:
+	print("sell the rest on the summary")
+	_reset_save()
+	SaveData.gold = 1000
+	var t := Tournament.new(1, 41)
+	_plain(t)
+	t.equip["racket"] = _item(Gear.EPIC)
+	t.equip["shoes"] = _item(Gear.LEGENDARY, 1, "shoes")
+	t.bag = [_item(Gear.MYTHIC, 1, "band"), _item(Gear.RARE, 1, "band")]
+	t.stage = 4
+	t.record_match(false, "1:6", _rng(1))
+	SaveData.record_run(t)
+	var want := Items.sell_price(_item(Gear.EPIC)) + Items.sell_price(_item(Gear.MYTHIC, 1, "band")) + Items.sell_price(_item(Gear.RARE))
+	check(Locker.save_from(t, 1) == "", "the legendary shoes go into the locker")
+	var bank := SaveData.gold
+	var rest := Locker.rest(t)
+	check(rest.size() == 3 and Locker.rest_gold(t) == want, "the rest: 3 things for %d (the kept original is not one of them)" % Locker.rest_gold(t))
+	var sell0 := int(t.income.get("sell", 0))
+	var g := Locker.sell_rest(t)
+	check(g == want and SaveData.gold == bank + want, "sold into the bank +%d" % g)
+	check(int(t.income["sell"]) == sell0 + want and t.bag.is_empty() and t.equip["racket"].is_empty(), "on the summary's sale line, the run is empty")
+	check(Locker.items().size() == 1 and int(Locker.items()[0]["rarity"]) == Gear.LEGENDARY, "the kept one is safe in the locker")
+	check(Locker.sell_rest(t) == 0, "nothing twice")
+	var live := Tournament.new(1, 42)
+	_plain(live)
+	live.equip["racket"] = _item(Gear.EPIC)
+	check(Locker.sell_rest(live) == 0 and not live.equip["racket"].is_empty(), "never during a run (only when the run is banked)")
+	_reset_save()
+
+
+# --- Loop review P1: the quests and the ball machine, one decision ------------------------
+
+func test_one_scale() -> void:
+	print("quests on the run's scale, the ball machine a daily hook")
+	_reset_save()
+	var tpl := ClubQuests.find_template("net")
+	var q := []
+	var lap := []
+	for played in [0, 8]:
+		SaveData.played = played
+		q.append(int(ClubQuests._make(tpl, 0, false)["gold"]))
+		lap.append(BallMachine.gold_for_lap())
+	check(q[0] == roundi(30 * Tournament.BEGINNER_START) and q[1] == roundi(30 * Tournament.INCOME_SCALE), "a quest pays on the run's income scale (%s)" % [q])
+	check(lap[0] == lap[1] and lap[0] == BallMachine.GOLD_BASE, "a ball machine lap does not (%s): capped at %d a day instead" % [lap, BallMachine.DAILY_CIRCLES])
 	_reset_save()

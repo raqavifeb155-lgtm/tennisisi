@@ -53,7 +53,7 @@ static func show_locker(ui: TournamentUI) -> void:
 		for i in nx.size():
 			RunShop.item_card(ui, nx[i], "Из магазина", "Продать +%d" % Items.sell_price(nx[i]), "shop_owned", 10 + i)
 	var k := Locker.INSURANCE * (1.0 - ClubApi.insurance_discount())
-	ui._note("Страховка: легендарную и мифическую кладут за %d%% цены — от %d и от %d золота" % [roundi(k * 100.0), roundi(Items.BUY[3] * Items.PRICE_SCALE * k), roundi(Items.BUY[4] * Items.PRICE_SCALE * k)])
+	ui._note("Страховка: легендарную и мифическую кладут один раз за %d%% цены — от %d и от %d золота, и дальше вещь застрахована: класть её снова бесплатно" % [roundi(k * 100.0), roundi(Items.BUY[3] * Items.PRICE_SCALE * k), roundi(Items.BUY[4] * Items.PRICE_SCALE * k)])
 	ui._primary("МАГАЗИН", "club_shop")
 	ui._secondary("Внешность и управление", "locker_look")
 
@@ -67,7 +67,7 @@ static func bag_section(ui: TournamentUI, t: Tournament) -> void:
 	ui._sub("Шкафчик  ·  %s" % ("можно взять в забег до первого матча" if open else "после первого матча уже нельзя"))
 	for i in li.size():
 		if open:
-			RunShop.item_card(ui, li[i], "Взять в забег", "Под риском: сохранить заново на итоге", "locker_take", i)
+			RunShop.item_card(ui, li[i], "Взять в забег", "Застрахована: на итоге сохранить бесплатно" if Locker.is_insured(li[i]) else "Под риском: сохранить заново на итоге", "locker_take", i)
 		else:
 			var c := RunShop.item_card(ui, li[i], "Шкафчик", "")
 			c.modulate = Color(1, 1, 1, 0.55)
