@@ -2,7 +2,8 @@ class_name Locker
 ## The locker (v0.2 A-2, spec 2026-10-08-v02-hub-economy 1, ROGUELIKE_DESIGN 11.0): what a
 ## run leaves behind. On the summary the player keeps ONE item worn or in the bag; how rare
 ## it may be depends on how far the run went (the ceiling), and a legendary or mythic needs
-## an insurance of 10% of its price. A kept item can be taken into the next run before its
+## an insurance of a quarter of its price, paid ONCE (hub spec 15: the thing is marked
+## "insured" and never pays again; it was 10% on every keep). A kept item can be taken into the next run before its
 ## first match — and is at risk again there. What the shop sold ("next") comes along by
 ## itself: it was bought for that run.
 ##
@@ -11,7 +12,7 @@ class_name Locker
 
 const MAX_SLOTS := 4
 const NEXT_MAX := 3               # bought items waiting for the next run
-const INSURANCE := 0.10
+const INSURANCE := 0.25           # once per thing (spec 15); economy_sim: whole club 55.7 h at 10%, 64.3 h at 25%
 ## The ceiling by the round the run ended in (index; 5 = the title): ROGUELIKE 11.0.
 const CAPS := [Gear.RARE, Gear.RARE, Gear.EPIC, Gear.EPIC, Gear.LEGENDARY, Gear.MYTHIC]
 

@@ -217,12 +217,12 @@ func test_locker() -> void:
 	for r in 6:
 		caps.append(Locker.cap(r))
 	check(caps == [Gear.RARE, Gear.RARE, Gear.EPIC, Gear.EPIC, Gear.LEGENDARY, Gear.MYTHIC], "the ceiling by the round of exit %s" % [caps])
-	check(Locker.insurance(_item(Gear.LEGENDARY)) == 36 and Locker.insurance(_item(Gear.MYTHIC)) == 120, "insurance 36 / 120")
-	check(Locker.insurance(_item(Gear.LEGENDARY, 3)) == 47 and Locker.insurance(_item(Gear.EPIC)) == 0, "the level counts (360 x 1.3 x 10%% = 47), an epic needs none")
+	check(Locker.insurance(_item(Gear.LEGENDARY)) == 90 and Locker.insurance(_item(Gear.MYTHIC)) == 300, "insurance a quarter, once: 90 / 300")
+	check(Locker.insurance(_item(Gear.LEGENDARY, 3)) == 117 and Locker.insurance(_item(Gear.EPIC)) == 0, "the level counts (360 x 1.3 x 25%% = 117), an epic needs none")
 	check(Locker.put(_item(Gear.EPIC), 1) != "", "an epic out in the second round: above the ceiling")
-	check(Locker.put(_item(Gear.LEGENDARY), 5) == "нужно ещё 36", "a legendary with no gold: «%s»" % Locker.put(_item(Gear.LEGENDARY), 5))
-	SaveData.gold = 50
-	check(Locker.put(_item(Gear.LEGENDARY), 5) == "" and SaveData.gold == 14 and Locker.items().size() == 1, "...with gold: kept, 36 paid")
+	check(Locker.put(_item(Gear.LEGENDARY), 5) == "нужно ещё 90", "a legendary with no gold: «%s»" % Locker.put(_item(Gear.LEGENDARY), 5))
+	SaveData.gold = 104
+	check(Locker.put(_item(Gear.LEGENDARY), 5) == "" and SaveData.gold == 14 and Locker.items().size() == 1, "...with gold: kept, 90 paid")
 	check(Locker.put(_item(Gear.RARE), 0).begins_with("шкафчик полон"), "full: «%s»" % Locker.put(_item(Gear.RARE), 0))
 	var g := SaveData.gold
 	check(Locker.put(_item(Gear.RARE, 1, "band"), 0, 0) == "" and SaveData.gold == g + 120 and Locker.items()[0]["slot"] == "band", "replace: the old one is sold into the bank (+120)")
@@ -269,7 +269,7 @@ func test_insured_once() -> void:
 	_reset_save()
 	SaveData.club = {"levels": {"locker": 1}}
 	SaveData.gold = 100
-	check(Locker.put(_item(Gear.LEGENDARY), 5) == "" and SaveData.gold == 64, "the first time a legendary goes in: 36 paid")
+	check(Locker.put(_item(Gear.LEGENDARY), 5) == "" and SaveData.gold == 10, "the first time a legendary goes in: 90 paid")
 	check(bool(Locker.items()[0].get("insured", false)), "...and it is insured")
 	check(Locker.insurance(Locker.items()[0]) == 0, "an insured thing owes no insurance")
 	check(Locker.put(_item(Gear.EPIC, 1, "band"), 5) == "" and not Locker.items()[1].has("insured"), "an epic needs none and is not marked")
@@ -314,9 +314,9 @@ func test_insured_once() -> void:
 	cf.set_value("meta", "gold", 500)
 	cf.set_value("locker", "data", {"items": [_item(Gear.LEGENDARY)]})
 	SaveData._apply(cf)
-	check(Locker.items().size() == 1 and not Locker.items()[0].has("insured") and Locker.insurance(Locker.items()[0]) == 36, "an old save's legendary: no flag, owes 36 once")
+	check(Locker.items().size() == 1 and not Locker.items()[0].has("insured") and Locker.insurance(Locker.items()[0]) == 90, "an old save's legendary: no flag, owes 90 once")
 	var old: Dictionary = Locker.take(0)
-	check(Locker.put(old, 5) == "" and SaveData.gold == 464 and bool(Locker.items()[0]["insured"]), "...paid once on the next keep, insured from then on")
+	check(Locker.put(old, 5) == "" and SaveData.gold == 410 and bool(Locker.items()[0]["insured"]), "...paid once on the next keep, insured from then on")
 	var cf2 := SaveData._to_config()
 	SaveData.locker = {}
 	SaveData._apply(cf2)
