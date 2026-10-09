@@ -23,7 +23,7 @@ static func block(ui: TournamentUI, stats: Dictionary, opponent: String) -> bool
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 4)
 	panel.add_child(v)
-	v.add_child(_row(ui, "ВЫ", "", opponent.to_upper(), true))
+	v.add_child(_row(ui, Career.hero_short(), "", opponent.to_upper(), true))
 	for r in t.rows():
 		v.add_child(_row(ui, r[0], r[1], r[2]))
 	ui._box.add_child(panel)

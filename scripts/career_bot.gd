@@ -10,6 +10,8 @@ static var runs := -1              # tournaments to play (-1 = not asked: one to
 static var reload := false
 static var done := 0
 static var reload_fails := 0
+static var name_fails := 0                # the hero's name lost on a reload, or not the heir's after the retirement
+static var name_seen := ""
 
 
 static func _args() -> void:
@@ -34,7 +36,7 @@ static func next(m: Node) -> bool:
 		SaveData.record_run(t)  # the bot gave up a too long run: it still counts
 	var c := Career.data()
 	var last: Dictionary = (c["cells"] as Array).back() if not (c["cells"] as Array).is_empty() else ((Career.last_season().get("cells", [{}]) as Array).back())
-	print("CAREER run %d/%d · gen %d · season %d · %d/4 · age %d · +%d pts%s · bank %d" % [done, runs, int(c["gen"]), Career.season(),
+	print("CAREER run %d/%d · %s · gen %d · season %d · %d/4 · age %d · +%d pts%s · bank %d" % [done, runs, Career.hero_name(), int(c["gen"]), Career.season(),
 		int(c["in_season"]), int(c["age"]), int(last.get("pts", 0)), " (final)" if last.get("final", false) else "", SaveData.gold])
 	if int(c["season_due"]) > 0:
 		var s := Career.last_season()
@@ -42,9 +44,13 @@ static func next(m: Node) -> bool:
 		c["season_due"] = 0
 	if reload:
 		_reload()
+	if Career.hero_name() != name_seen and name_seen != "":
+		name_fails += 1  # the name changed with no retirement: a reload lost it
+		print("  NAME CHANGED: %s -> %s" % [name_seen, Career.hero_name()])
+	name_seen = Career.hero_name()
 	if done >= runs:
-		print("\n=== CAREER ===\nruns %d · generation %d · retired %d · season %d %d/4 · reload checks failed %d" % [done, int(c["gen"]),
-			(c["retired"] as Array).size(), Career.season(), int(c["in_season"]), reload_fails])
+		print("\n=== CAREER ===\nruns %d · generation %d · retired %d · season %d %d/4 · reload checks failed %d · name checks failed %d" % [done, int(c["gen"]),
+			(c["retired"] as Array).size(), Career.season(), int(c["in_season"]), reload_fails, name_fails])
 		return false
 	m.call_deferred("_start_tournament", int(m.get("_autoplay_format")))
 	return true
@@ -81,6 +87,9 @@ static func auto_retire(m: Node) -> void:
 			relic = o
 	var heirs := Career.heir_candidates()
 	var rec := Career.retire(heirs[0], relic, t)
+	if Career.hero_name() != String(heirs[0]["name"]):
+		name_fails += 1  # the heir's name must become the hero's
+	name_seen = Career.hero_name()
 	print("RETIRED %s (gen %d): %d runs, %d titles, best %s, best skill %s %d%s" % [rec["name"], int(rec["gen"]), int(rec["runs"]),
 		int(rec["titles"]), Career.rank_text(int(rec["best_rank"])), rec["best_skill"], int(rec["levels"][rec["best_skill"]]),
 		", relic " + String(rec["relic"]["name"]) if not (rec["relic"] as Dictionary).is_empty() else ""])
