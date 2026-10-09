@@ -48,7 +48,9 @@ static func say(text: String, good := true) -> void:
 
 static func show_msg(ui: TournamentUI) -> void:
 	if msg != "":
-		ui._box.add_child(ui._text(msg, UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.WIN if msg_good else UiTheme.LOSE))
+		var l := ui._text(msg, UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.WIN if msg_good else UiTheme.LOSE)
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART  # «Куплено: … Поедет в следующий турнир» widened the screen past «По карману» (HANDOFF 12)
+		ui._box.add_child(l)
 		msg = ""
 
 
@@ -73,10 +75,10 @@ static func item_tag(item: Dictionary, what := "") -> String:
 		parts.append(what)
 	parts.append(Gear.slot_name(String(item.get("slot", "racket"))))
 	parts.append(UiTheme.RARITY_NAMES[clampi(int(item.get("rarity", 0)), 0, 4)])
-	if Items.level(item) > 1:
-		parts.append("ур. %d" % Items.level(item))
 	if Locker.is_insured(item):
-		parts.append("застрахована")  # hub spec 15
+		parts.append("застрахована")  # hub spec 15 (the level is on the picture's badge: the tag stays one line)
+	elif Items.level(item) > 1:
+		parts.append("ур. %d" % Items.level(item))
 	return "  ·  ".join(parts)
 
 

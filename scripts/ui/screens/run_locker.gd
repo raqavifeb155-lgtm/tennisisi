@@ -53,7 +53,7 @@ static func show_locker(ui: TournamentUI) -> void:
 		for i in nx.size():
 			RunShop.item_card(ui, nx[i], "Из магазина", "Продать +%d" % Items.sell_price(nx[i]), "shop_owned", 10 + i)
 	var k := Locker.INSURANCE * (1.0 - ClubApi.insurance_discount())
-	ui._note("Страховка: легендарную и мифическую кладут один раз за %d%% цены — от %d и от %d золота. дальше она застрахована: класть её снова — бесплатно" % [roundi(k * 100.0), roundi(Items.BUY[3] * Items.PRICE_SCALE * k), roundi(Items.BUY[4] * Items.PRICE_SCALE * k)])
+	ui._note("Страховка: легендарную и мифическую кладут один раз за %d%% цены — от %d и от %d золота, и дальше вещь застрахована: класть её снова бесплатно" % [roundi(k * 100.0), roundi(Items.BUY[3] * Items.PRICE_SCALE * k), roundi(Items.BUY[4] * Items.PRICE_SCALE * k)])
 	ui._primary("МАГАЗИН", "club_shop")
 	ui._secondary("Внешность и управление", "locker_look")
 

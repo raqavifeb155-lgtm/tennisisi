@@ -144,7 +144,9 @@ static func show_summary(ui: TournamentUI, t: Tournament) -> void:
 			wins += 1
 	ui._note("Побед: %d  ·  матчей: %d" % [wins, t.results.size()])
 	if _msg != "":
-		ui._box.add_child(ui._text(_msg, UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.WIN if _msg_good else UiTheme.LOSE))
+		var ml := ui._text(_msg, UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.WIN if _msg_good else UiTheme.LOSE)
+		ml.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART  # a long name must not widen the screen
+		ui._box.add_child(ml)
 		_msg = ""
 	var total_label := _income_panel(ui, t)
 	summary_quests(ui)

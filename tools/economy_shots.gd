@@ -200,6 +200,12 @@ func _flow() -> void:
 	var price := Items.price(Shop.stock()[0])
 	main._on_ui("shop_buy", 0)
 	check(SaveData.gold == g - price and Locker.next_items().size() == 1, "a second tap buys (-%d)" % price)
+	await process_frame
+	await process_frame
+	var wide := 0.0
+	for c in main.ui._box.get_children():
+		wide = maxf(wide, (c as Control).size.x)
+	check(wide <= 720.0, "the «Куплено…» line wraps: nothing wider than the screen (%d px), «По карману» stays in view" % wide)
 	main._on_ui("shop_owned", 10)
 	main._on_ui("shop_strings", 10)
 	var before: Dictionary = Locker.next_items()[0].duplicate(true)
