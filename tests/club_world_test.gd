@@ -504,6 +504,15 @@ func test_in_the_club() -> void:
 					closest = minf(closest, d)
 	check(worst_wait < 6.0, "60 s of strolling: nobody is held up for long (%.1f s)" % worst_wait)
 	check(closest > 0.55, "and nobody walks through anybody (closest %.2f m)" % closest)
+	crowd.refresh(false)
+	var shown_low := 0
+	for a in crowd.walker_count():
+		shown_low += int(crowd.walker_pos(a) != Vector3.INF)
+	crowd.refresh(true)
+	var shown_high := 0
+	for a in crowd.walker_count():
+		shown_high += int(crowd.walker_pos(a) != Vector3.INF)
+	check(shown_low == 5 and shown_high == crowd.walker_count(), "on Low the strollers not drawn are not there either, nobody bumps into a ghost (%d of %d, High %d)" % [shown_low, crowd.walker_count(), shown_high])
 	# the bodies: juniors and the old coach
 	var kid := Athlete.new()
 	root.add_child(kid)

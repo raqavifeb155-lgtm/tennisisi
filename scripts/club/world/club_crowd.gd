@@ -52,6 +52,7 @@ var _lengths: Array[float] = []
 var _routes: Array = []
 var _fan_n := 0
 var _registered := false
+var _shown := 1000                # how many strollers are drawn now (refresh)
 var _fan_base: Array[Color] = []
 var _fan_t := 0.0
 
@@ -110,6 +111,7 @@ func refresh(high: bool) -> void:
 	_high = high
 	var n := _walkers.size() + FANS
 	var vis := n if high else mini(n, FANS + 5)
+	_shown = maxi(0, vis - FANS)   # the strollers not drawn (the low preset) are not there: nobody bumps into them
 	for k in 2:
 		_people[k].multimesh.visible_instance_count = (vis + 1 - k) / 2
 	_birds.visible = high
@@ -267,6 +269,8 @@ func _others() -> Array[Vector2]:
 ## Where stroller `i` stands, and where fan `i` does (Vector3.INF = not there).
 func walker_pos(i: int) -> Vector3:
 	var w := _walkers[i]
+	if i >= _shown:
+		return Vector3.INF
 	return Vector3(w.pos.x, 0.0, w.pos.y) if w.pos.x < 1.0e4 else Vector3.INF
 
 

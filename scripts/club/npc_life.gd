@@ -174,6 +174,8 @@ func _spawn(id: String, kind: String, data: Dictionary) -> Npc:
 	n.name = String(data.get("name", "?"))
 	n.size = 1.0 if kind == "guest" else JuniorGen.junior_t(float(Academy.age(data)))
 	var look: Dictionary = data.get("look", {})
+	if look.is_empty() and kind == "guest":   # the star looks like himself, not like the hero's default
+		look = (Opponents.find(String(data.get("roster", ""))) as Dictionary).get("look", {})
 	n.look = look
 	n.skin = Looks.skin(look) if look.has("skin") else Color("e3b48a")
 	n.shirt = ClubBuilds.club_color() if kind == "student" else Color("f2f0ea")

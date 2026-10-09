@@ -18,6 +18,7 @@ var nopack := false     # --nopack: the club as it stands before the model pack 
 var census := false
 var npcviews := false   # --npcviews: H-8, the people of the club at the court, the academy, the paths; a 60 s watch for overlaps and floating
 var ruins := false      # --ruins: H-8, the ruin of a lot (weeds, junk) and what a building on someone else's lot leaves
+var budget := false     # --budget: H-8, draw calls and triangles of the club on the preset given by --gfx, without people and with them
 var npcs := false       # --npc: T-2, the coach's offer, the hire screens, the students, the visitor
 var academy := false    # --academy: T-3, the academy's five levels on its lot, the office, a card, the focus
 var foreman := false    # --foreman: the foreman window (the ghost of the next level) for every construction at every level
@@ -53,6 +54,8 @@ func _initialize() -> void:
 			ruins = true
 		elif a == "--npcviews":
 			npcviews = true
+		elif a == "--budget":
+			budget = true
 		elif a == "--academy":
 			academy = true
 		elif a == "--nopack":
@@ -214,6 +217,10 @@ func _run() -> void:
 		return
 	if npcviews:
 		await _npc_views()
+		quit()
+		return
+	if budget:
+		await _budget()
 		quit()
 		return
 	if ruins:
@@ -811,6 +818,29 @@ func _npc_views() -> void:
 		await _shot(v[0], 1.4)
 		await RenderingServer.frame_post_draw   # (after the frame: what was drawn, not what the physics tick left)
 		_watch(worst)
+	# The street's strollers (ClubCrowd, the skinned figures): the hero beside the nearest one, twice
+	var crowd = club.world.get_node("ClubScenery").crowd if club.world.get_node("ClubScenery").get("crowd") != null else null
+	if crowd != null:
+		var first := -1
+		for k in 2:
+			var best := -1
+			var bd := 1.0e9
+			for i in crowd.walker_count():
+				var wp: Vector3 = crowd.walker_pos(i)
+				if wp != Vector3.INF and Vector2(wp.x, wp.z).distance_to(Vector2(0.0, 14.0)) < bd and (k == 0 or i != first):
+					bd = Vector2(wp.x, wp.z).distance_to(Vector2(0.0, 14.0))
+					best = i
+			first = best
+			if best >= 0:
+				var wp2: Vector3 = crowd.walker_pos(best)
+				hero.position = Vector3(wp2.x + 0.8, world_floor(wp2.x + 0.8, wp2.z + 3.0), wp2.z + 3.0)
+				club._place = ""
+				club._update_place()
+				club.cam.release(0.0)
+				club.cam.snap(false)
+				await _shot("n08_stroller_%d" % (k + 1), 0.5)
+				await RenderingServer.frame_post_draw
+				_watch(worst)
 	print("static views: smallest gap %.2f m, highest float %.3f, body lag %.2f m, bodies %d  %s" % [worst["gap"], worst["float"], worst["lag"], worst["bodies"], worst.get("who", "")])
 	# The club on its own for a minute: people walk their routes, the hero stands by the court,
 	# then follows a student for another half a minute (the camera behind him).
@@ -847,6 +877,89 @@ func _npc_views() -> void:
 	print("followed: smallest gap %.2f m, highest float %.3f, body lag %.2f m, bodies %d, hero off the ground %.3f  %s" % [worst2["gap"], worst2["float"], worst2["lag"], worst2["bodies"], float(worst2.get("hero_off", 0.0)), worst2.get("who", "")])
 
 
+## The club's budget (CLUB_HUB_TZ 9: <= 70 draws on Low) at five standing places and the camera behind the
+## hero, the strollers walking: with nobody of the academy, then with three students and a visiting star
+## standing round the hero (all four real bodies) - and the same frame without the hero and the coach
+## (what the world costs by itself, as `_shot` counts it).
+func _budget() -> void:
+	var club = main.club
+	SaveData.played = 9
+	SaveData.titles = 2
+	SaveData.gold = 3000
+	SaveData.academy = {}
+	SaveData.club = {"met_coach": true, "walk_hint": true, "hire_hint": true, "lots": {"n7": "academy", "n2": "coach"}, "levels": {"academy": 3, "coach": 2}}
+	club.close()
+	main.set_location(Locations.LIST[0]["id"])
+	main._show_menu()
+	await create_timer(0.8).timeout
+	club = main.club
+	ClubDaytime.force_hour = 10.0
+	club.hud._bubble.visible = false
+	club.hud.visible = false
+	var hero: Athlete = main.player
+	var spots := [["court", Vector3(0.0, 0, 15.5)], ["gate", Vector3(0.0, 0, 33.5)], ["path_north", Vector3(-6.0, 0, -22.0)], ["lawn_east", Vector3(24.0, 0, 8.0)], ["academy_door", Vector3(30.0, 0, 18.0)]]
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 21
+	Academy.data()["free_given"] = true
+	for with_people in [false, true]:
+		if with_people:
+			for i in 3:
+				var st: Dictionary = JuniorGen.make(rng, 1)
+				st["id"] = "s%d" % (i + 1)
+				st["age0"] = [12, 15, 18][i]
+				st["since"] = SaveData.played - 3
+				st["trainings"] = 3
+				(Academy.students() as Array).append(st)
+			Academy.data()["guest"] = {"roster": "rublev", "name": "Андрей Рублёв", "until": SaveData.played + 2, "seed": 5}
+		club._refresh()
+		await create_timer(0.5).timeout
+		var people: Array = club.npc_life.people()
+		var worst := Vector3.ZERO
+		for sp in spots:
+			var at: Vector3 = sp[1]
+			hero.position = Vector3(at.x, world_floor(at.x, at.z), at.z)
+			hero.rotation.y = 0.0
+			hero.velocity = Vector3.ZERO
+			var k := 0
+			for n in people:   # round him, ahead and to the sides, on the ground
+				var o: Vector2 = [Vector2(-2.0, -3.0), Vector2(2.0, -4.0), Vector2(-3.5, -6.5), Vector2(1.0, -8.0)][k % 4]
+				n.pos = Vector3(at.x + o.x, world_floor(at.x + o.x, at.z + o.y), at.z + o.y)
+				n.route = []
+				n.dwell = 999.0
+				n.activity = "idle"
+				k += 1
+			club._place = ""
+			club._update_place()
+			club.cam.release(0.0)
+			club.cam.snap(false)
+			await create_timer(1.0).timeout
+			await process_frame
+			var all := Vector2(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME), Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME) / 1000.0)
+			var bodies := 0
+			for n in people:
+				bodies += int(n.body != null and n.body.visible)
+			var pv: bool = hero.visible
+			var cv: bool = main.cpu.visible
+			hero.visible = false
+			main.cpu.visible = false
+			var hidden: Array = []
+			for n in people:
+				if n.body != null and n.body.visible:
+					n.body.visible = false
+					hidden.append(n.body)
+			await process_frame
+			await process_frame
+			var w := Vector2(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME), Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME) / 1000.0)
+			hero.visible = pv
+			main.cpu.visible = cv
+			for b in hidden:
+				b.visible = true
+			worst.x = maxf(worst.x, all.x)
+			print("%s %-13s bodies %d: draws %3d  tris %5.1fk   without the bodies: draws %3d  tris %5.1fk" % ["people" if with_people else "empty ", sp[0], bodies, all.x, all.y, w.x, w.y])
+			worst.y = maxf(worst.y, w.x)
+		print("== %s: worst draws %d, the world alone %d" % ["with people" if with_people else "empty", worst.x, worst.y])
+
+
 func world_floor(x: float, z: float) -> float:
 	return main.club.world.walk.floor_at(Vector2(x, z))
 
@@ -865,12 +978,25 @@ func _watch(w: Dictionary) -> void:
 		if n.body != null and n.body.visible:
 			w["bodies"] = maxi(w["bodies"], 1)
 			var floor_y := world_floor(n.body.position.x, n.body.position.z)
-			w["float"] = maxf(w["float"], absf(n.body.position.y - floor_y))
-			if absf(n.body.position.y - floor_y) > 0.05:
+			var off := _off_ground(n.body.position)
+			w["float"] = maxf(w["float"], off)
+			if off > 0.05:
 				w["who"] = "%s y %.2f floor %.2f at %.1f,%.1f" % [n.id, n.body.position.y, floor_y, n.pos.x, n.pos.z]
 			w["lag"] = maxf(w["lag"], Vector2(n.body.position.x - n.pos.x, n.body.position.z - n.pos.z).length())
 	var hp: Vector3 = main.player.position
-	w["hero_off"] = maxf(float(w.get("hero_off", 0.0)), absf(hp.y - world_floor(hp.x, hp.z)))
+	w["hero_off"] = maxf(float(w.get("hero_off", 0.0)), _off_ground(hp))
+
+
+## How far the feet are from the ground drawn under them: zero anywhere between the grounds within half
+## a metre (a step in the ground is eased, 1.6 m/s, like the hero's).
+func _off_ground(p: Vector3) -> float:
+	var lo := 9.0
+	var hi := -9.0
+	for k in 9:
+		var f := world_floor(p.x + (0.0 if k == 0 else cos(float(k) * TAU / 8.0) * 0.5), p.z + (0.0 if k == 0 else sin(float(k) * TAU / 8.0) * 0.5))
+		lo = minf(lo, f)
+		hi = maxf(hi, f)
+	return maxf(0.0, maxf(lo - p.y, p.y - hi))
 
 
 ## T-2: after the first run the coach offers newcomers; the list, a candidate's card, the
@@ -1025,3 +1151,4 @@ func _academy() -> void:
 	await _shot("a11_release", 0.9)
 	main._on_ui("menu", 0)
 	await create_timer(0.5).timeout
+
