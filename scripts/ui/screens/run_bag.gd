@@ -87,8 +87,8 @@ static func bracket_extra(ui: TournamentUI, t: Tournament) -> void:
 		worn += 0 if t.equip.get(s, {}).is_empty() else 1
 	ui._row("Сумка", "надето %d из 3 · в сумке %d" % [worn, t.bag.size()], "bag")
 	if t.can_take_locker():  # v0.2 A-2: the locker's things can come along until the first match
-		if not Locker.items().is_empty():
-			ui._row("Шкафчик", "%d — взять в забег" % Locker.items().size(), "bag")
+		if not Locker.items().is_empty() and Locker.take_left(t) > 0:
+			ui._row("Шкафчик", "%d · в забег ещё %d" % [Locker.items().size(), Locker.take_left(t)], "bag")
 		if not Locker.boarded.is_empty():
 			ui._note("С тобой из магазина: %s" % ", ".join(Locker.boarded))
 
