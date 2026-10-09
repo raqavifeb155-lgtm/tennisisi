@@ -139,16 +139,30 @@ func test_clay_slide() -> void:
 	ath.move_input = Vector2.ZERO
 	var t := 0.0
 	var spread := 0.0
+	var wrist := 0.0
+	var bent := 0.0
+	var arm_cost := 0.0
 	while ath.velocity.length() > 0.2 and t < 2.0:
 		step()
 		t += DT
 		var feet := feet_world()
 		spread = maxf(spread, absf((feet[0] as Vector3).x - (feet[1] as Vector3).x))
+		if ath._slide > 0.5:
+			# The racket arm of the slide: the racket carries on from the forearm (no snapped
+			# wrist) and the elbow bends the human way.
+			var j := arm("r")
+			var upper: Vector3 = ((j[1] as Vector3) - (j[0] as Vector3)).normalized()
+			var fore: Vector3 = ((j[2] as Vector3) - (j[1] as Vector3)).normalized()
+			wrist = maxf(wrist, rad_to_deg(fore.angle_to(ath._racket.transform.basis.y)))
+			bent = maxf(bent, rad_to_deg(upper.angle_to(fore)))
+			arm_cost = maxf(arm_cost, ath._elbow_cost(j[0], j[2], j[1], Basis(Vector3.UP, ath._twist)))
 	var dist := ath.position.x - x0
 	check(v0 > 5.0, "top speed reached %.1f m/s" % v0)
 	check(dist > 1.1 and dist < 1.9, "glides %.2f m before stopping (Sinner 1.6 m from 5.1 m/s)" % dist)
 	check(t > 0.4 and t < 0.75, "stops in %.2f s (measured 0.63 s)" % t)
 	check(spread > 1.0, "feet spread %.2f m along the slide (measured 1.5-1.8 m)" % spread)
+	check(wrist < 35.0, "slide: the racket follows the forearm, wrist bent %.0f deg at most" % wrist)
+	check(bent < 100.0 and arm_cost < 0.03, "slide: elbow bends the human way (%.0f deg, cost %.3f)" % [bent, arm_cost])
 	# Pushing back the other way bites after ~0.28 s of the slide, not at once.
 	fresh("clay")
 	ath.max_speed = 5.1
