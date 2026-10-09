@@ -29,6 +29,9 @@ static func next(m: Node) -> bool:
 	if runs <= 0:
 		return false
 	done += 1
+	var t: Tournament = m.get("tournament")
+	if t != null and not t.banked:
+		SaveData.record_run(t)  # the bot gave up a too long run: it still counts
 	var c := Career.data()
 	var last: Dictionary = (c["cells"] as Array).back() if not (c["cells"] as Array).is_empty() else ((Career.last_season().get("cells", [{}]) as Array).back())
 	print("CAREER run %d/%d · gen %d · season %d · %d/4 · age %d · +%d pts%s · bank %d" % [done, runs, int(c["gen"]), Career.season(),
