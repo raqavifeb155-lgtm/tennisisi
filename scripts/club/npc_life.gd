@@ -174,12 +174,24 @@ func _spawn(id: String, kind: String, data: Dictionary) -> Npc:
 	n.name = String(data.get("name", "?"))
 	n.size = 1.0 if kind == "guest" else JuniorGen.junior_t(float(Academy.age(data)))
 	var look: Dictionary = data.get("look", {})
+	if look.is_empty() and kind == "guest":   # the star looks like himself, not like the hero's default
+		look = (Opponents.find(String(data.get("roster", ""))) as Dictionary).get("look", {})
 	n.look = look
 	n.skin = Looks.skin(look) if look.has("skin") else Color("e3b48a")
 	n.shirt = ClubBuilds.club_color() if kind == "student" else Color("f2f0ea")
 	var stops := _stops()
-	var at: Vector2 = stops[_rng.randi() % stops.size()]["at"]
-	n.pos = Vector3(at.x + _rng.randf_range(-0.5, 0.5), 0.0, at.y + _rng.randf_range(-0.5, 0.5))
+	var at := Vector2.ZERO
+	for tries in 12:   # a place nobody stands on (two arriving at one stop would be one inside the other)
+		var s: Vector2 = stops[_rng.randi() % stops.size()]["at"]
+		at = s + Vector2(_rng.randf_range(-0.5, 0.5), _rng.randf_range(-0.5, 0.5)) * (1.0 + float(tries) * 0.3)
+		var free := true
+		for o in _npcs:
+			free = free and Vector2(o.pos.x, o.pos.z).distance_to(at) > 1.0
+		for a in _registry().agent_list(id):
+			free = free and (a[0] as Vector2).distance_to(at) > float(a[1]) + 0.5
+		if free:
+			break
+	n.pos = Vector3(at.x, 0.0, at.y)
 	n.dwell = _rng.randf_range(2.0, 6.0)
 	n.next_mark = _rng.randf_range(10.0, 30.0)
 	return n
@@ -430,7 +442,7 @@ func _drive_body(n: Npc, delta: float) -> void:
 		a.position = Vector3(n.pos.x, 0.0, n.pos.z)   # a jump (a test, a new stop): no running after it
 		d = Vector2.ZERO
 	a.max_speed = SPEED * 1.25
-	a.move_input = (d / 0.35).limit_length(1.0) if d.length() > 0.04 else Vector2.ZERO
+	a.move_input = (d / 0.09).limit_length(1.0) if d.length() > 0.03 else Vector2.ZERO
 	a.rotation.y = lerp_angle(a.rotation.y, n.yaw, 1.0 - exp(-10.0 * delta))
 	a.position.y = n.pos.y
 	var training := n.route.is_empty() and n.activity == "train" and n.face_t <= 0.0

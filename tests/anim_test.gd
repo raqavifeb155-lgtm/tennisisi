@@ -44,6 +44,7 @@ func run_all() -> void:
 	test_tired_pose()
 	test_racket_smash()
 	test_racket_on_a_fall()
+	test_club_crowd()
 	print("\n%s (%d failures)" % ["ALL ANIMATION TESTS PASSED" if failures == 0 else "ANIMATION TESTS FAILED", failures])
 	if ath:
 		ath.free()
@@ -963,3 +964,172 @@ func test_racket_smash() -> void:
 	check(res[0] and not res[1] and ath._mode == 0, "no swipe for %.0f s: the mini-game ends, nothing broken" % RacketSmash.IDLE_CANCEL)
 	rs.free()
 	world.free()
+
+
+## The club with people (stream H-8, after the NPC collisions): the hero walks and jogs through
+## a crowd at the court as Club does it (ClubWalk.resolve against ClubNpc's bodies each frame,
+## the ground's height eased under his feet), among a junior and the old coach who are real
+## bodies, driven as ClubNpcLife drives them, and three who stand. He is never inside anybody,
+## never jumps, is not held up for long, his yaw is smooth, and every pair of feet stays on
+## the ground - the hero's, the junior's, the coach's - with the legs whole.
+func test_club_crowd() -> void:
+	print("club with people: the hero walks through the crowd at the court")
+	if ath:
+		ath.free()
+		ath = null
+	Athlete.surface = "hard"
+	var walk := ClubWalk.new()
+	walk.bounds = Rect2(-12, -14, 24, 30)
+	var ground := func(q: Vector2) -> float:   # the way up to the court: the path rises 12 cm over z 6..2
+		return 0.12 * clampf((6.0 - q.y) / 4.0, 0.0, 1.0)
+	walk.ground = ground
+	walk.floors.append([Rect2(-12, -14, 24, 3.0), 0.15])   # and a room's floor at the far end
+	walk.add_circle(Vector2(4.2, -2.0), 0.5, "post")
+	var reg := ClubNpc.new()
+	var hero := Athlete.new()
+	root.add_child(hero)
+	hero.setup(-1.0, Color(0.9, 0.3, 0.2), walk.bounds)
+	hero.set_meta("casual", true)
+	hero.position = Vector3(0, 0, 9)
+	var kid := Athlete.new()
+	root.add_child(kid)
+	kid.setup(-1.0, Color(0.2, 0.5, 0.9), walk.bounds)
+	AthleteCasual.set_junior(kid, 0.75)
+	kid.set_meta("casual", true)
+	var old := Athlete.new()
+	root.add_child(old)
+	old.setup(-1.0, Color(0.5, 0.5, 0.5), walk.bounds)
+	AthleteCasual.make_elder(old)
+	old.set_meta("casual", true)
+	kid.position = Vector3(-3.0, 0, 1.0)
+	old.position = Vector3(1.4, 0, -0.5)
+	# the people: [id, body or null, x, z, radius]; the two with bodies walk, the rest stand
+	var people := {"kid": kid, "coach": old}
+	var stand := {"s1": Vector2(-0.5, 3.4), "s2": Vector2(0.5, 3.4), "guest": Vector2(-0.3, -1.8)}   # two shoulder to shoulder: a notch the hero can't pass
+	var pos := {"kid": Vector2(-3.0, 1.0), "coach": Vector2(1.4, -0.5)}
+	for id in stand:
+		pos[id] = stand[id]
+		reg.register(id, Vector3(stand[id].x, 0.0, stand[id].y), "", "", [], {"radius": 0.40})
+	reg.register("kid", func() -> Vector3: return Vector3(pos["kid"].x, 0.0, pos["kid"].y), "", "", [], {"radius": 0.30})
+	reg.register("coach", func() -> Vector3: return Vector3(pos["coach"].x, 0.0, pos["coach"].y), "", "", [], {"radius": 0.40})
+	var worst := {"sink": 0.0, "stretch": 0.0, "jump": 0.0, "yaw": 0.0, "overlap": 0.0, "off": 0.0, "sink_who": ""}
+	var hero_y := 0.0
+	var results := []
+	for pass_i in 2:
+		var jog := pass_i == 1
+		hero.position = Vector3(0.0, 0, 9.5)
+		hero.velocity = Vector3.ZERO
+		hero_y = walk.floor_at(Vector2(0.0, 9.5))
+		var frames := 0
+		var held := 0.0
+		var worst_held := 0.0
+		var side := 1.0
+		var detour := 0.0
+		var last := Vector2(hero.position.x, hero.position.z)
+		var last_yaw := hero.rotation.y
+		while hero.position.z > -9.0 and frames < 1800:
+			frames += 1
+			var here := Vector2(hero.position.x, hero.position.z)
+			# the stick: toward the far end; held up by somebody for half a second, he steps aside a while
+			var want := Vector2(0.0, -1.0)
+			if detour > 0.0:
+				detour -= DT
+				want = Vector2(side * 0.9, -0.45).normalized()
+			elif held > 0.5:
+				detour = 0.7
+				held = 0.0
+				side = -side
+			hero.max_speed = Club.JOG_SPEED if jog else Club.WALK_TOP
+			hero.accel = Club.ACCEL
+			hero.decel = Club.DECEL
+			hero.move_input = want
+			var v := Vector2(hero.velocity.x, hero.velocity.z)
+			if v.length() > 0.4:
+				hero.rotation.y = lerp_angle(hero.rotation.y, atan2(-v.x, -v.y), 1.0 - exp(-12.0 * DT))
+			# the walkers: the junior to and fro across the court's width, the coach pacing a short beat
+			for id in people:
+				var b: Athlete = people[id]
+				var goal := Vector2(3.4 if int(frames / 240) % 2 == 0 else -3.4, 1.0) if id == "kid" else Vector2(1.4 + (0.9 if int(frames / 150) % 2 == 0 else -0.9), -0.5)
+				var d: Vector2 = goal - (pos[id] as Vector2)
+				var sp := 1.6 if id == "kid" else 1.1
+				var mv: Vector2 = d.normalized() * minf(1.0, d.length() / 0.4) if d.length() > 0.1 else Vector2.ZERO
+				var rr := 0.36 * (0.75 if id == "kid" else 1.0) + 0.04
+				var others := reg.agent_list(id) + [[here, 0.35]]   # (he stops for the hero: ClubNpcLife._step)
+				var to := walk.resolve(pos[id], pos[id] + mv * sp * DT, rr, others)
+				pos[id] = to
+				b.max_speed = sp * 1.25
+				b.move_input = (Vector2(to.x - b.position.x, to.y - b.position.z) / 0.35).limit_length(1.0) if Vector2(to.x - b.position.x, to.y - b.position.z).length() > 0.04 else Vector2.ZERO
+			# the club's own frame (Club._physics_process): out of the bodies, onto the ground
+			hero._physics_process(DT)
+			for id in people:
+				var nb: Athlete = people[id]
+				nb._physics_process(DT)   # (it clamps into its area and puts him at height 0)
+				nb.position.y = walk.floor_at(Vector2(nb.position.x, nb.position.z))   # ClubNpcLife._drive_body puts him on the ground after it
+			var at := walk.resolve(here, Vector2(hero.position.x, hero.position.z), 0.35, reg.agent_list())
+			hero.position = Vector3(at.x, hero_y, at.y)
+			hero_y = move_toward(hero_y, walk.floor_at(at), 1.6 * DT)
+			hero.position.y = hero_y
+			ath = hero
+			step_process_only(hero)
+			for id in people:
+				step_process_only(people[id])
+			# what to look at
+			var now := Vector2(hero.position.x, hero.position.z)
+			worst["jump"] = maxf(worst["jump"], now.distance_to(last))
+			if now.distance_to(last) < 0.2 * hero.max_speed * DT:
+				held += DT
+				worst_held = maxf(worst_held, held)
+			else:
+				held = 0.0
+			last = now
+			worst["yaw"] = maxf(worst["yaw"], absf(angle_difference(last_yaw, hero.rotation.y)))
+			last_yaw = hero.rotation.y
+			for a in reg.agent_list():
+				var gap := now.distance_to(a[0]) - (float(a[1]) + 0.35)
+				worst["overlap"] = minf(worst["overlap"], gap)
+			worst["off"] = maxf(worst["off"], absf(hero.position.y - walk.floor_at(now)))
+			if frames > 20:
+				var legs := _crowd_legs(hero, hero.position.y)
+				if legs.x < worst["sink"]:
+					worst["sink_who"] = "hero f%d y%.3f floor %.3f" % [frames, hero.position.y, walk.floor_at(now)]
+				worst["sink"] = minf(worst["sink"], legs.x)
+				worst["stretch"] = maxf(worst["stretch"], legs.y)
+				for id in people:
+					var lb := _crowd_legs(people[id], walk.floor_at(Vector2(people[id].position.x, people[id].position.z)))
+					if lb.x < worst["sink"]:
+						worst["sink_who"] = "%s f%d y%.3f floor %.3f speed %.2f" % [id, frames, people[id].position.y, walk.floor_at(Vector2(people[id].position.x, people[id].position.z)), people[id].velocity.length()]
+					worst["sink"] = minf(worst["sink"], lb.x)
+					worst["stretch"] = maxf(worst["stretch"], lb.y)
+		results.append([jog, hero.position.z, frames, worst_held])
+	for r in results:
+		check(r[1] <= -9.0, "%s through the crowd to the far end in %.1f s (z %.1f)" % ["jogging" if r[0] else "walking", r[2] * DT, r[1]])
+		check(r[3] < 1.5, "%s: never held up for long by anybody (%.2f s)" % ["jogging" if r[0] else "walking", r[3]])
+	check(worst["overlap"] > -0.03, "never inside anybody (deepest %.3f m)" % worst["overlap"])
+	check(worst["jump"] < 0.16, "no jump in his position, no shove (largest step %.3f m a frame)" % worst["jump"])
+	check(worst["yaw"] < 0.7, "he turns smoothly (largest turn %.2f rad a frame)" % worst["yaw"])
+	check(worst["off"] < 0.03, "he stands on the ground, on the ramp and the room's floor (off by %.3f m)" % worst["off"])
+	check(worst["sink"] > -0.06 and worst["stretch"] < 0.02, "every pair of feet on the ground, legs whole (sink %.3f %s, stretch %.3f)" % [worst["sink"], worst["sink_who"], worst["stretch"]])
+	kid.free()
+	old.free()
+
+
+## The pose of an athlete as Athlete._process draws it (without its physics).
+func step_process_only(a: Athlete) -> void:
+	a._process(DT)
+
+
+## The lowest shoe above the ground it stands on (negative: sunk) and how far the thigh and the
+## shin are from their lengths, for the athlete `a` standing at ground height `floor_y`.
+func _crowd_legs(a: Athlete, floor_y: float) -> Vector2:
+	var keep := ath
+	ath = a
+	var feet := feet_world()
+	var low := minf((feet[0] as Vector3).y, (feet[1] as Vector3).y) - floor_y
+	var stretch := 0.0
+	for i in 2:
+		var th: Array = bone_ends("thigh%d" % i)
+		var sh: Array = bone_ends("shin%d" % i)
+		stretch = maxf(stretch, absf(((th[1] as Vector3) - (th[0] as Vector3)).length() - Athlete.THIGH))
+		stretch = maxf(stretch, absf(((sh[1] as Vector3) - (sh[0] as Vector3)).length() - Athlete.SHIN))
+	ath = keep
+	return Vector2(low, stretch)

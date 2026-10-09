@@ -14,6 +14,7 @@ func _initialize() -> void:
 	test_daytime()
 	test_paths()
 	await test_in_the_club()
+	await test_people()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -256,6 +257,53 @@ func test_in_the_club() -> void:
 	for m in scenery._fence_mats:
 		green = green or m.albedo_color.r < 0.3
 	check(green, "and a new fence")
+	# The ruin belongs to the lot, not to the type (ClubLots.ruin_level): a type on somebody else's
+	# lot neither leaves a ruin on its own home nor drags the ruin of its old corner along.
+	SaveData.played = 1
+	SaveData.titles = 1
+	SaveData.club["levels"] = {}
+	SaveData.club["lots"] = {}
+	club._refresh()
+	await _frames(4)
+	var home := {}
+	for t in ClubLots.ORDER:
+		home[t] = [_site_props(scenery, t, true), _site_props(scenery, t, false)]
+	for t in ["coach", "stands", "locker", "trophy", "bar", "academy", "arena"]:
+		check(home[t][0] > 0 and home[t][1] == 0, "empty lots, a ruin at the home of the %s (%d junk and weeds, no tidy-up)" % [t, home[t][0]])
+	SaveData.club["lots"] = {"n1": "bar"}
+	SaveData.club["levels"] = {"bar": 2}
+	club._refresh()
+	await _frames(4)
+	check(_site_props(scenery, "locker", true) == 0 and _site_props(scenery, "locker", false) == 0, "a bar on the locker room's lot: the old corner there is cleared of ruin, and no locker's flowers are put up for nobody")
+	check(_site_props(scenery, "bar", true) == home["bar"][0], "and the bar's own home is still a ruin (%d)" % home["bar"][0])
+	var board_ok := false
+	var lot1: Vector3 = ClubLots.lot("n1")["pos"]
+	for pr in scenery.visible_props():
+		if pr.owner == "bar" and pr.from > 0:
+			board_ok = board_ok or Rect2(lot1.x - ClubLots.HALF.x, lot1.z - ClubLots.HALF.y, ClubLots.HALF.x * 2.0, ClubLots.HALF.y * 2.0).has_point(Vector2(pr.xf.origin.x, pr.xf.origin.z))
+	check(board_ok, "the bar's menu board went with the bar to its new lot, not left at its old corner")
+	check(_site_props(scenery, "trophy", true) == home["trophy"][0] and _site_props(scenery, "stands", true) == home["stands"][0], "the other lots keep their ruin")
+	SaveData.club["lots"] = {"n6": "bar", "n7": "coach"}
+	SaveData.club["levels"] = {"bar": 1, "coach": 2}
+	club._refresh()
+	await _frames(4)
+	var bar_junk := 0
+	for pr in scenery.visible_props():
+		if pr.owner == "bar" and pr.need == 1:
+			bar_junk += 1
+	check(bar_junk == 0 and _site_props(scenery, "bar", false) > 0, "the bar at home, level 1: the junk is gone, the menu board is up")
+	check(_site_props(scenery, "academy", true) == 0 and _site_props(scenery, "coach", true) == home["coach"][0], "a coach's room on the academy's lot clears that lot, not his own")
+	SaveData.club["levels"] = {"bar": 2, "coach": 2}
+	club._refresh()
+	await _frames(4)
+	check(_site_props(scenery, "bar", true) == 0, "the bar's weeds are gone at level 2")
+	var in_site := true
+	for pr in scenery.visible_props():
+		if pr.owner in ["coach", "academy"]:
+			var lot_pos: Vector3 = ClubLots.lot(String(ClubLots.TYPES[pr.owner]["home"]))["pos"]
+			in_site = in_site and Rect2(lot_pos.x - ClubLots.HALF.x, lot_pos.z - ClubLots.HALF.y, ClubLots.HALF.x * 2.0, ClubLots.HALF.y * 2.0).has_point(Vector2(pr.xf.origin.x, pr.xf.origin.z))
+	check(in_site, "the ruin of the coach's and the academy's lots lies on the lots")
+	SaveData.club.erase("lots")
 	SaveData.club["levels"] = {}
 	club._refresh()
 	await _frames(4)
@@ -456,6 +504,15 @@ func test_in_the_club() -> void:
 					closest = minf(closest, d)
 	check(worst_wait < 6.0, "60 s of strolling: nobody is held up for long (%.1f s)" % worst_wait)
 	check(closest > 0.55, "and nobody walks through anybody (closest %.2f m)" % closest)
+	crowd.refresh(false)
+	var shown_low := 0
+	for a in crowd.walker_count():
+		shown_low += int(crowd.walker_pos(a) != Vector3.INF)
+	crowd.refresh(true)
+	var shown_high := 0
+	for a in crowd.walker_count():
+		shown_high += int(crowd.walker_pos(a) != Vector3.INF)
+	check(shown_low == 5 and shown_high == crowd.walker_count(), "on Low the strollers not drawn are not there either, nobody bumps into a ghost (%d of %d, High %d)" % [shown_low, crowd.walker_count(), shown_high])
 	# the bodies: juniors and the old coach
 	var kid := Athlete.new()
 	root.add_child(kid)
@@ -527,6 +584,138 @@ func test_in_the_club() -> void:
 	check(not club.active and (hero.get("_racket") as Node3D).visible, "in a match he has his racket again")
 	main.queue_free()
 	await _frames(2)
+
+
+## The club's people (stream H-8, with T-2's students and the visiting star): 40 s of the club on its
+## own with the hero standing by the court - nobody inside anybody, a body stays with its figure,
+## nobody floats or is sunk (as drawn: the sample is taken before a frame's first tick), the hero is never moved by them -
+## then 20 s with the hero walking through them.
+func test_people() -> void:
+	print("the people of the club")
+	SaveData.played = 9
+	SaveData.titles = 2
+	SaveData.gold = 3000
+	SaveData.academy = {}
+	SaveData.club = {"met_coach": true, "walk_hint": true, "hire_hint": true, "lots": {"n7": "academy", "n2": "coach"}, "levels": {"academy": 3, "coach": 2}}
+	SaveData.run = {}
+	SaveData.active = null
+	Skills.pending = []
+	ClubDaytime.force_hour = 11.0
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	root.add_child(main)
+	await _frames(5)
+	SaveData.enabled = false
+	main._show_menu()
+	await _frames(6)
+	var club = main.club
+	var w: ClubWorld = club.world
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 21
+	Academy.data()["free_given"] = true
+	for i in 3:
+		var st: Dictionary = JuniorGen.make(rng, 1)
+		st["id"] = "s%d" % (i + 1)
+		st["age0"] = [12, 15, 18][i]
+		st["since"] = SaveData.played - 3
+		st["trainings"] = 3
+		(Academy.students() as Array).append(st)
+	Academy.data()["guest"] = {"roster": "rublev", "name": "Андрей Рублёв", "until": SaveData.played + 2, "seed": 5}
+	club._refresh()
+	await _frames(4)
+	var hero: Athlete = main.player
+	var people: Array = club.npc_life.people()
+	check(people.size() == 4, "three students and a visiting star (%d)" % people.size())
+	hero.position = Vector3(0.0, 0.0, 14.0)
+	club._place = ""
+	club._update_place()
+	var starts := [Vector2(-4.5, 10.5), Vector2(3.8, 6.0), Vector2(-3.0, 17.0), Vector2(4.0, 16.0)]   # near him: all four are real bodies
+	for k in people.size():
+		var n = people[k]
+		n.pos = Vector3(starts[k].x, 0.0, starts[k].y)
+		n.dwell = 1.0
+		n.route = []
+	var worst := {"gap": 9.0, "float": 0.0, "lag": 0.0, "lag_sum": 0.0, "lag_n": 0, "hero_moved": 0.0, "moving": 0.0}
+	var hero_at := Vector2(hero.position.x, hero.position.z)
+	var seen_frame := -1
+	for i in 2400:
+		await physics_frame   # (it fires before the tick: what stands here is what the last frame drew, if a frame came between)
+		if i % 6 == 0 and Engine.get_process_frames() != seen_frame:
+			_look_at_people(club, w, worst)
+		seen_frame = Engine.get_process_frames()
+	worst["hero_moved"] = Vector2(hero.position.x, hero.position.z).distance_to(hero_at)
+	print("   (gap %.2f, float %.3f, lag max %.2f mean %.3f over %d, hero moved %.3f)" % [worst["gap"], worst["float"], worst["lag"], float(worst["lag_sum"]) / maxf(1.0, float(worst["lag_n"])), worst["lag_n"], worst["hero_moved"]])
+	check(worst["gap"] > -0.07, "40 s: nobody inside anybody (the bodies count 4 cm wider each than they are; %.3f m)" % worst["gap"])
+	check(worst["float"] < 0.05, "nobody floats or is sunk: a body stands on the ground it is drawn on (%.3f m)" % worst["float"])
+	check(worst["lag_n"] > 20 and float(worst["lag_sum"]) / worst["lag_n"] < 0.12 and worst["lag"] < 0.35, "a body keeps up with its figure (mean %.3f, worst %.2f m)" % [float(worst["lag_sum"]) / maxf(1.0, float(worst["lag_n"])), worst["lag"]])
+	check(worst["hero_moved"] < 0.01, "and the hero standing still is not moved by them (%.3f m)" % worst["hero_moved"])
+	# the hero walks up and down the court's side through them
+	var worst2 := {"gap": 9.0, "float": 0.0, "lag": 0.0, "lag_sum": 0.0, "lag_n": 0}
+	var last := Vector2(hero.position.x, hero.position.z)
+	var jump := 0.0
+	for i in 1200:
+		main.hud.touch._stick_vector = Vector2(0.15 * sin(float(i) / 40.0), -1.0 if int(float(i) / 240.0) % 2 == 0 else 1.0).normalized()
+		await physics_frame
+		var now := Vector2(hero.position.x, hero.position.z)
+		jump = maxf(jump, now.distance_to(last))
+		last = now
+		if i % 3 == 0 and Engine.get_process_frames() != seen_frame:
+			_look_at_people(club, w, worst2)
+		seen_frame = Engine.get_process_frames()
+	main.hud.touch._stick_vector = Vector2.ZERO
+	check(worst2["gap"] > -0.07, "20 s of the hero walking among them: nobody inside anybody (%.3f m)" % worst2["gap"])
+	check(worst2["float"] < 0.05, "and nobody floats or is sunk (%.3f m)" % worst2["float"])
+	check(jump < 0.11, "and he is never shoved (largest step %.3f m a frame)" % jump)
+	main.queue_free()
+	await _frames(2)
+	SaveData.club = {}
+	SaveData.academy = {}
+	SaveData.played = 0
+	SaveData.titles = 0
+	SaveData.gold = 0
+
+
+## One look at the club's people as they are drawn: the smallest gap between any two bodies (the hero's,
+## the club's), how far a body stands above or below the ground, how far it trails its figure.
+func _look_at_people(club: Node, w: ClubWorld, m: Dictionary) -> void:
+	var list: Array = club.npc.agent_list()
+	list.append([Vector2(club.main.player.position.x, club.main.player.position.z), 0.35])
+	for i in list.size():
+		for j in range(i + 1, list.size()):
+			var gp := (list[i][0] as Vector2).distance_to(list[j][0]) - float(list[i][1]) - float(list[j][1])
+			if gp < -0.07:
+				print("   overlap %s %s r %s %s" % [list[i][0], list[j][0], list[i][1], list[j][1]])
+			m["gap"] = minf(m["gap"], gp)
+	for n in club.npc_life.people():
+		if n.body != null and n.body.visible:
+			m["float"] = maxf(m["float"], _off_ground(w, n.body.position))
+			var lag := Vector2(n.body.position.x - n.pos.x, n.body.position.z - n.pos.z).length()
+			m["lag"] = maxf(m["lag"], lag)
+			m["lag_sum"] += lag
+			m["lag_n"] += 1
+	var hp: Vector3 = club.main.player.position
+	m["float"] = maxf(m["float"], _off_ground(w, hp))
+
+
+## How far a walker's feet are from the ground drawn under him. A step in the ground (the court's edge,
+## a room's floor) is eased like the hero's (1.6 m/s), so anywhere between the grounds within half a metre is standing on it.
+func _off_ground(w: ClubWorld, p: Vector3) -> float:
+	var lo := 9.0
+	var hi := -9.0
+	for k in 9:
+		var o := Vector2.ZERO if k == 0 else Vector2.from_angle(float(k) * TAU / 8.0) * 0.5
+		var f := w.walk.floor_at(Vector2(p.x, p.z) + o)
+		lo = minf(lo, f)
+		hi = maxf(hi, f)
+	return maxf(0.0, maxf(lo - p.y, p.y - hi))
+
+
+## How many props of `owner` there are now: its ruin (junk and weeds) or its tidy-up (flowers...).
+func _site_props(scenery: ClubScenery, owner: String, ruin: bool) -> int:
+	var n := 0
+	for pr in scenery.visible_props():
+		if pr.owner == owner and ((pr.need > 0) if ruin else (pr.from > 0)):
+			n += 1
+	return n
 
 
 func _scenery_verts(scenery: ClubScenery) -> int:
