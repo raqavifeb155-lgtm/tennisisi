@@ -674,7 +674,8 @@ func _npc() -> void:
 	club.hud._bubble.visible = false
 	ClubDaytime.force_hour = 10.0
 	main.cpu.position = Vector3(-2.3, 0, 8.0)
-	main.player.position = Vector3(-0.6, 0, 8.4)
+	club.coach._wait = 999.0
+	main.player.position = Vector3(-1.45, 0, 8.6)
 	club._place = ""
 	club._update_place()
 	club.cam.snap()
@@ -692,7 +693,7 @@ func _npc() -> void:
 	await create_timer(0.9).timeout
 	club.hud._bubble.visible = false
 	var npc = club.npc_life.people()[0]
-	main.player.position = Vector3(0.6, 0, 9.6)
+	main.player.position = Vector3(1.1, 0, 8.6)
 	npc.pos = Vector3(2.0, 0, 8.0)
 	npc.route = []
 	npc.dwell = 999.0
@@ -737,7 +738,9 @@ func _npc() -> void:
 	club._update_place()
 	club.hud.visible = false
 	await _shot("07_students_and_visitor", 1.2)
-	club.npc_life.say("stu_s2", "Сегодня подача идёт", 3.0)
-	club.npc_life.say("guest", "Хороший корт. Давно так не играл", 3.0)
-	await _shot("08_speech", 0.5)
+	for n in club.npc_life.people():
+		print("  %s %s at %s body %s" % [n.id, n.kind, n.pos, n.body != null and n.body.visible])
 	club.hud.visible = true
+	club.hud.hide_place()
+	club.npc_life.say("stu_s2", "Сегодня подача идёт", 3.0)
+	await _shot("08_speech", 0.5)

@@ -34,6 +34,11 @@ class Npc:
 	var bubble_t := 0.0
 	var phase := 0.0
 	var stuck := 0.0
+	var look: Dictionary = {}
+	var body: Athlete              # a real body while the hero is near (spec 2.1), else null
+	var face := Vector3.INF        # someone to look at (the coach putting a word in)
+	var face_t := 0.0
+	var swing_t := 0.0
 
 var club: Node
 var world: ClubWorld
@@ -43,6 +48,11 @@ var _npcs: Array[Npc] = []
 var _active := false
 var _clock := 0.0
 var _rng := RandomNumberGenerator.new()
+var _athletes: Array[Athlete] = []   # the pool of real bodies (BODIES at most), reused
+
+const BODIES := 2              # real Athletes near the hero, never more (spec 2.1, the budget)
+const NEAR_IN := 11.0          # a light figure this close becomes a body...
+const NEAR_OUT := 15.0         # ...and a body this far goes back to a figure
 
 
 func setup(c: Node) -> void:
@@ -58,6 +68,11 @@ func set_active(on: bool) -> void:
 			_body.visible = true
 			_legs.visible = true
 	else:
+		for n in _npcs:
+			_release(n)
+		for a in _athletes:
+			if is_instance_valid(a):
+				a.visible = false
 		if is_instance_valid(_body):
 			_body.visible = false
 			_legs.visible = false
@@ -108,6 +123,7 @@ func refresh() -> void:
 		for w in want:
 			keep = keep or w[0] == _npcs[i].id
 		if not keep:
+			_release(_npcs[i])
 			_registry().unregister(_npcs[i].id)
 			if _npcs[i].bubble:
 				_npcs[i].bubble.queue_free()
@@ -158,6 +174,7 @@ func _spawn(id: String, kind: String, data: Dictionary) -> Npc:
 	n.name = String(data.get("name", "?"))
 	n.size = 1.0 if kind == "guest" else JuniorGen.junior_t(float(Academy.age(data)))
 	var look: Dictionary = data.get("look", {})
+	n.look = look
 	n.skin = Looks.skin(look) if look.has("skin") else Color("e3b48a")
 	n.shirt = ClubBuilds.club_color() if kind == "student" else Color("f2f0ea")
 	var stops := _stops()
@@ -245,13 +262,18 @@ func _process(delta: float) -> void:
 		return
 	_clock += delta
 	var hero: Vector3 = club.main.player.position
+	_assign_bodies(hero)
 	var i := 0
 	for n in _npcs:
 		_step(n, delta, hero)
 		var lean := 0.0
 		var bob := 0.0
+		n.face_t -= delta
 		if n.route.is_empty():
-			if n.activity == "train":
+			if n.face_t > 0.0 and n.face != Vector3.INF:
+				var f := Vector2(n.face.x - n.pos.x, n.face.z - n.pos.z)
+				n.yaw = lerp_angle(n.yaw, atan2(-f.x, -f.y), 1.0 - exp(-6.0 * delta))
+			elif n.activity == "train":
 				var beat := maxf(0.0, sin(_clock * 4.2 + n.phase))
 				lean = 0.35 * beat
 				n.yaw = lerp_angle(n.yaw, 0.0 if n.pos.z > 0.0 else PI, 1.0 - exp(-6.0 * delta))
@@ -266,8 +288,13 @@ func _process(delta: float) -> void:
 		# The ground under him (rooms' floors, ramps: ClubWalk.floor_at), eased like the hero's.
 		n.pos.y = move_toward(n.pos.y, world.walk.floor_at(Vector2(n.pos.x, n.pos.z)), 1.6 * delta)
 		var b := Basis.from_euler(Vector3(-lean, n.yaw, 0.0)) * Basis.from_scale(Vector3.ONE * n.size)
-		_body.multimesh.set_instance_transform(i, Transform3D(b, n.pos + Vector3(0, bob, 0)))
-		_legs.multimesh.set_instance_transform(i, Transform3D(b, n.pos + Vector3(0, bob * 0.4, 0)))
+		var at := n.pos
+		if n.body != null:
+			_drive_body(n, delta)
+			b = Basis.from_scale(Vector3.ONE * 0.001)   # the figure steps aside for the body
+			at = Vector3(0.0, -5.0, 0.0)
+		_body.multimesh.set_instance_transform(i, Transform3D(b, at + Vector3(0, bob, 0)))
+		_legs.multimesh.set_instance_transform(i, Transform3D(b, at + Vector3(0, bob * 0.4, 0)))
 		_bubble_tick(n, delta)
 		i += 1
 
@@ -276,7 +303,7 @@ func _step(n: Npc, delta: float, hero: Vector3) -> void:
 	var here := Vector2(n.pos.x, n.pos.z)
 	if n.route.is_empty():
 		n.dwell -= delta
-		if n.dwell <= 0.0:
+		if n.dwell <= 0.0 and n.face_t <= 0.0:
 			_next_stop(n)
 		return
 	var target: Vector2 = n.route[0]
@@ -304,6 +331,110 @@ func _step(n: Npc, delta: float, hero: Vector3) -> void:
 	n.stuck = 0.0
 	n.pos = Vector3(to.x, n.pos.y, to.y)
 	n.yaw = lerp_angle(n.yaw, atan2(-mv.x, -mv.y), 1.0 - exp(-10.0 * delta))
+
+
+## Stand still for a while looking at `who` (the coach has a word for him).
+func hold(id: String, secs: float, who := Vector3.INF) -> void:
+	var n := npc(id)
+	if n == null:
+		return
+	n.route = []
+	n.dwell = maxf(n.dwell, secs)
+	n.face_t = secs
+	n.face = who if who != Vector3.INF else club.coach.body.position
+
+
+# --- Real bodies near the hero (spec 2.1) ------------------------------------------------------
+
+## The (at most BODIES) people nearest to the hero get a real Athlete - a child's size by
+## age, his own look, no racket while he walks, the racket up when he trains - the rest stay
+## light figures. A margin between NEAR_IN and NEAR_OUT keeps them from flickering.
+func _assign_bodies(hero: Vector3) -> void:
+	for n in _npcs:
+		if n.body != null and Vector2(n.pos.x - hero.x, n.pos.z - hero.z).length() > NEAR_OUT:
+			_release(n)
+	var free := BODIES
+	for n in _npcs:
+		if n.body != null:
+			free -= 1
+	if free <= 0:
+		return
+	var want: Array = _npcs.filter(func(n): return n.body == null and Vector2(n.pos.x - hero.x, n.pos.z - hero.z).length() < NEAR_IN)
+	want.sort_custom(func(a, b): return Vector2(a.pos.x - hero.x, a.pos.z - hero.z).length() < Vector2(b.pos.x - hero.x, b.pos.z - hero.z).length())
+	for n in want.slice(0, free):
+		_take_body(n)
+
+
+func _take_body(n: Npc) -> void:
+	var look: Dictionary = n.look.duplicate() if not n.look.is_empty() else Looks.DEFAULT.duplicate()
+	if n.kind == "student":
+		look["shirt"] = Looks.nearest_kit(ClubBuilds.club_color())   # the club's colours
+		look["beard"] = 0 if Academy.age(n.st) < 18 else int(look.get("beard", 0))
+	var a: Athlete = null
+	for x in _athletes:
+		if is_instance_valid(x) and not x.has_meta("npc_owner"):
+			a = x
+			break
+	if a == null:
+		if _athletes.size() >= BODIES:
+			return
+		a = Athlete.new()
+		a.name = "npc_body_%d" % _athletes.size()
+		world.add_child(a)
+		a.setup(-1.0, look, world.walk.bounds)
+		_athletes.append(a)
+	elif a.get_meta("npc_look", "") != str(look):
+		a.set_look(look)
+	a.set_meta("npc_look", str(look))
+	a.set_meta("npc_owner", n.id)
+	a.set_meta("casual", true)
+	if n.size < 0.999:
+		AthleteCasual.set_junior(a, n.size)
+	elif a.has_meta("junior"):
+		a.remove_meta("junior")
+		a.remove_meta("body_stamp")
+	a.area = world.walk.bounds
+	a.position = Vector3(n.pos.x, 0.0, n.pos.z)
+	a.rotation.y = n.yaw
+	a.velocity = Vector3.ZERO
+	a.move_input = Vector2.ZERO
+	a.max_speed = SPEED
+	a.relax()
+	a.visible = true
+	n.body = a
+
+
+func _release(n: Npc) -> void:
+	if n.body == null:
+		return
+	if is_instance_valid(n.body):
+		n.body.remove_meta("npc_owner")
+		n.body.move_input = Vector2.ZERO
+		n.body.visible = false
+	n.body = null
+
+
+## The body follows the person's own walk (the figure's logic stays the one truth): steered to
+## where he is, the gait from its own speed; the racket comes out on the court.
+func _drive_body(n: Npc, delta: float) -> void:
+	var a := n.body
+	var d := Vector2(n.pos.x - a.position.x, n.pos.z - a.position.z)
+	if d.length() > 2.5:
+		a.position = Vector3(n.pos.x, 0.0, n.pos.z)   # a jump (a test, a new stop): no running after it
+		d = Vector2.ZERO
+	a.max_speed = SPEED * 1.25
+	a.move_input = (d / 0.35).limit_length(1.0) if d.length() > 0.04 else Vector2.ZERO
+	a.rotation.y = lerp_angle(a.rotation.y, n.yaw, 1.0 - exp(-10.0 * delta))
+	a.position.y = n.pos.y
+	var training := n.route.is_empty() and n.activity == "train" and n.face_t <= 0.0
+	a.set_meta("casual", not training)
+	if training:
+		n.swing_t -= delta
+		if n.swing_t <= 0.0 and not a.is_swinging():
+			n.swing_t = _rng.randf_range(2.2, 3.4)
+			var side := 1 if _rng.randf() < 0.6 else -1
+			var contact := a.to_global(Vector3(0.75 * float(side), 0.95 * n.size, -0.5))   # local: +x his forehand, -z ahead
+			a.swing(side, 0.45, contact)
 
 
 func _next_stop(n: Npc) -> void:

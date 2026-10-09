@@ -1425,6 +1425,40 @@ func test_npc_flow() -> void:
 	main._on_ui("menu", 0)
 	await _frames(3)
 	check(club.active and not main.ui.is_open(), "«Назад»: the club")
+	# Near the hero he is a real body (the spec's budget: two at most), far away a light figure.
+	npc.route = []
+	npc.dwell = 999.0
+	main.player.position = npc.pos + Vector3(2.5, 0, 0)
+	await _frames(4)
+	var body: Athlete = npc.body
+	check(body != null and body.visible and body.has_meta("casual"), "near the hero: a real Athlete, walking casually")
+	check(body == null or body.has_meta("junior") == (npc.size < 0.999), "a child's size by his age (%.2f)" % npc.size)
+	var far := Vector3(npc.pos.x, 0, npc.pos.z + (20.0 if npc.pos.z < 10.0 else -20.0))
+	main.player.position = far
+	await _frames(4)
+	check(npc.body == null and (body == null or not body.visible), "the hero walks off: a light figure again")
+	# The coach's round: he walks up to the student, says a word, the student answers.
+	main.player.position = npc.pos + Vector3(-1.5, 0, -2.5)
+	var co: ClubCoach = club.coach
+	co._path = []
+	co._stay = 0.0
+	co._wait = 999.0
+	co._last_say = -100.0
+	co._stops = [{"at": Vector3.INF, "stay": 4.0, "who": npc.id}, {"at": ClubCoach.HOME, "stay": 0.0, "who": ""}]
+	var said := false
+	var answered := false
+	for k in 300:
+		await create_timer(0.05).timeout
+		said = said or reg.speaker() == "coach"
+		answered = answered or (said and reg.speaker() == npc.id)
+		if answered:
+			break
+	var cp: Vector3 = co.body.position
+	print("   (coach at %s, student at %s, stops %d, path %d)" % [cp, npc.pos, co._stops.size(), co._path.size()])
+	check(said and Vector2(cp.x - npc.pos.x, cp.z - npc.pos.z).length() < 2.5, "the coach comes up to the student and says a word")
+	check(answered, "the student answers him")
+	var plan: Array = co.plan_round()
+	check(plan.size() >= 2 and plan.any(func(st): return st["who"] == npc.id) and plan[plan.size() - 1]["at"] == ClubCoach.HOME, "a round: the student, a place, then home")
 	# The visitor.
 	Academy.data()["guest"] = {"roster": "rublev", "name": "Андрей Рублёв", "until": SaveData.played + 2, "seed": 5}
 	club._refresh()

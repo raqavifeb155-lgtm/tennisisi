@@ -10,6 +10,7 @@ const FIRST := ["Миша", "Саша", "Даня", "Ваня", "Артём", "�
 	"Аня", "Лена", "Соня", "Маша", "Катя", "Ира", "Варя", "Алиса", "Милана", "Ксюша", "Ярик", "Глеб", "Стёпа", "Макар"]
 const LAST := ["Петров", "Соколов", "Орлов", "Волков", "Зайцев", "Белов", "Громов", "Ершов", "Жуков", "Карпов", "Лебедев", "Морозов",
 	"Новиков", "Попов", "Румянцев", "Седов", "Тихонов", "Ушаков", "Фомин", "Чернов", "Шилов", "Юдин", "Яковлев", "Мартынов", "Крылов", "Назаров"]
+const GIRLS := ["Аня", "Лена", "Соня", "Маша", "Катя", "Ира", "Варя", "Алиса", "Милана", "Ксюша"]
 ## Age 13 -> 0.70 ... 18 -> 1.0 (the model's size, spec 2.2; the model code is stream H's, this is the data).
 const GROWTH_AGES := [[13, 0.70], [14, 0.76], [15, 0.83], [16, 0.90], [17, 0.96], [18, 1.0]]
 const PRICE_BASE := 60.0
@@ -58,10 +59,16 @@ static func price(st: Dictionary) -> int:
 static func make(rng: RandomNumberGenerator, tier: int, adult := false) -> Dictionary:
 	var st := {}
 	st["seed"] = rng.randi()
-	st["name"] = "%s %s" % [FIRST[rng.randi() % FIRST.size()], LAST[rng.randi() % LAST.size()]]
+	var first: String = FIRST[rng.randi() % FIRST.size()]
+	var girl := GIRLS.has(first)
+	st["name"] = "%s %s" % [first, String(LAST[rng.randi() % LAST.size()]) + ("а" if girl else "")]   # Фомин -> Ира Фомина
 	st["age"] = rng.randi_range(18, 23) if adult else rng.randi_range(13, 17)
 	st["pot"] = snappedf(rng.randf_range(0.35, 1.0) if not adult else rng.randf_range(0.3, 0.8), 0.01)
 	st["look"] = Looks.random(rng)
+	if girl or int(st["age"]) < 18:
+		st["look"]["beard"] = 0   # no beards on kids (nor on girls)
+	if girl:
+		st["girl"] = true
 	var keys: Array = Opponents.STAT_KEYS.duplicate()
 	var lean: Array = []
 	var pool := keys.duplicate()
