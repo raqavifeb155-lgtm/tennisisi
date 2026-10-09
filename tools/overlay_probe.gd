@@ -298,7 +298,8 @@ func _house_round(club) -> void:
 	await _expect("Дом: тап по «В дом» — мы внутри, клуб не рисуется", func() -> bool: return house.inside and not club.world.visible)
 	await _wait(0.8)
 	await _expect("Дом: у двери «Выйти из дома»", func() -> bool: return club.hud.current_place() == "house_exit" and _button(club.hud.root, "ВЫЙТИ ИЗ ДОМА") != null)
-	_check("Дом: быстрый переход убран, ⚙ на месте", not club.hud._travel_btn.visible and _gear().is_visible_in_tree())
+	_check("Дом: быстрый переход убран", not club.hud._travel_btn.visible)
+	_check("Дом: ⚙ клуба на месте", club.hud.gear.is_visible_in_tree())
 	# a room: walk in
 	var c := HouseWorld.room_center("dorm")
 	main.player.position = Vector3(c.x + 1.6, 0.0, c.z + HouseWorld.DOOR_DZ)
