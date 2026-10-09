@@ -86,6 +86,25 @@ func _run() -> void:
 	Locker.put(Gear._affix_item(Gear.RARE, rng, "band"), 0)
 	main._on_ui("sum_keep", 1)
 	await _shot("sum_replace", 0.5)
+	# Hub spec 15: an insured legendary goes back for free; «Продать остальное» (loop review P1).
+	_reset(10)
+	SaveData.club = {"levels": {"locker": 1}}
+	var t4 := Tournament.new(1, 23)
+	t4.stage = 4
+	t4.equip["racket"] = Locker.insure(Items.instance(Items.find("thunderer")))
+	t4.equip["shoes"] = Gear._affix_item(Gear.EPIC, rng, "shoes")
+	t4.bag = [Gear._affix_item(Gear.RARE, rng, "band")]
+	t4.record_match(false, "4:6", rng)
+	main.tournament = t4
+	SaveData.record_run(t4)
+	main.ui.show_summary(t4)
+	await _shot("sum_insured", 2.4)
+	main._on_ui("sum_keep", 0)
+	await _shot("sum_rest", 0.6)
+	main._on_ui("sum_sell_rest", 0)
+	await _shot("sum_rest_armed", 0.5)
+	main._on_ui("sum_sell_rest", 0)
+	await _shot("sum_rest_sold", 0.5)
 
 	# The shop: stall, shop, boutique.
 	for lv in [0, 1, ClubBuilds.max_level("shop")]:
@@ -212,6 +231,26 @@ func _flow() -> void:
 	check(not t.locker_done, "full locker: asks what to replace first")
 	main._on_ui("sum_replace", 0)
 	check(t.locker_done and Locker.items().size() == 1 and Locker.items()[0]["slot"] == "racket", "replaced: the racket is kept")
+	# «Продать остальное»: two taps with an epic in it, the kept thing stays
+	var t5 := Tournament.new(1, 6)
+	t5.stage = 2
+	t5.equip["racket"] = Gear._affix_item(Gear.EPIC, rng, "racket")
+	t5.equip["band"] = Gear._affix_item(Gear.RARE, rng, "band")
+	t5.record_match(false, "1:6", rng)
+	main.tournament = t5
+	SaveData.record_run(t5)
+	var kept_before: Array = (SaveData.locker["items"] as Array).duplicate(true)
+	SaveData.locker["items"] = []
+	main.ui.show_summary(t5)
+	main._on_ui("sum_keep", 1)
+	var bank := SaveData.gold
+	var rest_g := Locker.rest_gold(t5)
+	main._on_ui("sum_sell_rest", 0)
+	check(SaveData.gold == bank and not t5.equip["racket"].is_empty(), "sell the rest: an epic waits for the second tap")
+	main._on_ui("sum_sell_rest", 0)
+	check(rest_g > 0 and SaveData.gold == bank + rest_g and t5.equip["racket"].is_empty() and Locker.items().size() == 1, "...sold +%d, the kept band is in the locker" % rest_g)
+	SaveData.locker["items"] = kept_before
+	main.tournament = t
 	main._on_ui("sum_shop", 0)
 	check(RunShop.back_to == "to_summary", "the shop from the summary comes back to it")
 	# the bag with the locker, the bracket row, the islands

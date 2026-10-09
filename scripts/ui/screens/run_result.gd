@@ -116,6 +116,7 @@ static var _flown: Tournament = null     # the run whose coins already flew into
 static var _msg := ""
 static var _msg_good := true
 static var _replacing := -1              # the candidate waiting for a locker cell to give way
+static var _sell_armed: Tournament = null # «Продать остальное» waits for its second tap (an epic+ in it)
 
 
 static func _gold_lines(t: Tournament) -> Array:
@@ -158,6 +159,7 @@ static func show_summary(ui: TournamentUI, t: Tournament) -> void:
 		gl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		ui._box.add_child(gl)
 	_locker_block(ui, t)
+	_rest_block(ui, t)
 	# One tap to the next run in the same place and format (the conditions screen, if any,
 	# comes next), the way the club's «Новая игра» goes; a new island is offered first.
 	var again_id := news if news != "" else t.location
@@ -273,6 +275,24 @@ static func _locker_block(ui: TournamentUI, t: Tournament) -> void:
 			card.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
+## «Продать остальное» (loop review P1): what the run leaves but the kept thing, in one tap
+## (two when an epic or better is in it) into the bank — it would vanish with the run.
+static func _rest_block(ui: TournamentUI, t: Tournament) -> void:
+	var rest := Locker.rest(t)
+	if rest.is_empty():
+		return
+	var g := Locker.rest_gold(t)
+	var text := "Продать остальное (%d)  ·  +%d" % [rest.size(), g]
+	if _sell_armed == t:
+		text = "Точно продать (%d)? +%d" % [rest.size(), g]
+		if not t.locker_done:
+			ui._note("В шкафчик за этот забег ещё ничего не положено — после продажи будет нечего")
+	elif t.locker_done:
+		ui._note("Остальное пропадёт с забегом — продай его")
+	var b := ui._make_button(text, "sum_sell_rest", 0, "")
+	ui._box.add_child(b)
+
+
 static func _kept_line(ui: TournamentUI) -> void:
 	ui._note("Вещь в шкафчике. В следующем забеге её можно взять с собой")
 
@@ -339,3 +359,16 @@ static func ui_action(m: Node, action: String, arg: int) -> void:
 			ui.show_summary(t)
 		"sum_shop":
 			RunShop.ui_action(m, "shop_open", 0)
+		"sum_sell_rest":
+			var big := Locker.rest(t).any(func(c): return int(c["item"].get("rarity", 0)) >= Gear.EPIC)
+			if big and _sell_armed != t:
+				_sell_armed = t
+			else:
+				_sell_armed = null
+				var n := Locker.rest(t).size()
+				var g := Locker.sell_rest(t)
+				if g > 0 or n > 0:
+					_msg = "Продано вещей: %d  ·  +%d в банк" % [n, g]
+					_msg_good = true
+					SaveData.save()
+			ui.show_summary(t)
