@@ -657,7 +657,9 @@ func test_match_bet() -> void:
 	var h: Array = SaveData.bets["history"]
 	check(h.size() == 2 and h.back()["side"] == "self" and not h.back()["won"], "the bets' history keeps who, which side, how it ended")
 	var rh := Bets.run_history(t5)
-	check(rh.size() == 1 and int(rh[0]["stage"]) == 3 and RunBets.history_line(rh[0]).ends_with("· 25 · мимо"), "the run's summary lists this run's bets only: «%s»" % (RunBets.history_line(rh[0]) if rh.size() > 0 else ""))
+	var run_bets: GDScript = load("res://scripts/ui/screens/run_bets.gd")  # by path: a -s script compiles before the autoloads exist
+	var bet_line: String = run_bets.history_line(rh[0]) if rh.size() > 0 else ""
+	check(rh.size() == 1 and int(rh[0]["stage"]) == 3 and bet_line.ends_with("· 25 · мимо"), "the run's summary lists this run's bets only: «%s»" % bet_line)
 	var cf := SaveData._to_config()
 	SaveData.bets = {}
 	SaveData._apply(cf)
@@ -683,8 +685,9 @@ func test_match_bet() -> void:
 	# The card of the opponent shows the line; the bracket row too.
 	SaveData.titles = 1
 	var tc := Tournament.new(1, 11)
-	var inf := OpponentCard.info(tc, 0)
-	check(OpponentCard.odds_line(inf["odds"]) == "Коэф. %.2f / %.2f" % [inf["odds"]["you"], inf["odds"]["opp"]] and float(inf["odds"]["you"]) >= 1.05, "the opponent's card: «%s»" % OpponentCard.odds_line(inf["odds"]))
+	var card_screen: GDScript = load("res://scripts/ui/screens/opponent_card.gd")  # by path: a -s script compiles before the autoloads exist
+	var inf: Dictionary = card_screen.info(tc, 0)
+	check(card_screen.odds_line(inf["odds"]) == "Коэф. %.2f / %.2f" % [inf["odds"]["you"], inf["odds"]["opp"]] and float(inf["odds"]["you"]) >= 1.05, "the opponent's card: «%s»" % card_screen.odds_line(inf["odds"]))
 	SaveData.titles = 0
 	SaveData.gold = 0
 	SaveData.bets = {}
