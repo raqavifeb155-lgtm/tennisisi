@@ -17,6 +17,9 @@ var views := false
 var nopack := false     # --nopack: the club as it stands before the model pack arrives (simple forms)
 var census := false
 var npcs := false       # --npc: T-2, the coach's offer, the hire screens, the students, the visitor
+var academy := false    # --academy: T-3, the academy's five levels on its lot, the office, a card, the focus
+var foreman := false    # --foreman: the foreman window (the ghost of the next level) for every construction at every level
+var only := ""           # --only=court,stands: with --foreman, just these constructions
 var lots := false       # --lots: T-1, the empty lots, the sheet, the build moment
 var hour := 11.0   # shots are of the morning unless --hour= says otherwise (else they depend on the clock)
 var tag := ""          # --tag=X: club_X_<h>_*.png (other worktrees shoot into the same folder)
@@ -30,6 +33,10 @@ func _initialize() -> void:
 			gfx = int(a.get_slice("=", 1))
 		elif a == "--builds":
 			builds = true
+		elif a == "--foreman":
+			foreman = true
+		elif a.begins_with("--only="):
+			only = a.get_slice("=", 1)
 		elif a == "--stats":
 			stats = true
 		elif a == "--views":
@@ -40,6 +47,8 @@ func _initialize() -> void:
 			lots = true
 		elif a == "--npc":
 			npcs = true
+		elif a == "--academy":
+			academy = true
 		elif a == "--nopack":
 			nopack = true
 			ClubPack.state = ClubPack.FAILED
@@ -199,6 +208,14 @@ func _run() -> void:
 		return
 	if npcs:
 		await _npc()
+		quit()
+		return
+	if academy:
+		await _academy()
+		quit()
+		return
+	if foreman:
+		await _foreman()
 		quit()
 		return
 	if builds:
@@ -503,6 +520,30 @@ func _measure() -> Vector2:
 	return Vector2(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME), Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))
 
 
+## The foreman's window with the ghost of the next level, every construction at every level.
+func _foreman() -> void:
+	var club = main.club
+	SaveData.played = 3
+	SaveData.titles = 4
+	SaveData.gold = 9999
+	SaveData.club = {"met_coach": true}
+	club._refresh()
+	club.hud.say("", 0.0)
+	club._travel("gate")
+	await create_timer(0.4).timeout
+	club._on_choice("club_foreman", 0)
+	for id in ClubLots.foreman_ids():
+		if only != "" and not (id in only.split(",")):
+			continue
+		for lv in ClubBuilds.max_level(id):
+			SaveData.club["levels"] = {id: lv}
+			if id == "court" and lv >= 3:
+				SaveData.club["color"] = 2
+			club._refresh()
+			club.foreman_show(id)
+			await _shot("f_%s_%d" % [id, lv], 0.5)
+
+
 func _builds() -> void:
 	var club = main.club
 	SaveData.played = 3
@@ -744,3 +785,68 @@ func _npc() -> void:
 	club.hud.hide_place()
 	club.npc_life.say("stu_s2", "Сегодня подача идёт", 3.0)
 	await _shot("08_speech", 0.5)
+
+
+## T-3: the academy on the east lawn at each level (seen from the way in), the coach's office
+## with three students, a student's card (focus, camp, sparring), the focus sheet, «Отпустить?».
+func _academy() -> void:
+	var club = main.club
+	SaveData.played = 9
+	SaveData.titles = 2
+	SaveData.gold = 3000
+	SaveData.academy = {}
+	SaveData.club = {"met_coach": true, "walk_hint": true, "hire_hint": true, "lots": {"n7": "academy", "n2": "coach"}, "levels": {"academy": 1, "coach": 2}}
+	club.close()
+	main.set_location(Locations.LIST[0]["id"])
+	main._show_menu()
+	await create_timer(0.8).timeout
+	club = main.club
+	ClubDaytime.force_hour = 10.0
+	club.hud._bubble.visible = false
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 21
+	Academy.data()["free_given"] = true
+	for i in 3:
+		var st: Dictionary = JuniorGen.make(rng, 1)
+		st["id"] = "s%d" % (i + 1)
+		st["age0"] = [13, 15, 17][i]
+		st["since"] = SaveData.played - 3
+		st["trainings"] = 3
+		(Academy.students() as Array).append(st)
+	Academy.data()["trained_at"] = SaveData.played
+	main.player.position = Vector3(27.5, 0, 15.5)
+	main.player.rotation.y = -PI * 0.5
+	club.hud.visible = false
+	club._refresh()
+	club.cam.frame(Vector3(32.5, 24.0, 44.0), Vector3(32.5, 0.0, 12.5), 0.0)
+	await create_timer(1.0).timeout
+	for lv in range(1, 6):
+		SaveData.club["levels"]["academy"] = lv
+		club._refresh()
+		club.cam.frame(Vector3(32.5, 24.0, 44.0), Vector3(32.5, 0.0, 12.5), 0.0)
+		await _shot("a%d_level" % lv, 1.0)
+	club.cam.release(0.0)
+	club.hud.visible = true
+	main.player.position = Vector3(31.0, 0, 14.4)
+	club._place = ""
+	club._update_place()
+	club.cam.snap()
+	await _shot("a6_place_button", 1.0)
+	club._on_choice("club_students", 0)
+	await _shot("a7_office", 0.9)
+	main.ui._scroll.scroll_vertical = 900
+	await _shot("a7b_office_scrolled", 0.5)
+	club._on_choice("club_student", 1)
+	await _shot("a8_student_card", 0.9)
+	main.ui._scroll.scroll_vertical = 900
+	await _shot("a8b_student_card_bottom", 0.5)
+	club._on_choice("club_camp", 0)
+	await _shot("a9_after_camp", 0.9)
+	club._on_choice("club_focus", 0)
+	await _shot("a10_focus", 0.9)
+	club._on_choice("club_focus_set:2", 0)
+	await create_timer(0.5).timeout
+	club._on_choice("club_release_ask", 0)
+	await _shot("a11_release", 0.9)
+	main._on_ui("menu", 0)
+	await create_timer(0.5).timeout

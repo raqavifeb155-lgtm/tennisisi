@@ -53,6 +53,19 @@ var short := {"n": 0, "back": 0, "lost": 0}
 var _cur_short := false
 var _cpu_bounced := false
 
+## F-E (serve hotfix): every serve of either side, one record per attempt:
+## {who, attempt, kmh, label (the player's), x (|x| across the box), dir, in, res ("ace" / "unret" / "")}.
+## service_pts / oneshot / doubles are per server (0 player, 1 CPU): service points played, won by the
+## serve alone (an ace or an unreturned ball) and lost on a double fault; cpu_serve_games counts the CPU's.
+const STRONG_KMH := 195.0        # "a strong serve" for the tables (the owner's complaint: 200+ into the corner)
+var serves: Array = []
+var service_pts := [0, 0]
+var oneshot := [0, 0]
+var retfail := [0, 0]             # the receiver got a racket on it and missed (rally 2, the server won): "taken" but lost at once
+var doubles := [0, 0]
+var cpu_serve_games := 0
+var _srv := {}                    # the serve in the air
+
 var _shots: Array = []            # this point: {who, contact, speed, drop, lob, pos: [player, cpu]}
 var _serve_dir := ""              # this point's player serve direction (last in-box one)
 var _cpu_at_net := false
@@ -66,6 +79,7 @@ func setup(g: Node) -> void:
 		ge.shot.connect(on_shot)
 		ge.bounce.connect(on_bounce)
 		ge.point.connect(on_point)
+		ge.player_stroke.connect(on_stroke)
 		ge.match_finished.connect(func(_i: Dictionary) -> void: print(report()))
 
 
@@ -104,6 +118,13 @@ func reset() -> void:
 	_serve_dir = ""
 	_cpu_at_net = false
 	_last_server = -1
+	serves = []
+	service_pts = [0, 0]
+	oneshot = [0, 0]
+	retfail = [0, 0]
+	doubles = [0, 0]
+	cpu_serve_games = 0
+	_srv = {}
 
 
 static func serve_dir(x_across: float) -> String:
@@ -128,6 +149,9 @@ func on_shot(who: int, info: Dictionary) -> void:
 	elif _cur_short:
 		short["back"] += 1
 		_cur_short = false
+	if bool(info.get("serve", false)):
+		var att = game.get("serve_attempt") if game else null
+		_srv = {"who": who, "attempt": int(att) if att != null else 1, "kmh": rec["speed"] * 3.6, "label": ""}
 	if who == WHO_PLAYER and rec["drop"] and not bool(info.get("serve", false)):
 		pdrop["n"] += 1
 		_pt_drop = true
@@ -146,6 +170,12 @@ func on_shot(who: int, info: Dictionary) -> void:
 			_cpu_at_net = true
 
 
+## The player's stroke right after the shot: a serve takes its timing label.
+func on_stroke(info: Dictionary) -> void:
+	if bool(info.get("serve", false)) and not _srv.is_empty() and int(_srv["who"]) == WHO_PLAYER:
+		_srv["label"] = String(info.get("label", ""))
+
+
 ## A bounce while a serve is in the air: a fault is forgotten (the point starts with the
 ## next serve); the player's serve is counted by direction, in or out.
 func on_bounce(info: Dictionary) -> void:
@@ -161,6 +191,14 @@ func on_bounce(info: Dictionary) -> void:
 	var hitter := int(info.get("last_hitter", -1))
 	var pos: Vector3 = info.get("pos", Vector3.ZERO)
 	var inside := Court.in_service_box(pos, -1 if hitter == WHO_PLAYER else 1, float(game.box_side), BallPhysics.RADIUS)
+	if not _srv.is_empty():
+		var xs := pos.x * float(game.box_side)
+		_srv["x"] = absf(xs)
+		_srv["dir"] = "net" if (pos.z > 0.0) == (hitter == WHO_PLAYER) else serve_dir(xs if xs > 0.0 else 0.0)
+		_srv["in"] = inside
+		_srv["res"] = ""
+		serves.append(_srv)
+		_srv = {}
 	if not inside:
 		_shots.clear()
 	if hitter != WHO_PLAYER:
@@ -187,7 +225,21 @@ func on_point(info: Dictionary) -> void:
 	rallies.append(rally)
 	if server == WHO_PLAYER and _last_server != WHO_PLAYER:
 		player_serve_games += 1
+	if server == WHO_CPU and _last_server != WHO_CPU:
+		cpu_serve_games += 1
 	_last_server = server
+	if server == WHO_PLAYER or server == WHO_CPU:
+		service_pts[server] += 1
+		if reason == "DOUBLE FAULT":
+			doubles[server] += 1
+		elif rally == 2 and winner == server:
+			retfail[server] += 1
+			if not serves.is_empty() and int(serves[-1]["who"]) == server:
+				serves[-1]["res"] = "retfail"
+		elif rally == 1 and winner == server:
+			oneshot[server] += 1
+			if not serves.is_empty() and int(serves[-1]["who"]) == server:
+				serves[-1]["res"] = "ace" if reason == "ACE" else "unret"
 	if server == WHO_PLAYER and _serve_dir != "" and rally == 1 and winner == WHO_PLAYER:
 		var s: Dictionary = serve[_serve_dir]
 		if reason == "ACE":
@@ -276,6 +328,66 @@ func active_share(who := -1) -> float:
 	return float(act) / maxf(all, 1)
 
 
+## The serve log filtered: n served, in the box, aces, unreturned (not an ace), all by `who` and
+## attempt (0 = both). min_kmh: only serves from this speed; label: the player's timing label;
+## corner: only the wide / T ones by the bounce.
+func serve_stats(who: int, attempt := 1, min_kmh := 0.0, label := "", corner := false) -> Dictionary:
+	var r := {"n": 0, "in": 0, "ace": 0, "unret": 0, "retfail": 0, "kmh": 0.0}
+	for s in serves:
+		if int(s["who"]) != who or (attempt > 0 and int(s["attempt"]) != attempt):
+			continue
+		if float(s["kmh"]) < min_kmh or (label != "" and String(s["label"]) != label):
+			continue
+		if corner and not (s["dir"] == "wide" or s["dir"] == "T"):
+			continue
+		r["n"] += 1
+		r["kmh"] += float(s["kmh"])
+		if s["in"]:
+			r["in"] += 1
+			if s["res"] == "ace":
+				r["ace"] += 1
+			elif s["res"] == "unret":
+				r["unret"] += 1
+			elif s["res"] == "retfail":
+				r["retfail"] += 1
+	r["kmh"] = float(r["kmh"]) / maxf(r["n"], 1)
+	return r
+
+
+static func _pc(a: float, b: float) -> String:
+	return "%d%%" % roundi(100.0 * a / maxf(b, 1.0))
+
+
+func _serve_line(label: String, s: Dictionary) -> String:
+	return "%s n %3d  in %s  avg %d km/h  ace %d (%s of in)  unreturned %d  return error %d  one-shot %s of in" % [label, s["n"], _pc(s["in"], s["n"]), roundi(s["kmh"]), s["ace"], _pc(s["ace"], s["in"]), s["unret"], s["retfail"], _pc(s["ace"] + s["unret"] + s["retfail"], s["in"])]
+
+
+## F-E: the serve tables (the player's first and second serve, strong ones into the corner,
+## PERFECT ones; the CPU's serve), printed with report().
+func serve_report() -> String:
+	var lines := PackedStringArray()
+	var k := STRONG_KMH
+	lines.append("--- serve (F-E): strong = %d+ km/h, corner = wide or T by the bounce ---" % roundi(k))
+	lines.append(_serve_line("YOU 1st          ", serve_stats(WHO_PLAYER, 1)))
+	lines.append(_serve_line("YOU 1st PERFECT  ", serve_stats(WHO_PLAYER, 1, 0.0, "PERFECT")))
+	lines.append(_serve_line("YOU 1st strong   ", serve_stats(WHO_PLAYER, 1, k)))
+	lines.append(_serve_line("YOU 1st PERF+strong", serve_stats(WHO_PLAYER, 1, k, "PERFECT")))
+	lines.append(_serve_line("YOU 1st strong corner", serve_stats(WHO_PLAYER, 1, k, "", true)))
+	lines.append(_serve_line("YOU 2nd          ", serve_stats(WHO_PLAYER, 2)))
+	lines.append("YOU won by the serve alone (ace + unreturned) %d, return errors %d of %d service points: one-shot %s, doubles %d" % [oneshot[0], retfail[0], service_pts[0], _pc(oneshot[0] + retfail[0], service_pts[0]), doubles[0]])
+	lines.append(_serve_line("CPU 1st          ", serve_stats(WHO_CPU, 1)))
+	lines.append(_serve_line("CPU 1st corner   ", serve_stats(WHO_CPU, 1, 0.0, "", true)))
+	lines.append(_serve_line("CPU 2nd          ", serve_stats(WHO_CPU, 2)))
+	var g := maxf(cpu_serve_games, 1)
+	lines.append("CPU won by the serve alone %d, return errors %d of %d service points: one-shot %s, aces/game %.2f, doubles %d (%.2f/game) over %d games" % [oneshot[1], retfail[1], service_pts[1],
+		_pc(oneshot[1] + retfail[1], service_pts[1]), float(_cpu_aces()) / g, doubles[1], float(doubles[1]) / g, cpu_serve_games])
+	return "\n".join(lines)
+
+
+func _cpu_aces() -> int:
+	return int(endings[WHO_CPU].get("ace", 0))
+
+
 func report() -> String:
 	var lines := PackedStringArray()
 	lines.append("=== AI METRICS ===")
@@ -304,6 +416,7 @@ func report() -> String:
 			pdrop["n"], pdrop["hit"], roundi(100.0 * pdrop["hit"] / n), pdrop["arrived"], roundi(100.0 * pdrop["arrived"] / n), pdrop["far"], roundi(100.0 * pdrop["far"] / n),
 			pdrop["own_err"], roundi(100.0 * pdrop["own_err"] / n), pdrop["won"], roundi(100.0 * pdrop["won"] / n),
 			pdrop["pts_won"], pdrop["pts"], roundi(100.0 * pdrop["pts_won"] / maxf(pdrop["pts"], 1))])
+	lines.append(serve_report())
 	if game and game.get("ai") and game.ai.has_method("report"):
 		lines.append(game.ai.report())
 	return "\n".join(lines)

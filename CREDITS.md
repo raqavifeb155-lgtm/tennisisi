@@ -27,9 +27,9 @@
   Shocked Reaction" (352766); `coin.ogg` — "coin recieved" (230517); `reward.ogg` — "Game Bonus"
   (144751); `click.ogg` — "Click Button" (140881); `victory.ogg` — "Success Fanfare Trumpets"
   (6185); `defeat.ogg` — "Sad Trumpet" (278822); `music_menu.ogg` — "Lofi Sunny Cafe"
-  (alex-morgan, 568156); `amb_park_plane.ogg` — "Airplane, aircraft take off" (freesound_community,
-  121949). Sources and the prep commands: `tools/prep_audio.py`. `amb_park.ogg` was then
-  repaired (a helicopter in the recording: its blade wobble levelled out), see `tools/dechop_bed.py`.
+  (alex-morgan, 568156). Sources and the prep commands: `tools/prep_audio.py`. The first park bed
+  ("City Traffic (Outdoor)", 6414) carried a helicopter that could not be repaired, so
+  `amb_park.ogg` is now made of the London bed (`amb_grass.ogg`), see `tools/rebed_park.py`.
 - All other sounds in `assets/sfx/` are generated procedurally by `tools/gen_sfx.py`.
 
 ## 3D models (the club's props)
@@ -48,6 +48,21 @@ it as `models/club_props.<version>.glb` and the game downloads it after the star
   pot, sign, planks fence, broken column), Car Kit (cone, tyre, bumper), City Kit Commercial 2.1
   (parasol, awning, five low-detail shop fronts), City Kit Suburban 2.0 (two fences).
 - Quaternius is not used (kept in reserve).
+
+## 3D models (the Academy house)
+
+All CC0 1.0 (public domain, no attribution required; credited here anyway). Brought to the club's look and composed into levelled sets
+(bed, sofa, table, kitchen, desk: worn out to premium) by `tools/academy_models.py` into `assets/academy/models/academy_props.glb`
+(56 models, 855 KB), downloaded after the start like the club's pack. Everything else of the house - gym machines, screens, medical room,
+trophy cases, the facade in 6 stages, the kids' light figures - is made in code (`scripts/academy/house/house_shapes.gd`). What is taken from where: `docs/academy/ASSETS.md`.
+
+- KayKit by Kay Lousberg (kaylousberg.itch.io, github.com/KayKit-Game-Assets), CC0: Furniture Bits 1.0 (beds, sofas, armchairs, tables, shelves,
+  cabinets, lamps, rugs, frames, plants), Restaurant Bits 1.0 (counters, fridges, stoves, a hood, plates, pots, a kitchen table), Prototype Bits 1.0
+  (a pallet, boxes, a barrel, doors, a table).
+- Kenney (kenney.nl), CC0: Furniture Kit (televisions, chairs, speakers, a fridge, an office chair, bookcases, a bunk bed, a coffee machine, a radio),
+  taken from the mirror github.com/shorepine/kenney (3d/furniture), which publishes the whole library as CC0.
+- Quaternius Universal Animation Library (free part, CC0, github.com/J-Ponzo/gltf-universal-animation-library) was looked at for the list of motions only;
+  nothing of it is in the game.
 
 ## Шрифт символов
 

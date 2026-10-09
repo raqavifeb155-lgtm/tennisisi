@@ -13,6 +13,11 @@ class_name Locker
 const MAX_SLOTS := 4
 const NEXT_MAX := 3               # bought items waiting for the next run
 const INSURANCE := 0.25           # once per thing (spec 15); economy_sim: whole club 55.7 h at 10%, 64.3 h at 25%
+## Hub spec 16: how many of the locker's things may ride into one run, by the level of the
+## changing room (ClubBuilds "locker", 0..5): ONE at the start, growing with the room. One line
+## of data: change the numbers here. What the shop sold for the run ("next") and the heir's
+## relic come on top of it: the first was paid for, the second is the family's.
+const TAKE_BY_LEVEL := [1, 1, 2, 2, 3, 3]
 ## The ceiling by the round the run ended in (index; 5 = the title): ROGUELIKE 11.0.
 const CAPS := [Gear.RARE, Gear.RARE, Gear.EPIC, Gear.EPIC, Gear.LEGENDARY, Gear.MYTHIC]
 
@@ -44,6 +49,49 @@ static func next_items() -> Array:
 ## One slot, +1 a level of the changing room (ClubBuilds "locker", stream B), at most 4.
 static func slots() -> int:
 	return clampi(ClubBuilds.locker_slots(), 1, MAX_SLOTS)
+
+
+## How many things of the locker the player may take into a run now.
+static func take_limit() -> int:
+	return int(TAKE_BY_LEVEL[clampi(ClubBuilds.level("locker"), 0, TAKE_BY_LEVEL.size() - 1)])
+
+
+## What the run may still take: the limit less what it already took (Tournament.locker_taken).
+static func take_left(t: Tournament) -> int:
+	return maxi(take_limit() - (t.locker_taken if t != null else 0), 0)
+
+
+## The level of the changing room that first raises the limit above the current one (-1 = at the top).
+static func next_take_level() -> int:
+	var now := take_limit()
+	for lv in range(ClubBuilds.level("locker") + 1, TAKE_BY_LEVEL.size()):
+		if int(TAKE_BY_LEVEL[lv]) > now:
+			return lv
+	return -1
+
+
+static func things_word(n: int) -> String:
+	if n % 10 == 1 and n % 100 != 11:
+		return "вещь"
+	if n % 10 >= 2 and n % 10 <= 4 and (n % 100 < 10 or n % 100 >= 20):
+		return "вещи"
+	return "вещей"
+
+
+## "В забег: 1 вещь · больше — с «Стена ракеток»": the limit and what raises it.
+static func take_text() -> String:
+	var n := take_limit()
+	var s := "В забег: %d %s" % [n, things_word(n)]
+	var lv := next_take_level()
+	if lv > 0:
+		s += " · больше — с «%s»" % String(ClubBuilds.TABLE["locker"]["levels"][lv - 1]["title"])
+	return s
+
+
+## Before the first match, with more things in the locker than the run may take: the player
+## picks (RunLocker.show_pick). With as many or fewer the bag's «Взять в забег» stays as it was.
+static func needs_pick(t: Tournament) -> bool:
+	return t != null and t.can_take_locker() and take_left(t) > 0 and items().size() > take_left(t)
 
 
 static func cap(round_i: int) -> int:

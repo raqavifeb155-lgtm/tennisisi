@@ -21,7 +21,7 @@ const SETTLE_AT := 0.2   # the first stance is taken at this moment
 ## The torso's frame as drawn: [yaw basis, pelvis point, chest point], model space.
 static func torso(a: Athlete) -> Array:
 	var ends: Array = a._ends["chest"]
-	var yaw: float = lerpf(a._hip_twist, a._twist, 0.75) if a._body == Athlete.Body.TOON else a._twist
+	var yaw: float = lerpf(a._hip_twist, a._twist, 0.75) if a._toon() else a._twist
 	return [Basis(Vector3.UP, yaw), ends[0], ends[1]]
 
 

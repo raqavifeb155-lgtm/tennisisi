@@ -11,8 +11,22 @@ func _check(ok: bool, what: String) -> void:
 		_fails += 1
 
 
+## A timer fires at the start of a frame, BEFORE that frame's tweens and _process calls run, and
+## under load one frame can be longer than the whole wait: two more frames let the things the
+## wait was for (a fade's callback, a smoothed volume, a timer in _process) catch up.
 func _wait(seconds: float) -> void:
 	await create_timer(seconds, true, false, true).timeout
+	await process_frame
+	await process_frame
+
+
+## Waits for a state, not for a time (a stream swap after a fade, a bell after its timer): asks
+## again every 50 ms for up to `limit` s; the check after it is as strict as before.
+func _until(cond: Callable, limit := 10.0) -> void:
+	var t := 0.0
+	while not cond.call() and t < limit:
+		await create_timer(0.05, true, false, true).timeout
+		t += 0.05
 
 
 func _initialize() -> void:
@@ -31,6 +45,21 @@ func _run() -> void:
 			var len_s := s.get_length()
 			_check(len_s >= 30.0 and len_s <= 75.0, "%s: bed is %.0f s (30..75 s keeps browser memory low)" % [id, len_s])
 
+	print("no helicopter")
+	# 10.10: the park / club bed carried one (tools/rebed_park.py); nothing named so may come back.
+	var dir := DirAccess.open("res://assets/sfx")
+	var bad := 0
+	for f in dir.get_files():
+		var fl := f.to_lower()
+		if fl.contains("heli") or fl.contains("rotor") or fl.contains("chopper") or fl.contains("plane"):
+			bad += 1
+	_check(bad == 0, "no helicopter / plane sound files in assets/sfx")
+	for loc in Sfx.ACCENTS:
+		for spec in Sfx.ACCENTS[loc]:
+			var snd: String = spec["sound"]
+			var sl := snd.to_lower()
+			_check(not (sl.contains("heli") or sl.contains("rotor") or sl.contains("chopper") or sl.contains("plane")), "%s accent %s is not a helicopter" % [loc, snd])
+
 	var sfx := Sfx.new()
 	root.add_child(sfx)
 	await process_frame
@@ -40,8 +69,8 @@ func _run() -> void:
 	print("switching to London")
 	sfx.set_ambience(true)
 	sfx.set_location("grass")
-	await _wait(1.0)
 	var amb: AudioStreamPlayer = sfx._ambience
+	await _until(func() -> bool: return amb.stream != null and amb.stream.resource_path.ends_with("amb_grass.ogg") and not sfx._accents.is_empty())
 	_check(amb.stream != null and amb.stream.resource_path.ends_with("amb_grass.ogg"), "bed swapped to amb_grass.ogg")
 	_check((amb.stream as AudioStreamOggVorbis).loop, "bed loops")
 	_check(amb.bus == "Master", "bed plays on Master")
@@ -53,7 +82,7 @@ func _run() -> void:
 	if not bell.is_empty():
 		_check(float(bell["timer"]) >= 120.0 and float(bell["timer"]) <= 240.0, "the first bell comes after 2..4 minutes (%.0f s left)" % bell["timer"])
 		bell["timer"] = 0.05
-		await _wait(0.3)
+		await _until(func() -> bool: return float(bell["timer"]) >= 420.0)
 		_check(float(bell["timer"]) >= 420.0, "after ringing, the next bell is 7+ minutes away (%.0f s)" % bell["timer"])
 
 	print("ducking")
@@ -70,14 +99,14 @@ func _run() -> void:
 	sfx.set_ambience(false)
 	_check(not amb.playing, "ambience off stops the bed")
 	sfx.set_location("clay")
-	await _wait(2.0)
+	await _until(func() -> bool: return amb.stream != null and amb.stream.resource_path.ends_with("amb_clay.ogg"))
 	_check(amb.stream.resource_path.ends_with("amb_clay.ogg") and not amb.playing, "a location change while off stays silent")
 	sfx.set_ambience(true)
 	_check(amb.playing, "ambience on plays the sea")
 
 	print("the next court")
 	sfx.set_location("grass")
-	await _wait(2.0)
+	await _until(func() -> bool: return sfx._bed_location == "grass" and not sfx._streams.has("amb_clay"))
 	_check(not sfx._streams.has("amb_clay") and not sfx._streams.has("amb_clay_gull"), "leaving Spain lets its sounds go")
 	sfx._neighbor_timer = 0.0
 	await _wait(0.1)
@@ -105,11 +134,11 @@ func _run() -> void:
 	# On the web the music, beds and accents are not in the game pack: they download after
 	# the start. Simulated here: the London bed is "on its way" while we travel there.
 	sfx.set_location("clay")
-	await _wait(2.0)
+	await _until(func() -> bool: return sfx._bed_location == "clay")
 	sfx._pending["amb_grass"] = true
 	sfx._streams.erase("amb_grass")
 	sfx.set_location("grass")
-	await _wait(1.0)
+	await _until(func() -> bool: return sfx._bed_location == "grass")
 	_check(amb.stream == null and not amb.playing, "London without its bed while it downloads")
 	sfx._arrived("amb_grass", load("res://assets/sfx/amb_grass.ogg"))
 	_check(amb.stream != null and amb.stream.resource_path.ends_with("amb_grass.ogg") and amb.playing, "the bed starts the moment it arrives")

@@ -91,12 +91,14 @@ static func show(ui: TournamentUI, animate := true) -> void:
 
 
 ## Two big cards on top: «ОБЫЧНЫЙ» (all the conditions below) and «ХАРДКОР» (a fixed hard set).
+## The gold frame is the picked card's alone: a card's accent is its frame too, so the one not
+## picked gets a quiet accent (ОБЫЧНЫЙ is gold in its own colour, which stayed lit in hardcore).
 static func _modes(ui: TournamentUI) -> void:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 12)
 	var opened := hard_open()
 	var defs := [
-		{"title": "ОБЫЧНЫЙ", "tag": "как всегда", "desc": "Любые условия ниже", "accent": UiTheme.GOLD, "on": not hardcore, "arg": 0, "action": "mods_mode"},
+		{"title": "ОБЫЧНЫЙ", "tag": "как всегда", "desc": "Любые условия ниже", "accent": UiTheme.GOLD if not hardcore else UiTheme.MUTED, "on": not hardcore, "arg": 0, "action": "mods_mode"},
 		{"title": "ХАРДКОР", "tag": "золото ×%s" % _k(float(Modifiers.find("hardcore")["reward"])) if opened else "закрыто",
 			"desc": "Без помощи в беге, замедления и прицела; кольцо уже; соперники сильнее" if opened else "Нужен первый титул",
 			"accent": Color(0.9, 0.25, 0.25), "on": hardcore, "arg": 1, "action": "mods_mode" if opened else ""},

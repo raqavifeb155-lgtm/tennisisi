@@ -23,6 +23,7 @@ func _initialize() -> void:
 	await test_lots_world()
 	await test_lots_flow()
 	await test_npc_flow()
+	await test_academy_flow()
 	await test_world()
 	await test_flow()
 	await test_transitions()
@@ -548,21 +549,25 @@ func test_flow() -> void:
 	main._show_menu()
 	await _frames(3)
 	SaveData.played = 0
-	var screens: GDScript = load("res://scripts/club/club_screens.gd")  # loaded: it reaches the autoloads
-	check(screens.loc_unlocked("grass"), "with a Spanish title England is open")
+	var islands: GDScript = load("res://scripts/ui/screens/run_islands.gd")  # loaded: it reaches the autoloads
+	check(Locations.unlocked("grass"), "with a Spanish title England is open")
 	SaveData.titles_by_loc = {"park": 1}
-	check(not screens.loc_unlocked("grass") and screens.loc_hint("grass") != "", "without it England is locked, with a hint")
+	check(not Locations.unlocked("grass") and Locations.unlock_hint("grass") != "", "without it England is locked, with a hint")
 	SaveData.titles_by_loc = {"park": 1, "clay": 1, "grass": 1}
 	club._on_choice("club_locations", 0)
 	await _frames(2)
 	check(main.ui.is_open(), "the islands screen opens")
-	screens.locations(main.ui, func(id: String) -> bool: return id == "park", func(id: String) -> String: return "за титул в Испании")
+	islands.show_locations(main.ui, func(id: String) -> bool: return id == "park", func(_id: String) -> String: return "за титул в Испании")
 	await _frames(1)
 	var locked := 0
+	var priced := 0
 	for c in main.ui._box.get_children():
-		if c is Button and (c as Button).disabled:
-			locked += 1
-	check(locked == Locations.LIST.size() - 1, "locked islands show a lock and can't be picked (%d)" % locked)
+		if c is GameCard:
+			priced += 1 if "Призовые ×" in (c as GameCard).desc else 0
+			if (c as GameCard).mouse_filter == Control.MOUSE_FILTER_IGNORE and "за титул в Испании" in (c as GameCard).tag:
+				locked += 1
+	check(locked == Locations.LIST.size() - 1, "locked islands show a lock and the hint and can't be picked (%d)" % locked)
+	check(priced == Locations.LIST.size(), "every island card carries its prize multiplier (%d)" % priced)
 	main._on_ui("location", 0)
 	await _frames(2)
 	check(main.ui.is_open(), "an open island: on to the formats, as before")
@@ -817,6 +822,14 @@ func test_build_world() -> void:
 		ghosts = ghosts and w.ghost_id() == id
 		w.show_ghost("", 0)
 	check(ghosts, "every construction has its ghost (the rooms too)")
+	# The ghost is only what is new: the court's colour run-off (4 strips) at level 3, and not
+	# again at level 4 (a twin on the real strips fought them for the depth).
+	var counts := []
+	for lv in [3, 4]:
+		w.show_ghost("court", lv)
+		counts.append((w.get("_ghost") as Node3D).find_children("*", "GeometryInstance3D", true, false).size())
+	w.show_ghost("", 0)
+	check(counts[0] == 4 and counts[1] == 3, "the ghost of a level is its new things only (court 3: %d, court 4: %d)" % [counts[0], counts[1]])
 	var scaff := true
 	for id in ClubBuilds.ORDER:
 		w.set_scaffold(id, true)
@@ -1114,7 +1127,7 @@ func test_lots() -> void:
 	check(ClubLots.price("coach") == 40 and ClubLots.price("stands") == 50 and ClubLots.price("bar") == 50, "the price of a lot is the first level's (40 / 50 / 50 at scale 1)")
 	check(ClubLots.why_not("n1", "coach") == "" and not ClubLots.can_build("n1", "coach"), "the coach's room is allowed, but 0 gold is not enough")
 	check(ClubLots.why_not("n1", "locker") == "Откроется после первого забега" and ClubLots.why_not("n1", "bar") == "Откроется после первого титула", "the locker waits for a run, the bar for a title")
-	check(ClubLots.why_not("n1", "academy") == "Скоро" and ClubLots.why_not("n1", "arena") == "Скоро", "the academy and the arena: «Скоро»")
+	check(ClubLots.why_not("n1", "academy") == "Откроется после 4 забегов" and ClubLots.why_not("n1", "arena") == "Скоро", "the academy waits for four runs (T-3), the arena: «Скоро»")
 	check(ClubLots.why_not("n3", "coach") == "Участок откроется после первого забега", "a shut lot: «Участок откроется после первого забега»")
 	var sh := ClubLots.sheet("n1", "coach")
 	check(sh["build"]["text"] == "Нужно ещё 40" and not sh["build"]["can"], "the sheet says how much is missing")
@@ -1385,7 +1398,7 @@ func test_npc_flow() -> void:
 	check(Academy.students().size() == 1 and Academy.students()[0]["name"] == name1 and SaveData.gold == 0, "hired: the student of the card, no gold spent")
 	check(not main.ui.is_open() and club.active, "back in the club")
 	check(club.npc_life.people().size() == 1 and reg.has("stu_s1") and reg.entry("stu_s1")["action"] == "club_train:s1" and reg.entry("stu_s1")["kind"] == "student", "the student is a person of the club (ClubNpc)")
-	check(reg.entry("coach")["label"] == "Поговорить", "the coach has no newcomers now")
+	check(reg.entry("coach")["label"] == "Ученики" and reg.entry("coach")["action"] == "club_students", "the coach has no newcomers now: «Ученики» (his office)")
 	# He lives: walks about.
 	var npc = club.npc_life.people()[0]
 	var p0: Vector3 = npc.pos
@@ -1475,3 +1488,102 @@ func test_npc_flow() -> void:
 	SaveData.academy = {}
 	SaveData.club = {}
 	SaveData.played = 0
+
+
+## T-3: the academy on a lot - every level builds; its button opens the coach's office; a
+## student's card: focus, camp, sparring, release; the next level bought from the office rises.
+func test_academy_flow() -> void:
+	print("academy")
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	root.add_child(main)
+	await _frames(5)
+	SaveData.enabled = false
+	SaveData.played = 5
+	SaveData.titles = 0
+	SaveData.gold = 100000
+	SaveData.active = null
+	SaveData.run = {}
+	SaveData.academy = {}
+	SaveData.club = {"met_coach": true, "walk_hint": true, "hire_hint": true, "lots": {"n7": "academy"}, "levels": {"academy": 1}}
+	Skills.pending = []
+	Skills.points = 0
+	main._show_menu()
+	await _frames(3)
+	var club = main.club
+	var w = club.world
+	check(w.level_built("academy") == 1 and w.level_root("academy") != null and w.level_root("academy").get_child_count() > 5, "the academy stands on its lot (level 1)")
+	var ok := true
+	for lv in 6:
+		w.set_level("academy", lv)
+		ok = ok and w.level_built("academy") == lv
+	w.show_ghost("academy", 5)
+	w.show_ghost("", 0)
+	w.set_level("academy", 1)
+	check(ok, "every level of the academy builds (and its ghost)")
+	var place := ClubPlaces.find("academy")
+	check(not place.is_empty() and club._open_ids.has("academy") and Vector2(place["pos"].x, place["pos"].z).distance_to(Vector2(32, 14)) < 0.1, "its place: the circle on the lot, open")
+	check(not w.walk.blocked(Vector2(32, 14), 0.35) and not w.walk.blocked(Vector2(30, 14), 0.35), "the circle and the way in from the west are free")
+	# Two students (level 1: two seats) - the first free, the second for gold.
+	var c0: Dictionary = Academy.candidates()[0]
+	Academy.hire(c0["id"])
+	check(Academy.capacity() == 2 and not Academy.is_full(), "level 1: room for one more")
+	club._refresh()
+	main.player.position = place["pos"]
+	club._place = ""
+	club._update_place()
+	await _frames(2)
+	check(club.hud.current_place() == "academy" and club.place_buttons("academy")["action"] == "club_students", "by the academy: «УЧЕНИКИ»")
+	club._on_choice("club_students", 0)
+	await _frames(3)
+	var AR = load("res://scripts/ui/screens/academy_room.gd")
+	var AS = load("res://scripts/ui/screens/academy_student.gd")
+	var cards := 0
+	for c in main.ui._box.get_children():
+		if c is Control and c.has_method("flip"):
+			cards += 1
+	var waits: bool = main.ui._box.find_children("*", "Label", true, false).any(func(l): return (l as Label).text.contains("в следующем сезоне"))
+	check(main.ui.is_open() and cards == 1 and waits, "the office: the student; the free seat waits for next season's set (%d cards)" % cards)
+	var st: Dictionary = Academy.students()[0]
+	check(String(AR.lines(st)["tag"]).contains("фокус"), "a student's card in the list tells his focus")
+	club._on_choice("club_student", 0)
+	await _frames(3)
+	check(AS.current == st["id"] and main.ui.is_open(), "his card")
+	club._on_choice("club_focus", 0)
+	await _frames(3)
+	club._on_choice("club_focus_set:3", 0)
+	await _frames(3)
+	check(Academy.focus_of(st) == "net" and AS.current == st["id"], "focus picked: the net, back on his card")
+	var g0 := SaveData.gold
+	club._on_choice("club_spar", 0)
+	await _frames(3)
+	check(SaveData.gold == g0 - Academy.spar_price(st) and int(st.get("spar_run", -1)) == SaveData.played, "sparring paid and played")
+	check(Academy.why_not_camp(st).begins_with("Сборы — с академии"), "no camps at level 1")
+	# The next level from the office.
+	club._on_choice("club_students", 0)
+	await _frames(3)
+	var up: Button = null
+	for b in main.ui._actions.find_children("*", "Button", true, false):
+		if (b as Button).text.begins_with("Улучшить"):
+			up = b
+	check(up != null and not up.disabled, "the office offers the next level (%s)" % (up.text if up else "none"))
+	club._on_choice("club_academy_up", 0)
+	await _frames(30)
+	check(Academy.level() == 2 and w.level_built("academy") == 2 and club.active and not main.ui.is_open(), "level 2 bought: back in the club, it stands")
+	check(Academy.camps_open(), "camps now")
+	club._on_choice("club_train:%s" % st["id"], 0)
+	await _frames(3)
+	var g1 := SaveData.gold
+	club._on_choice("club_camp", 0)
+	await _frames(3)
+	check(SaveData.gold < g1 and int(st.get("camp_season", -1)) == Academy.season(), "a camp from his card")
+	club._on_choice("club_release_ask", 0)
+	await _frames(3)
+	club._on_choice("club_release", 0)
+	await _frames(6)
+	check(Academy.students().is_empty() and club.active and not main.ui.is_open(), "let go: he leaves, back in the club (he was opened from the club)")
+	main.queue_free()
+	await _frames(2)
+	SaveData.academy = {}
+	SaveData.club = {}
+	SaveData.played = 0
+	SaveData.gold = 0

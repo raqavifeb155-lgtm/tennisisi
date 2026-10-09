@@ -351,12 +351,17 @@ func test_reward_flow() -> void:
 	check(cards.all(func(c): return c.visible_text() == ""), "none of them shows a word")
 	check(ui.bag_chip.visible and ui.bag_chip.count == BAG.carried(t), "the bag chip is on the screen with the count")
 	var at: Array[int] = []
-	for c in cards:
-		c.flipped.connect(func() -> void: at.append(Time.get_ticks_msec()))
+	var seq: Array[int] = []
+	for i in cards.size():
+		cards[i].flipped.connect(func() -> void:
+			at.append(Time.get_ticks_msec())
+			seq.append(i))
 	await timer(TUI.REVEAL_WAIT + 0.15 * 2 + 0.8)
 	check(cards.all(func(c): return c.is_open() and c.visible_text() != ""), "after the turns all are open and readable")
-	check(at.size() == 3 and (at[1] - at[0]) >= 100 and (at[1] - at[0]) <= 260 and (at[2] - at[1]) >= 100 and (at[2] - at[1]) <= 260,
-		"they turned one after another, about 0.15 s apart: %s" % str(at))
+	# Wall-clock gaps between single turns are not a stable measure: one slow frame on a loaded machine
+	# lands two turns on the same tick. So: the order is kept and the whole row (nominally 0.3 s) spreads.
+	check(at.size() == 3 and seq == [0, 1, 2] and (at[2] - at[0]) >= 120 and (at[2] - at[0]) <= 600,
+		"they turned one after another (in order, the row spread over about 0.3 s): %s %s" % [str(seq), str(at)])
 	ui.show_reward(t)
 	await timer(0.3)
 	cards = _cards(ui)
@@ -397,6 +402,16 @@ func test_flights() -> void:
 		guard += 0.05
 	check(done[0] and Time.get_ticks_msec() - t0 < 1500, "the flight ends in %d ms" % (Time.get_ticks_msec() - t0))
 	check(ui.bag_chip.count == have + 1 and ui.bag_chip.badge_text() == "+1", "the chip counts it and shows +1: %d %s" % [ui.bag_chip.count, ui.bag_chip.badge_text()])
+	# The landing bumps the chip (scale 1.22 and back, ~0.35 s; the tween starts on the next frame)
+	# and a container re-sorts at the end of the frame: measure the resting layout, not the bump
+	# (it flaked, the gap to the run's chip is 4 px).
+	await process_frame
+	await process_frame
+	var settle := 0.0
+	while settle < 3.0 and not ui.bag_chip.scale.is_equal_approx(Vector2.ONE):
+		await timer(0.05)
+		settle += 0.05
+	await process_frame
 	var rc: Rect2 = ui.bag_chip.get_global_rect()
 	check(rc.end.x <= 720.0 - TUI.HUD_BUTTON_W + 14.0 and not rc.intersects(ui._chip.get_global_rect()) and not rc.intersects(ui._run_chip.get_global_rect()), "the bag chip stands clear of the gold chips and the ⚙ corner")
 	# A sale pours coins into the run's chip.

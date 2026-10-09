@@ -27,8 +27,85 @@ func _initialize() -> void:
 	test_bets()
 	test_match_bet()
 	test_golden()
+	test_loot_shown_is_dropped()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
+
+
+## Owner, 10.10: the opponent ran with a racket whatever his loot was. The item he wears is the item
+## that drops, in every slot and at every rarity, and the trophy game shows that very item.
+func test_loot_shown_is_dropped() -> void:
+	print("loot: shown == dropped")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 77
+	var bad := PackedStringArray()
+	var n := 0
+	for slot in Gear.SLOTS:
+		for rar in 5:
+			var t := Tournament.new(0, 300 + n)
+			n += 1
+			var gear := {}
+			for s2 in Gear.SLOTS:
+				gear[s2] = Gear.roll(Gear.COMMON, rng, s2)  # the others are plain, the slot under test is the best
+			var it: Dictionary = Gear.roll(rar, rng, slot)
+			gear[slot] = it
+			t.lineup[0]["gear"] = gear
+			t.lineup[0]["racket"] = gear["racket"]
+			t.drop_bonus = 1.0  # a sure drop: every slot falls, the best epic+ is the trophy
+			var planned := t.planned_drops(0)
+			t.record_match(true, "6:1", rng)
+			var what := "%s/%d" % [slot, rar]
+			var fell: Array = t.new_items.duplicate()
+			if not t.pending_loot.is_empty():
+				fell.append(t.pending_loot)
+			if planned.size() != 3 or fell.size() != 3:
+				bad.append(what + ": planned %d, fell %d" % [planned.size(), fell.size()])
+			for p in planned:
+				if not fell.has(p):
+					bad.append(what + ": planned " + String(p["name"]) + " did not fall")
+			if not gear.values().all(func(g): return fell.has(g)):
+				bad.append(what + ": an item of his is missing among the drops")
+			if rar >= Gear.EPIC:
+				if t.pending_loot != it:
+					bad.append(what + ": the trophy is not his " + slot)
+				var sc := t.trophy_scene()
+				if sc["item"] != it or sc["shown"] != it or sc["slot"] != slot or sc["worn"][slot] != it:
+					bad.append(what + ": the trophy game shows another item")
+				if AthleteGear.slot_of(sc["item"]) != slot:
+					bad.append(what + ": the slot of the trophy changed")
+	check(bad.is_empty(), "%d slot x rarity cases: the item on him is the item that falls %s" % [n, str(bad)])
+	# The dice are thrown at the lineup, once: the same run drops the same things, whatever rng the match ends with.
+	var a := Tournament.new(1, 41)
+	var b := Tournament.new(1, 41)
+	var same := true
+	for i in a.lineup.size():
+		same = same and a.lineup[i]["drop_u"] == b.lineup[i]["drop_u"] and a.planned_drops(i) == b.planned_drops(i)
+	check(same, "the drop dice come with the lineup (same run, same drops)")
+	var x := Tournament.new(1, 41)
+	var y := Tournament.new(1, 41)
+	x.drop_bonus = 0.3
+	y.drop_bonus = 0.3
+	x.record_match(true, "6:3", RandomNumberGenerator.new())
+	var r2 := RandomNumberGenerator.new()
+	r2.seed = 999
+	y.record_match(true, "6:3", r2)
+	check(x.pending_loot == y.pending_loot and x.new_items == y.new_items, "what drops does not depend on the rng the match ends with")
+	var old := Tournament.new(1, 41)
+	var d := old.to_dict()
+	for lu in d["lineup"]:
+		lu.erase("drop_u")
+	var back := Tournament.from_dict(d)
+	check(back.planned_drops(0) == old.planned_drops(0), "an older save without the dice gets the same ones from the seed")
+	# Not always a racket: across many runs the trophies come in all three slots.
+	var seen := {}
+	for k in 400:
+		var tt := Tournament.new(2, 5000 + k)
+		tt.drop_bonus = 1.0
+		tt.stage = 4  # the first opponent wears only commons
+		tt.record_match(true, "6:0", rng)
+		if not tt.pending_loot.is_empty():
+			seen[String(tt.pending_loot.get("slot", "racket"))] = true
+	check(seen.has("racket") and seen.has("shoes") and seen.has("band"), "trophies come as rackets, shoes and wristbands %s" % str(seen.keys()))
 
 
 func check(cond: bool, msg: String) -> void:
@@ -657,7 +734,9 @@ func test_match_bet() -> void:
 	var h: Array = SaveData.bets["history"]
 	check(h.size() == 2 and h.back()["side"] == "self" and not h.back()["won"], "the bets' history keeps who, which side, how it ended")
 	var rh := Bets.run_history(t5)
-	check(rh.size() == 1 and int(rh[0]["stage"]) == 3 and RunBets.history_line(rh[0]).ends_with("· 25 · мимо"), "the run's summary lists this run's bets only: «%s»" % (RunBets.history_line(rh[0]) if rh.size() > 0 else ""))
+	var run_bets: GDScript = load("res://scripts/ui/screens/run_bets.gd")  # by path: a -s script compiles before the autoloads exist
+	var bet_line: String = run_bets.history_line(rh[0]) if rh.size() > 0 else ""
+	check(rh.size() == 1 and int(rh[0]["stage"]) == 3 and bet_line.ends_with("· 25 · мимо"), "the run's summary lists this run's bets only: «%s»" % bet_line)
 	var cf := SaveData._to_config()
 	SaveData.bets = {}
 	SaveData._apply(cf)
@@ -683,8 +762,9 @@ func test_match_bet() -> void:
 	# The card of the opponent shows the line; the bracket row too.
 	SaveData.titles = 1
 	var tc := Tournament.new(1, 11)
-	var inf := OpponentCard.info(tc, 0)
-	check(OpponentCard.odds_line(inf["odds"]) == "Коэф. %.2f / %.2f" % [inf["odds"]["you"], inf["odds"]["opp"]] and float(inf["odds"]["you"]) >= 1.05, "the opponent's card: «%s»" % OpponentCard.odds_line(inf["odds"]))
+	var card_screen: GDScript = load("res://scripts/ui/screens/opponent_card.gd")  # by path: a -s script compiles before the autoloads exist
+	var inf: Dictionary = card_screen.info(tc, 0)
+	check(card_screen.odds_line(inf["odds"]) == "Коэф. %.2f / %.2f" % [inf["odds"]["you"], inf["odds"]["opp"]] and float(inf["odds"]["you"]) >= 1.05, "the opponent's card: «%s»" % card_screen.odds_line(inf["odds"]))
 	SaveData.titles = 0
 	SaveData.gold = 0
 	SaveData.bets = {}

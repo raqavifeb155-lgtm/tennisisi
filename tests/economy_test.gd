@@ -36,6 +36,7 @@ func _run() -> void:
 	test_locker()
 	test_locker_in_run()
 	test_insured_once()
+	test_take_limit()
 	test_goals()
 	test_shop()
 	test_strings()
@@ -238,7 +239,7 @@ func test_locker() -> void:
 func test_locker_in_run() -> void:
 	print("locker in a run")
 	_reset_save()
-	SaveData.club = {"levels": {"locker": 1}}
+	SaveData.club = {"levels": {"locker": 2}}  # hub spec 16: two may ride at level 2
 	SaveData.gold = 100
 	Locker.put(_item(Gear.RARE, 1, "shoes"), 0)
 	Locker.put(_item(Gear.RARE, 1, "racket"), 0)
@@ -324,6 +325,80 @@ func test_insured_once() -> void:
 	SaveData.locker = {}
 	SaveData._apply(cf2)
 	check(bool(Locker.items()[0].get("insured", false)), "the flag survives the save file")
+	_reset_save()
+
+
+# --- Hub spec 16: how many of the locker's things ride into a run ------------------------
+
+func test_take_limit() -> void:
+	print("take limit (hub spec 16)")
+	_reset_save()
+	var lim := []
+	for lv in 6:
+		SaveData.club = {"levels": {"locker": lv}}
+		lim.append(Locker.take_limit())
+	check(lim == [1, 1, 2, 2, 3, 3], "the limit by the changing room's level: %s" % str(lim))
+	SaveData.club = {}
+	check(Locker.take_limit() == 1, "a new club: one thing")
+	check(Locker.take_text() == "В забег: 1 вещь · больше — с «Стена ракеток»", "the caption: «%s»" % Locker.take_text())
+	SaveData.club = {"levels": {"locker": 4}}
+	check(Locker.take_text() == "В забег: 3 вещи", "the top: no «больше»: «%s»" % Locker.take_text())
+	SaveData.club = {"levels": {"locker": 1}}
+	check(Locker.next_take_level() == 2 and Locker.take_text().ends_with("«Стена ракеток»"), "level 1 waits for the wall of rackets")
+	# a level-1 room: two lockers, one thing rides
+	SaveData.gold = 100
+	Locker.put(_item(Gear.RARE, 1, "shoes"), 0)
+	Locker.put(_item(Gear.LEGENDARY, 1, "racket"), 5)
+	var legend_gold := SaveData.gold
+	check(Locker.items().size() == 2, "two things in the locker")
+	var t := Tournament.new(1, 5)
+	_plain(t)
+	check(Locker.needs_pick(t), "more than the limit: the run asks which one")
+	check(t.take_from_locker(1) and t.locker_taken == 1 and t.equip["racket"]["rarity"] == Gear.LEGENDARY, "the pick is taken (worn)")
+	check(not t.take_from_locker(0), "a second one is refused at the limit of one")
+	check(Locker.items().size() == 1 and Locker.items()[0]["slot"] == "shoes", "the other stays in the locker")
+	check(not Locker.needs_pick(t) and Locker.take_left(t) == 0, "limit reached: no more asking")
+	check(SaveData.gold == legend_gold and bool(t.equip["racket"].get("insured", false)), "gold untouched, the legendary still insured")
+	var back := Tournament.from_dict(t.to_dict())
+	check(back.locker_taken == 1 and Locker.take_left(back) == 0, "the count survives a save")
+	# an old save of a run (no count): zero taken
+	var d := t.to_dict()
+	d.erase("locker_taken")
+	check(Tournament.from_dict(d).locker_taken == 0, "an old run's save: nothing taken yet")
+	# as many as the limit or fewer: no sheet
+	SaveData.locker = {}
+	Locker.put(_item(Gear.RARE, 1, "shoes"), 0)
+	var t2 := Tournament.new(1, 6)
+	_plain(t2)
+	check(not Locker.needs_pick(t2), "one thing for a limit of one: no extra screen")
+	# a higher room: two ride, the third stays
+	SaveData.club = {"levels": {"locker": 2}}
+	SaveData.locker = {}
+	for s in ["racket", "shoes", "band"]:
+		Locker.put(_item(Gear.RARE, 1, s), 0)
+	var t3 := Tournament.new(1, 7)
+	_plain(t3)
+	check(Locker.needs_pick(t3) and Locker.take_left(t3) == 2, "level 2: two of three")
+	t3.take_from_locker(0)
+	check(Locker.needs_pick(t3) and Locker.take_left(t3) == 1, "after one: ask again")
+	t3.take_from_locker(0)
+	check(not Locker.needs_pick(t3) and Locker.items().size() == 1, "two taken, one left in the locker")
+	# the shop's things and the heir's relic ride on top of the limit
+	SaveData.locker = {"items": [_item(Gear.RARE, 1, "shoes"), _item(Gear.RARE, 1, "racket")],
+		"next": [_item(Gear.COMMON, 1, "band"), {"slot": "racket", "rarity": Gear.EPIC, "name": "r", "mods": {}, "lines": [], "relic": true}]}
+	SaveData.club = {}
+	var t4 := Tournament.new(1, 8)
+	_plain(t4)
+	Locker.board(t4)
+	check(Locker.next_items().is_empty() and t4.locker_taken == 0, "bought things and the relic come along by themselves, off the count")
+	check(Locker.take_left(t4) == 1 and Locker.needs_pick(t4), "...and the limit is whole for the locker's own things")
+	var worn := 0
+	for s in Gear.SLOTS:
+		worn += 0 if t4.equip.get(s, {}).is_empty() else 1
+	check(worn + t4.bag.size() == 2, "both arrived (%d)" % (worn + t4.bag.size()))
+	# a match played: the locker is shut, the limit does not matter
+	t4.record_match(false, "1:6", _rng(2))
+	check(not Locker.needs_pick(t4) and not t4.take_from_locker(0), "after the first match: shut")
 	_reset_save()
 
 

@@ -17,6 +17,8 @@ extends RefCounted
 
 const SIZE := 192            # pixels of the rendered picture
 const POOL := 3              # things drawn in one frame, at most
+const IDLE_FREE := 40.0      # seconds without a picture to draw before the viewports go: a loot card, the bag and the
+                             # shop come one after the other, and making the viewports again is a stall on a phone
 
 static var _cache := {}      # key -> ImageTexture
 static var _queue: Array = []  # [key, item, slot]
@@ -191,7 +193,7 @@ class ThumbRenderer extends Node:
 			return
 		if ItemThumb._queue.is_empty():
 			_idle += delta
-			if _idle > 3.0 and not _vps.is_empty():
+			if _idle > IDLE_FREE and not _vps.is_empty():
 				_free_pool()  # nothing to draw for a while: the viewports go
 			return
 		_idle = 0.0

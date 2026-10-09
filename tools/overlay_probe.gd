@@ -11,6 +11,7 @@ var main: Node
 var fails := 0
 var checks := 0
 var _chosen := ""
+var retries := 0
 
 
 func _initialize() -> void:
@@ -34,12 +35,54 @@ func _tap_at(p: Vector2) -> void:
 	await _wait(0.35)  # TournamentUI reports a press after its little dip
 
 
-## A tap at the middle of a control.
+## A tap at the middle of a control, once the control stands still: a container re-sorts at the
+## end of a frame and a press dips the button (scale), so under load a rect read right after a
+## fade or a re-open is stale and the finger would land beside the button.
 func _tap(c: Control) -> void:
 	if c == null:
 		await _expect("кнопка для нажатия найдена", func() -> bool: return false)
 		return
+	await _still(c)
+	if not is_instance_valid(c):  # the screen was rebuilt meanwhile: nothing to press any more
+		return
 	await _tap_at(c.get_global_rect().get_center())
+
+
+## Waits (up to 2 s) until `c` is in the tree, not mid-press and has kept its rect for 3 frames.
+func _still(c: Control) -> void:
+	var last := Rect2()
+	var same := 0
+	var t := 0.0
+	while same < 3 and t < 2.0 and is_instance_valid(c):
+		await process_frame
+		t += 0.02
+		if not is_instance_valid(c):
+			return
+		var r := c.get_global_rect()
+		if c.is_visible_in_tree() and r.size.x > 0.0 and c.scale.is_equal_approx(Vector2.ONE) and r == last:
+			same += 1
+		else:
+			same = 0
+		last = r
+
+
+## A tap that must have an effect: taps the control that `find` returns and waits for `done`;
+## if nothing happened (a tap eaten by something that was still fading), looks again and taps
+## again, up to 3 times. Every repeat is printed (RETRY), so a flaky spot stays visible.
+func _tap_until(find: Callable, done: Callable) -> void:
+	for attempt in 3:
+		var c: Control = await find.call()
+		if c == null or not is_instance_valid(c):
+			break
+		await _tap(c)
+		var t := 0.0
+		while not done.call() and t < 2.0:
+			await _wait(0.05)
+			t += 0.05
+		if done.call():
+			return
+		retries += 1
+		print("RETRY  тап по «%s» не сработал, попытка %d" % [c.text if c is Button else str(c.name), attempt + 2])
 
 
 ## A check that may need a moment (a tap's dip, a sheet's fade, a slow frame when other
@@ -68,6 +111,11 @@ func _check(what: String, ok: bool) -> void:
 	if not ok:
 		fails += 1
 	print("%s  %s" % ["PASS" if ok else "FAIL", what])
+
+
+## A visible label of the screen says `text`.
+func _label_has(text: String) -> bool:
+	return main.ui.root.find_children("*", "Label", true, false).any(func(l): return (l as Label).is_visible_in_tree() and text in (l as Label).text)
 
 
 ## The visible button whose text contains `text`, under `from`.
@@ -132,12 +180,12 @@ func _tutorial_round(ctx: String) -> void:
 	var next := await _find(_tut(), "ДАЛЬШЕ")
 	await _expect("%s: «ДАЛЬШЕ» есть" % ctx, func() -> bool: return next != null)
 	if next:
-		await _tap(next)
+		await _tap_until(func() -> Control: return await _find(_tut(), "ДАЛЬШЕ"), func() -> bool: return _tut()._page == page + 1)
 		await _expect("%s: «ДАЛЬШЕ» листает" % ctx, func() -> bool: return _tut()._page == page + 1)
 	var close := await _find(_tut(), "Закрыть")
 	await _expect("%s: «Закрыть» есть на странице" % ctx, func() -> bool: return close != null)
 	if close:
-		await _tap(close)
+		await _tap_until(func() -> Control: return await _find(_tut(), "Закрыть"), func() -> bool: return not _tut().visible)
 	await _expect("%s: обучение закрылось" % ctx, func() -> bool: return not _tut().visible)
 
 
@@ -165,6 +213,7 @@ func _pause_shape(ctx: String) -> void:
 	for c in _pause().find_children("*", "Button", true, false):
 		if (c as Button).is_visible_in_tree() and (c as Button).size.y < 84.0:
 			small += 1
+	await _no_code_words(ctx)
 	await _expect("%s: кнопки не меньше 84 px" % ctx, func() -> bool: return small == 0)
 
 
@@ -187,6 +236,26 @@ func _screen_shape(ctx: String) -> void:
 	await _expect("%s: кнопки целиком на экране" % ctx, func() -> bool: return outside == 0)
 
 
+## No screen shows a raw id («net_rusher», «serve_cannon»): every visible text of the screen
+## and of the HUD is free of lower-case snake_case words (owner, 10.10).
+func _no_code_words(ctx: String) -> void:
+	var rx := RegEx.new()
+	rx.compile("[a-z]+_[a-z_]+")
+	var found := PackedStringArray()
+	for base in [main.ui.root, main.hud]:
+		if base == null:
+			continue
+		for c in base.find_children("*", "Control", true, false):
+			var txt := ""
+			if c is Label or c is Button:
+				txt = c.text
+			elif c is RichTextLabel:
+				txt = (c as RichTextLabel).get_parsed_text()
+			if txt != "" and (c as Control).is_visible_in_tree() and rx.search(txt) != null:
+				found.append(txt.left(60))
+	await _expect("%s: на экране нет кодовых слов вида snake_case %s" % [ctx, str(found)], func() -> bool: return found.is_empty())
+
+
 ## A club screen on TournamentUI's frame (the coach's board, the islands, a shop, a place's
 ## card): opens with its title, is shaped for a thumb, has the gear over it that opens the
 ## settings (no exit outside a match), and "Назад" comes back to the walkable club.
@@ -200,9 +269,8 @@ func _club_screen(ctx: String, action: String, title: String, back := "menu") ->
 	await _tap(_gear())
 	await _settings_round("%s → ⚙" % ctx)
 	_chosen = ""
-	await _tap(await _find(main.ui.root, "Назад"))
+	await _tap_until(func() -> Control: return await _find(main.ui.root, "Назад"), func() -> bool: return _chosen == back)
 	await _expect("%s: «Назад» нажимается" % ctx, func() -> bool: return _chosen == back)
-	await _wait(0.8)
 	await _expect("%s: назад в клуб" % ctx, func() -> bool: return club.active and club.hud.visible and not main.ui.is_open())
 
 
@@ -258,6 +326,77 @@ func _run_mods_round(club) -> void:
 	await _expect("%s: назад в клуб" % ctx, func() -> bool: return club.active and club.hud.visible and not main.ui.is_open())
 	SaveData.played = played
 	SaveData.mods_freq = mf
+
+
+## Hub spec 16: «Что берёшь в забег» before the first match, at both phone heights: the cards sit
+## inside the screen, do not overlap each other nor the gear, «Идти без вещей» is a thumb's
+## size; a tap on a card takes it (the limit reached: the bracket), the rest stays in the locker.
+func _locker_pick_round() -> void:
+	var club0 = SaveData.club
+	var locker0 = SaveData.locker
+	var tour0 = main.tournament
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	var gear = load("res://scripts/gear.gd")
+	for size in [Vector2i(720, 1564), Vector2i(720, 1480)]:
+		root.size = size
+		await _wait(0.4)
+		var ctx := "Что берёшь в забег (%d)" % size.y
+		# level 4: three of four ride; level 1: one of two
+		for lv in [4, 1]:
+			var n := 4 if lv == 4 else 2
+			SaveData.club = {"levels": {"locker": lv}}
+			var li: Array = [gear._affix_item(gear.RARE, rng, "shoes"), gear._affix_item(gear.EPIC, rng, "racket"),
+				Locker.insure(gear._affix_item(gear.LEGENDARY, rng, "band")), gear._affix_item(gear.RARE, rng, "racket")]
+			SaveData.locker = {"items": li.slice(0, n)}
+			var t2 := Tournament.new(1, 11)
+			main.tournament = t2
+			main.tournament_mode = true
+			var load_ui = load("res://scripts/ui/screens/run_locker.gd")
+			load_ui.pre_run(main.ui, t2)
+			await _wait(0.8)
+			var tag := "%s, ур. %d, %d вещи" % [ctx, lv, n]
+			await _expect("%s: лист открылся" % tag, func() -> bool: return _label_has("Что берёшь в забег"))
+			await _expect("%s: карточек столько же, сколько вещей" % tag, func() -> bool: return _cards().size() == n)
+			var frame := Rect2(Vector2.ZERO, Vector2(root.size))
+			var cs := _cards()
+			var ok := true
+			for k in cs.size():
+				var r: Rect2 = (cs[k] as Control).get_global_rect()
+				if not frame.grow(2.0).encloses(r) or r.intersects(_gear().get_global_rect()) or (k > 0 and r.intersects((cs[k - 1] as Control).get_global_rect())):
+					ok = false
+			_check("%s: карточки целиком в экране, не налезают друг на друга и на ⚙" % tag, ok)
+			await _screen_shape(tag)
+			_check("%s: подпись лимита есть" % tag, _label_has("В забег: "))
+			var first := true
+			var want := 3 if lv == 4 else 1
+			for k in want:
+				cs = _cards()
+				if cs.is_empty():
+					break
+				var before := Locker.items().size()
+				await _tap(cs[1] if cs.size() > 1 else cs[0])
+				await _expect("%s: тап %d берёт вещь" % [tag, k + 1], func() -> bool: return Locker.items().size() == before - 1 and t2.locker_taken == k + 1)
+				first = false
+				if k + 1 < want:
+					await _expect("%s: после тапа %d лист остаётся (ещё можно)" % [tag, k + 1], func() -> bool: return _label_has("Что берёшь в забег"))
+			await _expect("%s: лимит выбран — сетка" % tag, func() -> bool: return _label_has("НА КОРТ") or _button(main.ui.root, "НА КОРТ") != null)
+			_check("%s: остальное осталось в шкафчике (%d)" % [tag, Locker.items().size()], Locker.items().size() == n - want)
+			if lv == 1:
+				# the skip button: nothing taken, nothing lost
+				SaveData.locker = {"items": li.slice(0, 2)}
+				var t3 := Tournament.new(1, 12)
+				main.tournament = t3
+				load_ui.pre_run(main.ui, t3)
+				await _wait(0.8)
+				_chosen = ""
+				await _tap(await _find(main.ui.root, "Идти без вещей"))
+				await _expect("%s: «Идти без вещей» — сетка, ничего не взято" % tag, func() -> bool: return _chosen == "locker_pick_skip" and t3.locker_taken == 0 and Locker.items().size() == 2)
+	root.size = Vector2i(720, 1564)
+	await _wait(0.4)
+	SaveData.club = club0
+	SaveData.locker = locker0
+	main.tournament = tour0
 
 
 ## The visible cards (GameCard) of the screen. By the script's name: the class needs the autoloads.
@@ -455,7 +594,14 @@ func _run() -> void:
 	root.size = Vector2i(720, 1564)
 	main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(main)
-	await create_timer(7.0).timeout
+	# The boot screen (BootLoader) eats every tap until frames come out steady or 6 s have passed,
+	# plus its 0.35 s fade: under load a fixed 7 s was not always enough. Wait for it to be gone.
+	await create_timer(1.0).timeout
+	var boot := 0.0
+	while boot < 60.0 and not main.find_children("*", "BootLoader", false, false).is_empty():
+		await create_timer(0.1).timeout
+		boot += 0.1
+	await create_timer(1.0).timeout  # the club and the menu settle under the faded screen
 	SaveData.control_chosen = true
 	SaveData.enabled = false  # look, don't touch the player's progress
 	Skills.pending = []       # no perk screen in the way of the menu
@@ -475,7 +621,7 @@ func _run() -> void:
 	await _tutorial_round("Клуб 2D → ?")
 	await _expect("Клуб 2D → ?: игра не на паузе после", func() -> bool: return not paused)
 	_chosen = ""
-	await _tap(await _find(main.ui.root, "ТУРНИР"))
+	await _tap_until(func() -> Control: return await _find(main.ui.root, "ТУРНИР"), func() -> bool: return _chosen == "start_tournament")
 	await _expect("Клуб 2D → ?: после закрытия «ТУРНИР» нажимается", func() -> bool: return _chosen == "start_tournament")
 
 	main.ui.show_menu()
@@ -484,7 +630,7 @@ func _run() -> void:
 	await _tap(_gear())
 	await _settings_round("Клуб 2D → ⚙")
 	_chosen = ""
-	await _tap(await _find(main.ui.root, "ТУРНИР"))
+	await _tap_until(func() -> Control: return await _find(main.ui.root, "ТУРНИР"), func() -> bool: return _chosen == "start_tournament")
 	await _expect("Клуб 2D → ⚙ → ГОТОВО: Клуб нажимается", func() -> bool: return _chosen == "start_tournament")
 
 	# --- The walkable 3D club (the main screen since v0.2 B) ----------------------------
@@ -525,17 +671,26 @@ func _run() -> void:
 
 
 		await _bookie_round(club)
-		# The locked island: a row that can't be pressed, with a hint.
-		load("res://scripts/club/club_screens.gd").locations(main.ui, func(id: String) -> bool: return id == "newyork", func(_id: String) -> String: return "за титул в Нью-Йорке")
+		# The locked island: a card that can't be pressed, with a lock, the hint and the prize multiplier
+		# (the one islands screen, RunIslands: the same for the club, the menu and the result).
+		load("res://scripts/ui/screens/run_islands.gd").show_locations(main.ui, func(id: String) -> bool: return id == "park", func(_id: String) -> String: return "за титул в Нью-Йорке")
 		await _wait(0.6)
 		var lock_rows := 0
-		for c in main.ui.root.find_children("*", "Button", true, false):
-			var b := c as Button
-			if b.is_visible_in_tree() and b.find_children("*", "Label", true, false).any(func(l): return "✕" in (l as Label).text):
-				lock_rows += 1
-				_check("Куда едем?: закрытый остров не нажимается", b.disabled)
+		var priced := 0
+		for c in main.ui._box.get_children():
+			if c is GameCard:
+				var gc := c as GameCard
+				priced += 1 if "Призовые ×" in gc.desc else 0
+				if "Закрыто" in gc.tag:
+					lock_rows += 1
+					_check("Куда едем?: закрытый остров не нажимается, с подсказкой «за титул в …»", gc.mouse_filter == Control.MOUSE_FILTER_IGNORE and "за титул в Нью-Йорке" in gc.tag)
 		await _expect("Куда едем?: закрытые острова есть, с замком", func() -> bool: return lock_rows > 0)
+		await _expect("Куда едем?: у каждого острова видны призовые ×", func() -> bool: return priced == main.ui._box.get_children().filter(func(c): return c is GameCard).size() and priced > 0)
 		await _screen_shape("Куда едем? (замки)")
+		# The menu's and the result's way in (TournamentUI.show_locations) is the same screen.
+		main.ui.show_locations()
+		await _wait(0.6)
+		await _expect("Куда едем?: из меню и итога тот же экран", func() -> bool: return main.ui.root.find_children("*", "Label", true, false).any(func(l): return (l as Label).is_visible_in_tree() and (l as Label).text == "Куда едем?") and main.ui._box.get_children().filter(func(c): return c is GameCard).size() == Locations.LIST.size())
 		_chosen = ""
 		await _tap(await _find(main.ui.root, "Назад"))
 		await _wait(0.8)
@@ -592,6 +747,30 @@ func _run() -> void:
 		await _expect("Кандидат: «ВЗЯТЬ» берёт, мы в клубе", func() -> bool: return acad.students().size() == 1 and club.active and not main.ui.is_open())
 		await _wait(0.5)
 		await _club_screen("Клуб 3D → Ученик", "club_train:s1", String(acad.students()[0]["name"]).get_slice(" ", 0))
+		# T-3: the coach's office, a student's card from it, the focus, «Отпустить?».
+		await _club_screen("Клуб 3D → Кабинет тренера", "club_students", "Кабинет тренера")
+		club.ui_action("club_students", 0)
+		await _wait(0.8)
+		club.ui_action("club_student", 0)
+		await _wait(0.8)
+		await _screen_shape("Кабинет → Ученик")
+		await _expect("Кабинет → Ученик: «Фокус» и «Отпустить» есть", func() -> bool: return _label_has("Отпустить") and main.ui.root.find_children("*", "Label", true, false).any(func(l): return (l as Label).is_visible_in_tree() and (l as Label).text == "Фокус"))
+		await _tap(await _find(main.ui.root, "Назад"))
+		await _expect("Кабинет → Ученик: «Назад» ведёт в кабинет", func() -> bool: return main.ui.is_open() and main.ui.root.find_children("*", "Label", true, false).any(func(l): return (l as Label).is_visible_in_tree() and "Кабинет тренера" in (l as Label).text))
+		club.ui_action("club_student", 0)
+		await _wait(0.6)
+		club.ui_action("club_focus", 0)
+		await _wait(0.8)
+		await _screen_shape("Ученик → Фокус")
+		await _tap(await _find(main.ui.root, "Назад"))
+		await _expect("Фокус: «Назад» ведёт к ученику", func() -> bool: return main.ui.is_open() and _label_has("Отпустить"))
+		club.ui_action("club_release_ask", 0)
+		await _wait(0.8)
+		await _screen_shape("Ученик → Отпустить?")
+		await _tap(await _find(main.ui.root, "Назад"))
+		await _expect("Отпустить?: «Назад» — ученик остаётся", func() -> bool: return acad.students().size() == 1 and _label_has("Отпустить"))
+		main._on_ui("menu", 0)
+		await _wait(0.6)
 		SaveData.academy = {}
 		SaveData.club["lots"] = {"n1": "locker", "n2": "coach", "n3": "trophy", "n4": "stands", "n5": "bar"}
 		club._refresh()
@@ -641,6 +820,7 @@ func _run() -> void:
 	await _expect("Карточка соперника: «Коэф.» выше «ИГРАТЬ» и не под ней", func() -> bool: return play != null and odds_l.size() == 1 and (odds_l[0] as Label).get_global_rect().end.y <= play.get_global_rect().position.y)
 	await _screen_shape("Карточка соперника")
 	SaveData.titles = titles1
+	await _locker_pick_round()
 
 	# --- A practice match and its pause ------------------------------------------------
 	main.tournament = null
@@ -747,6 +927,9 @@ func _run() -> void:
 
 	# --- Gold: the bank on the chip, the run's gold apart until the summary (C-4) ---------
 	var bank0 := SaveData.gold
+	var career_saved: Dictionary = SaveData.career.duplicate(true)  # the run below must not close a season of the saved career
+	var career_gd = load("res://scripts/career.gd")  # by path: a -s script compiles before the autoloads
+	career_gd.data()["in_season"] = 0
 	var g := Tournament.new(1)
 	g.gold = 75
 	main.ui.show_bracket(g)
@@ -764,6 +947,7 @@ func _run() -> void:
 	await _expect("Золото: итоги начинаются с банка до забега", func() -> bool: return main.ui.chip_values().x == bank0 and main.ui.run_chip_shown())
 	await _wait(2.0)
 	await _expect("Золото: на итогах забег ушёл в банк", func() -> bool: return main.ui.chip_values().x == bank0 + 75 and not main.ui.run_chip_shown())
+	SaveData.career = career_saved
 
 	# --- Loot cards (v0.2 L): backs, the turn, the bag chip, the flight into it ---------------
 	var lt := Tournament.new(1, 5)
@@ -778,9 +962,13 @@ func _run() -> void:
 		{"kind": "item", "item": Gear.roll(Gear.COMMON, lrng, "band"), "title": "Напульсник", "desc": "x"},
 		Rewards.WILDCARD.duplicate()]
 	main.ui.show_reward(lt)
-	await _wait(0.4)
+	# The backs turn over by themselves after 0.8 s: look at them by frames, not by a timer that a
+	# loaded machine stretches past that (a 0.4 s wait there could return after the turn).
+	await process_frame
+	await process_frame
 	var cards: Array = main.ui._box.get_children().filter(func(c): return c is GameCard)
 	_check("Награда: три карточки, все рубашкой вверх, читать нечего", cards.size() == 3 and cards.all(func(c): return c.face_down and c.visible_text() == ""))
+	await _wait(0.4)
 	_check("Награда: чип сумки виден, не налезает на ⚙, золото и забег", _chip_clear(main.ui))
 	await _tap(cards[0])
 	await _expect("Награда: тап по рубашке открывает весь ряд", func() -> bool: return cards.all(func(c): return c.is_open() and c.visible_text() != ""))
@@ -819,7 +1007,7 @@ func _run() -> void:
 	await _career_round()
 	await _name_round()
 
-	print("\nOVERLAYS: %d checks, %d failed" % [checks, fails])
+	print("\nOVERLAYS: %d checks, %d failed, %d repeated taps" % [checks, fails, retries])
 	quit(1 if fails > 0 else 0)
 
 
