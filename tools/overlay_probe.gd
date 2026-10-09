@@ -834,6 +834,9 @@ func _run() -> void:
 
 	# --- Gold: the bank on the chip, the run's gold apart until the summary (C-4) ---------
 	var bank0 := SaveData.gold
+	var career_saved: Dictionary = SaveData.career.duplicate(true)  # the run below must not close a season of the saved career
+	var career_gd = load("res://scripts/career.gd")  # by path: a -s script compiles before the autoloads
+	career_gd.data()["in_season"] = 0
 	var g := Tournament.new(1)
 	g.gold = 75
 	main.ui.show_bracket(g)
@@ -851,6 +854,7 @@ func _run() -> void:
 	await _expect("Золото: итоги начинаются с банка до забега", func() -> bool: return main.ui.chip_values().x == bank0 and main.ui.run_chip_shown())
 	await _wait(2.0)
 	await _expect("Золото: на итогах забег ушёл в банк", func() -> bool: return main.ui.chip_values().x == bank0 + 75 and not main.ui.run_chip_shown())
+	SaveData.career = career_saved
 
 	# --- Loot cards (v0.2 L): backs, the turn, the bag chip, the flight into it ---------------
 	var lt := Tournament.new(1, 5)
@@ -865,9 +869,13 @@ func _run() -> void:
 		{"kind": "item", "item": Gear.roll(Gear.COMMON, lrng, "band"), "title": "Напульсник", "desc": "x"},
 		Rewards.WILDCARD.duplicate()]
 	main.ui.show_reward(lt)
-	await _wait(0.4)
+	# The backs turn over by themselves after 0.8 s: look at them by frames, not by a timer that a
+	# loaded machine stretches past that (a 0.4 s wait there could return after the turn).
+	await process_frame
+	await process_frame
 	var cards: Array = main.ui._box.get_children().filter(func(c): return c is GameCard)
 	_check("Награда: три карточки, все рубашкой вверх, читать нечего", cards.size() == 3 and cards.all(func(c): return c.face_down and c.visible_text() == ""))
+	await _wait(0.4)
 	_check("Награда: чип сумки виден, не налезает на ⚙, золото и забег", _chip_clear(main.ui))
 	await _tap(cards[0])
 	await _expect("Награда: тап по рубашке открывает весь ряд", func() -> bool: return cards.all(func(c): return c.is_open() and c.visible_text() != ""))
