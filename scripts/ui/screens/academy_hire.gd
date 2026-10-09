@@ -13,7 +13,7 @@ static var back := "menu"   # where «← Назад» leads: the club, or the c
 static func lines(st: Dictionary) -> Dictionary:
 	var parts: Array[String] = []
 	for id in Traits.shown(st):
-		parts.append(String(Traits.def(id)["name"]))
+		parts.append(Traits.name(id))
 	for i in Traits.hidden_count(st):
 		parts.append("???")
 	var price := int(st.get("price", 0))

@@ -213,6 +213,7 @@ func _pause_shape(ctx: String) -> void:
 	for c in _pause().find_children("*", "Button", true, false):
 		if (c as Button).is_visible_in_tree() and (c as Button).size.y < 84.0:
 			small += 1
+	await _no_code_words(ctx)
 	await _expect("%s: кнопки не меньше 84 px" % ctx, func() -> bool: return small == 0)
 
 
@@ -233,6 +234,26 @@ func _screen_shape(ctx: String) -> void:
 			outside += 1
 	await _expect("%s: кнопки не меньше 84 px" % ctx, func() -> bool: return small == 0)
 	await _expect("%s: кнопки целиком на экране" % ctx, func() -> bool: return outside == 0)
+
+
+## No screen shows a raw id («net_rusher», «serve_cannon»): every visible text of the screen
+## and of the HUD is free of lower-case snake_case words (owner, 10.10).
+func _no_code_words(ctx: String) -> void:
+	var rx := RegEx.new()
+	rx.compile("[a-z]+_[a-z_]+")
+	var found := PackedStringArray()
+	for base in [main.ui.root, main.hud]:
+		if base == null:
+			continue
+		for c in base.find_children("*", "Control", true, false):
+			var txt := ""
+			if c is Label or c is Button:
+				txt = c.text
+			elif c is RichTextLabel:
+				txt = (c as RichTextLabel).get_parsed_text()
+			if txt != "" and (c as Control).is_visible_in_tree() and rx.search(txt) != null:
+				found.append(txt.left(60))
+	await _expect("%s: на экране нет кодовых слов вида snake_case %s" % [ctx, str(found)], func() -> bool: return found.is_empty())
 
 
 ## A club screen on TournamentUI's frame (the coach's board, the islands, a shop, a place's

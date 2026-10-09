@@ -112,6 +112,8 @@ var _tap_marker_hold := 0.0
 # Player hitting state
 var incoming: BallPhysics.Prediction
 var t_contact := INF            # predicted game seconds until the ball reaches the contact plane
+var _slot_type := ShotType.TOPSPIN  # the stroke the racket drops into the slot for (the last one played)
+var _split_done := false        # the waiting side has split-stepped for the ball in flight
 var contact_pred := Vector3.ZERO
 var pending_swing := {}
 var late_until := -1.0
@@ -613,8 +615,29 @@ func _physics_process(delta: float) -> void:
 	else:
 		ai.tick(delta, phase == Phase.RALLY and last_hitter == Who.PLAYER and ball.active)
 	_update_player_movement()
+	_update_split_steps()
 	if autoplay:
 		_autoplay_tick()
+
+
+## The side waiting for the ball split-steps as the other one hits: off the court a beat
+## before their contact, landing ~0.15 s after it, loaded to push off (the expert timing,
+## docs/MOVEMENT_REALISM.md). Only the look: the run itself starts as before.
+func _update_split_steps() -> void:
+	if _split_done or phase != Phase.RALLY or not ball.active:
+		return
+	if last_hitter == Who.CPU:
+		if t_contact <= Athlete.SPLIT_LEAD:
+			_split_done = true
+			cpu.split_step()
+	elif last_hitter == Who.PLAYER:
+		var v := ball.state.vel
+		if v.z >= -0.5:
+			return
+		var t := (ball.state.pos.z - (cpu.position.z + Athlete.CONTACT_FORWARD)) / -v.z
+		if t <= Athlete.SPLIT_LEAD:
+			_split_done = true
+			player.split_step()
 
 
 func _process(_delta: float) -> void:
@@ -667,6 +690,7 @@ func _update_player_hitting() -> void:
 		t_contact = INF
 		incoming = null
 		_prev_rel = rel
+		player.unslot()
 		return
 
 	incoming = BallPhysics.predict(ball.state, 2.5, 1.0 / 120.0, 2)
@@ -686,6 +710,7 @@ func _update_player_hitting() -> void:
 
 	if t_contact < 1.2 and pending_swing.is_empty():
 		player.prepare(1 if player.lateral_of(contact_pred) >= 0.0 else -1)
+	_update_racket_slot()
 
 	# Out of reach but within a dive, with a swing on the way: throw the body at it.
 	if not pending_swing.is_empty() and not player.is_down() and t_contact < Athlete.DIVE_TIME * 0.8 and contact_pred.y < 1.7:
@@ -702,6 +727,20 @@ func _update_player_hitting() -> void:
 	if late_until > 0.0 and game_time > late_until:
 		late_until = -1.0
 		ball_used = true
+
+
+## No swipe yet and the ball is close: the racket drops into the slot by itself, so the
+## swipe plays only the whip through the ball (Athlete.slot). The stroke it guesses is the
+## last one played; the swipe still decides the shot.
+func _update_racket_slot() -> void:
+	if not pending_swing.is_empty() or player.is_swinging() or player.is_down() or serve_flight:
+		return
+	var reach := Vector2(contact_pred.x - player.position.x, contact_pred.z - player.position.z).length()
+	var ok := t_contact <= Athlete.SWING_TO_CONTACT and t_contact > 0.0 and reach <= Athlete.REACH and contact_pred.y > 0.15 and contact_pred.y <= SMASH_MIN_H
+	if ok:
+		player.slot(1 if player.lateral_of(contact_pred) >= 0.0 else -1, t_contact, contact_pred, _swing_style(_slot_type, contact_pred.y))
+	elif player.is_slotted() and t_contact != INF and reach > Athlete.REACH + 0.3:
+		player.unslot()  # the ball moved out of reach: back to the ready position
 
 
 func _on_ball_crossed() -> void:
@@ -860,6 +899,7 @@ func _on_swipe(points: PackedVector2Array, times: PackedInt32Array) -> void:
 func _swing_input(dir: Vector3, pace_k: float, type: int) -> void:
 	if not _player_can_hit():
 		return
+	_slot_type = type as ShotType
 	if late_until > 0.0:
 		_player_hit(game_time - late_cross_time, dir, pace_k, type)
 		return
@@ -1354,6 +1394,7 @@ func execute_shot(who: int, hitter: Athlete, contact: Vector3, target: Vector3, 
 		v.y = (h_net - contact.y + 0.5 * BallPhysics.gravity() * t_net * t_net) / t_net
 	ball.launch(contact, v, r.spin)
 	last_hitter = who as Who
+	_split_done = false
 	bounces = 0
 	net_touched = false
 	if who == Who.CPU:
@@ -2310,8 +2351,9 @@ func _start_bonus() -> void:
 	cpu.velocity = Vector3.ZERO
 	cpu.relax()
 	_runner_timer = 0.0
-	if not tournament.pending_loot.is_empty():
-		cpu.set_racket(tournament.pending_loot)
+	# The runner is the opponent just beaten, in all three of his items; the trophy is the one he
+	# wears in its slot (Tournament.trophy_scene): a racket, shoes or a wristband, not always a racket.
+	cpu.set_gear(AthleteGear.items_of(_trophy_worn()))
 	hud.announcer.item_card(tournament.pending_loot, "НОКАУТИРУЙ И ЗАБЕРИ")
 	hud.announcer.set_hint("Подача по бегущему: попади в него мячом")
 	_bonus_hud()
@@ -2397,17 +2439,19 @@ func _bonus_hit() -> void:
 	_bonus_hits += 1
 	cpu.knockout(ball.state.vel)
 	ball.state.vel = Vector3(-ball.state.vel.x * 0.2, 3.5, -ball.state.vel.z * 0.15)  # pops off the body
-	cpu.set_racket({})
+	var worn := _trophy_worn()
+	worn[AthleteGear.slot_of(tournament.pending_loot)] = {}  # the trophy leaves him: the racket from his hand, the shoes, the band
+	cpu.set_gear(AthleteGear.items_of(worn))
 	sfx.play("hit_perfect", -2.0)
 	cam.impulse(1.0)
 	_haptic("heavy")
 	hud.announcer.moment("KNOCKOUT!", UiTheme.GOLD)
-	# The racket flies out of their hand and lands on the court; go and pick it up.
+	# The trophy flies off him and lands on the court; go and pick it up.
 	_drop_from = cpu.position + Vector3(0.0, 1.1, 0.0)
 	_drop_to = cpu.position + Vector3(rng.randf_range(-1.2, 1.2), 0.04, rng.randf_range(0.6, 1.4))
 	_drop_to.x = clampf(_drop_to.x, -5.0, 5.0)
 	_drop_t = 0.0
-	_drop = _make_drop_racket(tournament.pending_loot)
+	_drop = _make_drop_item(tournament.pending_loot)
 	add_child(_drop)
 	_drop.global_position = _drop_from
 	player.area = Rect2(-8.0, -17.0, 16.0, 31.0)  # no net now: the whole court is open
@@ -2426,7 +2470,7 @@ func _bonus_pickup(delta: float) -> void:
 	if _drop_t < 1.0:
 		_drop.rotate_object_local(Vector3.FORWARD, delta * 14.0)
 	else:
-		_drop.rotation = Vector3(-PI * 0.5, 0.6, 0.0)  # lying flat on the court
+		_drop.rotation = Vector3(-PI * 0.5 if AthleteGear.slot_of(tournament.pending_loot) == "racket" else 0.0, 0.6, 0.0)  # a racket lies flat, shoes and a band stand
 	var to := _drop_to - player.position
 	to.y = 0.0
 	player.move_input = Vector2(to.x, to.z).normalized() * clampf(to.length(), 0.3, 1.0) if to.length() > 0.5 else Vector2.ZERO
@@ -2434,7 +2478,9 @@ func _bonus_pickup(delta: float) -> void:
 		_drop.queue_free()
 		_drop = null
 		player.move_input = Vector2.ZERO
-		player.set_racket(tournament.pending_loot)
+		var mine: Dictionary = tournament.equip.duplicate()
+		mine[AthleteGear.slot_of(tournament.pending_loot)] = tournament.pending_loot  # in the hand / on the feet / on the wrist
+		player.set_gear(AthleteGear.items_of(mine))
 		player.split_step()
 		hud.announcer.item_card(tournament.pending_loot, "ТРОФЕЙ")
 		sfx.play("point", -4.0, 1.25)
@@ -2442,6 +2488,99 @@ func _bonus_pickup(delta: float) -> void:
 		_haptic("perfect")
 		_bonus_state = 2
 		_bonus_wait = 0.4 if autoplay else 1.6
+
+
+## The opponent's three items as the trophy game dresses him: what the beaten one wore (the
+## trophy among them, the same dictionary), or the trophy alone for a test round.
+func _trophy_worn() -> Dictionary:
+	var sc := tournament.trophy_scene()
+	var worn: Dictionary = (sc["worn"] as Dictionary).duplicate()
+	if not tournament.pending_loot.is_empty():
+		worn[String(sc["slot"])] = tournament.pending_loot
+	return worn
+
+
+## The knocked-out item as a thing on the court, by its slot: a racket, a pair of shoes, a wristband.
+func _make_drop_item(item: Dictionary) -> Node3D:
+	match AthleteGear.slot_of(item):
+		"shoes":
+			return _make_drop_shoes(item)
+		"band":
+			return _make_drop_band(item)
+	return _make_drop_racket(item)
+
+
+func _glow_material(c: Color, item: Dictionary) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = c
+	mat.emission_enabled = Gear.glow(item) > 0.0
+	mat.emission = c
+	mat.emission_energy_multiplier = maxf(Gear.glow(item), 0.4)
+	return mat
+
+
+func _make_drop_shoes(item: Dictionary) -> Node3D:
+	var root := Node3D.new()
+	var skin := AthleteGear.skin_of(item, "shoes")
+	var body := Color(String(skin.get("body", "#f2f2f2")))
+	var sole := Color(String(skin.get("sole", "#c9ccd2")))
+	var glow := _glow_material(Gear.color(item), item)
+	for side in [-1.0, 1.0]:
+		var up := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.16, 0.14, 0.4)
+		up.mesh = bm
+		var um := StandardMaterial3D.new()
+		um.albedo_color = body
+		up.material_override = um
+		up.position = Vector3(side * 0.14, 0.12, 0.0)
+		root.add_child(up)
+		var so := MeshInstance3D.new()
+		var sm := BoxMesh.new()
+		sm.size = Vector3(0.18, 0.05, 0.44)
+		so.mesh = sm
+		var smat := StandardMaterial3D.new()
+		smat.albedo_color = sole
+		so.material_override = smat
+		so.position = Vector3(side * 0.14, 0.025, 0.0)
+		root.add_child(so)
+		var stripe := MeshInstance3D.new()
+		var tm := BoxMesh.new()
+		tm.size = Vector3(0.17, 0.03, 0.2)
+		stripe.mesh = tm
+		stripe.material_override = glow  # the rarity's colour on the shoe
+		stripe.position = Vector3(side * 0.14, 0.2, -0.02)
+		root.add_child(stripe)
+	root.add_child(_drop_light(Gear.color(item), Vector3(0.0, 0.3, 0.0)))
+	return root
+
+
+func _make_drop_band(item: Dictionary) -> Node3D:
+	var root := Node3D.new()
+	var skin := AthleteGear.skin_of(item, "band")
+	var ring := MeshInstance3D.new()
+	var tm := TorusMesh.new()
+	tm.inner_radius = 0.1
+	tm.outer_radius = 0.17
+	ring.mesh = tm
+	var m := _glow_material(Color(String(skin.get("color", "#9aa0a8"))), item)
+	m.emission_enabled = true
+	m.emission = Gear.color(item)
+	m.emission_energy_multiplier = maxf(Gear.glow(item), 0.5)
+	ring.material_override = m
+	ring.position = Vector3(0.0, 0.3, 0.0)
+	root.add_child(ring)
+	root.add_child(_drop_light(Gear.color(item), ring.position))
+	return root
+
+
+func _drop_light(c: Color, pos: Vector3) -> OmniLight3D:
+	var light := OmniLight3D.new()
+	light.light_color = c
+	light.light_energy = 1.2
+	light.omni_range = 2.0
+	light.position = pos
+	return light
 
 
 func _make_drop_racket(item: Dictionary) -> Node3D:
@@ -2485,7 +2624,7 @@ func _bonus_miss() -> void:
 	ball.park()
 	_bonus_hud()
 	if _bonus_balls <= 0:
-		hud.announcer.moment("TROPHY LOST", UiTheme.LOSE, "ракетка осталась у соперника")
+		hud.announcer.moment("TROPHY LOST", UiTheme.LOSE, {"racket": "ракетка осталась у соперника", "shoes": "кроссовки остались у соперника", "band": "напульсник остался у соперника"}[AthleteGear.slot_of(tournament.pending_loot)])
 		_bonus_state = 2
 		_bonus_wait = 0.5 if autoplay else 2.0
 	else:

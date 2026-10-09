@@ -32,20 +32,19 @@ static func info(t: Tournament, i: int) -> Dictionary:
 	}
 
 
-## A modifier id as a line: "Железный · реже ошибается". Ids this class does not know (the
-## catalog of stream G) are shown as they are, so a new aura never breaks the card.
-## G-6/G-7: the traits and auras by their name from Modifiers (a hidden aura stays "???").
+## A modifier id as a line: "Железный · реже ошибается". Always words (Modifiers.human_name): an id
+## nobody knows gets a Russian stand-in, never the code word («net_rusher»). A hidden aura is
+## «???» until the first point.
 static func mod_text(id: String, lu := {}) -> String:
 	if (lu.get("hidden", []) as Array).has(id):
 		return "??? · раскроется на первом очке"
+	var n := Modifiers.human_name(id)
+	var d := Modifiers.human_desc(id)
+	if d == "":
+		return n
 	if Tournament.MODIFIERS.has(id):
-		var m: Dictionary = Tournament.MODIFIERS[id]
-		return "%s · %s" % [m["name"], m["desc"]]
-	var e := Modifiers.find(id)
-	if not e.is_empty():
-		var d := String(e.get("desc", ""))
-		return "%s · %s" % [e["name"], d.left(1).to_lower() + d.substr(1)] if d != "" else String(e["name"])
-	return id
+		return "%s · %s" % [n, d]  # the old ones are written in lower case already
+	return "%s · %s" % [n, d.left(1).to_lower() + d.substr(1)]
 
 
 ## "Коэф. 1.75 / 2.10": on yourself / on him (the bookmaker, E-5).
@@ -65,7 +64,7 @@ static func hand_text(o: Dictionary) -> String:
 
 ## Just the name, for the bracket's line.
 static func mod_name(id: String) -> String:
-	return String(Tournament.MODIFIERS[id]["name"]) if Tournament.MODIFIERS.has(id) else id
+	return Modifiers.human_name(id)
 
 
 static func show(ui: TournamentUI, t: Tournament, i: int) -> void:

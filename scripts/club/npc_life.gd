@@ -509,5 +509,5 @@ func line_for(id: String) -> String:
 		return HINT_LINE
 	var shown: Array = Traits.shown(n.st)
 	if not shown.is_empty() and _rng.randf() < 0.4:
-		return "Моё — %s" % String(Traits.def(shown[_rng.randi() % shown.size()])["name"]).to_lower()
+		return "Моё — %s" % Traits.name(shown[_rng.randi() % shown.size()]).to_lower()
 	return STUDENT_LINES[_rng.randi() % STUDENT_LINES.size()]
