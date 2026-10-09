@@ -822,6 +822,14 @@ func test_build_world() -> void:
 		ghosts = ghosts and w.ghost_id() == id
 		w.show_ghost("", 0)
 	check(ghosts, "every construction has its ghost (the rooms too)")
+	# The ghost is only what is new: the court's colour run-off (4 strips) at level 3, and not
+	# again at level 4 (a twin on the real strips fought them for the depth).
+	var counts := []
+	for lv in [3, 4]:
+		w.show_ghost("court", lv)
+		counts.append((w.get("_ghost") as Node3D).find_children("*", "GeometryInstance3D", true, false).size())
+	w.show_ghost("", 0)
+	check(counts[0] == 4 and counts[1] == 3, "the ghost of a level is its new things only (court 3: %d, court 4: %d)" % [counts[0], counts[1]])
 	var scaff := true
 	for id in ClubBuilds.ORDER:
 		w.set_scaffold(id, true)
