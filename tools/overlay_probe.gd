@@ -567,17 +567,26 @@ func _run() -> void:
 
 
 		await _bookie_round(club)
-		# The locked island: a row that can't be pressed, with a hint.
-		load("res://scripts/club/club_screens.gd").locations(main.ui, func(id: String) -> bool: return id == "newyork", func(_id: String) -> String: return "за титул в Нью-Йорке")
+		# The locked island: a card that can't be pressed, with a lock, the hint and the prize multiplier
+		# (the one islands screen, RunIslands: the same for the club, the menu and the result).
+		load("res://scripts/ui/screens/run_islands.gd").show_locations(main.ui, func(id: String) -> bool: return id == "park", func(_id: String) -> String: return "за титул в Нью-Йорке")
 		await _wait(0.6)
 		var lock_rows := 0
-		for c in main.ui.root.find_children("*", "Button", true, false):
-			var b := c as Button
-			if b.is_visible_in_tree() and b.find_children("*", "Label", true, false).any(func(l): return "✕" in (l as Label).text):
-				lock_rows += 1
-				_check("Куда едем?: закрытый остров не нажимается", b.disabled)
+		var priced := 0
+		for c in main.ui._box.get_children():
+			if c is GameCard:
+				var gc := c as GameCard
+				priced += 1 if "Призовые ×" in gc.desc else 0
+				if "Закрыто" in gc.tag:
+					lock_rows += 1
+					_check("Куда едем?: закрытый остров не нажимается, с подсказкой «за титул в …»", gc.mouse_filter == Control.MOUSE_FILTER_IGNORE and "за титул в Нью-Йорке" in gc.tag)
 		await _expect("Куда едем?: закрытые острова есть, с замком", func() -> bool: return lock_rows > 0)
+		await _expect("Куда едем?: у каждого острова видны призовые ×", func() -> bool: return priced == main.ui._box.get_children().filter(func(c): return c is GameCard).size() and priced > 0)
 		await _screen_shape("Куда едем? (замки)")
+		# The menu's and the result's way in (TournamentUI.show_locations) is the same screen.
+		main.ui.show_locations()
+		await _wait(0.6)
+		await _expect("Куда едем?: из меню и итога тот же экран", func() -> bool: return main.ui.root.find_children("*", "Label", true, false).any(func(l): return (l as Label).is_visible_in_tree() and (l as Label).text == "Куда едем?") and main.ui._box.get_children().filter(func(c): return c is GameCard).size() == Locations.LIST.size())
 		_chosen = ""
 		await _tap(await _find(main.ui.root, "Назад"))
 		await _wait(0.8)

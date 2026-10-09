@@ -558,7 +558,7 @@ func ui_action(action: String, arg: int) -> void:
 		"club_quests":
 			ClubScreens.quests(main.ui)
 		"club_locations":
-			ClubScreens.locations(main.ui)
+			RunIslands.show_locations(main.ui)  # the one islands screen
 		"club_mods":
 			# The run's conditions, then the run in the remembered place and format.
 			if SaveData.club.has("last_location"):

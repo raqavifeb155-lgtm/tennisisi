@@ -547,21 +547,25 @@ func test_flow() -> void:
 	main._show_menu()
 	await _frames(3)
 	SaveData.played = 0
-	var screens: GDScript = load("res://scripts/club/club_screens.gd")  # loaded: it reaches the autoloads
-	check(screens.loc_unlocked("grass"), "with a Spanish title England is open")
+	var islands: GDScript = load("res://scripts/ui/screens/run_islands.gd")  # loaded: it reaches the autoloads
+	check(Locations.unlocked("grass"), "with a Spanish title England is open")
 	SaveData.titles_by_loc = {"park": 1}
-	check(not screens.loc_unlocked("grass") and screens.loc_hint("grass") != "", "without it England is locked, with a hint")
+	check(not Locations.unlocked("grass") and Locations.unlock_hint("grass") != "", "without it England is locked, with a hint")
 	SaveData.titles_by_loc = {"park": 1, "clay": 1, "grass": 1}
 	club._on_choice("club_locations", 0)
 	await _frames(2)
 	check(main.ui.is_open(), "the islands screen opens")
-	screens.locations(main.ui, func(id: String) -> bool: return id == "park", func(id: String) -> String: return "за титул в Испании")
+	islands.show_locations(main.ui, func(id: String) -> bool: return id == "park", func(_id: String) -> String: return "за титул в Испании")
 	await _frames(1)
 	var locked := 0
+	var priced := 0
 	for c in main.ui._box.get_children():
-		if c is Button and (c as Button).disabled:
-			locked += 1
-	check(locked == Locations.LIST.size() - 1, "locked islands show a lock and can't be picked (%d)" % locked)
+		if c is GameCard:
+			priced += 1 if "Призовые ×" in (c as GameCard).desc else 0
+			if (c as GameCard).mouse_filter == Control.MOUSE_FILTER_IGNORE and "за титул в Испании" in (c as GameCard).tag:
+				locked += 1
+	check(locked == Locations.LIST.size() - 1, "locked islands show a lock and the hint and can't be picked (%d)" % locked)
+	check(priced == Locations.LIST.size(), "every island card carries its prize multiplier (%d)" % priced)
 	main._on_ui("location", 0)
 	await _frames(2)
 	check(main.ui.is_open(), "an open island: on to the formats, as before")
