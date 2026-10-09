@@ -246,3 +246,22 @@ static func on_run() -> Array:
 		Traits.reveal(st, "")
 	roll_visit()
 	return grew
+
+
+# --- T-4: experience from a match ------------------------------------------------------------------------
+
+## Experience into one stat of a student (a match, a coach's setup): the steps are paid as in
+## on_run, never past the ceiling. Returns [{id, stat, to}] of what grew.
+static func give_xp(st: Dictionary, key: String, amount: float) -> Array:
+	var grew: Array = []
+	if amount <= 0.0 or not (st.get("stats", {}) as Dictionary).has(key):
+		return grew
+	var xps: Dictionary = st.get("xp", {})
+	xps[key] = float(xps.get(key, 0.0)) + amount
+	var cap := ceiling(st)
+	while int(st["stats"][key]) < cap and float(xps[key]) >= cost(int(st["stats"][key])):
+		xps[key] = float(xps[key]) - cost(int(st["stats"][key]))
+		st["stats"][key] = int(st["stats"][key]) + 1
+		grew.append({"id": st["id"], "stat": key, "to": int(st["stats"][key])})
+	st["xp"] = xps
+	return grew
