@@ -154,6 +154,7 @@ static func show_summary(ui: TournamentUI, t: Tournament) -> void:
 		ui._box.add_child(ui._text(_msg, UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.WIN if _msg_good else UiTheme.LOSE))
 		_msg = ""
 	var total_label := _income_panel(ui, t)
+	RunBets.summary_extra(ui, t)  # E-5: the run's bets, one line each
 	summary_quests(ui)
 	var news := new_island(t)
 	if news != "":

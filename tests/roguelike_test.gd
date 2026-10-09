@@ -656,6 +656,8 @@ func test_match_bet() -> void:
 	check(paid == 0 and int(SaveData.bets["loss_streak"]) == 1, "a bet on himself lost with the match")
 	var h: Array = SaveData.bets["history"]
 	check(h.size() == 2 and h.back()["side"] == "self" and not h.back()["won"], "the bets' history keeps who, which side, how it ended")
+	var rh := Bets.run_history(t5)
+	check(rh.size() == 1 and int(rh[0]["stage"]) == 3 and RunBets.history_line(rh[0]).ends_with("· 25 · мимо"), "the run's summary lists this run's bets only: «%s»" % (RunBets.history_line(rh[0]) if rh.size() > 0 else ""))
 	var cf := SaveData._to_config()
 	SaveData.bets = {}
 	SaveData._apply(cf)

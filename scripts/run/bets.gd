@@ -169,6 +169,11 @@ static func dq_roll(seed_value: int, stage: int, chance: float) -> bool:
 	return r.randf() < chance
 
 
+## The bets of one run (its seed), oldest first: what the run's summary lists.
+static func run_history(t: Tournament) -> Array:
+	return (SaveData.bets.get("history", []) as Array).filter(func(e): return int(e.get("run", 0)) == t.rng.seed)
+
+
 static func unlocked() -> bool:
 	return SaveData.titles >= 1
 
@@ -275,7 +280,8 @@ static func settle_match(t: Tournament, sb: MatchScore) -> int:
 	SaveData.gold += paid
 	note(SaveData.bets, won and not dq)
 	var h: Array = SaveData.bets.get("history", [])
-	h.append({"name": String(t.bet.get("name", "")), "side": side, "stake": stake, "odds": float(t.bet["odds"]), "won": won and not dq, "paid": paid, "dq": dq})
+	h.append({"name": String(t.bet.get("name", "")), "side": side, "stake": stake, "odds": float(t.bet["odds"]), "won": won and not dq, "paid": paid, "dq": dq,
+		"run": t.rng.seed, "stage": int(t.bet.get("stage", t.stage))})
 	while h.size() > HISTORY_KEEP:
 		h.pop_front()
 	SaveData.bets["history"] = h

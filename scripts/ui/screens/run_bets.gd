@@ -111,6 +111,27 @@ static func show_match_bet(ui: TournamentUI, t: Tournament) -> void:
 	_history(ui)
 
 
+## The run's summary: this run's bets, one line each (nothing when there were none).
+static func summary_extra(ui: TournamentUI, t: Tournament) -> void:
+	var h := Bets.run_history(t)
+	if h.is_empty():
+		return
+	var net := 0
+	for e in h:
+		net += int(e.get("paid", 0)) - int(e.get("stake", 0))
+	ui._box.add_child(ui._text("Ставки забега  ·  итог %s%d золота" % ["+" if net > 0 else "", net], UiTheme.text_bold(), UiTheme.T_SMALL + 3, UiTheme.WIN if net > 0 else UiTheme.MUTED))
+	for e in h:
+		var l := ui._text(history_line(e), UiTheme.text(), UiTheme.T_SMALL + 2, UiTheme.WIN if e.get("won", false) else UiTheme.LOSE)
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		ui._box.add_child(l)
+
+
+## "Рублёв · против себя ×2.10 · 50 · +105" (or "мимо", "дисквалификация").
+static func history_line(e: Dictionary) -> String:
+	var res := "дисквалификация" if e.get("dq", false) else ("+%d" % int(e["paid"]) if e.get("won", false) else "мимо")
+	return "%s · %s %s · %d · %s" % [e.get("name", ""), "против себя" if e.get("side", "") == "against" else "на себя", _x(float(e.get("odds", 1.0))), int(e.get("stake", 0)), res]
+
+
 ## The last bets, newest first: who, which side, how it ended.
 static func _history(ui: TournamentUI) -> void:
 	var h: Array = SaveData.bets.get("history", [])
@@ -120,10 +141,8 @@ static func _history(ui: TournamentUI) -> void:
 	var shown := 0
 	for i in range(h.size() - 1, -1, -1):
 		var e: Dictionary = h[i]
-		var res := "дисквалификация" if e.get("dq", false) else ("+%d" % int(e["paid"]) if e.get("won", false) else "мимо")
 		var col := UiTheme.WIN if e.get("won", false) else UiTheme.LOSE
-		var l := ui._text("%s · %s %s %d · %s" % [e.get("name", ""), "против себя" if e.get("side", "") == "against" else "на себя", _x(float(e.get("odds", 1.0))), int(e.get("stake", 0)), res],
-			UiTheme.text_bold(), UiTheme.T_SMALL + 2, col)
+		var l := ui._text(history_line(e), UiTheme.text_bold(), UiTheme.T_SMALL + 2, col)
 		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		ui._box.add_child(l)
 		shown += 1
