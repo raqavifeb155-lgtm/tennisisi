@@ -42,6 +42,7 @@ func _run() -> void:
 	test_islands()
 	test_loop_review()
 	test_newcomer_quests()
+	test_sell_rest()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -701,4 +702,36 @@ func test_newcomer_quests() -> void:
 	ClubQuests.start_run("n1", 0)
 	var aces := ClubQuests.find_template("aces")
 	check(int(aces["first"]) == 1 and ClubQuests._make(aces, 0, false, true)["text"] == "Подай эйс за матч", "a newcomer's text reads right: «%s»" % ClubQuests._make(aces, 0, false, true)["text"])
+	_reset_save()
+
+
+# --- Loop review P1: «Продать остальное» on the summary ----------------------------------
+
+func test_sell_rest() -> void:
+	print("sell the rest on the summary")
+	_reset_save()
+	SaveData.gold = 1000
+	var t := Tournament.new(1, 41)
+	_plain(t)
+	t.equip["racket"] = _item(Gear.EPIC)
+	t.equip["shoes"] = _item(Gear.LEGENDARY, 1, "shoes")
+	t.bag = [_item(Gear.MYTHIC, 1, "band"), _item(Gear.RARE, 1, "band")]
+	t.stage = 4
+	t.record_match(false, "1:6", _rng(1))
+	SaveData.record_run(t)
+	var want := Items.sell_price(_item(Gear.EPIC)) + Items.sell_price(_item(Gear.MYTHIC, 1, "band")) + Items.sell_price(_item(Gear.RARE))
+	check(Locker.save_from(t, 1) == "", "the legendary shoes go into the locker")
+	var bank := SaveData.gold
+	var rest := Locker.rest(t)
+	check(rest.size() == 3 and Locker.rest_gold(t) == want, "the rest: 3 things for %d (the kept original is not one of them)" % Locker.rest_gold(t))
+	var sell0 := int(t.income.get("sell", 0))
+	var g := Locker.sell_rest(t)
+	check(g == want and SaveData.gold == bank + want, "sold into the bank +%d" % g)
+	check(int(t.income["sell"]) == sell0 + want and t.bag.is_empty() and t.equip["racket"].is_empty(), "on the summary's sale line, the run is empty")
+	check(Locker.items().size() == 1 and int(Locker.items()[0]["rarity"]) == Gear.LEGENDARY, "the kept one is safe in the locker")
+	check(Locker.sell_rest(t) == 0, "nothing twice")
+	var live := Tournament.new(1, 42)
+	_plain(live)
+	live.equip["racket"] = _item(Gear.EPIC)
+	check(Locker.sell_rest(live) == 0 and not live.equip["racket"].is_empty(), "never during a run (only when the run is banked)")
 	_reset_save()

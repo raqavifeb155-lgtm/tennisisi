@@ -166,4 +166,38 @@ static func save_from(t: Tournament, i: int, replace := -1) -> String:
 	var why := put(c[i]["item"], exit_round(t), replace)
 	if why == "":
 		t.locker_done = true
+		c[i]["item"]["kept"] = true  # the run's original: «Продать остальное» must not sell it (the locker holds a copy)
 	return why
+
+
+# --- «Продать остальное» (loop review P1) -------------------------------------------
+
+## What is left of a finished run (worn and in the bag) but the thing kept in the locker:
+## it would vanish with the run. [{"item", "from", "i"}]
+static func rest(t: Tournament) -> Array:
+	if not t.banked:
+		return []
+	return candidates(t).filter(func(c): return not bool(c["item"].get("kept", false)))
+
+
+static func rest_gold(t: Tournament) -> int:
+	var g := 0
+	for c in rest(t):
+		g += Items.sell_price(c["item"])
+	return g
+
+
+## Sells the rest into the bank, on the run's «Продажа» line (the summary's total grows with
+## it). Only once the run is banked. Returns the gold.
+static func sell_rest(t: Tournament) -> int:
+	var g := rest_gold(t)
+	if g <= 0 and rest(t).is_empty():
+		return 0
+	for slot in Gear.SLOTS:
+		var it: Dictionary = t.equip.get(slot, {})
+		if not it.is_empty() and not bool(it.get("kept", false)):
+			t.equip[slot] = {}
+	t.bag = t.bag.filter(func(it): return bool(it.get("kept", false)))
+	t.earn("sell", g)
+	SaveData.gold += g
+	return g
