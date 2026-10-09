@@ -1,6 +1,6 @@
 class_name Bets
 ## The betting desk of the Club, «Тотализатор» (v0.2 A-3, HOW_TO_FISH_TAKEAWAYS 3.2):
-## the «Мяч в поле» wheel and a bet on your own match. Game gold only — never Stars, never
+## the «Мяч в поле» wheel and the bookmaker (bets on a match, for and against yourself). Game gold only — never Stars, never
 ## money, nothing to cash out. The odds are honest and written on the table; the wheel's
 ## field is drawn before the animation, which only shows it. Opens after the first title.
 ## After three lost bets in a row the desk suggests a break (betting stays open).
@@ -10,10 +10,168 @@ const PAYS := {"blue": 2, "red": 2, "net": 35}
 const CHIPS := [10, 25, 50, 100]
 const MAX_SHARE := 0.25           # a stake is at most a quarter of the gold
 const BREAK_AFTER := 3
-## A bet on your own match: the odds by round (Джумхур .. Джокович); a clean sweep (the
-## opponent takes at most one game, two points in the quick format) pays SWEEP_X more.
-const MATCH_ODDS := [1.3, 1.8, 2.5, 3.5, 6.0]
-const SWEEP_X := 2.5
+
+# --- The bookmaker: a bet on a match (v0.2 E-5) -----------------------------------------
+# The odds come from the chance of winning, like a betting shop: k = (1 - MARGIN) / p,
+# rounded to 0.01 and kept in K_MIN..K_MAX. Both sides are on the board: on yourself
+# (k_you) and against yourself (k_opp, the opponent's side). Betting against yourself is
+# a risk: after the match there is a chance of a disqualification (DQ_ON_LOSS when the
+# match was lost, DQ_ON_WIN when it was won) unless the player has the «Ушлый» trait.
+# `market(match)` takes any match as plain data (a pupil, a final, a guest): see there.
+
+const MARGIN := 0.08              # the house keeps 8%: k = 0.92 / p
+const K_MIN := 1.05
+const K_MAX := 9.0
+const P_MIN := 0.04               # the chance stays honest but never a sure thing
+const P_MAX := 0.96
+const LEVEL_SLOPE := 0.45         # logit of the chance per skill level over the opponent's rating
+const FORM_WEIGHT := 1.2          # logit of a full streak of wins (history of the last matches)
+const FORM_KEEP := 10
+const FORM_MIN := 3               # fewer matches in the book: no form yet
+const DQ_ON_LOSS := 0.35          # against yourself, the match lost (the bet wins)
+const DQ_ON_WIN := 0.10           # against yourself, the match won (the bet burns)
+const DQ_FINE := 0.20             # of the saved gold
+const HISTORY_KEEP := 12
+const SIDES := ["self", "against"]
+const SHADY := "shady"            # the trait's key: Skills.mod("shady") (perk «Ушлый») or club traits
+const SKILL_LEVELS := 10.5        # levels per 1.0 of AI skill: rating() moves 0.5 x (1.4 x 9 + 8.5) per skill
+const REWARD_LEVELS := 6.0        # levels per ln(prize x): a trait x1.05 ~ 0.3, an aura x1.6 ~ 2.8, hardcore x2.5 ~ 5.5
+
+
+static var last_result := {}      # the last settled bet: won, paid, side, dq, fine, stake
+
+
+## A roster opponent's rating in skill levels: the level at which the player wins about
+## half of his matches. From his stats (1.4 x mean - 2.2) and his tier (3 + 8.5 x skill)
+## half and half; calibrated on the D-5 bot table (all skills level 8: 80/83/57/92/35%).
+static func rating(opp: Dictionary, extra := 0.0) -> float:
+	var st := Opponents.stats(opp)
+	var sum := 0.0
+	for k in Opponents.STAT_KEYS:
+		sum += float(st[k])
+	var by_stats := 1.4 * sum / float(Opponents.STAT_KEYS.size()) - 2.2
+	var by_tier := 3.0 + 8.5 * float(opp.get("skill", 0.5))
+	return 0.5 * (by_stats + by_tier) + extra
+
+
+## The chance that side A (the player) wins: level against rating, a little for the form
+## (`form`: his share of wins in the last matches, `form_n` of them).
+static func p_win(level: float, rating_b: float, form := 0.5, form_n := 0) -> float:
+	var x := LEVEL_SLOPE * (level - rating_b)
+	if form_n >= FORM_MIN:
+		x += FORM_WEIGHT * (form - 0.5)
+	return clampf(1.0 / (1.0 + exp(-x)), P_MIN, P_MAX)
+
+
+## The odds for a chance p (the stake comes back inside it): 0.92 / p, 0.01 steps, 1.05..9.
+static func odds_from_p(p: float) -> float:
+	return clampf(snappedf((1.0 - MARGIN) / clampf(p, 0.001, 1.0), 0.01), K_MIN, K_MAX)
+
+
+## The board for ANY match, as plain data. `m` is either {"p": chance of side A} or
+## {"level": A's skill level, "rating": B's rating, "form": share, "form_n": n}; extras
+## ("name", "stage", ...) are carried through. Returns {p, p_opp, you, opp, overround}:
+## `you` pays on A (yourself), `opp` pays on B. No UI here: a pupil's match, a tournament
+## final or a guest's can use it as it is.
+static func market(m: Dictionary) -> Dictionary:
+	var p: float
+	if m.has("p"):
+		p = clampf(float(m["p"]), P_MIN, P_MAX)
+	else:
+		p = p_win(float(m.get("level", 0.0)), float(m.get("rating", 5.0)), float(m.get("form", 0.5)), int(m.get("form_n", 0)))
+	var out := {"p": p, "p_opp": 1.0 - p, "you": odds_from_p(p), "opp": odds_from_p(1.0 - p)}
+	out["overround"] = 1.0 / float(out["you"]) + 1.0 / float(out["opp"])
+	for k in m:
+		if not out.has(k) and k != "level" and k != "rating":
+			out[k] = m[k]
+	return out
+
+
+## The coming match (or round i) of a run as a match for `market`: the drawn opponent of the
+## round (D-8: the top-100, random players, the fixed boss) at his rating, plus what the run
+## puts on top of him: the D-8 pull-up by the round (the calibration above is round 0), his
+## traits and auras and the run's conditions (hardcore too) by their prize x, a golden racket.
+static func match_for(t: Tournament, i := -1) -> Dictionary:
+	var idx := clampi(t.stage if i < 0 else i, 0, t.rounds() - 1)
+	var o := t.opp(idx)
+	var lv := Opponents.player_level()
+	var lu: Dictionary = t.lineup[idx] if idx < t.lineup.size() else {}
+	var extra := round_pull(o, lv, idx)
+	if lu.get("golden", false):
+		extra += 1.0
+	extra += mods_levels(lu.get("mods", [])) + mods_levels(t.run_modifiers)
+	var f := form_of(SaveData.bets)
+	return {"level": lv, "rating": rating(o, extra), "form": f[0], "form_n": f[1],
+		"name": String(o["name"]), "stage": idx}
+
+
+## The D-8 pull-up of the AI skill by the round, in levels: what round i asks on top of round 0.
+static func round_pull(o: Dictionary, level: float, round_i: int) -> float:
+	var sk := float(o.get("skill", 0.5))
+	var boss := bool(o.get("boss", false))
+	var d := Opponents.adapted_skill(sk, level, boss, round_i) - Opponents.adapted_skill(sk, level, boss, 0)
+	return SKILL_LEVELS * d
+
+
+## Traits, auras and run conditions in levels: REWARD_LEVELS x ln(prize x) each, at least
+## that of x1.05 (an old modifier with no prize of its own still counts a little).
+static func mods_levels(ids: Array) -> float:
+	var x := 0.0
+	for id in ids:
+		x += REWARD_LEVELS * log(maxf(float(Modifiers.find(String(id)).get("reward", 1.0)), 1.05))
+	return x
+
+
+static func match_market(t: Tournament, i := -1) -> Dictionary:
+	return market(match_for(t, i))
+
+
+## The player's last matches (1 won, 0 lost) as the desk remembers them: [share, count].
+static func form_of(state: Dictionary) -> Array:
+	var l: Array = state.get("form", [])
+	if l.is_empty():
+		return [0.5, 0]
+	var w := 0
+	for r in l:
+		w += int(r)
+	return [float(w) / float(l.size()), l.size()]
+
+
+static func note_form(state: Dictionary, won: bool) -> void:
+	var l: Array = state.get("form", [])
+	l.append(1 if won else 0)
+	while l.size() > FORM_KEEP:
+		l.pop_front()
+	state["form"] = l
+
+
+## The trait that takes the disqualification risk away (the perk «Ушлый» of the Касание
+## skill; the traits catalog of the academy, when it is in the game, can put "shady" into
+## the club's traits too).
+static func is_shady() -> bool:
+	return Skills.mod(SHADY) > 0.0 or (SaveData.club.get("traits", []) as Array).has(SHADY)
+
+
+## The chance of a disqualification after this match for a bet on this side.
+static func dq_chance(side: String, player_won: bool) -> float:
+	if side != "against" or is_shady():
+		return 0.0
+	return DQ_ON_WIN if player_won else DQ_ON_LOSS
+
+
+## The roll for a match, fixed by the run's seed and the round (a reload gives the same):
+## true = disqualified.
+static func dq_roll(seed_value: int, stage: int, chance: float) -> bool:
+	if chance <= 0.0:
+		return false
+	var r := RandomNumberGenerator.new()
+	r.seed = hash([seed_value, stage, "dq"])
+	return r.randf() < chance
+
+
+## The bets of one run (its seed), oldest first: what the run's summary lists.
+static func run_history(t: Tournament) -> Array:
+	return (SaveData.bets.get("history", []) as Array).filter(func(e): return int(e.get("run", 0)) == t.rng.seed)
 
 
 static func unlocked() -> bool:
@@ -54,11 +212,6 @@ static func chips_for(gold: int) -> Array:
 	return CHIPS.filter(func(c): return c <= max_stake(gold, CHIPS[0]))
 
 
-static func match_odds(stage: int, sweep: bool) -> float:
-	var k: float = MATCH_ODDS[clampi(stage, 0, MATCH_ODDS.size() - 1)]
-	return k * SWEEP_X if sweep else k
-
-
 ## The player won and the opponent took at most one game (two points in the quick format).
 static func swept(sb: MatchScore) -> bool:
 	if sb.winner != 0:
@@ -84,25 +237,55 @@ static func needs_break(state: Dictionary) -> bool:
 
 
 ## A bet on the coming match of the run: the stake leaves the saved gold at once (a reload
-## can't take it back). One per match; at most a quarter of the gold.
-static func place_match(t: Tournament, stake: int, sweep: bool) -> bool:
-	if not t.bet.is_empty() or stake <= 0 or stake > max_stake(SaveData.gold, CHIPS[0]):
+## can't take it back). One per match; at most Bets.max_stake. side: "self" or "against"
+## (against yourself: the opponent's odds, and the disqualification risk). The odds are
+## written down now: they do not move after the bet.
+static func place_match(t: Tournament, stake: int, side := "self") -> bool:
+	if not t.bet.is_empty() or stake <= 0 or stake > max_stake(SaveData.gold, CHIPS[0]) or not SIDES.has(side):
 		return false
+	var mk := match_market(t)
 	SaveData.gold -= stake
-	t.bet = {"stake": stake, "odds": match_odds(t.stage, sweep), "sweep": sweep, "stage": t.stage}
+	t.bet = {"stake": stake, "side": side, "odds": float(mk["you"] if side == "self" else mk["opp"]),
+		"p": float(mk["p"] if side == "self" else mk["p_opp"]), "stage": t.stage, "name": String(mk["name"])}
 	SaveData.save()
 	return true
 
 
-## The match is over (sb: its final board): pays the bet out or lets it go. Returns the
-## gold paid (0 = lost).
+## The match is over (sb: its final board): pays the bet out or lets it go; after a bet
+## against yourself the dice of the disqualification roll. Returns the gold paid (0 = lost);
+## the rest of what happened is in Bets.last_result.
 static func settle_match(t: Tournament, sb: MatchScore) -> int:
+	last_result = {}
 	if t.bet.is_empty():
 		return 0
-	var won := sb.winner == 0 and (not bool(t.bet["sweep"]) or swept(sb))
-	var paid := roundi(int(t.bet["stake"]) * float(t.bet["odds"])) if won else 0
+	var side := String(t.bet.get("side", "self"))
+	var player_won := sb.winner == 0
+	var won: bool
+	if side == "against":
+		won = not player_won
+	else:
+		won = player_won and (not bool(t.bet.get("sweep", false)) or swept(sb))  # old saves: the sweep bet
+	var stake := int(t.bet["stake"])
+	var paid := roundi(stake * float(t.bet["odds"])) if won else 0
+	var dq := dq_roll(t.rng.seed, int(t.bet.get("stage", t.stage)), dq_chance(side, player_won))
+	var fine := 0
+	if dq:
+		paid = 0
+		fine = floori(DQ_FINE * SaveData.gold)
+		SaveData.gold -= fine
+		t.disqualify()
+		var cx: Array = SaveData.bets.get("codex", [])
+		cx.append({"kind": "dq", "name": String(t.bet.get("name", "")), "stage": int(t.bet.get("stage", 0)), "stake": stake, "fine": fine})
+		SaveData.bets["codex"] = cx
 	SaveData.gold += paid
-	note(SaveData.bets, won)
+	note(SaveData.bets, won and not dq)
+	var h: Array = SaveData.bets.get("history", [])
+	h.append({"name": String(t.bet.get("name", "")), "side": side, "stake": stake, "odds": float(t.bet["odds"]), "won": won and not dq, "paid": paid, "dq": dq,
+		"run": t.rng.seed, "stage": int(t.bet.get("stage", t.stage))})
+	while h.size() > HISTORY_KEEP:
+		h.pop_front()
+	SaveData.bets["history"] = h
+	last_result = {"won": won and not dq, "paid": paid, "side": side, "dq": dq, "fine": fine, "stake": stake, "odds": float(t.bet["odds"])}
 	t.bet = {}
 	SaveData.save()
 	return paid

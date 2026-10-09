@@ -2180,7 +2180,7 @@ func _on_ui(action: String, arg: int) -> void:
 			Skills.spend_point(Skills.LIST[arg])
 			SaveData.save()
 			ui.show_character(false)
-		"bets", "wheel_chip", "spin", "bet_match", "bet_chip", "bet_win", "bet_sweep", "bet_back":
+		"bets", "wheel_chip", "spin", "bet_match", "bet_chip", "bet_win", "bet_against", "bet_back":
 			RunBets.ui_action(self, action, arg)  # v0.2 A: the betting desk
 		"mods_toggle", "mods_preset", "mods_mode", "mods_go", "mods_back":
 			RunMods.ui_action(self, action, arg)  # v0.2 G: the run's conditions
