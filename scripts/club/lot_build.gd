@@ -40,6 +40,8 @@ func play(c: Node, lot_id: String, type: String) -> void:
 			sz = Vector2(8.0, 4.2)
 		"stands":
 			sz = Vector2(5.0, 11.0)
+		"academy":
+			sz = Vector2(14.0, 10.0)
 	_scaffold = world.make_scaffold_at("scaffold_lot", _at + Vector3(0, 0, -0.3), sz, false)
 	_scaffold.scale = Vector3(1.0, 0.001, 1.0)
 	_scaffold.visible = false
