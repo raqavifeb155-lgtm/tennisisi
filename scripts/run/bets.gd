@@ -34,6 +34,8 @@ const DQ_FINE := 0.20             # of the saved gold
 const HISTORY_KEEP := 12
 const SIDES := ["self", "against"]
 const SHADY := "shady"            # the trait's key: Skills.mod("shady") (perk «Ушлый») or club traits
+const SKILL_LEVELS := 10.5        # levels per 1.0 of AI skill: rating() moves 0.5 x (1.4 x 9 + 8.5) per skill
+const REWARD_LEVELS := 6.0        # levels per ln(prize x): a trait x1.05 ~ 0.3, an aura x1.6 ~ 2.8, hardcore x2.5 ~ 5.5
 
 
 static var last_result := {}      # the last settled bet: won, paid, side, dq, fine, stake
@@ -85,18 +87,39 @@ static func market(m: Dictionary) -> Dictionary:
 	return out
 
 
-## The coming match (or round i) of a run as a match for `market`.
+## The coming match (or round i) of a run as a match for `market`: the drawn opponent of the
+## round (D-8: the top-100, random players, the fixed boss) at his rating, plus what the run
+## puts on top of him: the D-8 pull-up by the round (the calibration above is round 0), his
+## traits and auras and the run's conditions (hardcore too) by their prize x, a golden racket.
 static func match_for(t: Tournament, i := -1) -> Dictionary:
-	var idx := t.stage if i < 0 else i
-	var o: Dictionary = Opponents.ROSTER[clampi(idx, 0, Opponents.ROSTER.size() - 1)]
+	var idx := clampi(t.stage if i < 0 else i, 0, t.rounds() - 1)
+	var o := t.opp(idx)
+	var lv := Opponents.player_level()
 	var lu: Dictionary = t.lineup[idx] if idx < t.lineup.size() else {}
-	var extra := 0.0
+	var extra := round_pull(o, lv, idx)
 	if lu.get("golden", false):
 		extra += 1.0
-	extra += 0.3 * float((lu.get("mods", []) as Array).size())
+	extra += mods_levels(lu.get("mods", [])) + mods_levels(t.run_modifiers)
 	var f := form_of(SaveData.bets)
-	return {"level": Opponents.player_level(), "rating": rating(o, extra), "form": f[0], "form_n": f[1],
+	return {"level": lv, "rating": rating(o, extra), "form": f[0], "form_n": f[1],
 		"name": String(o["name"]), "stage": idx}
+
+
+## The D-8 pull-up of the AI skill by the round, in levels: what round i asks on top of round 0.
+static func round_pull(o: Dictionary, level: float, round_i: int) -> float:
+	var sk := float(o.get("skill", 0.5))
+	var boss := bool(o.get("boss", false))
+	var d := Opponents.adapted_skill(sk, level, boss, round_i) - Opponents.adapted_skill(sk, level, boss, 0)
+	return SKILL_LEVELS * d
+
+
+## Traits, auras and run conditions in levels: REWARD_LEVELS x ln(prize x) each, at least
+## that of x1.05 (an old modifier with no prize of its own still counts a little).
+static func mods_levels(ids: Array) -> float:
+	var x := 0.0
+	for id in ids:
+		x += REWARD_LEVELS * log(maxf(float(Modifiers.find(String(id)).get("reward", 1.0)), 1.05))
+	return x
 
 
 static func match_market(t: Tournament, i := -1) -> Dictionary:

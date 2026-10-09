@@ -660,6 +660,24 @@ func test_match_bet() -> void:
 	SaveData.bets = {}
 	SaveData._apply(cf)
 	check(int(SaveData.bets.get("placed", 0)) == 2 and (SaveData.bets["history"] as Array).size() == 2, "the desk's record and history are saved")
+	# After the D-8/G-6/G-7 merge: the odds are of the drawn opponent of the round, pulled up by
+	# the round, with his traits and auras and the run's conditions (hardcore) on top.
+	var td := Tournament.new(1, 21)
+	var same := true
+	for i in td.rounds():
+		same = same and Bets.match_for(td, i)["name"] == td.opp(i)["name"]
+	check(same, "the bookmaker prices the drawn field (%s)" % [range(td.rounds()).map(func(i): return td.opp(i)["name"])])
+	var weak := {"skill": 0.1}
+	check(Bets.round_pull(weak, 8.0, 0) == 0.0 and Bets.round_pull(weak, 8.0, 3) > 2.0 and Bets.round_pull(weak, 0.0, 3) == 0.0,
+		"the D-8 pull-up by the round: a veteran's semi-final asks +%.1f levels of a weak player, a newcomer's none" % Bets.round_pull(weak, 8.0, 3))
+	var any_trait := true
+	for lu in td.lineup:
+		any_trait = any_trait and Bets.mods_levels(lu["mods"]) >= 0.29
+	check(any_trait and Bets.mods_levels([]) == 0.0, "every opponent's trait counts in his rating")
+	var p_plain := float(Bets.match_market(td, 2)["p"])
+	td.run_modifiers = ["hardcore"]
+	var p_hard := float(Bets.match_market(td, 2)["p"])
+	check(p_hard < p_plain * 0.5, "hardcore makes the player much more of an outsider: %.2f -> %.2f" % [p_plain, p_hard])
 	# The card of the opponent shows the line; the bracket row too.
 	SaveData.titles = 1
 	var tc := Tournament.new(1, 11)
