@@ -598,6 +598,15 @@ func test_chest() -> void:
 	check(perks_seen == 0, "1000 chests: no temporary perks")
 	check(levels_ok, "every chest item in Paris is level 4")
 	check(float(epics) / items_n > 0.45 and float(epics) / items_n < 0.65, "quarter-final chests: epic+ in %d of %d items" % [epics, items_n])
+	# loop review P1: a legendary from a chest is rare even in the final (<= 8%), the boutique still matters
+	var legs := 0
+	var fin_items := 0
+	for k in 2000:
+		var fc := holder.make_chest(4, cr)
+		if not fc["item"].is_empty():
+			fin_items += 1
+			legs += 1 if int(fc["item"]["rarity"]) == Gear.LEGENDARY else 0
+	check(float(legs) / fin_items <= 0.10 and Tournament.CHEST_RARITY[4][3] <= 8.0, "final chests: a legendary in %d of %d items (<= 8%%)" % [legs, fin_items])
 	# taking it: gold into the run's lines, the item worn or in the bag, state goes on
 	var t2 := Tournament.new(1, 12)
 	_plain(t2)
