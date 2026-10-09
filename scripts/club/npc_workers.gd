@@ -2,17 +2,16 @@ class_name ClubNpcWorkers
 extends Node3D
 ## Two builders for a lot's build moment (docs/superpowers/specs/2026-10-09-tycoon.md 1.5,
 ## the first of the club's NPCs; T-2 adds the coach's walks and the hired players on the
-## same light figures): the people of ClubCrowd's meshes (a body and legs with a head, two
-## MultiMeshes), an orange vest and a yellow hard hat each. They walk in to the front of
-## the lot, hammer, wave and walk off. Nothing here is an Athlete: four draw calls.
+## same light figures): two ClubPeople figures (one MultiMesh, legs and arms walking in its
+## shader), an orange vest and a yellow hard hat each. They walk in to the front of the lot,
+## hammer, wave and walk off. Nothing here is an Athlete: two draw calls.
 
 const VEST := Color("f08a3c")
 const HAT := Color("ffd642")
 const SPEED := 4.2            # m/s on the way in
 const SPEED_OUT := 5.0        # and running off
 
-var _body: MultiMeshInstance3D
-var _legs: MultiMeshInstance3D
+var _people: MultiMeshInstance3D
 var _hats: MultiMeshInstance3D
 var _centre := Vector3.ZERO
 var _phase := "away"          # "in", "work", "out", "away"
@@ -25,8 +24,11 @@ var _to: Array[Vector3] = []
 ## Builders stand by at the sides of the lot (not shown yet).
 func start(centre: Vector3) -> void:
 	_centre = centre
-	_body = _mm(ClubCrowd._body_mesh(), VEST)
-	_legs = _mm(ClubCrowd._legs_mesh(), Color.WHITE)
+	_people = ClubPeople.instance(ClubPeople.Kind.SHORT_HAIR, 2)
+	_people.custom_aabb = AABB(Vector3(-20, -1, -20), Vector3(40, 4, 40))
+	add_child(_people)
+	ClubPeople.paint(_people.multimesh, 0, VEST, Looks.SKIN[2], 0.15)
+	ClubPeople.paint(_people.multimesh, 1, VEST, Looks.SKIN[6], 0.05)
 	var hat := ClubShapes.new()
 	hat.ball(0.17, Vector3(0, 1.84, 0), Color.WHITE, Vector3(1.0, 0.62, 1.0), 8, 3)
 	hat.box(Vector3(0.34, 0.03, 0.2), Vector3(0, 1.74, -0.17), Color.WHITE)
@@ -90,6 +92,7 @@ func _apply(_delta: float) -> void:
 		var yaw := 0.0
 		var sc := 1.0
 		var walk_len := a.distance_to(b)
+		var step := -1.0
 		match _phase:
 			"away":
 				sc = 0.0
@@ -98,6 +101,7 @@ func _apply(_delta: float) -> void:
 				pos = a.lerp(b, u)
 				yaw = atan2(-(b.x - a.x), -(b.z - a.z))
 				lean = sin(_clock * 12.0 + float(i)) * 0.04
+				step = _clock * 12.0 + float(i)
 				if u >= 1.0:
 					_phase = "work"
 					_t = 0.0
@@ -112,11 +116,12 @@ func _apply(_delta: float) -> void:
 				pos = b.lerp(a, u)
 				yaw = atan2(-(a.x - b.x), -(a.z - b.z))
 				lean = sin(_clock * 14.0 + float(i)) * 0.05
+				step = _clock * 14.0 + float(i)
 				sc = 1.0 - smoothstep(0.55, 1.0, u)
 				if u >= 1.0:
 					_phase = "away"
 		var basis := Basis.from_euler(Vector3(-lean, yaw, 0.0)) * Basis.from_scale(Vector3.ONE * sc)
 		var xf := Transform3D(basis, pos)
-		_body.multimesh.set_instance_transform(i, xf)
-		_legs.multimesh.set_instance_transform(i, xf)
+		_people.multimesh.set_instance_transform(i, xf)
+		ClubPeople.step(_people.multimesh, i, step)
 		_hats.multimesh.set_instance_transform(i, Transform3D(basis, pos + Vector3(0, 0, 0)))

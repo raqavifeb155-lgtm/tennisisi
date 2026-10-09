@@ -35,6 +35,7 @@ var smash_info := {}
 var smash_points := -1
 var smash_ok := false
 var smash_next := false         # after the smash the next point started (the serve)
+var smash_forced := false       # no point was lost to an error by itself: the test loses one
 var ev := {"stroke": 0, "point": 0, "shot": 0, "bounce": 0}
 
 
@@ -199,6 +200,13 @@ func _smash_step(vp: Vector2) -> void:
 	var hub = main.smash_hub
 	var sm: RacketSmash = hub.smash
 	var btn: Control = main.hud.smash_btn
+	# The rallies run on the swipes' wall-clock time (the flick and tap limits are in ms), so how
+	# the points end changes with the speed of the frames: if no point has been lost to an error
+	# by now, this one is (the net), and the button is checked all the same.
+	if smash_state == 0 and not smash_forced and frame >= 1500 and main.phase == main.Phase.RALLY and script_steps.is_empty():
+		smash_forced = true
+		smash_info["forced"] = true
+		main._end_point(main.Who.CPU, "NET")
 	if smash_state == 0 and main.phase == main.Phase.OVER and hub.offer_left > 0.0 and script_steps.is_empty():
 		smash_info["button_visible"] = btn.is_visible_in_tree() and btn.size.x >= 84.0
 		smash_info["tournament"] = main.tournament_mode

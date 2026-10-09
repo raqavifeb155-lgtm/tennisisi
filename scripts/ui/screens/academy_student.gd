@@ -71,7 +71,7 @@ static func show(ui: TournamentUI, st: Dictionary, mode := "card", note := "") -
 	for id in Traits.all_ids(st):
 		if Traits.is_shown(st, id):
 			var d := Traits.def(id)
-			var l := ui._text("%s  ·  %s" % [d["name"], d["desc"]], UiTheme.text_bold(), UiTheme.T_SMALL + 2, KIND_COLORS.get(d["kind"], UiTheme.INK))
+			var l := ui._text("%s  ·  %s" % [Traits.name(id), Traits.desc(id)], UiTheme.text_bold(), UiTheme.T_SMALL + 2, KIND_COLORS.get(d.get("kind", ""), UiTheme.INK))
 			l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			ui._box.add_child(l)
 	var hid := int(inf["hidden"])

@@ -132,6 +132,7 @@ var results: Array = []           # per match: {"stage", "won", "score"}
 var gold := 0
 var income := {}                  # gold by kind (INCOME_KINDS): adds up to `gold`
 var last_prize := 0               # prize money the last record_match / give_up paid (the result shows it)
+var locker_taken := 0             # things taken from the locker into this run (Locker.take_limit, hub spec 16)
 var locker_done := false          # the summary's one item went into the locker (Locker)
 var champion := false
 var chest := {}                   # the chest by the net after the last win ({} = none), see make_chest
@@ -179,7 +180,7 @@ func _init(format_index := 0, seed_value := 0, hardcore_run := false) -> void:
 const SAVED := ["format", "location", "field", "lineup", "racket", "pending_loot", "missed_loot", "banked",
 	"state", "stage", "wildcards", "perks", "results", "gold", "champion", "offer",
 	"equip", "bag", "new_items", "auto_sold", "run_mods", "mythic_rolled", "drop_bonus", "bet",
-	"income", "locker_done", "run_modifiers", "chest", "dry", "hardcore", "freq", "disqualified"]
+	"income", "locker_done", "locker_taken", "run_modifiers", "chest", "dry", "hardcore", "freq", "disqualified"]
 
 
 ## The run as plain data, for the save file: a phone that reloads the page (Telegram
@@ -248,7 +249,8 @@ func roll_lineup() -> void:
 			gear["racket"] = Gear.roll(Gear.LEGENDARY, rng, "racket", lvl + 1)
 		elif golden:
 			gear["racket"] = Items.set_level(gear["racket"], lvl + 1)
-		lineup.append({"mods": mods, "hidden": aur["hidden"], "gear": gear, "racket": gear["racket"], "golden": golden})
+		lineup.append({"mods": mods, "hidden": aur["hidden"], "gear": gear, "racket": gear["racket"], "golden": golden,
+			"drop_u": drop_rolls(rng.seed, i)})
 
 
 ## The level of the gear opponents wear here: 1 + the island's tier (v0.2 A-4).
@@ -366,9 +368,13 @@ func can_take_locker() -> bool:
 	return results.is_empty() and stage == 0 and state == State.BRACKET
 
 
-func take_from_locker(i: int) -> void:
-	if can_take_locker():
-		join(Locker.take(i))
+## False once the run took as many as the locker room allows (hub spec 16).
+func take_from_locker(i: int) -> bool:
+	if not can_take_locker() or Locker.take_left(self) <= 0 or i < 0 or i >= Locker.items().size():
+		return false
+	join(Locker.take(i))
+	locker_taken += 1
+	return true
 
 
 func equip_from_bag(i: int) -> void:
@@ -413,16 +419,59 @@ func sell_extra() -> int:
 	return total
 
 
-## What a beaten opponent's gear drops: each item on its own (DROP_CHANCE + bonus).
-static func drops(gear: Dictionary, r: RandomNumberGenerator, bonus: float) -> Array:
+## The dice of one opponent's drops, thrown when the lineup is rolled (their own generator, so the
+## run's other rolls keep their numbers): one number 0..1 per slot. The item he wears in that slot
+## drops when its number is under DROP_CHANCE (+ the run's bonus), so what the court shows on him
+## and what falls from him is one decision made in advance (owner, 10.10).
+static func drop_rolls(seed_value: int, i: int) -> Dictionary:
+	var r := RandomNumberGenerator.new()
+	r.seed = seed_value * 1000003 + i * 7919 + 4243
+	var out := {}
+	for slot in Gear.SLOTS:
+		out[slot] = r.randf()
+	return out
+
+
+## What a beaten opponent's gear drops: each item on its own (DROP_CHANCE + bonus). With a plan
+## (drop_rolls) the dice are the plan's, else r throws them.
+static func drops(gear: Dictionary, r: RandomNumberGenerator, bonus: float, plan := {}) -> Array:
 	var out: Array = []
 	for slot in Gear.SLOTS:
 		var it: Dictionary = gear.get(slot, {})
 		if it.is_empty():
 			continue
-		if r.randf() < DROP_CHANCE[clampi(int(it["rarity"]), 0, 4)] + bonus:
+		var u: float = float(plan[slot]) if plan.has(slot) else r.randf()
+		if u < DROP_CHANCE[clampi(int(it["rarity"]), 0, 4)] + bonus:
 			out.append(it)
 	return out
+
+
+## The items opponent i will drop when beaten, in slot order: the same decision the end of the
+## match takes (an older save without the dice gets them from the run's seed).
+func planned_drops(i: int) -> Array:
+	var lu: Dictionary = lineup[clampi(i, 0, lineup.size() - 1)]
+	var plan: Dictionary = lu.get("drop_u", drop_rolls(rng.seed, i))
+	return drops(lu.get("gear", {}), rng, drop_bonus, plan)
+
+
+## Which of the dropped items is the trophy of the knockout game: the best epic or better, the first
+## of equals; -1 if none.
+static func trophy_index(dropped: Array) -> int:
+	var best := -1
+	for k in dropped.size():
+		if int(dropped[k]["rarity"]) >= Gear.EPIC and (best < 0 or int(dropped[k]["rarity"]) > int(dropped[best]["rarity"])):
+			best = k
+	return best
+
+
+## What the trophy game shows: the opponent just beaten with all three of his items on, and the
+## trophy itself (pending_loot, the item he wore in that slot: the same dictionary). main.gd
+## dresses the runner from "worn" and flies "item" out of his hand.
+func trophy_scene() -> Dictionary:
+	var done := clampi(int(results.back()["stage"]) if not results.is_empty() else stage, 0, lineup.size() - 1)
+	var worn: Dictionary = lineup[done].get("gear", {})
+	var slot := String(pending_loot.get("slot", "racket"))
+	return {"worn": worn, "item": pending_loot, "slot": slot, "shown": worn.get(slot, {})}
 
 
 func tier_name() -> String:
@@ -609,12 +658,9 @@ func use_wildcard() -> bool:
 
 
 ## The beaten opponent's drops: the best epic+ goes to the trophy game, the rest into the bag.
-func _take_drops(r: RandomNumberGenerator) -> void:
-	var dropped := drops(current_lineup().get("gear", {}), r, drop_bonus)
-	var best := -1
-	for k in dropped.size():
-		if int(dropped[k]["rarity"]) >= Gear.EPIC and (best < 0 or int(dropped[k]["rarity"]) > int(dropped[best]["rarity"])):
-			best = k
+func _take_drops(_r: RandomNumberGenerator) -> void:
+	var dropped := planned_drops(stage)
+	var best := trophy_index(dropped)
 	if best >= 0:
 		pending_loot = dropped[best]
 		dropped.remove_at(best)

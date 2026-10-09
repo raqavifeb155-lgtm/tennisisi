@@ -514,7 +514,8 @@ func test_in_the_club() -> void:
 	old.setup(-1.0, Color(0.5, 0.5, 0.5), Rect2(-9, -18, 18, 36))
 	AthleteCasual.make_elder(old)
 	await _frames(40)
-	check(kid._model.scale.y < 0.7 and kid._model.scale.y > 0.6 and kid._head.scale.x > 1.28 * 1.4, "a junior is 0.7 of the adult, his head bigger (%.2f, head x%.2f)" % [kid._model.scale.y, kid._head.scale.x / 1.28])
+	var adult_head := 1.2 if kid._body == Athlete.Body.SMOOTH else 1.28
+	check(kid._model.scale.y < 0.7 and kid._model.scale.y > 0.6 and kid._head.scale.x > adult_head * 1.4, "a junior is 0.7 of the adult, his head bigger (%.2f, head x%.2f)" % [kid._model.scale.y, kid._head.scale.x / adult_head])
 	check(old._pitch > 0.1 and (old._bones["chest"] as Node3D).get_child_count() >= 2, "the old coach stoops and wears a whistle on a cord (%.2f)" % old._pitch)
 	check(old.look["hair_color"] == 10 and old.look["beard"] == 2, "grey hair, a moustache")
 	kid.queue_free()

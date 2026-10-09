@@ -20,6 +20,8 @@ var npcviews := false   # --npcviews: H-8, the people of the club at the court, 
 var ruins := false      # --ruins: H-8, the ruin of a lot (weeds, junk) and what a building on someone else's lot leaves
 var npcs := false       # --npc: T-2, the coach's offer, the hire screens, the students, the visitor
 var academy := false    # --academy: T-3, the academy's five levels on its lot, the office, a card, the focus
+var foreman := false    # --foreman: the foreman window (the ghost of the next level) for every construction at every level
+var only := ""           # --only=court,stands: with --foreman, just these constructions
 var lots := false       # --lots: T-1, the empty lots, the sheet, the build moment
 var hour := 11.0   # shots are of the morning unless --hour= says otherwise (else they depend on the clock)
 var tag := ""          # --tag=X: club_X_<h>_*.png (other worktrees shoot into the same folder)
@@ -33,6 +35,10 @@ func _initialize() -> void:
 			gfx = int(a.get_slice("=", 1))
 		elif a == "--builds":
 			builds = true
+		elif a == "--foreman":
+			foreman = true
+		elif a.begins_with("--only="):
+			only = a.get_slice("=", 1)
 		elif a == "--stats":
 			stats = true
 		elif a == "--views":
@@ -220,6 +226,10 @@ func _run() -> void:
 		return
 	if academy:
 		await _academy()
+		quit()
+		return
+	if foreman:
+		await _foreman()
 		quit()
 		return
 	if builds:
@@ -522,6 +532,30 @@ func _measure() -> Vector2:
 	await process_frame
 	await process_frame
 	return Vector2(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME), Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))
+
+
+## The foreman's window with the ghost of the next level, every construction at every level.
+func _foreman() -> void:
+	var club = main.club
+	SaveData.played = 3
+	SaveData.titles = 4
+	SaveData.gold = 9999
+	SaveData.club = {"met_coach": true}
+	club._refresh()
+	club.hud.say("", 0.0)
+	club._travel("gate")
+	await create_timer(0.4).timeout
+	club._on_choice("club_foreman", 0)
+	for id in ClubLots.foreman_ids():
+		if only != "" and not (id in only.split(",")):
+			continue
+		for lv in ClubBuilds.max_level(id):
+			SaveData.club["levels"] = {id: lv}
+			if id == "court" and lv >= 3:
+				SaveData.club["color"] = 2
+			club._refresh()
+			club.foreman_show(id)
+			await _shot("f_%s_%d" % [id, lv], 0.5)
 
 
 func _builds() -> void:

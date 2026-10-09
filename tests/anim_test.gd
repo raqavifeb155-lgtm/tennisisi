@@ -35,11 +35,15 @@ func run_all() -> void:
 	test_serve_kick()
 	test_stances()
 	test_human_arms()
+	test_high_balls()
 	test_stance_change()
+	test_racket_slot()
+	test_foot_jitter()
 	test_lean()
 	test_swing_retarget()
 	test_tired_pose()
 	test_racket_smash()
+	test_racket_on_a_fall()
 	test_club_crowd()
 	print("\n%s (%d failures)" % ["ALL ANIMATION TESTS PASSED" if failures == 0 else "ANIMATION TESTS FAILED", failures])
 	if ath:
@@ -139,16 +143,30 @@ func test_clay_slide() -> void:
 	ath.move_input = Vector2.ZERO
 	var t := 0.0
 	var spread := 0.0
+	var wrist := 0.0
+	var bent := 0.0
+	var arm_cost := 0.0
 	while ath.velocity.length() > 0.2 and t < 2.0:
 		step()
 		t += DT
 		var feet := feet_world()
 		spread = maxf(spread, absf((feet[0] as Vector3).x - (feet[1] as Vector3).x))
+		if ath._slide > 0.5:
+			# The racket arm of the slide: the racket carries on from the forearm (no snapped
+			# wrist) and the elbow bends the human way.
+			var j := arm("r")
+			var upper: Vector3 = ((j[1] as Vector3) - (j[0] as Vector3)).normalized()
+			var fore: Vector3 = ((j[2] as Vector3) - (j[1] as Vector3)).normalized()
+			wrist = maxf(wrist, rad_to_deg(fore.angle_to(ath._racket.transform.basis.y)))
+			bent = maxf(bent, rad_to_deg(upper.angle_to(fore)))
+			arm_cost = maxf(arm_cost, ath._elbow_cost(j[0], j[2], j[1], Basis(Vector3.UP, ath._twist)))
 	var dist := ath.position.x - x0
 	check(v0 > 5.0, "top speed reached %.1f m/s" % v0)
 	check(dist > 1.1 and dist < 1.9, "glides %.2f m before stopping (Sinner 1.6 m from 5.1 m/s)" % dist)
 	check(t > 0.4 and t < 0.75, "stops in %.2f s (measured 0.63 s)" % t)
 	check(spread > 1.0, "feet spread %.2f m along the slide (measured 1.5-1.8 m)" % spread)
+	check(wrist < 35.0, "slide: the racket follows the forearm, wrist bent %.0f deg at most" % wrist)
+	check(bent < 100.0 and arm_cost < 0.03, "slide: elbow bends the human way (%.0f deg, cost %.3f)" % [bent, arm_cost])
 	# Pushing back the other way bites after ~0.28 s of the slide, not at once.
 	fresh("clay")
 	ath.max_speed = 5.1
@@ -398,6 +416,109 @@ func test_stances() -> void:
 	check(((ff[0] as Vector3) - (ff[1] as Vector3)).length() < 0.32, "serve: feet together in the air (%.2f m)" % ((ff[0] as Vector3) - (ff[1] as Vector3)).length())
 
 
+## Foot and knee jitter on the run (a hotfix: a leg started to shake on the run): in the
+## body's frame a foot never jumps between two frames and never zigzags (its velocity
+## flipping direction at speed several times a second) in any run: straight, sideways,
+## back, snaking, round a circle, a U-turn, a stick shivering around the straight line.
+const JITTER_JUMP := 0.30     # m per frame (18 m/s): a clean gait peaks at ~0.12
+const JITTER_ZIGZAG := 0.5    # quick direction flips (two within 0.1 s, each over 1 m/s: a visible shake, not a 5 mm tremor) of a foot, per second and shoe
+# (a clean gait flips once per stance/swing change, 0.15+ s apart); the knees only for jumps
+
+
+func jitter_input(name: String, t: float) -> Vector2:
+	match name:
+		"fwd_slow": return Vector2(0.0, -0.35)
+		"fwd": return Vector2(0.0, -1.0)
+		"side": return Vector2(1.0, 0.0)
+		"side_left": return Vector2(-1.0, 0.0)
+		"back": return Vector2(0.0, 1.0)
+		"diag": return Vector2(0.6, -0.8)
+		"wobble_slow": return Vector2(0.08 * sin(t * 4.0), -1.0)
+		"wobble_fast": return Vector2(0.08 * sin(t * 23.0), -1.0)
+		"stick_shiver": return Vector2(0.06 if int(t * 60.0) % 2 == 0 else -0.06, -1.0)
+		"snake": return Vector2(sin(t * 1.8), -1.0)
+		"snake_back": return Vector2(sin(t * 2.6), 0.8)
+		"circle": return Vector2(sin(t * 1.4), -cos(t * 1.4))
+		"slow_circle": return Vector2(0.4 * sin(t * 2.2), -0.4 * cos(t * 2.2))
+		"u_turn": return Vector2(0.0, -1.0) if fmod(t, 2.4) < 1.2 else Vector2(0.0, 1.0)
+		"zig": return Vector2(1.0, -0.3) if fmod(t, 0.9) < 0.45 else Vector2(-1.0, -0.3)
+		"creep": return Vector2(0.03 * sin(t * 5.0), -0.12)
+	return Vector2.ZERO
+
+
+## Worst frame jump (m) and zigzag rate (per second) of both feet and both knees in the
+## body's frame over a run of the given input; returns [jump, zigzag, where].
+func jitter_run(name: String, top_speed: float) -> Array:
+	fresh("hard", Vector3(0, 0, 0), Rect2(-80, -80, 160, 160))
+	ath.max_speed = top_speed
+	var t := 0.0
+	var prev := {}
+	var vel_prev := {}
+	var flip_at := {}
+	var frame := 0
+	var jump := 0.0
+	var where := ""
+	var zig := 0
+	var seconds := 0.0
+	for f in 60 * 7:
+		ath.move_input = jitter_input(name, t)
+		var slide_before: float = ath._slide
+		step()
+		if ath._slide > slide_before:
+			prev.clear()   # a hard stop from a sprint snaps into the slide pose on purpose
+			vel_prev.clear()
+		t += DT
+		if t < 1.0:
+			continue
+		seconds += DT
+		frame += 1
+		for key in ["shoe0", "shoe1", "knee0", "knee1"]:
+			var p: Vector3
+			if key.begins_with("shoe"):
+				p = ath._model.global_transform * (bone_ends(key)[0] as Vector3).lerp(bone_ends(key)[1], 0.5)
+			else:
+				p = ath._model.global_transform * (bone_ends("shin" + key.substr(4))[0] as Vector3)
+			p = ath.to_local(p)
+			if prev.has(key):
+				var w: Vector3 = (p - prev[key]) / DT
+				w.y = 0.0
+				if (p - prev[key]).length() > jump:
+					jump = (p - prev[key]).length()
+					where = "%s t=%.2f" % [key, t]
+				if vel_prev.has(key):
+					var u: Vector3 = vel_prev[key]
+					if key.begins_with("shoe") and u.length() > 1.0 and w.length() > 1.0 and u.dot(w) < 0.0:
+						if flip_at.has(key) and frame - int(flip_at[key]) <= 6:
+							zig += 1
+						flip_at[key] = frame
+				vel_prev[key] = w
+			prev[key] = p
+	return [jump, zig / maxf(seconds, 0.01) / 2.0, where]
+
+
+func test_foot_jitter() -> void:
+	print("foot jitter: no jumps, no zigzag of the feet and knees on the run")
+	var names := ["fwd_slow", "fwd", "side", "side_left", "back", "diag", "wobble_slow", "wobble_fast",
+		"stick_shiver", "snake", "snake_back", "circle", "slow_circle", "u_turn", "zig", "creep"]
+	var worst_jump := 0.0
+	var worst_zig := 0.0
+	var wj := ""
+	var wz := ""
+	for top in [2.5, 4.0, 6.2]:
+		for n in names:
+			var r := jitter_run(n, top)
+			if r[0] > worst_jump:
+				worst_jump = r[0]
+				wj = "%s @%.1f %s" % [n, top, r[2]]
+			if r[1] > worst_zig:
+				worst_zig = r[1]
+				wz = "%s @%.1f" % [n, top]
+			if r[0] > JITTER_JUMP or r[1] > JITTER_ZIGZAG:
+				print("    %-12s top %.1f: jump %.3f m, zigzag %.1f /s %s" % [n, top, r[0], r[1], r[2]])
+	check(worst_jump < JITTER_JUMP, "no foot or knee jumps between frames (worst %.3f m: %s)" % [worst_jump, wj])
+	check(worst_zig < JITTER_ZIGZAG, "no foot or knee zigzag (worst %.1f /s: %s)" % [worst_zig, wz])
+
+
 func test_lean() -> void:
 	print("lean: into the burst, not the steady run")
 	fresh()
@@ -492,6 +613,136 @@ func test_human_arms() -> void:
 		check(hand_back < 0.2, "%s: hands never reach round behind the back (%.2f m, %s)" % [c[4], hand_back, worst_at])
 
 
+## Balls above the usual strike zone but below the smash threshold (Main.SMASH_MIN_H, 2.2 m),
+## in front and a little to the side, forehand and backhand: the contact keys used to put the
+## hand half a metre to the side of the ball at the ball's height, flat racket across the
+## arm, so at head height the arm went up beside / across the face, the elbow flipped
+## round the shoulder-hand line (0.5 m in a frame) and the racket turned 45-55 deg in a
+## frame. Every frame of each swing: the forearm keeps off the head, the elbow stays bent
+## like an arm (not folded shut), the racket and the elbow do not jump between frames, a
+## forehand's hand stays on the racket side of the spine, the racket stays out of the head.
+const HIGH_HEIGHTS := [1.4, 1.6, 1.8, 2.0, 2.2]
+const HIGH_HEAD_MIN := 0.19      # m: the forearm's closest point to the head centre
+const HIGH_ELBOW_MIN := 40.0     # deg: the elbow's interior angle
+const HIGH_RACKET_JUMP := 40.0   # deg per frame (a whip peaks near 32 on these strokes)
+const HIGH_ELBOW_JUMP := 0.32    # m per frame
+const HIGH_HAND_X := 0.08        # m right of the spine at a forehand's contact
+
+
+func test_high_balls() -> void:
+	print("high balls below the smash: the arm does not twist, cross the face or flip")
+	var kinds := [
+		["forehand", 1, Athlete.Style.TOPSPIN, false],
+		["two-handed backhand", -1, Athlete.Style.TOPSPIN, false],
+		["one-handed backhand", -1, Athlete.Style.TOPSPIN, true],
+		["forehand slice", 1, Athlete.Style.SLICE, false],
+	]
+	for k in kinds:
+		var side: int = k[1]
+		for h in HIGH_HEIGHTS:
+			var head_min := 9.0
+			var elbow_min := 999.0
+			var rjump := 0.0
+			var ejump := 0.0
+			var hand_x := 9.0
+			var in_head := 0.0
+			for lat in [0.5, 0.75]:
+				for fwd in [0.5, 0.8]:
+					fresh("hard", Vector3(0, 0, 11))
+					ath.one_handed_backhand = k[3]
+					ath.prepare(side, k[2])
+					for i in 40:
+						step()
+					ath.swing(side, 0.3, ath.to_global(Vector3(lat * side, h, -fwd)), k[2])
+					var prev_r := Vector3.ZERO
+					var prev_e := Vector3.ZERO
+					var frames := 0
+					while ath.is_swinging() and frames < 150:
+						step()
+						frames += 1
+						var j := arm("r")
+						var sh: Vector3 = j[0]
+						var el: Vector3 = j[1]
+						var hd: Vector3 = j[2]
+						var rd: Vector3 = ath._racket.transform.basis.y
+						var head: Vector3 = ath._head.position
+						head_min = minf(head_min, Geometry3D.get_closest_point_to_segment(head, el, hd).distance_to(head))
+						elbow_min = minf(elbow_min, 180.0 - rad_to_deg((el - sh).angle_to(hd - el)))
+						in_head = maxf(in_head, 0.17 - Geometry3D.get_closest_point_to_segment(head, hd, hd + rd * 0.62).distance_to(head))
+						if frames > 1:
+							rjump = maxf(rjump, rad_to_deg(prev_r.angle_to(rd)))
+							ejump = maxf(ejump, (el - prev_e).length())
+						prev_r = rd
+						prev_e = el
+						if side > 0 and absf(ath._clock - ath._contact_at) < 0.009:
+							hand_x = minf(hand_x, hd.x)
+			var tag := "%s at %.1f m" % [k[0], h]
+			check(head_min >= HIGH_HEAD_MIN, "%s: the forearm keeps %.2f m off the head" % [tag, head_min])
+			check(elbow_min >= HIGH_ELBOW_MIN, "%s: the elbow never folds shut (%.0f deg)" % [tag, elbow_min])
+			check(rjump <= HIGH_RACKET_JUMP, "%s: the racket never turns more than %.0f deg in a frame (%.0f)" % [tag, HIGH_RACKET_JUMP, rjump])
+			check(ejump <= HIGH_ELBOW_JUMP, "%s: the elbow never jumps (%.2f m in a frame)" % [tag, ejump])
+			check(in_head < 0.03, "%s: the racket stays out of the head (%.2f m in)" % [tag, in_head])
+			if side > 0:
+				check(hand_x >= HIGH_HAND_X, "%s: the hand stays on the racket side of the spine at contact (x %.2f)" % [tag, hand_x])
+
+
+## The racket leaves the hand when the player goes down (a dive that lands, a slip, a
+## knockout), tumbles and lies flat on the court (never under it), and is back in the hand
+## once the player is up.
+func racket_in_hand() -> float:
+	var j := arm("r")
+	return ath._model.to_global(j[2]).distance_to(ath._racket.global_position)
+
+
+func test_racket_on_a_fall() -> void:
+	print("racket on a fall: out of the hand, on the court, back in the hand")
+	for kind in ["dive", "knockout", "dive then restart"]:
+		fresh("hard", Vector3(0, 0, 11))
+		ath.prepare(1)
+		for i in 30:
+			step()
+		var held_before := true
+		var loose := 0
+		var loose_from := -1
+		var sink := 99.0
+		var rest_speed := 0.0
+		var prev := Vector3.ZERO
+		var frames := 0
+		var total := 0
+		if kind == "knockout":
+			ath.knockout(Vector3(0, 2, 8))
+			total = int((Athlete.KO_FLY + Athlete.KO_LIE + 0.8) * 60.0)
+		else:
+			ath.swing(1, 0.2, ath.to_global(Vector3(2.0, 0.6, -0.4)), Athlete.Style.TOPSPIN)
+			ath.dive(ath.to_global(Vector3(2.0, 0.6, -0.4)))
+			total = int((Athlete.DIVE_TIME + Athlete.GROUND_TIME + Athlete.GETUP_TIME + 0.8) * 60.0)
+		var restart_at := int((Athlete.DIVE_TIME + 1.0) * 60.0) if kind == "dive then restart" else -1
+		var back_at := -1
+		for f in total:
+			if f == restart_at:
+				ath.recover()
+			step()
+			var t := float(f) / 60.0
+			var d := racket_in_hand()
+			if t < 0.1 and kind != "knockout" and d > 0.03:
+				held_before = false
+			if ath.racket_loose() and d > 0.12:
+				loose += 1
+				if loose_from < 0:
+					loose_from = f
+				sink = minf(sink, ath.racket_lowest_y())
+				if ath._rk == 1:
+					rest_speed = (ath._racket.global_position - prev).length() * 60.0   # the last one: just before it is picked up
+			elif loose_from >= 0 and back_at < 0 and not ath.racket_loose():
+				back_at = f
+			prev = ath._racket.global_position
+		check(held_before, "%s: the racket stays in the hand through the swing (the first 0.1 s)" % kind)
+		check(loose >= 40, "%s: the racket is out of the hand for a while (%d frames)" % [kind, loose])
+		check(sink > -0.005, "%s: the racket never goes through the court (lowest %.3f m)" % [kind, sink])
+		check(rest_speed < 0.1, "%s: it lies still after sliding (%.2f m/s)" % [kind, rest_speed])
+		check(back_at > 0 and racket_in_hand() < 0.03 and not ath.racket_loose(), "%s: the racket is in the hand again (frame %d, %.3f m off)" % [kind, back_at, racket_in_hand()])
+
+
 ## Changing the stance (forehand <-> backhand) while running back, running in, standing
 ## and running sideways: the chest turns half a circle and the hands must go round in
 ## front of it. Every frame, no hand, elbow or forearm may be inside the trunk or behind
@@ -521,6 +772,99 @@ func test_stance_change() -> void:
 			var dir := "forehand -> backhand" if first > 0 else "backhand -> forehand"
 			check(bad == 0, "%s, %s: no arm through the trunk or behind the back (%d bad frames %s)" % [sc, dir, bad, first_bad])
 			check(closest > 0.19, "%s, %s: hands keep %.2f m from the spine" % [sc, dir, closest])
+
+
+## The racket slot (Athlete.slot): no swipe yet and the ball close, the racket drops into
+## the slot by itself and waits; the swipe whips it through the ball from there. Standing,
+## backing off and shuffling sideways, released at contact, released early, released into
+## another stroke (slice), never released, or the ball switching wings: the arms never go
+## through the trunk or behind the back, the hands keep off the spine, the hand never jumps
+## more than a real whip moves in a frame (~15 m/s), and the swing still meets the ball.
+const ENDINGS := ["legacy", "whip", "early", "slice", "none", "switch"]
+
+
+func test_racket_slot() -> void:
+	print("racket slot: drop by itself, whip on the swipe, no arm through the body")
+	var moves := {"still": Vector2.ZERO, "back": Vector2(0.0, 1.0), "sideways": Vector2(1.0, 0.0)}
+	for mv_name in moves:
+		for side in [1, -1]:
+			for ending in ENDINGS:
+				fresh("hard", Vector3(0, 0, 9), Rect2(-12, -14, 24, 34))
+				var bad := 0
+				var first_bad := ""
+				var closest := 9.0
+				var jump := 0.0
+				var jump_at := ""
+				var closest_at := ""
+				var met := 9.0
+				ath.prepare(side)
+				for f in 30:
+					ath.move_input = moves[mv_name] * 0.5
+					step()
+				var ttc := Athlete.SWING_TO_CONTACT
+				var cur_side: int = side
+				var released := false
+				var prev_hand := ath._hand
+				for f in 70:
+					ath.move_input = moves[mv_name] * 0.5
+					var contact := ath.global_position + ath.right() * cur_side * 0.75 + ath.forward() * 0.45 + Vector3(0, 0.95, 0)
+					if not released:
+						if ending == "switch" and ttc < 0.1 and cur_side == side:
+							cur_side = -side
+							contact = ath.global_position + ath.right() * cur_side * 0.75 + ath.forward() * 0.45 + Vector3(0, 0.95, 0)
+						var go := ttc <= 0.0 if ending != "early" else ttc <= 0.15
+						if ending == "legacy":
+							if go:  # the old way: no slot, the whole swing starts at the swipe
+								ath.swing(cur_side, 0.0, contact)
+								released = true
+						elif ending == "none":
+							if ttc < -0.1:
+								ath.unslot()
+								released = true
+							else:
+								ath.slot(cur_side, maxf(ttc, 0.0), contact)
+						elif go or (ending == "switch" and cur_side != side and ttc <= 0.0):
+							ath.swing(cur_side, maxf(ttc, 0.0), contact, Athlete.Style.SLICE if ending == "slice" else Athlete.Style.TOPSPIN)
+							released = true
+						else:
+							ath.slot(cur_side, ttc, contact)
+					else:
+						ath.update_contact(contact) if ath.is_swinging() and ath._clock < ath._contact_at else null
+					step()
+					ttc -= DT
+					if (ath._hand - prev_hand).length() > jump:
+						jump = (ath._hand - prev_hand).length()
+						jump_at = "f%d mode %d clock %.3f contact %.3f len %.3f" % [f, ath._mode, ath._clock, ath._contact_at, ath._swing_len]
+					prev_hand = ath._hand
+					if ath.is_swinging() and absf(ath._clock - ath._contact_at) < DT * 0.6:
+						met = (ath.racket_head_world() - contact).length()
+					var pr := AthleteProbe.problems(ath)
+					if not pr.is_empty():
+						bad += 1
+						if first_bad == "":
+							first_bad = "frame %d %s" % [f, pr]
+					var t := AthleteProbe.torso(ath)
+					for it in AthleteProbe.arm_points(ath):
+						if (it[0] as String).begins_with("hand"):
+							var q := AthleteProbe.in_torso_frame(t, it[1])
+							if q.z < 99.0 and Vector2(q.x, q.y).length() < closest:
+								closest = Vector2(q.x, q.y).length()
+								closest_at = "f%d %s mode %d hold %s q %s" % [f, it[0], ath._mode, ath._slot_hold, q]
+				var tag := "%s, %s, %s" % [mv_name, "FH" if side > 0 else "BH", ending]
+				check(bad == 0, "%s: no arm through the trunk or behind the back (%d bad frames %s)" % [tag, bad, first_bad])
+				# Both hands on the racket in the ready stance hold it ~0.18 m in front of the
+				# chest (as before the slot), so the margin here is that, not the takeback's.
+				check(closest > 0.17, "%s: hands keep %.2f m from the spine (%s)" % [tag, closest, closest_at])
+				if ending == "legacy" or ending == "switch":
+					# The whole swing squeezed into the frames after the swipe (the old way,
+					# and still the way when the ball switches wings at the last moment).
+					print("  info %s: the hand moves up to %.2f m in a frame (%s)" % [tag, jump, jump_at])
+				else:
+					# A real forehand whip: the hand ~12-17 m/s near contact, 0.2-0.3 m a frame.
+					check(jump < 0.32, "%s: the hand moves at most %.2f m in a frame (%s)" % [tag, jump, jump_at])
+				if ending != "none":
+					check(met < 0.35, "%s: the racket meets the ball (%.2f m off at contact)" % [tag, met])
+				check(not ath.is_slotted(), "%s: nothing left waiting in the slot" % tag)
 
 
 ## Out of breath between points: bent over with both hands at the knees, the feet
