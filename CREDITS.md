@@ -27,9 +27,9 @@
   Shocked Reaction" (352766); `coin.ogg` — "coin recieved" (230517); `reward.ogg` — "Game Bonus"
   (144751); `click.ogg` — "Click Button" (140881); `victory.ogg` — "Success Fanfare Trumpets"
   (6185); `defeat.ogg` — "Sad Trumpet" (278822); `music_menu.ogg` — "Lofi Sunny Cafe"
-  (alex-morgan, 568156); `amb_park_plane.ogg` — "Airplane, aircraft take off" (freesound_community,
-  121949). Sources and the prep commands: `tools/prep_audio.py`. `amb_park.ogg` was then
-  repaired (a helicopter in the recording: its blade wobble levelled out), see `tools/dechop_bed.py`.
+  (alex-morgan, 568156). Sources and the prep commands: `tools/prep_audio.py`. The first park bed
+  ("City Traffic (Outdoor)", 6414) carried a helicopter that could not be repaired, so
+  `amb_park.ogg` is now made of the London bed (`amb_grass.ogg`), see `tools/rebed_park.py`.
 - All other sounds in `assets/sfx/` are generated procedurally by `tools/gen_sfx.py`.
 
 ## 3D models (the club's props)
