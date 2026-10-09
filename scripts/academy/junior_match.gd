@@ -256,6 +256,14 @@ static func strip_text(res: Dictionary) -> String:
 	return "Академия: %s %s %s" % [res["first_name"], res["score"], res["opp_short"]]
 
 
+## «Миша, Аня» for the coach's cloud: who waits in the booth.
+static func waiting_line() -> String:
+	var names: Array[String] = []
+	for m in queue():
+		names.append(String(Academy.student(String(m["sid"])).get("name", "")).get_slice(" ", 0))
+	return ", ".join(names)
+
+
 ## Results nobody has been told yet; they are marked told.
 static func take_news() -> Array:
 	var d := data()

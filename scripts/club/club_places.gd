@@ -168,11 +168,11 @@ const LIST := [
 		],
 	},
 	{
-		# Reserved (ACADEMY_LEGACY_TZ 6): the coach's booth behind the near baseline, at the
-		# court's corner, for the juniors' matches. A sign only.
+		# The coach's booth behind the near baseline, at the court's corner (ACADEMY_LEGACY_TZ 6,
+		# spec T-4): the students' matches wait here (AcademyMatchUi).
 		"id": "booth", "name": "Будка тренера", "pos": Vector3(-6.8, 0, 15.6), "r": 1.4,
-		"unlock": "never", "sign": "Будка тренера · скоро", "travel": false,
-		"levels": [{"label": "Будка", "action": "", "note": "Место под будку тренера"}],
+		"unlock": "played", "sign": "Будка тренера · после первого забега", "travel": false,
+		"levels": [{"label": "Матчи", "action": "club_booth", "note": "Матчи учеников: тай-брейк до 7 после каждого забега"}],
 	},
 	{
 		"id": "board", "name": "Доска-табло", "pos": Vector3(22, 0, -14), "r": 1.8,

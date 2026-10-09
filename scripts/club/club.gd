@@ -272,6 +272,17 @@ func _academy_news() -> void:
 	if not news.is_empty():
 		coach.say("Подросли! " + Academy.news_text(news), true)
 		SaveData.save()
+		return
+	# The students' matches (T-4): the ones nobody came to are played out, the new ones wait in the booth.
+	var played_out := JuniorMatch.sync()
+	var told := JuniorMatch.take_news()
+	var waiting := JuniorMatch.queue().size()
+	if waiting > 0:
+		coach.say("В будке ждёт матч: %s" % JuniorMatch.waiting_line(), true)
+	elif not told.is_empty():
+		coach.say("Пока тебя не было: " + "; ".join(told.slice(0, 2)), true)
+	if not played_out.is_empty() or waiting > 0:
+		SaveData.save()
 
 
 func _finish_builds() -> void:
@@ -524,6 +535,8 @@ func badge_counts() -> Dictionary:
 	if ClubLots.is_placed("coach"):
 		out["coach"] = Skills.points + Skills.pending.size() + ClubQuests.claimable_count()
 	out.merge(ClubLots.lot_badges())   # a red count over the lots where something can be bought
+	if SaveData.played >= 1:
+		out["booth"] = JuniorMatch.queue().size()   # the students' matches that wait (T-4)
 	return out
 
 
@@ -564,6 +577,9 @@ func _on_choice(action: String, arg: int) -> void:
 func ui_action(action: String, arg: int) -> void:
 	var id := _place if _place != "" else hud.current_place()
 	if AcademyRoom.route(self, action, arg):   # the academy's screens and the students (T-2/T-3)
+		return
+	if action == "club_booth" or action.begins_with("club_match"):   # the students' matches (T-4)
+		AcademyMatchUi.ui_action(main, action, arg)
 		return
 	match action:
 		"club_shop":
