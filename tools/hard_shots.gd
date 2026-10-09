@@ -49,7 +49,7 @@ func _run() -> void:
 	print("hardcore=", RM.hardcore, " titles=", SaveData.titles, " rows=", main.ui._box.get_child_count())
 	await _shot("03_hardcore")
 	RM.ui_action(main, "mods_toggle", 3)
-	RM.ui_action(main, "mods_toggle", 12)
+	RM.ui_action(main, "mods_toggle", RM.choices().size() - 1)  # the rotation shows 6..8
 	main.ui._scroll.scroll_vertical = 500
 	await _shot("04_hardcore_picks", 0.5)
 	RM.ui_action(main, "mods_go", 0)

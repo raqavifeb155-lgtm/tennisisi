@@ -79,7 +79,9 @@ const CHEST_CHANCE := [0.35, 0.35, 0.55, 0.55, 1.0]
 const CHEST_PITY := 2
 const CHEST_GOLD := [15, 22, 32, 48, 80]                # x the prize multiplier, 0.7..1.3
 ## Item rarity by the round: common, rare, epic, legendary (no mythics from a chest).
-const CHEST_RARITY := [[20.0, 36.0, 32.0, 12.0], [16.0, 34.0, 36.0, 14.0], [12.0, 32.0, 40.0, 16.0], [7.0, 28.0, 45.0, 20.0], [3.0, 20.0, 48.0, 29.0]]
+## Loop review P1 (10.10): a legendary at most 8% even in the final (was 12..29%: a champion
+## run gave ~0.6 legendaries and the boutique's 1188 meant nothing); the share went to rares.
+const CHEST_RARITY := [[20.0, 45.0, 32.0, 3.0], [16.0, 44.0, 36.0, 4.0], [12.0, 40.0, 43.0, 5.0], [7.0, 40.0, 47.0, 6.0], [3.0, 39.0, 50.0, 8.0]]
 const BAG_SIZE := 6
 const SKILL_PER_RARITY := 0.01    # his gear makes him a little stronger
 
@@ -113,9 +115,11 @@ var auto_sold := 0                # gold from items sold because the bag was ful
 var run_mods := {}                # mods that last the run (RunEffects run_mod, e.g. Корона)
 var run_modifiers: Array = []     # v0.2 G: the run's conditions picked before it (Modifiers ids)
 var hardcore := false             # v0.2 G-6: the hardcore run ("hardcore" is also first in run_modifiers)
+var freq := 0                     # hub-economy 14: the rate of the opponents' modifiers (Modifiers.FREQS)
 var mythic_rolled := false        # a mythic already showed up this run (one per run)
 var drop_bonus := 0.0             # added to the drop chances (1 = everything drops)
-var bet := {}                     # a bet on the coming match (Bets): stake, odds, sweep
+var bet := {}                     # a bet on the coming match (Bets): stake, side, odds
+var disqualified := false         # a bet against himself got him out: the run is over, no prize for that match
 var pending_loot := {}            # the best epic+ item dropped by the opponent just beaten
 var missed_loot := ""             # name of the racket lost in the trophy mini-game
 var banked := false               # the run's gold has been added to the saved total
@@ -175,7 +179,7 @@ func _init(format_index := 0, seed_value := 0, hardcore_run := false) -> void:
 const SAVED := ["format", "location", "field", "lineup", "racket", "pending_loot", "missed_loot", "banked",
 	"state", "stage", "wildcards", "perks", "results", "gold", "champion", "offer",
 	"equip", "bag", "new_items", "auto_sold", "run_mods", "mythic_rolled", "drop_bonus", "bet",
-	"income", "locker_done", "run_modifiers", "chest", "dry", "hardcore"]
+	"income", "locker_done", "run_modifiers", "chest", "dry", "hardcore", "freq", "disqualified"]
 
 
 ## The run as plain data, for the save file: a phone that reloads the page (Telegram
@@ -460,13 +464,21 @@ func gold_for_win(i: int) -> int:
 	return roundi(float(base) * (1.0 + ClubBuilds.gold_win_bonus()) * Modifiers.gold_mult(self, i))
 
 
+## A disqualification (Bets.settle_match): record_match ends the run without this match's prize.
+func disqualify() -> void:
+	disqualified = true
+
+
 ## Records a finished match and moves the run on.
 func record_match(won: bool, score_text: String, r: RandomNumberGenerator) -> void:
-	results.append({"stage": stage, "won": won, "score": score_text})
+	results.append({"stage": stage, "won": won, "score": score_text, "dq": disqualified})
 	last_prize = 0
 	missed_loot = ""
 	new_items = []
 	auto_sold = 0
+	if disqualified:
+		state = State.OVER  # no prize, no drops, no wildcard: out of the tournament
+		return
 	if won:
 		var round_i := stage
 		_take_drops(r)
@@ -628,4 +640,6 @@ func give_up() -> void:
 func finish_text() -> String:
 	if champion:
 		return "Чемпион! %s" % tier_name()
+	if disqualified:
+		return "Дисквалификация: %s" % round_name()
 	return "Вылет: %s" % round_name()

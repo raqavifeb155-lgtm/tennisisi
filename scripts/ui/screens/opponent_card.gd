@@ -15,7 +15,7 @@ static func info(t: Tournament, i: int) -> Dictionary:
 	var lu: Dictionary = t.lineup[i] if i < t.lineup.size() else {}
 	var mods: Array[String] = []
 	for m in lu.get("mods", []):
-		mods.append(mod_text(String(m)))
+		mods.append(mod_text(String(m), lu))
 	var st := Opponents.shown_stats(o, -1.0, i)  # as he plays against this player (the roster's, kept up with his level)
 	return {
 		"name": String(o["name"]),
@@ -28,16 +28,29 @@ static func info(t: Tournament, i: int) -> Dictionary:
 		"mods": mods,
 		"golden": bool(lu.get("golden", false)),
 		"prize": t.gold_for_win(i),
+		"odds": Bets.match_market(t, i),  # E-5: the bookmaker's line, "Коэф. 1.75 / 2.10"
 	}
 
 
 ## A modifier id as a line: "Железный · реже ошибается". Ids this class does not know (the
 ## catalog of stream G) are shown as they are, so a new aura never breaks the card.
-static func mod_text(id: String) -> String:
+## G-6/G-7: the traits and auras by their name from Modifiers (a hidden aura stays "???").
+static func mod_text(id: String, lu := {}) -> String:
+	if (lu.get("hidden", []) as Array).has(id):
+		return "??? · раскроется на первом очке"
 	if Tournament.MODIFIERS.has(id):
 		var m: Dictionary = Tournament.MODIFIERS[id]
 		return "%s · %s" % [m["name"], m["desc"]]
+	var e := Modifiers.find(id)
+	if not e.is_empty():
+		var d := String(e.get("desc", ""))
+		return "%s · %s" % [e["name"], d.left(1).to_lower() + d.substr(1)] if d != "" else String(e["name"])
 	return id
+
+
+## "Коэф. 1.75 / 2.10": on yourself / on him (the bookmaker, E-5).
+static func odds_line(mk: Dictionary) -> String:
+	return "Коэф. %.2f / %.2f" % [float(mk["you"]), float(mk["opp"])]
 
 
 ## "левша · одноручный бэкхенд": the label of the top-100 (the rig itself plays right-handed).
@@ -103,6 +116,8 @@ static func show(ui: TournamentUI, t: Tournament, i: int) -> void:
 		else:
 			hint.free()
 	ui._box.add_child(ui._text("За победу: +%d золота" % int(inf["prize"]), UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.GOLD))
+	if Bets.unlocked():
+		ui._box.add_child(ui._text(odds_line(inf["odds"]), UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.INK))
 	if i == t.stage:
 		ui._primary("ИГРАТЬ", "play")
 	else:

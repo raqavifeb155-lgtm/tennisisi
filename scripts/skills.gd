@@ -70,6 +70,7 @@ const PERKS := {
 		{"id": "tc_feel", "title": "Чувство мяча", "desc": "Окно PERFECT на касании +25%", "mods": {"touch_window": 0.25}},
 		{"id": "tc_skid", "title": "Стелющийся", "desc": "Резаный +8% скорости", "mods": {"touch_pace": 0.08}},
 		{"id": "tc_artist", "title": "Художник", "desc": "Окно +10%, вращение +10%", "mods": {"touch_window": 0.10, "touch_spin": 0.10}},
+		{"id": "tc_shady", "title": "Ушлый", "desc": "Ставки против себя без риска дисквалификации", "mods": {"shady": 1.0}},
 		{"id": "tc_ghost", "title": "Призрак", "desc": "Разброс −15%, вращение +10%", "mods": {"touch_scatter": -0.15, "touch_spin": 0.10}},
 	],
 	"feet": [
