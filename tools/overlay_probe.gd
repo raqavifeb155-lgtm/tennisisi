@@ -205,6 +205,60 @@ func _club_screen(ctx: String, action: String, title: String) -> void:
 	await _expect("%s: назад в клуб" % ctx, func() -> bool: return club.active and club.hud.visible and not main.ui.is_open())
 
 
+## «Условия забега» from the club's link (hub-economy 14): shaped for a thumb, the gear over it,
+## the rate's three plates in a row inside the screen, a tap picks a rate (the total moves),
+## «Назад» comes back to the club.
+func _run_mods_round(club) -> void:
+	var rm = load("res://scripts/ui/screens/run_mods.gd")
+	var played := SaveData.played
+	var mf := SaveData.mods_freq
+	SaveData.played = 3
+	SaveData.mods_freq = 0
+	club.ui_action("club_mods", 0)
+	await _wait(0.8)
+	var ctx := "Клуб 3D → Условия забега"
+	await _expect("%s: экран открылся" % ctx, func() -> bool: return main.ui.is_open() and main.ui.root.find_children("*", "Label", true, false).any(func(l): return (l as Label).is_visible_in_tree() and "Условия забега" in (l as Label).text))
+	# The list scrolls (6..8 conditions): rows below the fold are cut by the scroll, not by the
+	# screen, so they only must fit the width; everything else fits whole.
+	var frame := Rect2(Vector2.ZERO, Vector2(root.size))
+	var bad := 0
+	for c in main.ui.root.find_children("*", "Button", true, false):
+		var b := c as Button
+		if not b.is_visible_in_tree():
+			continue
+		var r := b.get_global_rect()
+		var scrolled: bool = main.ui._scroll.is_ancestor_of(b)
+		if r.size.y < 84.0 or (scrolled and (r.position.x < -2.0 or r.end.x > frame.end.x + 2.0)) or (not scrolled and not frame.grow(2.0).encloses(r)):
+			bad += 1
+	_check("%s: кнопки не меньше 84 px, в ширину экрана (список прокручивается)" % ctx, bad == 0)
+	await _expect("%s: ⚙ видна над экраном" % ctx, func() -> bool: return _gear().is_visible_in_tree())
+	var fb: Array = rm.freq_buttons(main.ui)
+	await _expect("%s: частота — три плашки в ряд, целиком на экране, не налезают" % ctx, func() -> bool:
+		if fb.size() != 3:
+			return false
+		for k in 3:
+			var r: Rect2 = (fb[k] as Control).get_global_rect()
+			if not frame.encloses(r) or r.size.y < 84.0 or (k > 0 and r.intersects((fb[k - 1] as Control).get_global_rect())):
+				return false
+		return true)
+	await _expect("%s: частота не под ⚙ и «Назад»" % ctx, func() -> bool: return fb.all(func(b): return not (b as Control).get_global_rect().intersects(_gear().get_global_rect())))
+	var x0: float = rm.total()
+	await _tap(fb[2] if fb.size() == 3 else null)
+	await _expect("%s: тап по «Часто» выбирает её, награда растёт" % ctx, func() -> bool: return rm.freq == 2 and rm.total() > x0 + 0.3)
+	fb = rm.freq_buttons(main.ui)
+	await _tap(fb[1] if fb.size() == 3 else null)
+	await _expect("%s: тап по «Обычно» — обычно" % ctx, func() -> bool: return rm.freq == 1)
+	await _tap(_gear())
+	await _settings_round("%s → ⚙" % ctx)
+	_chosen = ""
+	await _tap(await _find(main.ui.root, "Назад"))
+	await _expect("%s: «Назад» нажимается" % ctx, func() -> bool: return _chosen == "mods_back")
+	await _wait(0.8)
+	await _expect("%s: назад в клуб" % ctx, func() -> bool: return club.active and club.hud.visible and not main.ui.is_open())
+	SaveData.played = played
+	SaveData.mods_freq = mf
+
+
 ## The opponent's stamina bar in its three looks (OppStaminaView): where it stands is
 ## inside the phone's frame and clear of the timing ring, the ball in play (the serve) is
 ## not near it, and a ball on the bar makes it fade and a far ball brings it back.
@@ -412,6 +466,7 @@ func _run() -> void:
 			club._place = pl[0]
 			await _club_screen("Клуб 3D → место: %s" % pl[1], "club_place", pl[1])
 		club._place = ""
+		await _run_mods_round(club)
 		# The locked island: a row that can't be pressed, with a hint.
 		load("res://scripts/club/club_screens.gd").locations(main.ui, func(id: String) -> bool: return id == "newyork", func(_id: String) -> String: return "за титул в Нью-Йорке")
 		await _wait(0.6)
