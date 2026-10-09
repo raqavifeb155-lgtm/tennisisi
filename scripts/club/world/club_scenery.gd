@@ -152,7 +152,7 @@ func _signature() -> String:
 	for id in ["court", "stands", "gate", "shop", "locker", "trophy", "bar", "arena"]:  # (the fence looks at "gate")
 		parts.append(str(level_of(id)))
 	for id in ClubLots.ORDER:   # what the ruins see: the state of each type's home lot
-		parts.append(str(site_level(id)))
+		parts.append("%d%s" % [site_level(id), ClubLots.lot_of(id)])   # ...and where each stands (its tidy-ups go with it)
 	parts.append(str(int(SaveData.played >= 1)))
 	return ",".join(parts)
 
@@ -163,21 +163,36 @@ func level_of(owner: String) -> int:
 	return ClubPlaces.level(owner)
 
 
-## The level the props of `owner` see. A ruin (and the tidy-up of a built place) belongs to
-## the SITE: for the type of a lot it is whatever stands on that type's home lot - nothing
-## (0), or a building of any type (>= 1) - not the level of the type, which may stand elsewhere
-## (ClubLots.ruin_level, docs/superpowers/specs/2026-10-09-tycoon.md 7). Court, gate and shop:
-## their own level.
+## The level a RUIN prop of `owner` sees. A ruin belongs to the SITE: for the type of a lot it is
+## whatever stands on that type's home lot - nothing (0), or a building of any type (>= 1) - not
+## the level of the type, which may stand elsewhere (ClubLots.ruin_level,
+## docs/superpowers/specs/2026-10-09-tycoon.md 7). Court, gate and shop: their own level.
+## (A tidy-up - flowers at a door, a menu board - belongs to the BUILDING: its own level, and it
+## is carried to the lot the building stands on, see `visible_props`.)
 func site_level(owner: String) -> int:
 	var s := ClubLots.ruin_level(owner)
 	return s if s >= 0 else level_of(owner)
+
+
+## The props there are now: ruins by the site, tidy-ups by their building and where it stands.
+func visible_props() -> Array[ClubProps.Prop]:
+	var list := props.visible(site_level, _high, level_of)
+	for i in list.size():
+		var p: ClubProps.Prop = list[i]
+		if p.from > 0 and ClubLots.TYPES.has(p.owner):
+			var t := ClubLots.xf(p.owner)
+			if t != Transform3D.IDENTITY:
+				var q := p.moved(t)
+				q.xf.origin.y += ClubLayout.gy(Vector2(q.xf.origin.x, q.xf.origin.z)) - ClubLayout.gy(Vector2(p.xf.origin.x, p.xf.origin.z))
+				list[i] = q
+	return list
 
 
 ## Redraws what depends on a level, the pack or the preset.
 func _refresh(first: bool) -> void:
 	_sig = _signature()
 	_gen = ClubPack.generation
-	var list := props.visible(site_level, _high)
+	var list := visible_props()
 	world.walk.clear_tag("props")
 	crowns.clear()
 	for p in list:
@@ -339,7 +354,7 @@ static func _sag_height(x: float) -> float:
 ## What the props cost, by id: {id: [count, triangles]} for what is visible now (budgets).
 func prop_stats() -> Dictionary:
 	var out := {}
-	for p in props.visible(site_level, _high):
+	for p in visible_props():
 		if not out.has(p.id):
 			out[p.id] = [0, 0]
 		out[p.id][0] += 1

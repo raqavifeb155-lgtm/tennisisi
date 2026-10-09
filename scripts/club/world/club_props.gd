@@ -35,6 +35,25 @@ class Prop:
 	var from := 0
 	var tag := ""
 
+	## The same prop carried with its building to another lot (t: ClubLots.xf), set down on the
+	## ground there (the height above it kept).
+	func moved(t: Transform3D) -> Prop:
+		var q := Prop.new()
+		q.id = id
+		q.tint = tint
+		q.high = high
+		q.shadow = shadow
+		q.far = far
+		q.solid = solid
+		q.owner = owner
+		q.need = need
+		q.from = from
+		q.tag = tag
+		var o := t * xf.origin
+		o.y = xf.origin.y
+		q.xf = Transform3D(t.basis * xf.basis, o)
+		return q
+
 var props: Array[Prop] = []
 
 
@@ -53,8 +72,10 @@ func count() -> int:
 	return props.size()
 
 
-## Which props are there at the given levels (level_of: Callable owner -> int).
-func visible(level_of: Callable, high: bool) -> Array[Prop]:
+## Which props are there at the given levels (level_of: Callable owner -> int). `from_level_of`
+## (when given) is what the tidy-ups (`from`) look at instead: the ruins (`need`) belong to a site,
+## the tidy-ups to the building.
+func visible(level_of: Callable, high: bool, from_level_of := Callable()) -> Array[Prop]:
 	var out: Array[Prop] = []
 	for p in props:
 		if p.high and not high:
@@ -63,7 +84,7 @@ func visible(level_of: Callable, high: bool) -> Array[Prop]:
 			var lv: int = level_of.call(p.owner)
 			if p.need > 0 and lv >= p.need:
 				continue
-			if p.from > 0 and lv < p.from:
+			if p.from > 0 and (int(from_level_of.call(p.owner)) if from_level_of.is_valid() else lv) < p.from:
 				continue
 		out.append(p)
 	return out
