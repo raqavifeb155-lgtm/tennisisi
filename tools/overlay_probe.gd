@@ -791,6 +791,7 @@ func _run() -> void:
 	await _expect("Трофей → пауза → ПРОДОЛЖИТЬ: игра идёт", func() -> bool: return not paused and not _pause().visible)
 
 	await _career_round()
+	await _name_round()
 
 	print("\nOVERLAYS: %d checks, %d failed" % [checks, fails])
 	quit(1 if fails > 0 else 0)
@@ -860,3 +861,64 @@ func _career_round() -> void:
 	await _wait(1.2)
 	var club = main.get("club")
 	await _expect("Новый сезон → клуб", func() -> bool: return (club != null and club.active) or main.ui.is_open())
+
+
+## The hero's name: the look editor's row, the rename screen (dice, save with the price, cancel),
+## too poor for a change. Real taps; every button a thumb's size and on the screen.
+func _name_round() -> void:
+	main._show_menu()
+	await _wait(1.5)
+	var career = load("res://scripts/career.gd")
+	SaveData.career = {}
+	career.data()
+	SaveData.gold = 0
+	main._on_ui("look", 0)
+	await _career_screen("Имя → Внешность", "Внешность")
+	var frame := Rect2(Vector2.ZERO, Vector2(root.size)).grow(2.0)
+	var row := await _find(main.ui.root, "Изменить")
+	await _expect("Внешность: «Изменить» имя не меньше 84 px и на экране (первая смена бесплатно)", func() -> bool: return row != null and not row.disabled and row.size.y >= 84.0 and frame.encloses(row.get_global_rect()))
+	_chosen = ""
+	await _tap(row)
+	await _expect("Внешность → «Изменить» нажимается", func() -> bool: return _chosen == "career_rename")
+	await _career_screen("Имя → экран имени", "Имя героя")
+	var edit: LineEdit = main.ui.root.find_children("*", "LineEdit", true, false)[0]
+	await _expect("Имя: поле ввода не меньше 84 px и на экране", func() -> bool: return edit.size.y >= 84.0 and frame.encloses(edit.get_global_rect()))
+	var before := edit.text
+	var dice := await _find(main.ui.root, "Случайное")
+	await _expect("Имя: «Случайное» не меньше 84 px и на экране", func() -> bool: return dice != null and dice.size.y >= 84.0 and frame.encloses(dice.get_global_rect()))
+	await _tap(dice)
+	await _expect("Имя: «Случайное» подставило новое имя", func() -> bool: return edit.text != "" and edit.text != before)
+	var save := await _find(main.ui.root, "СОХРАНИТЬ")
+	await _expect("Имя: «СОХРАНИТЬ» не меньше 84 px, на экране и доступна (бесплатно)", func() -> bool: return save != null and not save.disabled and save.size.y >= 84.0 and frame.encloses(save.get_global_rect()))
+	var want := edit.text
+	_chosen = ""
+	await _tap(save)
+	await _expect("Имя: «СОХРАНИТЬ» меняет имя, золото цело, назад в Внешность", func() -> bool: return _chosen == "look" and career.hero_name() == want and SaveData.gold == 0)
+	await _career_screen("Имя → снова Внешность", "Внешность")
+	var row2 := await _find(main.ui.root, "Изменить")
+	await _expect("Внешность: без золота «Изменить 100» неактивна", func() -> bool: return row2 != null and row2.disabled and "100" in row2.text and frame.encloses(row2.get_global_rect()))
+	SaveData.gold = 250
+	main._on_ui("career_rename", 1)
+	await _career_screen("Имя → платная смена", "Имя героя")
+	edit = main.ui.root.find_children("*", "LineEdit", true, false)[0]
+	edit.text = "Тимур"
+	edit.text_changed.emit("Тимур")
+	save = await _find(main.ui.root, "СОХРАНИТЬ")
+	await _expect("Имя: платная «СОХРАНИТЬ 100» нажимается и на экране", func() -> bool: return save != null and not save.disabled and "100" in save.text and frame.encloses(save.get_global_rect()))
+	var cancel := await _find(main.ui.root, "Отмена")
+	await _expect("Имя: «Отмена» не меньше 84 px и на экране", func() -> bool: return cancel != null and cancel.size.y >= 84.0 and frame.encloses(cancel.get_global_rect()))
+	_chosen = ""
+	await _tap(cancel)
+	await _expect("Имя: «Отмена» — без списания и без смены", func() -> bool: return _chosen == "career_rename_back" and SaveData.gold == 250 and career.hero_name() == want)
+	await _wait(0.8)
+	main._on_ui("career_rename", 1)
+	await _wait(0.8)
+	edit = main.ui.root.find_children("*", "LineEdit", true, false)[0]
+	edit.text = "Тимур"
+	edit.text_changed.emit("Тимур")
+	_chosen = ""
+	await _tap(await _find(main.ui.root, "СОХРАНИТЬ"))
+	await _expect("Имя: платное «СОХРАНИТЬ» списало 100 и сменило имя", func() -> bool: return career.hero_name() == "Тимур" and SaveData.gold == 150)
+	await _wait(1.0)
+	main._show_menu()
+	await _wait(1.0)

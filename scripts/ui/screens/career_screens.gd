@@ -426,6 +426,7 @@ static func _coin_after(b: Button, shown := true) -> void:
 		coin.position = Vector2((b.size.x + w) * 0.5 + 24.0, b.size.y * 0.5)
 		coin.modulate.a = 0.4 if b.disabled else 1.0
 	b.resized.connect(place)
+	b.tree_entered.connect(place, CONNECT_DEFERRED)  # the theme's font counts only inside the tree
 	place.call()
 
 
@@ -538,7 +539,7 @@ static func show_rename(ui: TournamentUI, animate := true) -> void:
 ## A tool button of the rename screen (a tap's height; the dice is drawn on the first).
 static func _tool(ui: TournamentUI, text: String, dice: bool) -> Button:
 	var b := Button.new()
-	b.text = ("      " if dice else "") + text
+	b.text = ("        " if dice else "") + text
 	b.focus_mode = Control.FOCUS_NONE
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	b.custom_minimum_size = Vector2(0, UiTheme.TAP)
@@ -547,7 +548,9 @@ static func _tool(ui: TournamentUI, text: String, dice: bool) -> Button:
 		var d := Dice.new()
 		d.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		b.add_child(d)
-		b.resized.connect(func() -> void:
+		var place := func() -> void:
 			var w := b.get_theme_font("font").get_string_size(b.text, HORIZONTAL_ALIGNMENT_LEFT, -1, b.get_theme_font_size("font_size")).x
-			d.position = Vector2((b.size.x - w) * 0.5 + 20.0, b.size.y * 0.5))
+			d.position = Vector2((b.size.x - w) * 0.5 + 17.0, b.size.y * 0.5)
+		b.resized.connect(place)
+		b.tree_entered.connect(place, CONNECT_DEFERRED)
 	return b
