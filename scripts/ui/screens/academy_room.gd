@@ -50,6 +50,9 @@ static func show(ui: TournamentUI) -> void:
 		else:
 			var left := Academy.SEASON - SaveData.played % Academy.SEASON
 			ui._note("Свободное место. Новые кандидаты — в следующем сезоне (через %d %s)" % [left, ClubBuilds.runs_word(left)])
+	if not list.is_empty():
+		var waiting := JuniorMatch.queue().size()
+		ui._secondary("Матчи в будке  ·  ждут %d" % waiting if waiting > 0 else "Матчи в будке", "club_match_office")
 	# What the academy gives, and its next level.
 	var info := "Потолок роста %d  ·  опыт за забег ×%s" % [int(Academy._at(Academy.CEILING)), str(snappedf(float(Academy._at(Academy.XP_MULT)), 0.1))]
 	ui._box.add_child(_small(ui, info))

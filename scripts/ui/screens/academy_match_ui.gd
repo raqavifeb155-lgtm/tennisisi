@@ -7,6 +7,7 @@ class_name AcademyMatchUi
 ## «club_match_total», «club_match_advice»: Club.ui_action hands them to ui_action().
 
 static var picked := ""         # the match whose card is open
+static var back := "menu"       # where «назад» of the booth leads ("club_students": from the coach's office)
 
 
 ## The match as data (the tests read it): the lines a card shows.
@@ -24,7 +25,7 @@ static func info(m: Dictionary) -> Dictionary:
 
 static func booth(ui: TournamentUI) -> void:
 	JuniorMatch.sync()
-	ui._open(null, true, "menu")
+	ui._open(null, true, back)
 	ui._title("Будка тренера")
 	ui._sub("Тай-брейк до 7 после каждого забега. Матч ждёт тебя здесь и не сгорает до следующего забега")
 	var q := JuniorMatch.queue()
@@ -50,7 +51,7 @@ static func booth(ui: TournamentUI) -> void:
 static func card(ui: TournamentUI, m: Dictionary) -> void:
 	picked = String(m["id"])
 	var inf := info(m)
-	ui._open(null, true, "club_booth")
+	ui._open(null, true, "club_match_list")
 	ui._title("%s  против  %s" % [inf["first_name"], inf["opp"]])
 	ui._sub("Тай-брейк до 7  ·  рейтинг %d  против  %d" % [inf["rating"], inf["opp_rating"]])
 	var panel := PanelContainer.new()
@@ -111,7 +112,10 @@ static func result(ui: TournamentUI, res: Dictionary) -> void:
 ## The club's actions of the booth (Club.ui_action hands them here).
 static func ui_action(main: Node, action: String, arg: int) -> void:
 	match action:
-		"club_booth":
+		"club_booth", "club_match_office":
+			back = "club_students" if action == "club_match_office" else "menu"
+			booth(main.ui)
+		"club_match_list":
 			booth(main.ui)
 		"club_match_pick":
 			var q := JuniorMatch.queue()
