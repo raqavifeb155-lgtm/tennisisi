@@ -148,7 +148,7 @@ func clear(a: Vector2, b: Vector2, radius := 0.35) -> bool:
 	var seg := Rect2(Vector2(minf(a.x, b.x), minf(a.y, b.y)), (a - b).abs()).grow(r + 0.01)
 	var near_c: Array = []
 	for c in circles:
-		if seg.grow(float(c[1])).has_point(c[0]):
+		if seg.grow(float(c[1])).has_point(c[0]) and Geometry2D.get_closest_point_to_segment(c[0], a, b).distance_to(c[0]) < float(c[1]) + r + 0.01:
 			near_c.append(c)
 	var near_b: Array = []
 	for bx in boxes:
@@ -221,36 +221,33 @@ func route(from: Vector2, to: Vector2, radius := 0.35) -> Array:
 	if clear(from, to, radius):
 		return [to]
 	var nodes: Array = [from, to] + waypoints
-	var n := nodes.size()
-	var dist := {0: 0.0}
+	# A* with the sight lines asked late: a candidate is [f, g, node, parent] and its line is
+	# tested only when it comes up as the cheapest, so most pairs are never tested at all.
+	var dist := {}
 	var prev := {}
-	var open := [0]
-	var done := {}
-	while not open.is_empty():
+	var cands: Array = [[from.distance_to(to), 0.0, 0, -1]]
+	while not cands.is_empty():
 		var best := 0
-		for k in open.size():
-			var i: int = open[k]
-			if float(dist[i]) + (nodes[i] as Vector2).distance_to(to) < float(dist[open[best]]) + (nodes[open[best]] as Vector2).distance_to(to):
+		for k in range(1, cands.size()):
+			if float(cands[k][0]) < float(cands[best][0]):
 				best = k
-		var cur: int = open[best]
-		open.remove_at(best)
+		var cand: Array = cands[best]
+		cands[best] = cands[cands.size() - 1]
+		cands.pop_back()
+		var cur: int = cand[2]
+		if dist.has(cur):
+			continue
+		if cur != 0 and not _sees_node(nodes, int(cand[3]), cur, radius):
+			continue
+		dist[cur] = float(cand[1])
+		prev[cur] = int(cand[3])
 		if cur == 1:
 			break
-		done[cur] = true
-		for j in n:
-			if j == cur or done.has(j):
+		for j in nodes.size():
+			if j == 0 or dist.has(j):
 				continue
-			var nd: float = float(dist[cur]) + (nodes[cur] as Vector2).distance_to(nodes[j])
-			if dist.has(j) and nd >= float(dist[j]):
-				continue
-			if dist.has(1) and nd + (nodes[j] as Vector2).distance_to(to) >= float(dist[1]):
-				continue  # cannot beat the way to `to` already found
-			if not _sees_node(nodes, cur, j, radius):
-				continue
-			dist[j] = nd
-			prev[j] = cur
-			if not open.has(j):
-				open.append(j)
+			var g: float = float(cand[1]) + (nodes[cur] as Vector2).distance_to(nodes[j])
+			cands.append([g + (nodes[j] as Vector2).distance_to(to), g, j, cur])
 	if not prev.has(1):
 		return []
 	var out: Array = []
