@@ -6,6 +6,12 @@ extends SceneTree
 var failures := 0
 
 
+## Traits (G-7) multiply the prizes: the economy checks want the plain numbers.
+static func _plain(t: Tournament) -> void:
+	for l in t.lineup:
+		l["mods"] = []
+
+
 func _initialize() -> void:
 	SaveData.enabled = false
 	_run.call_deferred()
@@ -99,6 +105,7 @@ func test_drop_chances() -> void:
 	var rng := _rng(11)
 	for k in 6000:
 		var t := Tournament.new(1, 500 + k)
+		_plain(t)
 		for it in Tournament.drops(t.lineup[1]["gear"], rng, 0.0):
 			got[int(it["rarity"])] += 1
 		slots += 3
@@ -111,20 +118,24 @@ func test_drop_chances() -> void:
 func test_prize_money() -> void:
 	print("prize money")
 	var t := Tournament.new(1, 5)
+	_plain(t)
 	t.record_match(false, "2:6", _rng(1))
 	check(t.state == Tournament.State.OVER and t.gold == 20, "out in the first round: 20 gold of prize money (%d)" % t.gold)
 	t = Tournament.new(1, 5)
+	_plain(t)
 	t.wildcards = 1
 	t.record_match(false, "2:6", _rng(1))
 	check(t.gold == 0 and t.state == Tournament.State.LOST, "a loss with a wildcard pays nothing yet")
 	t.give_up()
 	check(t.gold == 20, "...giving up after it pays the round (%d)" % t.gold)
 	t = Tournament.new(1, 5)
+	_plain(t)
 	t.give_up()
 	check(t.gold == 0, "giving up before playing pays nothing")
 	var by_round := []
 	for out in 6:
 		var u := Tournament.new(1, 9)
+		_plain(u)
 		u.drop_bonus = -1.0
 		for i in out:
 			u.record_match(true, "6:1", _rng(i))
@@ -136,6 +147,7 @@ func test_prize_money() -> void:
 		by_round.append(u.gold)
 	check(by_round == [20, 35, 60, 95, 150, 225], "income by the round of exit %s" % [by_round])
 	var quick := Tournament.new(0, 5)
+	_plain(quick)
 	quick.record_match(false, "2:7", _rng(1))
 	check(quick.gold == 8, "the quick format pays x0.4 (%d)" % quick.gold)
 
@@ -143,6 +155,7 @@ func test_prize_money() -> void:
 func test_income() -> void:
 	print("income lines")
 	var t := Tournament.new(1, 21)
+	_plain(t)
 	t.earn("style", 6)
 	t.drop_bonus = 1.0
 	t.record_match(true, "6:2", _rng(2))
@@ -163,6 +176,7 @@ func test_income() -> void:
 func test_sell_extra() -> void:
 	print("sell everything extra")
 	var t := Tournament.new(1, 4)
+	_plain(t)
 	t.equip["racket"] = _item(Gear.RARE)
 	t.bag = [_item(Gear.COMMON, 1, "shoes"), _item(Gear.COMMON, 1, "racket"), _item(Gear.RARE, 1, "band"),
 		_item(Gear.EPIC, 1, "racket"), _item(Gear.RARE, 1, "racket")]
@@ -225,6 +239,7 @@ func test_locker_in_run() -> void:
 	Locker.put(_item(Gear.RARE, 1, "racket"), 0)
 	SaveData.locker["next"] = [_item(Gear.COMMON, 1, "band")]
 	var t := Tournament.new(1, 3)
+	_plain(t)
 	Locker.board(t)
 	check(t.equip["band"]["rarity"] == Gear.COMMON and Locker.next_items().is_empty(), "what was bought comes along by itself (put on)")
 	check(t.can_take_locker(), "before the first match the locker is open")
@@ -369,7 +384,9 @@ func test_islands() -> void:
 	check(SaveData._score(SaveData._to_config()) >= before, "the save's score never falls with a title")
 	# opponents get stronger, richer, better geared
 	var park := Tournament.new(1, 11)
+	_plain(park)
 	var paris := Tournament.new(1, 11)
+	_plain(paris)
 	paris.location = "paris"
 	park.stage = 2
 	paris.stage = 2
@@ -390,6 +407,7 @@ func test_islands() -> void:
 	for k in 400:
 		for j in 2:
 			var t := Tournament.new(1, 5000 + k)
+			_plain(t)
 			if j == 1:
 				t.location = "paris"
 			for l in t.lineup:
@@ -412,6 +430,7 @@ func test_income_scale() -> void:
 	check(is_equal_approx(Tournament.income_scale(), Tournament.INCOME_SCALE + (Tournament.BEGINNER_START - Tournament.INCOME_SCALE) * 0.5), "halfway through the first runs")
 	SaveData.played = Tournament.BEGINNER_RUNS
 	var t := Tournament.new(1, 3)
+	_plain(t)
 	check(is_equal_approx(Tournament.income_scale(), Tournament.INCOME_SCALE), "after %d runs the long-run scale" % Tournament.BEGINNER_RUNS)
 	check(t.prize_on_loss(0) == roundi(20 * Tournament.INCOME_SCALE) and t.gold_for_win(4) == roundi(50 * Tournament.INCOME_SCALE), "prizes follow it (%d, %d)" % [t.prize_on_loss(0), t.gold_for_win(4)])
 	Tournament.BEGINNER_START = 1.0
@@ -452,6 +471,7 @@ func test_chest() -> void:
 	var longest_dry := 0
 	for k in 1000:
 		var t := Tournament.new(1, 100 + k)
+		_plain(t)
 		t.drop_bonus = -1.0  # no trophy muddies the pity count
 		var dry := 0
 		for r in 4:
@@ -471,12 +491,15 @@ func test_chest() -> void:
 	check(fr[2] > fr[0] and fr[2] > 0.55, "quarter-final: %.0f%%" % [fr[2] * 100.0])
 	check(longest_dry <= Tournament.CHEST_PITY, "never more than %d wins in a row with no chest (longest %d)" % [Tournament.CHEST_PITY, longest_dry])
 	var f := Tournament.new(1, 5)
+	_plain(f)
 	f.stage = 4
 	f.record_match(true, "6:1", _rng(1))
 	check(f.champion and not f.chest.is_empty(), "the final always leaves a chest")
 	# the same run and match: the same chest
 	var a := Tournament.new(1, 77)
+	_plain(a)
 	var b := Tournament.new(1, 77)
+	_plain(b)
 	a.dry = 2
 	b.dry = 2
 	a.record_match(true, "6:1", _rng(1))
@@ -490,6 +513,7 @@ func test_chest() -> void:
 	var levels_ok := true
 	var cr := _rng(3)
 	var holder := Tournament.new(1, 8)
+	_plain(holder)
 	holder.location = "paris"
 	for k in 1000:
 		var c := holder.make_chest(2, cr)
@@ -512,6 +536,7 @@ func test_chest() -> void:
 	check(float(epics) / items_n > 0.45 and float(epics) / items_n < 0.65, "quarter-final chests: epic+ in %d of %d items" % [epics, items_n])
 	# taking it: gold into the run's lines, the item worn or in the bag, state goes on
 	var t2 := Tournament.new(1, 12)
+	_plain(t2)
 	t2.state = Tournament.State.REWARD
 	t2.chest = {"round": 1, "gold": 30, "item": _item(Gear.RARE, 1, "band"), "perk": "light_feet", "wildcard": true, "opened": false}
 	t2.open_chest()
@@ -523,6 +548,7 @@ func test_chest() -> void:
 	var saved := Tournament.from_dict(Tournament.new(1, 5).to_dict())
 	check(saved.chest.is_empty() and saved.dry == 0, "chest and pity survive a save")
 	var t3 := Tournament.new(1, 6)
+	_plain(t3)
 	t3.chest = {"round": 0, "gold": 5, "item": {}, "perk": "", "wildcard": false, "opened": false}
 	t3.dry = 1
 	check(Tournament.from_dict(t3.to_dict()).chest == t3.chest and Tournament.from_dict(t3.to_dict()).dry == 1, "a chest waiting survives a save")

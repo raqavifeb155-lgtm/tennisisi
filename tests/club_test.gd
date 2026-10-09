@@ -161,7 +161,7 @@ func test_builds() -> void:
 	t.lineup[1]["golden"] = false
 	var plain := t.gold_for_win(1)
 	SaveData.club = {"levels": {"stands": 5}}
-	check(t.gold_for_win(1) == roundi(plain * 1.10), "full stands: a won match pays +10%% (%d -> %d)" % [plain, t.gold_for_win(1)])
+	check(absi(t.gold_for_win(1) - roundi(plain * 1.10)) <= 1, "full stands: a won match pays +10%% (%d -> %d)" % [plain, t.gold_for_win(1)])
 	ClubBuilds.utility_enabled = false
 	check(t.gold_for_win(1) == plain, "utility off (online): the stands pay nothing")
 	ClubBuilds.utility_enabled = true

@@ -224,7 +224,7 @@ func test_traits() -> void:
 		var u := Tournament.new(1, k + 1)
 		same = same and t.lineup.map(func(l): return l["mods"]) == u.lineup.map(func(l): return l["mods"])
 		for i in t.lineup.size():
-			var o: Dictionary = Opponents.ROSTER[i]
+			var o: Dictionary = t.opp(i)  # D-8: the drawn opponent, not the fixed roster
 			var tr: Array = t.lineup[i]["mods"].filter(func(id): return Traits.has(id))
 			if tr.is_empty():
 				no_trait += 1

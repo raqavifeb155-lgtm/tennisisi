@@ -288,7 +288,7 @@ func _show_hud_settings(on: bool) -> void:
 
 
 func _physics_process(delta: float) -> void:
-	if not active:
+	if not active or not is_instance_valid(world):
 		return
 	var p: Athlete = main.player
 	# Walls and posts: the body slides along them (Athlete only knows its rectangle).
@@ -582,7 +582,7 @@ func roulette_on() -> bool:
 
 
 func roulette_busy() -> bool:
-	return _roulette_on and world.roulette().busy()
+	return _roulette_on and world.roulette() != null and world.roulette().busy()
 
 
 ## The chips the bar takes now: within its level's limit and a quarter of the gold.
@@ -593,6 +593,8 @@ func chips() -> Array:
 func roulette_open() -> void:
 	if _roulette_on:
 		return
+	if world.roulette() == null:
+		return  # the bar is not built yet (T-1 lots)
 	_roulette_on = true
 	main.player.move_input = Vector2.ZERO
 	_move_target = Vector3.INF
@@ -632,7 +634,7 @@ func roulette_close() -> void:
 ## A bet: the field is drawn now (Bets.spin), gold paid out now and saved; the wheel only
 ## shows it. {} when it can't go (the ball still rolls, a stake over the limit).
 func spin(bet: String, stake: int) -> Dictionary:
-	if not _roulette_on or world.roulette().busy() or not chips().has(stake) or not Bets.PAYS.has(bet):
+	if not _roulette_on or world.roulette() == null or world.roulette().busy() or not chips().has(stake) or not Bets.PAYS.has(bet):
 		return {}
 	var field := Bets.spin(main.rng)
 	var paid := Bets.payout(bet, stake, field)
