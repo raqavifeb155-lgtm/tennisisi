@@ -735,11 +735,13 @@ func _key(style: int, phase: String, side: int) -> Array:
 				hand = Vector3(0.46 * sv, 1.24, 0.02)
 				dir = Vector3(0.25 * sv, 0.85, 0.35)
 			"drop":
-				hand = Vector3(0.5 * sv, maxf(c.y + 0.12, 0.7), -0.06)
+				hand = Vector3(0.5 * sv, clampf(c.y + 0.12, 0.7, HIGH_DROP), -0.06)
 				dir = Vector3(0.6 * sv, 0.55, 0.1)
 			"contact":
 				dir = Vector3(1.0 * sv, 0.3, -0.35)
-				hand = c - dir.normalized() * RACKET_REACH
+				var hc := _contact_hand(c, dir, float(side))
+				hand = hc[0]
+				dir = hc[1]
 			_:
 				hand = Vector3(0.3 * sv, maxf(c.y, 0.9), -0.62)
 				dir = Vector3(0.45 * sv, 0.35, -0.82)
@@ -753,11 +755,13 @@ func _key(style: int, phase: String, side: int) -> Array:
 				hand = Vector3(-0.2, 1.3, 0.34)
 				dir = Vector3(0.3, 0.7, 0.65)
 			"drop":
-				hand = Vector3(-0.4, maxf(c.y - 0.32, 0.5), 0.14)
+				hand = Vector3(-0.4, clampf(c.y - 0.32, 0.5, HIGH_DROP), 0.14)
 				dir = Vector3(-0.3, -0.7, 0.62)
 			"contact":
 				dir = Vector3(-1.0, -0.02, -0.25)
-				hand = c - dir.normalized() * RACKET_REACH
+				var hc := _contact_hand(c, dir, float(side))
+				hand = hc[0]
+				dir = hc[1]
 			_:
 				# The arm swings on through, past the right shoulder: up and out to the
 				# right side, straight, the racket head up and behind (the classic
@@ -783,11 +787,13 @@ func _key(style: int, phase: String, side: int) -> Array:
 			"drop":
 				# The racket head drops only to hip height, still pointing back; the hands
 				# stay out to the left, arms long (BH-4/5).
-				hand = Vector3(-0.52, maxf(c.y - 0.06, 0.84), 0.06)
+				hand = Vector3(-0.52, clampf(c.y - 0.06, 0.84, HIGH_DROP), 0.06)
 				dir = Vector3(-0.45, -0.3, 0.84)
 			"contact":
 				dir = Vector3(-1.0, -0.03, -0.28)
-				hand = c - dir.normalized() * RACKET_REACH
+				var hc := _contact_hand(c, dir, float(side))
+				hand = hc[0]
+				dir = hc[1]
 			_:
 				if style == Style.FLAT:
 					hand = Vector3(0.36, 1.25, -0.38)
@@ -807,11 +813,13 @@ func _key(style: int, phase: String, side: int) -> Array:
 					hand = Vector3(0.4 * s, 1.42, 0.3)
 					dir = Vector3(0.2 * s, 0.85, 0.45)
 				"drop":
-					hand = Vector3(0.42 * s, maxf(c.y + 0.2, 0.9), 0.1)
+					hand = Vector3(0.42 * s, clampf(c.y + 0.2, 0.9, HIGH_DROP), 0.1)
 					dir = Vector3(0.75 * s, 0.35, 0.3)
 				"contact":
 					dir = Vector3(1.0 * s, 0.18, -0.25)
-					hand = c - dir.normalized() * RACKET_REACH
+					var hc := _contact_hand(c, dir, float(side))
+					hand = hc[0]
+					dir = hc[1]
 				_:
 					if style == Style.DROP:
 						# Soft hands: the racket stops short, face still open under the ball.
@@ -826,11 +834,13 @@ func _key(style: int, phase: String, side: int) -> Array:
 					hand = Vector3(0.45 * s, 1.15, 0.32)
 					dir = Vector3(0.2 * s, 0.6, 0.78)
 				"drop":
-					hand = Vector3(0.48 * s, c.y - 0.05, 0.15)
+					hand = Vector3(0.48 * s, minf(c.y - 0.05, HIGH_DROP), 0.15)
 					dir = Vector3(0.6 * s, -0.1, 0.7)
 				"contact":
 					dir = Vector3(1.0 * s, 0.03, -0.25)
-					hand = c - dir.normalized() * RACKET_REACH
+					var hc := _contact_hand(c, dir, float(side))
+					hand = hc[0]
+					dir = hc[1]
 				_:
 					hand = Vector3(-0.38 * s, 1.22, -0.36)
 					dir = Vector3(-0.6 * s, 0.25, 0.65)
@@ -846,11 +856,13 @@ func _key(style: int, phase: String, side: int) -> Array:
 				"drop":
 					# The racket head drops behind and below the hand; the hand itself stays
 					# up at the hip, elbow bent ~90 deg (FH-4) — it never hangs down straight.
-					hand = Vector3(0.42 * s, maxf(c.y + 0.02, 0.96), 0.24)
+					hand = Vector3(0.42 * s, clampf(c.y + 0.02, 0.96, HIGH_DROP), 0.24)
 					dir = Vector3(0.3 * s, -0.68, 0.67)
 				"contact":
 					dir = Vector3(1.0 * s, -0.05, -0.22)
-					hand = c - dir.normalized() * RACKET_REACH
+					var hc := _contact_hand(c, dir, float(side))
+					hand = hc[0]
+					dir = hc[1]
 				_:
 					if side > 0:
 						# Nadal's lasso: the arm whips up over the head on the same side,
@@ -862,6 +874,56 @@ func _key(style: int, phase: String, side: int) -> Array:
 						hand = Vector3(-0.3 * s, 1.5, -0.24)
 						dir = Vector3(-0.25 * s, 0.35, 0.9)
 	return [hand, dir.normalized()]
+
+
+## A racket direction turned from `a` to `b` by the share w, at an even rate along the
+## shortest way (a straight blend of two directions far apart races through the middle:
+## the racket drop -> a high contact turned ~130 deg, 45-55 deg in one frame).
+func _turn_dir(a: Vector3, b: Vector3, w: float) -> Vector3:
+	var an := a.normalized()
+	var bn := b.normalized()
+	if an.dot(bn) < -0.98:
+		return an.lerp(bn, w).normalized() if an.dot(bn) > -0.9999 else an
+	return an.slerp(bn, w).normalized()
+
+
+## HIGH_REACH: how far from the shoulder the strings-side hand may be at contact (m): the
+## arm is 0.58 m long, a little bent is still a comfortable stroke.
+const HIGH_REACH := 0.5
+## The racket drop for a high ball stays at the shoulders: the hand does not go up over
+## the head behind the back (that is the serve's racket drop).
+const HIGH_DROP := 1.4
+## The strings-side hand of a forehand stays this far right of the spine at contact (m).
+const HAND_X_MIN := 0.12
+## Where the hand is for a ball at `c` with the racket along `dir`, and the racket direction
+## to use. Every stroke's contact key points the racket sideways (dir is flat), so the hand
+## sits half a metre to the side of the ball at the ball's height: for a ball above the
+## shoulders that is a hand over the head (or past what the arm reaches), the arm shoots
+## straight up and twists round the racket held across it (a forehand or a backhand at head
+## height, below the smash threshold). Above the shoulders the racket tilts up instead (the
+## wrist cocked, the head above the hand) until the hand is within the arm's comfortable
+## reach, the way a high volley or a high topspin is hit. Smooth in c: the tilt grows with
+## the height and takes only what the reach asks for, along the shortest way (slerp).
+func _contact_hand(c: Vector3, dir: Vector3, side: float) -> Array:
+	var d0 := dir.normalized()
+	if side > 0.0:
+		# A ball close to the body on the racket side: the hand would be put across the
+		# chest, left of the spine, the arm sweeping over the face to get there. The hand
+		# stays at the racket shoulder and the racket points more to the front instead.
+		var dx := clampf((c.x - HAND_X_MIN) / RACKET_REACH, -0.2, 0.9)
+		if dx < d0.x:
+			var yz := Vector2(d0.y, d0.z).normalized() * sqrt(1.0 - dx * dx)
+			d0 = Vector3(dx, yz.x, yz.y)
+	var gate := smoothstep(1.25, 1.6, c.y)   # only balls up by the shoulders; wide and low ones stay as they were
+	if gate <= 0.0:
+		return [c - d0 * RACKET_REACH, d0]
+	var sh := Vector3(SHOULDER_W, SHOULDER_H, 0.0)
+	var up := Vector3(d0.x * 0.3, 1.0, d0.z * 0.3).normalized()
+	var t := smoothstep(1.3, 2.0, c.y) * 0.45
+	while t < 1.0 and (c - d0.slerp(up, t) * RACKET_REACH - sh).length() > HIGH_REACH:
+		t += 0.02
+	var d := d0.slerp(up, minf(t, 1.0) * gate).normalized()
+	return [c - d * RACKET_REACH, d]
 
 
 ## HAND_R_MIN: a hand's centre keeps at least this far from the spine while it travels.
@@ -959,13 +1021,13 @@ func _process(delta: float) -> void:
 			if e < 0.5:
 				var w := e * 2.0
 				_hand = from_h.cubic_interpolate(drop[0], from_h, con[0], w)
-				_rdir = from_d.lerp(drop[1], w).normalized()
+				_rdir = _turn_dir(from_d, drop[1], w)
 			else:
 				var w := (e - 0.5) * 2.0
 				var mid_h: Vector3 = _swing_from_hand if _slot_released else drop[0]
 				var mid_d: Vector3 = _swing_from_dir if _slot_released else drop[1]
 				_hand = mid_h.cubic_interpolate(con[0], from_h, fol[0], w)
-				_rdir = mid_d.lerp(con[1], w).normalized()
+				_rdir = _turn_dir(mid_d, con[1], w)
 			# Kinetic chain: the hips fire first, the shoulders stay turned while the
 			# racket drops (FH-4, BH-4) and unwind late, into the ball. A slice keeps
 			# the body side-on through the ball.

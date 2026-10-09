@@ -35,6 +35,7 @@ func run_all() -> void:
 	test_serve_kick()
 	test_stances()
 	test_human_arms()
+	test_high_balls()
 	test_stance_change()
 	test_racket_slot()
 	test_foot_jitter()
@@ -594,6 +595,79 @@ func test_human_arms() -> void:
 					worst_at = "%s hand, %.2f s from contact, mode %d" % [sd, ath._clock - ath._contact_at, ath._mode]
 		check(worst < 0.03, "%s: elbows stay human through the stroke (worst %.3f)" % [c[4], worst])
 		check(hand_back < 0.2, "%s: hands never reach round behind the back (%.2f m, %s)" % [c[4], hand_back, worst_at])
+
+
+## Balls above the usual strike zone but below the smash threshold (Main.SMASH_MIN_H, 2.2 m),
+## in front and a little to the side, forehand and backhand: the contact keys used to put the
+## hand half a metre to the side of the ball at the ball's height, flat racket across the
+## arm, so at head height the arm went up beside / across the face, the elbow flipped
+## round the shoulder-hand line (0.5 m in a frame) and the racket turned 45-55 deg in a
+## frame. Every frame of each swing: the forearm keeps off the head, the elbow stays bent
+## like an arm (not folded shut), the racket and the elbow do not jump between frames, a
+## forehand's hand stays on the racket side of the spine, the racket stays out of the head.
+const HIGH_HEIGHTS := [1.4, 1.6, 1.8, 2.0, 2.2]
+const HIGH_HEAD_MIN := 0.19      # m: the forearm's closest point to the head centre
+const HIGH_ELBOW_MIN := 40.0     # deg: the elbow's interior angle
+const HIGH_RACKET_JUMP := 40.0   # deg per frame (a whip peaks near 32 on these strokes)
+const HIGH_ELBOW_JUMP := 0.32    # m per frame
+const HIGH_HAND_X := 0.08        # m right of the spine at a forehand's contact
+
+
+func test_high_balls() -> void:
+	print("high balls below the smash: the arm does not twist, cross the face or flip")
+	var kinds := [
+		["forehand", 1, Athlete.Style.TOPSPIN, false],
+		["two-handed backhand", -1, Athlete.Style.TOPSPIN, false],
+		["one-handed backhand", -1, Athlete.Style.TOPSPIN, true],
+		["forehand slice", 1, Athlete.Style.SLICE, false],
+	]
+	for k in kinds:
+		var side: int = k[1]
+		for h in HIGH_HEIGHTS:
+			var head_min := 9.0
+			var elbow_min := 999.0
+			var rjump := 0.0
+			var ejump := 0.0
+			var hand_x := 9.0
+			var in_head := 0.0
+			for lat in [0.5, 0.75]:
+				for fwd in [0.5, 0.8]:
+					fresh("hard", Vector3(0, 0, 11))
+					ath.one_handed_backhand = k[3]
+					ath.prepare(side, k[2])
+					for i in 40:
+						step()
+					ath.swing(side, 0.3, ath.to_global(Vector3(lat * side, h, -fwd)), k[2])
+					var prev_r := Vector3.ZERO
+					var prev_e := Vector3.ZERO
+					var frames := 0
+					while ath.is_swinging() and frames < 150:
+						step()
+						frames += 1
+						var j := arm("r")
+						var sh: Vector3 = j[0]
+						var el: Vector3 = j[1]
+						var hd: Vector3 = j[2]
+						var rd: Vector3 = ath._racket.transform.basis.y
+						var head: Vector3 = ath._head.position
+						head_min = minf(head_min, Geometry3D.get_closest_point_to_segment(head, el, hd).distance_to(head))
+						elbow_min = minf(elbow_min, 180.0 - rad_to_deg((el - sh).angle_to(hd - el)))
+						in_head = maxf(in_head, 0.17 - Geometry3D.get_closest_point_to_segment(head, hd, hd + rd * 0.62).distance_to(head))
+						if frames > 1:
+							rjump = maxf(rjump, rad_to_deg(prev_r.angle_to(rd)))
+							ejump = maxf(ejump, (el - prev_e).length())
+						prev_r = rd
+						prev_e = el
+						if side > 0 and absf(ath._clock - ath._contact_at) < 0.009:
+							hand_x = minf(hand_x, hd.x)
+			var tag := "%s at %.1f m" % [k[0], h]
+			check(head_min >= HIGH_HEAD_MIN, "%s: the forearm keeps %.2f m off the head" % [tag, head_min])
+			check(elbow_min >= HIGH_ELBOW_MIN, "%s: the elbow never folds shut (%.0f deg)" % [tag, elbow_min])
+			check(rjump <= HIGH_RACKET_JUMP, "%s: the racket never turns more than %.0f deg in a frame (%.0f)" % [tag, HIGH_RACKET_JUMP, rjump])
+			check(ejump <= HIGH_ELBOW_JUMP, "%s: the elbow never jumps (%.2f m in a frame)" % [tag, ejump])
+			check(in_head < 0.03, "%s: the racket stays out of the head (%.2f m in)" % [tag, in_head])
+			if side > 0:
+				check(hand_x >= HIGH_HAND_X, "%s: the hand stays on the racket side of the spine at contact (x %.2f)" % [tag, hand_x])
 
 
 ## Changing the stance (forehand <-> backhand) while running back, running in, standing
