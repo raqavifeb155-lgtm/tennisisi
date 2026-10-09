@@ -154,11 +154,18 @@ const LIST := [
 		],
 	},
 	{
-		# Reserved for the next patch (docs/ACADEMY_LEGACY_TZ.md 4.1): the academy on the
-		# east lawn, 18 x 14 m around (32, 14). A sign only.
+		# The academy (T-3): a building of a lot (ClubLots, home: the east lawn n7), its own
+		# levels (Academy.LEVELS). The button opens the coach's office: the students.
 		"id": "academy", "name": "Академия", "pos": Vector3(32, 0, 14), "r": 2.0,
-		"unlock": "never", "sign": "Академия · скоро", "travel": false,
-		"levels": [{"label": "Академия", "action": "", "note": "Лужайка под академию"}],
+		"unlock": "", "sign": "", "build": "academy",
+		"levels": [
+			{"label": "Ученики", "action": "club_students", "note": "Лужайка под академию"},
+			{"note": "Детская площадка: мини-корт, лавка, стенка"},
+			{"note": "Домик-раздевалка и корзина мячей"},
+			{"note": "Корт академии с фонарями, доска расписания"},
+			{"note": "Общежитие: два этажа, флаги клуба"},
+			{"note": "Центр подготовки: стеклянный зал, табло с именами"},
+		],
 	},
 	{
 		# Reserved (ACADEMY_LEGACY_TZ 6): the coach's booth behind the near baseline, at the

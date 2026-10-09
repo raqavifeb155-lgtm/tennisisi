@@ -217,6 +217,8 @@ func _register_coach() -> void:
 		return
 	if hiring():
 		reg.set_button("coach", "Выбрать ученика", "club_hire", [["Поговорить", "club_say_coach"]])
+	elif not Academy.students().is_empty():
+		reg.set_button("coach", "Ученики", "club_students", [["Поговорить", "club_say_coach"]])   # the office (T-3)
 	else:
 		reg.set_button("coach", "Поговорить", "")
 	reg.entry("coach")["line"] = Callable(self, "_coach_line")
@@ -243,6 +245,11 @@ func _stops() -> Array:
 	]
 	var shop: Vector3 = ClubPlaces.find("shop")["pos"]
 	raw.append({"at": Vector2(shop.x, shop.z + 4.4), "kind": "idle"})
+	if Academy.is_built():
+		var ac: Vector3 = ClubPlaces.find("academy")["pos"]
+		var on_court := ClubLots.xf("academy") * (ClubLevels.ACADEMY + Vector3(4.9, 0, 2.6))
+		raw.append({"at": Vector2(on_court.x, on_court.z), "kind": "train"})
+		raw.append({"at": Vector2(ac.x - 0.8, ac.z + 2.6), "kind": "idle"})
 	for t in ["coach", "bar", "trophy"]:
 		if ClubLots.is_placed(t):
 			var c: Vector3 = ClubPlaces.find(t)["pos"]

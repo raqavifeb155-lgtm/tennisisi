@@ -15,6 +15,10 @@ func _initialize() -> void:
 	test_growth()
 	test_guest()
 	test_save()
+	test_building()
+	test_training()
+	test_sync()
+	test_hooks()
 	test_registry()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
@@ -202,13 +206,18 @@ func test_growth() -> void:
 	check(Academy.cost(1) == 40 and Academy.cost(5) == roundf(40.0 * pow(5.0, 1.4)) and Academy.cost(9) > 800, "a step costs 40 x n^1.4")
 	var weak := {"pot": 0.2, "traits": [], "trainings": 0}
 	var strong := {"pot": 1.0, "traits": [{"id": "talent", "hidden": false}], "trainings": 0}
-	check(Academy.ceiling(strong) >= Academy.ceiling(weak) + 3, "a talent with a big potential tops out higher (%d / %d)" % [Academy.ceiling(strong), Academy.ceiling(weak)])
-	# run_tests: SaveData.record_run calls Academy.on_run(): a played run trains the students
+	check(Academy.potential_ceiling(strong) >= Academy.potential_ceiling(weak) + 3, "a talent with a big potential tops out higher (%d / %d)" % [Academy.potential_ceiling(strong), Academy.potential_ceiling(weak)])
+	check(Academy.ceiling(strong) == 7 and Academy.ceiling(weak) == Academy.potential_ceiling(weak), "without the academy nobody grows past 7")
+	# A run banked by SaveData: the school catches up when the club asks (Academy.sync), once.
 	var before := int(st["trainings"])
 	var t := Tournament.new(1)
 	t.banked = false
 	SaveData.record_run(t)
-	check(int(st["trainings"]) == before + 1, "a run banked by SaveData trains the students")
+	check(int(st["trainings"]) == before, "the save itself does not touch the school")
+	Academy.sync()
+	check(int(st["trainings"]) == before + 1, "sync: one more training for the run banked")
+	Academy.sync()
+	check(int(st["trainings"]) == before + 1, "sync again: nothing more")
 
 
 func test_guest() -> void:
@@ -278,3 +287,216 @@ func test_registry() -> void:
 	check(not reg.has("nobody"), "a button for nobody: nothing")
 	reg.unregister("a")
 	check(not reg.has("a") and reg.position_of("a") == Vector3.INF, "gone")
+
+
+func _lot_academy(lv: int) -> void:
+	SaveData.club["lots"] = {"n7": "academy"}
+	SaveData.club["levels"] = {"academy": lv}
+
+
+func test_building() -> void:
+	print("the academy building")
+	_fresh()
+	SaveData.club = {"lots": {}}
+	check(Academy.level() == 0 and not Academy.is_built() and Academy.capacity() == 1, "no building: level 0, one seat")
+	check(not ClubLots.sheet_types().has("academy"), "a newcomer's lot sheet doesn't show it")
+	SaveData.played = 4
+	SaveData.titles = 2
+	check(ClubLots.sheet_types().has("academy") and ClubLots.why_not("n7", "academy") == "", "after four runs it can be built on a lot")
+	var pr := ClubLots.price("academy")
+	check(pr == roundi(150.0 * ClubBuilds.CLUB_PRICE_SCALE) and pr == Academy.level_price(1), "the lot costs the first level (%d)" % pr)
+	check(String(ClubLots.sheet("n7", "academy")["card"]["desc"]).contains("Детская") or String(ClubLots.sheet("n7", "academy")["card"]["desc"]).contains("мини-корт"), "the sheet tells the first level")
+	SaveData.gold = pr + 10
+	check(ClubLots.build("n7", "academy") and SaveData.gold == 10 and Academy.level() == 1 and Academy.is_built(), "built: the gold went, level 1")
+	check(ClubBuilds.level("academy") == 1 and ClubPlaces.level("academy") == 1 and not ClubPlaces.find("academy").is_empty(), "the club sees it: a place at its lot")
+	check(ClubPlaces.state("academy")["action"] == "club_students", "its button opens the coach's office")
+	check(Academy.capacity() == 2 and not Academy.camps_open(), "level 1: two seats, no camps yet")
+	check(Academy.why_not_upgrade().begins_with("Нужно ещё") and not Academy.upgrade(), "level 2 costs gold")
+	SaveData.gold = 100000
+	var p2 := Academy.next_price()
+	check(p2 == Academy.level_price(2) and Academy.upgrade() and Academy.level() == 2 and SaveData.gold == 100000 - p2, "level 2 bought (%d)" % p2)
+	check(Academy.camps_open() and Academy.capacity() == 2 and int(Academy._at(Academy.CEILING)) == 8, "level 2: camps, the ceiling 8")
+	Academy.upgrade()
+	check(Academy.level() == 3 and Academy.capacity() == 3 and int(Academy._at(Academy.SET_SIZE)) == 4, "level 3: three seats, four candidates")
+	Academy.upgrade()
+	Academy.upgrade()
+	check(Academy.level() == 5 and Academy.next_level().is_empty() and Academy.why_not_upgrade() != "" and not Academy.upgrade(), "five levels, then no more")
+	check(Academy.level_line(5) != "" and Academy.level_title(3) == "Корт академии", "each level has its title and the coach's line")
+	# The scout's hint and the rare talents.
+	_fresh()
+	_lot_academy(2)
+	SaveData.played = 9
+	Academy.data()["free_given"] = true
+	var set2 := Academy.candidates()
+	var hinted := true
+	for c in set2:
+		var had_hidden := (c["traits"] as Array).any(func(t): return bool(t["hidden"]))
+		hinted = hinted and (not had_hidden or (c.has("scouted") and Traits.is_shown(c, String(c["scouted"]))))
+	check(set2.size() == 3 and hinted, "level 2: the scout shows one hidden trait of each candidate")
+	var rare_seasons: Array = []
+	_lot_academy(3)
+	for se in range(1, 21):
+		if Academy.rare_due("s%d" % se):
+			rare_seasons.append(se)
+	var spaced := true
+	for i in range(1, rare_seasons.size()):
+		spaced = spaced and int(rare_seasons[i]) - int(rare_seasons[i - 1]) >= 2
+	check(rare_seasons.size() >= 2 and rare_seasons.size() <= 10 and spaced, "a rare talent at most once in two seasons (%s)" % str(rare_seasons))
+	_lot_academy(2)
+	check(not Academy.rare_due("s%d" % int(rare_seasons[0])), "not before level 3")
+	_lot_academy(3)
+	SaveData.played = int(rare_seasons[0]) * Academy.SEASON
+	Academy.data()["cands"] = {"key": "", "list": [], "rerolls": 0}
+	var set3 := Academy.candidates()
+	var rare: Array = set3.filter(func(c): return bool(c.get("rare", false)))
+	check(set3.size() == 5 and rare.size() == 1, "his season: four and a rare one (%d)" % set3.size())
+	if not rare.is_empty():
+		var r: Dictionary = rare[0]
+		var top := 0
+		for k in Opponents.STAT_KEYS:
+			if int(r["stats"][k]) >= 8:
+				top += 1
+		var plain: Dictionary = set3[0]
+		check(top >= 3 and float(r["pot"]) == 1.0 and int(r["price"]) >= int(plain["price"]) * 3, "rare: three stats 8-10, five stars, five-ten times dearer (%d vs %d)" % [int(r["price"]), int(plain["price"])])
+		var AH = load("res://scripts/ui/screens/academy_hire.gd")   # a screen: loaded when the autoloads are up
+		check(String(AH.lines(r)["tag"]).begins_with("РЕДКИЙ"), "his card says so")
+
+
+func test_training() -> void:
+	print("focus, camps, sparring")
+	_fresh()
+	SaveData.played = 1
+	var st := Academy.hire(Academy.candidates()[0]["id"])
+	st["traits"] = []
+	st["pot"] = 0.5
+	st["leanings"] = ["serve", "net"]
+	for k in Opponents.STAT_KEYS:
+		st["stats"][k] = 2
+	st["xp"] = {}
+	check(Academy.set_focus(st["id"], "backhand") and Academy.focus_of(st) == "backhand", "the focus: a stat")
+	check(not Academy.set_focus(st["id"], "nonsense") and Academy.focus_of(st) == "backhand", "nothing else")
+	Academy.train(st, 1.0)
+	var xp: Dictionary = st["xp"]
+	var bh := float(xp.get("backhand", 0.0)) + Academy.cost(2) * (int(st["stats"]["backhand"]) - 2)
+	var fh := float(xp.get("forehand", 0.0)) + Academy.cost(2) * (int(st["stats"]["forehand"]) - 2)
+	check(bh > fh * 5.0, "60%% into the focus, the rest shared (%.0f vs %.0f)" % [bh, fh])
+	Academy.set_focus(st["id"], Academy.EVEN)
+	for k in Opponents.STAT_KEYS:
+		st["stats"][k] = 2
+	st["xp"] = {}
+	Academy.train(st, 0.3)
+	check(is_equal_approx(float(st["xp"]["forehand"]), float(st["xp"]["backhand"])) and float(st["xp"]["serve"]) > float(st["xp"]["forehand"]), "evenly: the same to each, a leaning more")
+	var pr := Academy.progress(st, "forehand")
+	check(float(pr[1]) == Academy.cost(2) and float(pr[0]) > 0.0, "progress: gathered / the next step's cost")
+	# The camp: from academy level 2, once a season, a run's experience.
+	check(Academy.why_not_camp(st).begins_with("Сборы — с академии"), "no camps without the academy's house")
+	_lot_academy(2)
+	SaveData.gold = 0
+	var cp := Academy.camp_price(st)
+	check(cp == 60, "a beginner's camp: 60 (%d)" % cp)
+	check(Academy.why_not_camp(st).begins_with("Нужно ещё") and Academy.camp(st["id"]).is_empty(), "no gold, no camp")
+	SaveData.gold = 500
+	var tr := int(st["trainings"])
+	Academy.camp(st["id"])
+	check(SaveData.gold == 440 and int(st["trainings"]) == tr + 1, "a camp: 60 gold, a training more")
+	check(Academy.why_not_camp(st) == "Сборы уже были в этом сезоне", "once a season")
+	SaveData.played += Academy.SEASON
+	Academy.sync()
+	check(Academy.why_not_camp(st) == "", "next season again")
+	st["traits"] = [{"id": "coachs_pet", "hidden": false}]
+	check(Academy.camp_price(st) == 45, "«Любимец тренера»: a quarter off (%d)" % Academy.camp_price(st))
+	for k in Opponents.STAT_KEYS:
+		st["stats"][k] = 7
+	check(Academy.camp_price(st) == 150, "a strong one's camp is dearer (%d)" % Academy.camp_price(st))
+	# Sparring: once a run, half a run, all into the focus.
+	for k in Opponents.STAT_KEYS:
+		st["stats"][k] = 2
+	st["xp"] = {}
+	st["traits"] = []
+	Academy.set_focus(st["id"], "net")
+	var sp := Academy.spar_price(st)
+	var g0 := SaveData.gold
+	Academy.spar(st["id"])
+	check(SaveData.gold == g0 - sp and float(st["xp"].get("forehand", 0.0)) == 0.0 and (int(st["stats"]["net"]) > 2 or float(st["xp"]["net"]) > 0.0), "sparring: %d gold, all into the focus" % sp)
+	check(Academy.why_not_spar(st).begins_with("Спарринг уже был"), "once a run")
+	SaveData.played += 1
+	check(Academy.why_not_spar(st) == "", "after the next run again")
+	# The academy makes them grow faster and higher.
+	_lot_academy(0)
+	SaveData.club["lots"] = {}
+	var a0 := st.duplicate(true)
+	a0["xp"] = {}
+	Academy.train(a0, 1.0)
+	_lot_academy(5)
+	var a5 := st.duplicate(true)
+	a5["xp"] = {}
+	Academy.train(a5, 1.0)
+	var s0 := 0.0
+	var s5 := 0.0
+	for k in Opponents.STAT_KEYS:
+		s0 += float(a0["xp"][k]) + float(int(a0["stats"][k]) - 2) * 100.0
+		s5 += float(a5["xp"][k]) + float(int(a5["stats"][k]) - 2) * 100.0
+	check(s5 > s0 * 1.2, "level 5 grows them faster (x1.4)")
+	a5["pot"] = 1.0
+	check(Academy.ceiling(a5) == 10, "and up to 10")
+
+
+func test_sync() -> void:
+	print("runs, news")
+	_fresh()
+	SaveData.played = 1
+	var st := Academy.hire(Academy.candidates()[0]["id"])
+	st["traits"] = []
+	st["pot"] = 1.0
+	Academy.set_focus(st["id"], "serve")
+	Academy.take_news()
+	SaveData.played = 6
+	var grew := Academy.sync()
+	check(int(st["trainings"]) == 5 and int(Academy.data()["trained_at"]) == 6, "five runs played: five trainings at once")
+	check(not grew.is_empty(), "and something grew (%d)" % grew.size())
+	var news := Academy.take_news()
+	check(news.size() == mini(grew.size(), Academy.NEWS_MAX) and Academy.take_news().is_empty(), "the news is kept until the club tells it")
+	var txt := Academy.news_text([{"name": "Миша Петров", "stat": "serve", "to": 4}, {"name": "Миша Петров", "stat": "serve", "to": 5}, {"name": "Аня Белова", "stat": "net", "to": 3}])
+	check(txt == "Миша: подача 5 · Аня: сетка 3", "«Миша: подача 5 · Аня: сетка 3» (%s)" % txt)
+	# Somebody hired after some runs does not train for the runs before him.
+	SaveData.played = 10
+	Academy.data()["free_given"] = true
+	_lot_academy(1)
+	SaveData.gold = 10000
+	var c: Dictionary = Academy.candidates()[0]
+	var s2 := Academy.hire(c["id"])
+	check(int(st["trainings"]) == 9 and int(s2.get("trainings", 0)) == 0, "a newcomer starts from his first run here; the others caught up first")
+	SaveData.played = 11
+	Academy.sync()
+	check(int(s2["trainings"]) == 1 and int(st["trainings"]) == 10, "then both train")
+	SaveData.club = {}
+
+
+func test_hooks() -> void:
+	print("hooks for the academy's house")
+	_fresh()
+	SaveData.played = 1
+	var st := Academy.hire(Academy.candidates()[0]["id"])
+	st["traits"] = []
+	st["pot"] = 1.0
+	check(Academy.capacity() == 1, "no hook: the table's seats")
+	Academy.set_hook("capacity", func() -> int: return 6)
+	check(Academy.capacity() == 6, "the house's dorm sets the seats")
+	Academy.set_hook("ceiling_add", func(_s, k) -> int: return 1 if k == "speed" else 0)
+	check(Academy.ceiling(st, "speed") == Academy.ceiling(st, "serve") + 1, "a stat's ceiling +1 (the gym)")
+	for k in Opponents.STAT_KEYS:
+		st["stats"][k] = 2
+	st["xp"] = {}
+	st["leanings"] = []
+	Academy.set_focus(st["id"], Academy.EVEN)
+	Academy.set_hook("growth_mult", func(_s, k) -> float: return 2.0 if k == "stamina" else 1.0)
+	Academy.train(st, 0.2)
+	check(is_equal_approx(float(st["xp"]["stamina"]), 2.0 * float(st["xp"]["backhand"])), "a stat's growth x2 (the kitchen)")
+	var days: Array = []
+	Academy.set_hook("on_day", func(run: int) -> void: days.append(run))
+	SaveData.played = 3
+	Academy.sync()
+	check(days == [2, 3], "the house hears every day of the academy (%s)" % str(days))
+	for h in ["capacity", "ceiling_add", "growth_mult", "on_day"]:
+		Academy.set_hook(h, Callable())
+	check(Academy.hooks.is_empty() and Academy.capacity() == 1, "hooks off: as before")

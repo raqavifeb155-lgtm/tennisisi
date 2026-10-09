@@ -167,6 +167,8 @@ static var utility_enabled := true
 
 static func level(id: String) -> int:
 	var levels: Dictionary = SaveData.club.get("levels", {})
+	if not TABLE.has(id):
+		return maxi(int(levels.get(id, 0)), 0)   # a building with its own levels (the academy, T-3)
 	return clampi(int(levels.get(id, 0)), 0, max_level(id))
 
 

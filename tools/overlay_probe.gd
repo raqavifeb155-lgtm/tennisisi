@@ -70,6 +70,11 @@ func _check(what: String, ok: bool) -> void:
 	print("%s  %s" % ["PASS" if ok else "FAIL", what])
 
 
+## A visible label of the screen says `text`.
+func _label_has(text: String) -> bool:
+	return main.ui.root.find_children("*", "Label", true, false).any(func(l): return (l as Label).is_visible_in_tree() and text in (l as Label).text)
+
+
 ## The visible button whose text contains `text`, under `from`.
 func _button(from: Node, text: String) -> Button:
 	for c in from.find_children("*", "Button", true, false):
@@ -592,6 +597,30 @@ func _run() -> void:
 		await _expect("Кандидат: «ВЗЯТЬ» берёт, мы в клубе", func() -> bool: return acad.students().size() == 1 and club.active and not main.ui.is_open())
 		await _wait(0.5)
 		await _club_screen("Клуб 3D → Ученик", "club_train:s1", String(acad.students()[0]["name"]).get_slice(" ", 0))
+		# T-3: the coach's office, a student's card from it, the focus, «Отпустить?».
+		await _club_screen("Клуб 3D → Кабинет тренера", "club_students", "Кабинет тренера")
+		club.ui_action("club_students", 0)
+		await _wait(0.8)
+		club.ui_action("club_student", 0)
+		await _wait(0.8)
+		await _screen_shape("Кабинет → Ученик")
+		await _expect("Кабинет → Ученик: «Фокус» и «Отпустить» есть", func() -> bool: return _label_has("Отпустить") and main.ui.root.find_children("*", "Label", true, false).any(func(l): return (l as Label).is_visible_in_tree() and (l as Label).text == "Фокус"))
+		await _tap(await _find(main.ui.root, "Назад"))
+		await _expect("Кабинет → Ученик: «Назад» ведёт в кабинет", func() -> bool: return main.ui.is_open() and main.ui.root.find_children("*", "Label", true, false).any(func(l): return (l as Label).is_visible_in_tree() and "Кабинет тренера" in (l as Label).text))
+		club.ui_action("club_student", 0)
+		await _wait(0.6)
+		club.ui_action("club_focus", 0)
+		await _wait(0.8)
+		await _screen_shape("Ученик → Фокус")
+		await _tap(await _find(main.ui.root, "Назад"))
+		await _expect("Фокус: «Назад» ведёт к ученику", func() -> bool: return main.ui.is_open() and _label_has("Отпустить"))
+		club.ui_action("club_release_ask", 0)
+		await _wait(0.8)
+		await _screen_shape("Ученик → Отпустить?")
+		await _tap(await _find(main.ui.root, "Назад"))
+		await _expect("Отпустить?: «Назад» — ученик остаётся", func() -> bool: return acad.students().size() == 1 and _label_has("Отпустить"))
+		main._on_ui("menu", 0)
+		await _wait(0.6)
 		SaveData.academy = {}
 		SaveData.club["lots"] = {"n1": "locker", "n2": "coach", "n3": "trophy", "n4": "stands", "n5": "bar"}
 		club._refresh()

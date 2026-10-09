@@ -111,6 +111,28 @@ static func make(rng: RandomNumberGenerator, tier: int, adult := false) -> Dicti
 	return st
 
 
+## A rare talent (spec 3.5, the academy level 3+): his two leanings and one more stat at 8-10,
+## five stars, a rare trait shown; five to ten times dearer. Seen on the scout's list in advance.
+static func make_rare(rng: RandomNumberGenerator, tier: int) -> Dictionary:
+	var st := make(rng, maxi(tier, 2), false)
+	var keys: Array = (st["leanings"] as Array).duplicate()
+	for k in Opponents.STAT_KEYS:
+		if not keys.has(k):
+			keys.append(k)
+			break
+	for k in keys:
+		st["stats"][k] = rng.randi_range(8, 10)
+	st["pot"] = 1.0
+	var rare: Array = Traits.student_ids().filter(func(i: String) -> bool: return int(Traits.def(i)["tier"]) == 3 and Traits.def(i)["kind"] != "synergy")
+	var pick: String = rare[rng.randi() % rare.size()]
+	var have: Array = (st["traits"] as Array).map(func(t): return t["id"])
+	if not have.has(pick):
+		(st["traits"] as Array).push_front({"id": pick, "hidden": false})
+	st["rare"] = true
+	st["price"] = maxi(10, roundi(price(st) * Academy.RARE_PRICE / 5.0) * 5)
+	return st
+
+
 ## `n` candidates of a seed (set of 3 or 4).
 static func candidates(seed_v: int, n: int, tier: int) -> Array:
 	var rng := RandomNumberGenerator.new()

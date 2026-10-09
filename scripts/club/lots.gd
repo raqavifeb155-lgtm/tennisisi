@@ -29,7 +29,9 @@ const HALF := Vector2(8.0, 6.0)         # half the lot's site (x, z)
 const R := 2.2                          # the circle of an empty lot
 
 ## The seven buildings. "home": where it stood before lots (a lot id: its default lot in an old
-## save). "soon": no construction yet (the academy is T-3, the arena H-3): a card, no button.
+## save). "soon": no construction yet (the arena, H-3): a card, no button. "late": not on the
+## sheet before its own condition is met (a newcomer is not shown what is far away). The
+## academy (T-3) has its own levels (Academy.LEVELS), not ClubBuilds'.
 ## "faces_court": turned toward the court wherever it stands. "price"/"unlock": for the ones
 ## ClubBuilds does not know yet.
 const TYPES := {
@@ -38,9 +40,9 @@ const TYPES := {
 	"locker": {"name": "Раздевалка", "home": "n1", "gives": "Шкафчик для вещей, внешность, страховка вещей"},
 	"trophy": {"name": "Трофейная", "home": "n5", "gives": "Кубки за титулы и твоя статуя. Для красоты: силы не даёт"},
 	"bar": {"name": "Бар", "home": "n6", "gives": "Тотализатор и блэкджек: ставки золотом"},
-	"academy": {"name": "Академия", "home": "n7", "soon": true, "price": 150, "unlock": "played:4",
-		"gives": "Юниоры, их матчи и тренировки"},
-	"arena": {"name": "Крытая арена", "home": "n3", "soon": true, "price": 250, "unlock": "played:5",
+	"academy": {"name": "Академия", "home": "n7", "late": true, "price": 150, "unlock": "played:4",
+		"gives": "Места для учеников, рост быстрее и выше, сборы, скаут"},
+	"arena": {"name": "Крытая арена", "home": "n3", "soon": true, "late": true, "price": 250, "unlock": "played:5",
 		"gives": "Свои матчи, покрытие на выбор"},
 }
 const ORDER := ["coach", "stands", "locker", "trophy", "bar", "academy", "arena"]
@@ -151,9 +153,10 @@ static func cond_text(cond: String) -> String:
 	if cond == "":
 		return ""
 	var n := int(cond.get_slice(":", 1))
+	var one := n % 10 == 1 and n % 100 != 11   # «после 21 забега», «после 4 забегов»: the genitive
 	if cond.begins_with("titles"):
-		return "после первого титула" if n == 1 else "после %d %s" % [n, _word(n, "титула", "титулов")]
-	return "после первого забега" if n == 1 else "после %d %s" % [n, _word(n, "забега", "забегов")]
+		return "после первого титула" if n == 1 else "после %d %s" % [n, "титула" if one else "титулов"]
+	return "после первого забега" if n == 1 else "после %d %s" % [n, "забега" if one else "забегов"]
 
 
 static func _word(n: int, few: String, many: String) -> String:
@@ -226,6 +229,16 @@ static func build(lot_id: String, type: String) -> bool:
 	var lots: Dictionary = map().duplicate()
 	lots[lot_id] = type
 	SaveData.club["lots"] = lots
+	if not ClubBuilds.TABLE.has(type):
+		# A building with its own levels (the academy): the first one is bought here.
+		var pr := price(type)
+		SaveData.gold -= pr
+		SaveData.club["spent"] = int(SaveData.club.get("spent", 0)) + pr
+		var levels: Dictionary = SaveData.club.get("levels", {}).duplicate()
+		levels[type] = 1
+		SaveData.club["levels"] = levels
+		SaveData.save()
+		return true
 	if not ClubBuilds.buy(type):
 		lots.erase(lot_id)
 		SaveData.club["lots"] = lots
@@ -233,11 +246,18 @@ static func build(lot_id: String, type: String) -> bool:
 	return true
 
 
+## The coach's line for a level of a type just built (the academy's own, or ClubBuilds').
+static func line(type: String, lv: int) -> String:
+	if type == "academy":
+		return Academy.level_line(lv)
+	return ClubBuilds.line(type, lv)
+
+
 ## Types worth showing on a lot's sheet, in the order the sheet pages them.
 ## (The academy and the arena are not in the game yet: a newcomer is not shown them as «Скоро»
 ## cards between the things he can build; they join the sheet when their own run count is met.)
 static func sheet_types() -> Array:
-	return ORDER.filter(func(t: String) -> bool: return not is_soon(t) or cond_met(String(TYPES[t].get("unlock", "never"))))
+	return ORDER.filter(func(t: String) -> bool: return not (is_soon(t) or bool(TYPES[t].get("late", false))) or cond_met(String(TYPES[t].get("unlock", "never"))))
 
 
 ## What can be built now on some free lot, cheapest first (types not built, open, buildable).
@@ -395,6 +415,9 @@ static func sheet(lot_id: String, type: String) -> Dictionary:
 		desc += "\nПервый уровень: %s" % lv["now"]
 		if String(lv.get("perk", "")) != "":
 			desc += "\nПольза: %s" % lv["perk"]
+	elif type == "academy":
+		var lv: Dictionary = Academy.LEVELS[0]
+		desc += "\nПервый уровень: %s\nПольза: %s" % [lv["now"], lv["perk"]]
 	else:
 		desc += "\nПервый уровень будет позже"
 	card["desc"] = desc

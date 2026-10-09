@@ -12,10 +12,11 @@ const STANDS_X1 := Scenery.HX + 4.2
 const GATE_Z := 41.0
 const TROPHY := Vector3(-18, 0, -28.8)    # the trophy wall, behind its circle
 const BAR := Vector3(20, 0, -33.2)        # the roulette table (ClubWorld._build_bar_table)
+const ACADEMY := Vector3(32, 0, 14)       # the academy's home lot (n7): its circle; the path comes from the west
 
 
 static func has(id: String) -> bool:
-	return id in ["court", "stands", "gate", "trophy", "bar"]
+	return id in ["court", "stands", "gate", "trophy", "bar", "academy"]
 
 
 ## Where the building being built stands in the world (T-1: a building of a lot is drawn
@@ -38,6 +39,8 @@ static func build(w: ClubWorld, id: String, root: Node3D, lv: int, ghost := fals
 			_trophy(w, root, lv, ghost)
 		"bar":
 			_bar(w, root, lv, ghost)
+		"academy":
+			_academy(w, root, lv, ghost)
 
 
 # --- Small builders -----------------------------------------------------------------
@@ -525,3 +528,126 @@ static func _bar(w: ClubWorld, root: Node3D, lv: int, ghost: bool) -> void:
 		for bx in [-2.5, 2.5]:
 			var beam2 := _cyl(root, 0.1, 0.8, 4.0, at + Vector3(bx, 2.2, -2.0), ClubMaterial.ghost(), 10)
 			beam2.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+# --- Academy (T-3) -----------------------------------------------------------------------
+
+## The academy's outside, level by level (Academy.LEVELS): a mini court with a low net, a
+## bench and a hitting wall (1); a wooden house and a basket of balls (2); lights and the
+## schedule board (3); a two-storey dorm with lit windows and the club's flags (4); a glass
+## roof over the court and a board with the students' names (5). The circle in the middle and
+## the way in from the west stay free. (Inside - the academy's house - is another scene.)
+static func _academy(w: ClubWorld, root: Node3D, lv: int, ghost: bool) -> void:
+	if lv == 0:
+		return
+	var tag := "lvl_academy"
+	var a := ACADEMY
+	var steel := ClubMaterial.pal(ClubMaterial.METAL_DARK)
+	var wood := ClubMaterial.pal(ClubMaterial.WOOD)
+	var white := ClubMaterial.pal(ClubMaterial.LINES, false)
+	# The mini court east of the circle: 5 x 9 m, the club's colour from level 3.
+	var cc := a + Vector3(4.9, 0, 0)
+	var surf := ClubMaterial.get_mat(ClubBuilds.club_color(), false) if lv >= 3 else ClubMaterial.pal(ClubMaterial.HARD, false)
+	_box(root, Vector3(5.6, 0.04, 9.6), cc + Vector3(0, 0.02, 0), ClubMaterial.pal(ClubMaterial.OUT, false))
+	_box(root, Vector3(4.6, 0.045, 8.6), cc + Vector3(0, 0.025, 0), surf)
+	for x in [-2.3, 2.3]:
+		_box(root, Vector3(0.06, 0.05, 8.6), cc + Vector3(x, 0.03, 0), white)
+	for z in [-4.3, 4.3, -2.2, 2.2]:
+		_box(root, Vector3(4.6, 0.05, 0.06), cc + Vector3(0, 0.03, z), white)
+	_box(root, Vector3(0.06, 0.05, 4.4), cc + Vector3(0, 0.03, 0), white)
+	# The low net across the middle.
+	_box(root, Vector3(5.0, 0.55, 0.03), cc + Vector3(0, 0.38, 0), ClubMaterial.pal(ClubMaterial.BLACK, false))
+	_box(root, Vector3(5.0, 0.05, 0.05), cc + Vector3(0, 0.67, 0), white)
+	for x in [-2.55, 2.55]:
+		_cyl(root, 0.04, 0.04, 0.75, cc + Vector3(x, 0.37, 0), steel, 6)
+		_obstacle_circle(w, ghost, tag, Vector2(cc.x + x, cc.z), 0.15)
+	_obstacle_box(w, ghost, tag, Rect2(cc.x - 2.5, cc.z - 0.05, 5.0, 0.1))
+	# A bench by the court (south-west) and the hitting wall (west, south of the way in).
+	var bench := a + Vector3(1.2, 0, 4.6)
+	_box(root, Vector3(2.0, 0.08, 0.45), bench + Vector3(0, 0.45, 0), wood)
+	_box(root, Vector3(2.0, 0.45, 0.08), bench + Vector3(0, 0.72, 0.2), wood)
+	for x in [-0.85, 0.85]:
+		_box(root, Vector3(0.08, 0.45, 0.4), bench + Vector3(x, 0.22, 0), steel)
+	_obstacle_box(w, ghost, tag, Rect2(bench.x - 1.0, bench.z - 0.25, 2.0, 0.55))
+	var wall := a + Vector3(-4.6, 0, 4.9)
+	_box(root, Vector3(3.2, 2.2, 0.22), wall + Vector3(0, 1.1, 0), ClubMaterial.pal(ClubMaterial.CHALKBOARD))
+	_box(root, Vector3(3.2, 0.06, 0.24), wall + Vector3(0, 0.9, -0.01), white)
+	_obstacle_box(w, ghost, tag, Rect2(wall.x - 1.6, wall.z - 0.15, 3.2, 0.3))
+	# The sign at the way in: «АКАДЕМИЯ».
+	var sign := a + Vector3(-2.2, 0, -2.0)
+	_cyl(root, 0.06, 0.06, 2.4, sign + Vector3(-0.8, 1.2, 0), steel, 6)
+	_cyl(root, 0.06, 0.06, 2.4, sign + Vector3(0.8, 1.2, 0), steel, 6)
+	_box(root, Vector3(2.0, 0.55, 0.08), sign + Vector3(0, 2.2, 0), ClubMaterial.get_mat(ClubBuilds.club_color()))
+	_label(root, "АКАДЕМИЯ", sign + Vector3(0, 2.2, 0.06), 0.0065, Color.WHITE)
+	for x in [-0.8, 0.8]:
+		_obstacle_circle(w, ghost, tag, Vector2(sign.x + x, sign.z), 0.12)
+	if lv >= 2:
+		# A basket of balls by the net.
+		var bk := cc + Vector3(-2.9, 0, -1.2)
+		_cyl(root, 0.28, 0.22, 0.6, bk + Vector3(0, 0.3, 0), ClubMaterial.pal(ClubMaterial.METAL), 8)
+		_cyl(root, 0.26, 0.26, 0.08, bk + Vector3(0, 0.62, 0), ClubMaterial.glow(Color(0.85, 1.0, 0.3), 0.6), 8)
+		_obstacle_circle(w, ghost, tag, Vector2(bk.x, bk.z), 0.3)
+	if lv >= 2 and lv < 4:
+		# The wooden house north-west: a changing room with a gable roof.
+		var h := a + Vector3(-4.8, 0, -3.9)
+		_box(root, Vector3(4.0, 2.5, 3.0), h + Vector3(0, 1.25, 0), wood)
+		for sx in [-1.0, 1.0]:
+			var r := _box(root, Vector3(4.3, 0.12, 1.85), h + Vector3(0, 2.9, sx * 0.72), ClubMaterial.pal(ClubMaterial.RUST))
+			r.rotation.x = sx * 0.55
+		_box(root, Vector3(0.9, 1.8, 0.06), h + Vector3(0.8, 0.9, 1.52), ClubMaterial.pal(ClubMaterial.WOOD_DARK))
+		_box(root, Vector3(0.9, 0.7, 0.06), h + Vector3(-0.9, 1.5, 1.52), ClubMaterial.pal(ClubMaterial.GLASS, false))
+		_obstacle_box(w, ghost, tag, Rect2(h.x - 2.0, h.z - 1.5, 4.0, 3.0))
+	if lv >= 3:
+		# Lights at two corners and the schedule board by the way in.
+		for c in [cc + Vector3(-2.9, 0, -4.4), cc + Vector3(2.9, 0, 4.4)]:
+			_cyl(root, 0.07, 0.1, 5.0, c + Vector3(0, 2.5, 0), steel, 6)
+			_box(root, Vector3(0.7, 0.16, 0.4), c + Vector3(0, 5.0, 0), steel)
+			_box(root, Vector3(0.6, 0.05, 0.3), c + Vector3(0, 4.9, 0), ClubMaterial.glow(Color(1.0, 0.95, 0.8), 1.2))
+			_obstacle_circle(w, ghost, tag, Vector2(c.x, c.z), 0.2)
+		var b := a + Vector3(-1.2, 0, -4.6)
+		_box(root, Vector3(1.8, 1.2, 0.08), b + Vector3(0, 1.4, 0), ClubMaterial.pal(ClubMaterial.BOARD))
+		_cyl(root, 0.05, 0.05, 0.9, b + Vector3(-0.7, 0.45, 0), wood, 6)
+		_cyl(root, 0.05, 0.05, 0.9, b + Vector3(0.7, 0.45, 0), wood, 6)
+		_label(root, "РАСПИСАНИЕ", b + Vector3(0, 1.8, 0.05), 0.0035, ClubMaterial.PALETTE[ClubMaterial.NAVY])
+		_obstacle_box(w, ghost, tag, Rect2(b.x - 0.9, b.z - 0.1, 1.8, 0.2))
+	if lv >= 4:
+		# The dorm: two storeys, lit windows, the club's flags at the door.
+		var d := a + Vector3(-4.9, 0, -3.8)
+		_box(root, Vector3(4.6, 5.0, 3.2), d + Vector3(0, 2.5, 0), ClubMaterial.pal(ClubMaterial.PLASTER))
+		_box(root, Vector3(4.9, 0.25, 3.5), d + Vector3(0, 5.1, 0), ClubMaterial.pal(ClubMaterial.CLUB_DARK))
+		var lit := ClubMaterial.glow(Color(1.0, 0.85, 0.5), 0.9)
+		for y in [1.5, 3.7]:
+			for x in [-1.5, -0.5, 0.5, 1.5]:
+				if y < 2.0 and x > 1.0:
+					continue
+				_box(root, Vector3(0.6, 0.8, 0.05), d + Vector3(x, y, 1.62), lit)
+		_box(root, Vector3(0.9, 1.9, 0.06), d + Vector3(1.5, 0.95, 1.62), ClubMaterial.pal(ClubMaterial.WOOD_DARK))
+		for fx in [-1.6, 0.4]:
+			var f := d + Vector3(fx, 0, 2.2)
+			_cyl(root, 0.04, 0.04, 3.6, f + Vector3(0, 1.8, 0), steel, 6)
+			_box(root, Vector3(0.9, 0.6, 0.03), f + Vector3(0.47, 3.2, 0), ClubMaterial.get_mat(ClubBuilds.club_color(), false))
+			_obstacle_circle(w, ghost, tag, Vector2(f.x, f.z), 0.1)
+		_obstacle_box(w, ghost, tag, Rect2(d.x - 2.3, d.z - 1.6, 4.6, 3.2))
+	if lv >= 5:
+		# A glass roof over the court on four pillars, and the board with the students' names.
+		for c in [Vector2(-2.9, -4.7), Vector2(2.9, -4.7), Vector2(-2.9, 4.7), Vector2(2.9, 4.7)]:
+			_cyl(root, 0.12, 0.12, 4.0, cc + Vector3(c.x, 2.0, c.y), ClubMaterial.pal(ClubMaterial.METAL), 8)
+			_obstacle_circle(w, ghost, tag, Vector2(cc.x + c.x, cc.z + c.y), 0.15)
+		var gm := StandardMaterial3D.new()   # see-through: the court shows under it
+		gm.albedo_color = Color(ClubMaterial.PALETTE[ClubMaterial.GLASS], 0.3)
+		gm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		gm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		var glass := _box(root, Vector3(6.2, 0.08, 9.8), cc + Vector3(0, 4.05, 0), gm)
+		glass.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		for x in [-3.1, 3.1]:
+			_box(root, Vector3(0.12, 0.14, 9.8), cc + Vector3(x, 4.05, 0), ClubMaterial.pal(ClubMaterial.METAL))
+		var sb := cc + Vector3(0, 0, -5.4)
+		_box(root, Vector3(3.2, 1.4, 0.15), sb + Vector3(0, 2.9, 0), ClubMaterial.pal(ClubMaterial.BLACK))
+		_cyl(root, 0.05, 0.05, 2.2, sb + Vector3(-1.2, 1.1, 0), steel, 6)
+		_cyl(root, 0.05, 0.05, 2.2, sb + Vector3(1.2, 1.1, 0), steel, 6)
+		var names: Array[String] = []
+		if not ghost:
+			for st in Academy.students():
+				names.append(String(st.get("name", "")).get_slice(" ", 0).to_upper())
+		_label(root, "\n".join(names) if not names.is_empty() else "АКАДЕМИЯ", sb + Vector3(0, 2.9, 0.09), 0.004, UiTheme.GOLD)
+		_obstacle_box(w, ghost, tag, Rect2(sb.x - 1.3, sb.z - 0.1, 2.6, 0.2))
