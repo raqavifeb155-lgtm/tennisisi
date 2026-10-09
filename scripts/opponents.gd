@@ -230,6 +230,12 @@ static var round_floor := 0.3      # extra floor per round (--adapt-round=)
 const ADD_MAX := 0.1
 static var floor_slope := 0.055    # floor of the AI skill per skill level above ADAPT_FROM
 static var add_slope := 0.014      # and the gain for all (--adapt-floor= / --adapt-add= for the bot)
+## F-E retune: the same floor was a walkover on clay (the slow ball suits a levelled player: 6:0 in
+## 27% of matches against 5% in New York), while a steeper one breaks the park (the tutor, a net
+## rusher, beats a level-8 bot 0:6 from skill .5 up). So an island may bend the floor: slope_k x
+## floor_slope, round_k x round_floor. Set with the tournament's location (Tournament.location).
+const ISLAND_FLOOR := {"clay": {"slope_k": 1.73, "round_k": 0.27}}
+static var island := ""
 static var ease_max := 0.25        # what a level-0 player is spared: the AI skill below the roster's (--adapt-ease=)
 
 
@@ -250,8 +256,9 @@ static func adapted_skill(skill: float, level := -1.0, boss := false, round_i :=
 	var lv := player_level() if level < 0.0 else level
 	var over := maxf(lv - ADAPT_FROM, 0.0)
 	var gain := 0.0 if boss else minf(over * add_slope, ADD_MAX)
-	var floor_k := 1.0 + round_floor * float(round_i)
-	return clampf(maxf(skill, minf(over * floor_slope * floor_k, FLOOR_MAX)) + gain, 0.0, 1.0)
+	var bend: Dictionary = ISLAND_FLOOR.get(island, {})
+	var floor_k := 1.0 + round_floor * float(bend.get("round_k", 1.0)) * float(round_i)
+	return clampf(maxf(skill, minf(over * floor_slope * float(bend.get("slope_k", 1.0)) * floor_k, FLOOR_MAX)) + gain, 0.0, 1.0)
 
 
 ## What a beginner is spared: stats points x 1/9 taken off every stat of the opponent (OpponentAI

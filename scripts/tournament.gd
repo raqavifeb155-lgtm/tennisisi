@@ -93,6 +93,7 @@ var location := "park":
 		if v == location:
 			return
 		location = v
+		Opponents.island = v  # the island bends the opponents' floor (Opponents.ISLAND_FLOOR)
 		mythic_rolled = false
 		roll_field()  # D-8: every island has its own tiers of opponents
 		roll_lineup()

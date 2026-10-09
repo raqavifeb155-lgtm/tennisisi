@@ -567,6 +567,13 @@ func test_adapt() -> void:
 		mono = mono and v >= prev - 0.0001
 		prev = v
 	check(mono, "stronger player, never an easier opponent")
+	var park_f := Opponents.adapted_skill(0.1, 8.0, false, 0)
+	Opponents.island = "clay"
+	var clay_f := Opponents.adapted_skill(0.1, 8.0, false, 0)
+	var clay_late := Opponents.adapted_skill(0.1, 8.0, false, 3)
+	Opponents.island = "park"
+	check(clay_f > park_f + 0.1 and clay_late <= Opponents.FLOOR_MAX + Opponents.ADD_MAX, "clay lifts the early opponents more than the park (%.2f vs %.2f), under the cap" % [clay_f, park_f])
+	check(Opponents.adapted_skill(0.1, 8.0, false, 0) == park_f, "the park is back at its own floor")
 	# Every match has drop shots, approaches and changes of direction, even against a player who stands on the line.
 	var calm := _kinds(_sit({"player": Vector3(0.5, 0, 12.0), "rally": 5, "contact": Vector3(-1.3, 1.0, -11.8)}), "allcourt", 2000)
 	check(calm.get("drop", 0.0) > 0.01 and calm.get("drop", 0.0) < 0.08, "a drop shot out of a calm rally, now and then (%.1f%%)" % (100.0 * calm.get("drop", 0.0)))
