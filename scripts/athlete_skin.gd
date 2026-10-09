@@ -435,7 +435,7 @@ void fragment() {
 """
 
 ## The back faces of the body grown along the normals: a thin dark line round it. Parts
-## marked with vertex alpha 0 (ears, nose, hands) don't grow, so they draw no line.
+## marked with vertex alpha 0 (ears, nose, hands) shrink instead, hidden inside themselves.
 const OUTLINE_SHADER := """
 shader_type spatial;
 render_mode unshaded, cull_front, shadows_disabled;
@@ -444,7 +444,7 @@ uniform vec4 color : source_color = vec4(0.13, 0.1, 0.18, 1.0);
 uniform float grow = 0.0075;
 
 void vertex() {
-	VERTEX += NORMAL * grow * COLOR.a;
+	VERTEX += NORMAL * mix(-0.004, grow, COLOR.a);
 }
 
 void fragment() {

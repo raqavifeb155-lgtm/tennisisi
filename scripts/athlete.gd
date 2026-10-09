@@ -1874,8 +1874,8 @@ func _build() -> void:
 	skull.scale = Vector3(0.95, 1.05, 1.0)
 	if _body == Body.SMOOTH:
 		# Rounder (it is one mesh with the body anyway) and the face is drawn on it.
-		(skull.mesh as SphereMesh).radial_segments = 24
-		(skull.mesh as SphereMesh).rings = 14
+		(skull.mesh as SphereMesh).radial_segments = 20
+		(skull.mesh as SphereMesh).rings = 12
 		skull.set_meta("skull", true)
 	_head.add_child(skull)
 	if _body != Body.CLASSIC:
@@ -1893,6 +1893,9 @@ func _build() -> void:
 		_head.add_child(eye)
 	var nose := _no_outline(_sphere(0.02, skin.darkened(0.08)))
 	nose.position = Vector3(0, -0.02, -0.122)
+	if _body == Body.SMOOTH:
+		nose.scale = Vector3(0.7, 0.85, 0.75)   # a small soft nose under the drawn eyes
+		nose.position = Vector3(0, -0.018, -0.118)
 	_head.add_child(nose)
 
 	# Racket: local +Y runs from the hand to the head; the face lies in the XY plane.
@@ -2269,20 +2272,23 @@ func _build_smooth_body() -> void:
 	var sole := Color(0.86, 0.86, 0.84)
 	var hem := shorts.darkened(0.18)
 	var cuff := shirt.darkened(0.12)
-	var lk := 1.16                         # legs
-	var ak := 1.12                         # arms
+	var lk := 1.2                          # legs
+	var ak := 1.16                         # arms
 	var fk := 1.18                         # feet
 	for i in 2:
-		# Thigh: the shorts' leg with a darker hem, then a full quad tapering to the knee.
+		# Thigh (+Z is its front): the shorts' leg with a darker hem, then a full quad in
+		# front tapering to the knee cap.
 		_lathe_bone("thigh%d" % i, THIGH, [
-			[0.0, 0.0, shorts], [0.03, 0.074 * lk, shorts], [0.12, 0.094 * lk, shorts], [0.4, 0.09 * lk, shorts],
-			[0.4, 0.092 * lk, hem], [0.45, 0.09 * lk, hem], [0.45, 0.079 * lk, skin], [0.6, 0.076 * lk, skin],
-			[0.8, 0.063 * lk, skin], [0.93, 0.054 * lk, skin], [0.98, 0.046 * lk, skin], [1.0, 0.0, skin]])
-		# Shin: a calf high on the back of the leg, a slim ankle in a white sock.
+			[0.0, 0.0, shorts], [0.03, 0.074 * lk, shorts], [0.12, 0.092 * lk, shorts], [0.4, 0.088 * lk, shorts],
+			[0.4, 0.09 * lk, hem], [0.45, 0.088 * lk, hem], [0.45, 0.077 * lk, skin, 0.004], [0.62, 0.072 * lk, skin, 0.007, 0.95],
+			[0.8, 0.06 * lk, skin, 0.005, 0.95], [0.92, 0.052 * lk, skin, 0.004], [0.98, 0.046 * lk, skin, 0.003], [1.0, 0.0, skin]])
+		# Shin: a calf high on the back of the leg (-Z), a flat shin bone in front, a slim
+		# ankle in a white sock.
 		_lathe_bone("shin%d" % i, SHIN, [
-			[0.0, 0.0, skin], [0.03, 0.05 * lk, skin], [0.16, 0.06 * lk, skin], [0.3, 0.064 * lk, skin],
-			[0.5, 0.05 * lk, skin], [0.64, 0.042 * lk, skin], [0.64, 0.046 * lk, sock], [0.7, 0.045 * lk, sock],
-			[0.95, 0.04 * lk, sock], [1.0, 0.0, sock]])
+			[0.0, 0.0, skin], [0.03, 0.048 * lk, skin, 0.002], [0.14, 0.054 * lk, skin, -0.006, 0.92],
+			[0.28, 0.06 * lk, skin, -0.012, 0.88], [0.44, 0.052 * lk, skin, -0.008, 0.9], [0.56, 0.043 * lk, skin, -0.003],
+			[0.64, 0.04 * lk, skin], [0.64, 0.044 * lk, sock], [0.7, 0.043 * lk, sock],
+			[0.95, 0.039 * lk, sock], [1.0, 0.0, sock]])
 		_lathe_bone("shoe%d" % i, 0.19, [
 			[0.0, 0.0, sole], [0.04, 0.05 * fk, sole], [0.08, 0.056 * fk, white], [0.38, 0.062 * fk, white], [0.38, 0.064 * fk, accent],
 			[0.5, 0.064 * fk, accent], [0.5, 0.062 * fk, white], [0.85, 0.052 * fk, white], [0.96, 0.04 * fk, white], [1.0, 0.0, white]], 0.6)
@@ -2292,9 +2298,10 @@ func _build_smooth_body() -> void:
 		[0.0, 0.0, shirt], [0.0, 0.135, shirt], [0.5, 0.14, shirt], [1.0, 0.15, shirt], [1.0, 0.0, shirt]])
 	# Chest, pelvis -> shoulders in one piece: a narrow waist over the shorts, a broad
 	# chest and the slope of the trapezius up to the neck.
+	# -Z is its front: the chest stands out over a flat belly, the back is straight.
 	_lathe_bone("chest", 0.25, [
-		[0.0, 0.0, shirt], [0.0, 0.13, shirt], [0.04, 0.136, shirt], [0.3, 0.134, shirt], [0.55, 0.162, shirt],
-		[0.76, 0.188, shirt], [0.88, 0.182, shirt], [0.96, 0.15, shirt], [1.0, 0.1, shirt], [1.0, 0.0, shirt]])
+		[0.0, 0.0, shirt], [0.0, 0.13, shirt], [0.04, 0.136, shirt], [0.3, 0.132, shirt, 0.004], [0.55, 0.158, shirt, -0.004],
+		[0.74, 0.184, shirt, -0.012], [0.86, 0.182, shirt, -0.01], [0.95, 0.152, shirt, -0.004], [1.0, 0.1, shirt], [1.0, 0.0, shirt]])
 	# Shoulders, left -> right: round deltoids at the ends, in the shirt.
 	_lathe_bone("shoulders", 0.4, [
 		[0.0, 0.0, shirt], [0.02, 0.064 * ak, shirt], [0.11, 0.078 * ak, shirt], [0.28, 0.07 * ak, shirt],
@@ -2312,10 +2319,11 @@ func _build_smooth_body() -> void:
 		_lathe_bone("fore_" + side, FOREARM, [
 			[0.0, 0.0, skin], [0.04, 0.041 * ak, skin], [0.24, 0.048 * ak, skin], [0.5, 0.041 * ak, skin],
 			[0.72, 0.034 * ak, skin], [0.72, 0.042 * ak, accent], [0.94, 0.041 * ak, accent], [0.94, 0.031 * ak, skin], [1.0, 0.0, skin]])
+	# Joints a little thinner than the limbs there: they only fill a deep bend.
 	for i in 2:
-		_joint_ball("knee%d" % i, 0.053 * lk, skin)
+		_joint_ball("knee%d" % i, 0.047 * lk, skin)
 	for side in ["r", "l"]:
-		_joint_ball("elbow_" + side, 0.041 * ak, skin)
+		_joint_ball("elbow_" + side, 0.036 * ak, skin)
 	# Hands: a palm with a thumb along its side (pointing along the forearm, _place_hand).
 	_hand_scale = Vector3(0.8, 1.1, 0.6) * 1.25
 	_hand_r = _hand_mesh(skin, 1.0)
@@ -2362,7 +2370,9 @@ func _lathe_bone(bone: String, ref: float, prof: Array, flat := 1.0) -> void:
 	_bones[bone] = mi
 
 
-## The profile turned round +Y, centred on the origin, with vertex colours. `colour`
+## The profile turned round +Y, centred on the origin, with vertex colours. A ring may
+## carry two more values: [t, r, colour, dz, ex] - its centre moved by dz along +Z (a calf
+## behind the shin, a chest in front) and its width along X scaled by ex. `colour`
 ## (t, angle, row colour) -> Color paints per vertex instead (patterns, AthleteGear); the
 ## UV's x is then t along the bone.
 static func _lathe(len: float, prof: Array, segs: int, colour := Callable()) -> ArrayMesh:
@@ -2377,12 +2387,15 @@ static func _lathe(len: float, prof: Array, segs: int, colour := Callable()) -> 
 		var ib := mini(i + 1, n - 1)
 		var dy: float = (float(prof[ib][0]) - float(prof[ia][0])) * len
 		var dr: float = float(prof[ib][1]) - float(prof[ia][1])
+		var dz := _ring(prof[i], 3, 0.0)
+		var ex := _ring(prof[i], 4, 1.0)
+		var ddz := _ring(prof[ib], 3, 0.0) - _ring(prof[ia], 3, 0.0)
 		for j in segs + 1:
 			var a := TAU * float(j) / float(segs)
-			var rad := Vector3(cos(a), 0.0, sin(a))
+			var rad := Vector3(cos(a) / ex, 0.0, sin(a)).normalized()
 			var nrm := Vector3(0, -1.0 if t < 0.5 else 1.0, 0)
 			if r > 0.0001 and absf(dy) > 0.0001:
-				nrm = (rad - Vector3(0, dr / dy, 0)).normalized()
+				nrm = (rad - Vector3(0, (dr + ddz * sin(a)) / dy, 0)).normalized()
 			elif r > 0.0001:
 				nrm = (rad + nrm * 0.6).normalized()
 			if colour.is_valid():
@@ -2391,7 +2404,7 @@ static func _lathe(len: float, prof: Array, segs: int, colour := Callable()) -> 
 			else:
 				st.set_color(prof[i][2])
 			st.set_normal(nrm)
-			st.add_vertex(rad * r + Vector3(0, (t - 0.5) * len, 0))
+			st.add_vertex(Vector3(cos(a) * r * ex, (t - 0.5) * len, sin(a) * r + dz))
 	for i in n - 1:
 		for j in segs:
 			var a0 := i * (segs + 1) + j
@@ -2403,6 +2416,10 @@ static func _lathe(len: float, prof: Array, segs: int, colour := Callable()) -> 
 			st.add_index(b0 + 1)
 			st.add_index(b0)
 	return st.commit()
+
+
+static func _ring(row: Array, i: int, default: float) -> float:
+	return float(row[i]) if row.size() > i else default
 
 
 static var _toon_outline: StandardMaterial3D
