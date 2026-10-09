@@ -441,8 +441,10 @@ func prize_mult() -> float:
 	return float(format_info()["reward"]) * Locations.prize_mult(location) * income_scale()
 
 
+## The title pays by the same conditions as the matches did (the final's auras and the run's
+## conditions, «Хардкор»): the screen promised «золото ×N», and the title is the biggest prize.
 func champion_bonus() -> int:
-	return roundi(CHAMPION_BONUS * prize_mult())
+	return roundi(CHAMPION_BONUS * prize_mult() * Modifiers.gold_mult(self, rounds() - 1))
 
 
 ## Prize money for going out in round i (a played and lost match).

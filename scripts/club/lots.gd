@@ -36,7 +36,7 @@ const TYPES := {
 	"coach": {"name": "Тренерская", "home": "n2", "gives": "Навыки и задания тренера, отдых между очками"},
 	"stands": {"name": "Трибуны", "home": "n4", "faces_court": true, "gives": "Болельщики и до +10% золота за победы"},
 	"locker": {"name": "Раздевалка", "home": "n1", "gives": "Шкафчик для вещей, внешность, страховка вещей"},
-	"trophy": {"name": "Трофейная", "home": "n5", "gives": "Кубки за титулы, Кодекс, счётчик удачи"},
+	"trophy": {"name": "Трофейная", "home": "n5", "gives": "Кубки за титулы и твоя статуя. Для красоты: силы не даёт"},
 	"bar": {"name": "Бар", "home": "n6", "gives": "Тотализатор и блэкджек: ставки золотом"},
 	"academy": {"name": "Академия", "home": "n7", "soon": true, "price": 150, "unlock": "played:4",
 		"gives": "Юниоры, их матчи и тренировки"},
@@ -234,8 +234,10 @@ static func build(lot_id: String, type: String) -> bool:
 
 
 ## Types worth showing on a lot's sheet, in the order the sheet pages them.
+## (The academy and the arena are not in the game yet: a newcomer is not shown them as «Скоро»
+## cards between the things he can build; they join the sheet when their own run count is met.)
 static func sheet_types() -> Array:
-	return ORDER.duplicate()
+	return ORDER.filter(func(t: String) -> bool: return not is_soon(t) or cond_met(String(TYPES[t].get("unlock", "never"))))
 
 
 ## What can be built now on some free lot, cheapest first (types not built, open, buildable).

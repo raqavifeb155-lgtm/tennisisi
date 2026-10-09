@@ -61,7 +61,7 @@ const EDGES := [
 const PLACE_NODE := {
 	"court": "court_s", "gate": "gate", "locker": "locker_door", "coach": "coach_door", "shop": "shop_door",
 	"trophy": "trophy", "bar": "bar", "blackjack": "blackjack", "arena": "arena", "academy": "academy",
-	"board": "board", "machine": "court_s", "booth": "court_s",
+	"board": "board", "machine": "court_s", "booth": "court_s", "stands": "court_e",  # the stands sit by the court's east side
 }
 
 ## Strolls for the passers-by: chains of nodes walked back and forth.

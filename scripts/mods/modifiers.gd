@@ -303,10 +303,15 @@ static func loot_bonus(id: String) -> float:
 
 ## Product of the rewards (an unknown id pays x1), at most MAX_REWARD.
 static func reward(list: Array) -> float:
+	return minf(reward_raw(list), MAX_HARD if list.has("hardcore") else MAX_REWARD)
+
+
+## The same without the cap: the screen says so when the cap eats part of the pay.
+static func reward_raw(list: Array) -> float:
 	var x := 1.0
 	for id in list:
 		x *= float(find(id).get("reward", 1.0))
-	return minf(x, MAX_HARD if list.has("hardcore") else MAX_REWARD)
+	return x
 
 
 ## What beating opponent i pays on top: his auras x the run's conditions.

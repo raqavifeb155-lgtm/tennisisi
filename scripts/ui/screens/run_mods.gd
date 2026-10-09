@@ -82,7 +82,9 @@ static func show(ui: TournamentUI, animate := true) -> void:
 				head = false
 			ui._box.add_child(_row(ui, e, i))
 	var x := total()
-	ui._note("Выбрано %d из %d   ·   награда ×%s   ·   лут +%d%%" % [picked.size(), Modifiers.MAX_RUN, _k(x), roundi(Modifiers.RUN_LOOT * 100.0 * picked.size())])
+	var chosen := (["hardcore"] if hardcore else []) + picked
+	var capped := Modifiers.reward_raw(chosen) > x + 0.005
+	ui._note("Выбрано %d из %d   ·   награда ×%s%s   ·   лут +%d%%" % [picked.size(), Modifiers.MAX_RUN, _k(x), " (потолок)" if capped else "", roundi(Modifiers.RUN_LOOT * 100.0 * picked.size())])
 	ui._primary(("НАЧАТЬ ХАРДКОР  ·  ×%s" % _k(x)) if hardcore else ("НАЧАТЬ ЗАБЕГ" if picked.is_empty() else "НАЧАТЬ ЗАБЕГ  ·  ×%s" % _k(x)), "mods_go")
 
 

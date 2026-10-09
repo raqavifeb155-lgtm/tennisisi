@@ -409,10 +409,14 @@ func show_bracket(t: Tournament) -> void:
 	_sub(info)
 	if t.gold > 0:
 		_note("Золото забега +%d уйдёт в банк в конце турнира" % t.gold)
+	var goal := Goals.line(t.gold if not t.banked else 0)  # the horizon: what the bank plus this run can buy
+	if goal != "":
+		_note(goal).add_theme_color_override("font_color", UiTheme.GOLD)
 	RunBag.bracket_extra(self, t)  # v0.2 A: the bag
 	RunBets.bracket_extra(self, t)  # v0.2 A: a bet on the coming match
 	RunMods.bracket_extra(self, t)  # v0.2 G: the run's conditions
 	RunMods.badge(self, t)  # G-6: «ХАРДКОР»
+	RunResult.bracket_quests(self, t)  # the coach's quests are seen while playing
 	for i in t.rounds():
 		_bracket_row(t, i)
 	var opp := t.opponent()

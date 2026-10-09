@@ -23,9 +23,16 @@ var face_down := false
 var selected := false             # a lit choice (e.g. the current control scheme)
 var item := {}                    # a thing: its picture sits on the card ({} + item_slot = the stock one)
 var item_slot := ""
+var extra := ""                   # an item card's last line (price, what a tap does): never cut off
+var uniform := false              # a thing's card: one height and one width, the text cut to fit
 var flipping := false             # the card is turning right now
 
 var _content: VBoxContainer
+var _cut := false                 # the text of a uniform card was cut: a long press shows it all
+var _info: Control
+var _held := 0.0
+var _moved := 0.0
+var _detail_open := false
 var _back: Control
 var _shine: Control
 var _thumb: Control
@@ -37,6 +44,14 @@ var _tilt := 0.0
 
 
 const THUMB := 132.0               # the picture of a thing on its card
+## Cards of things (bag, locker, shop, rewards, loot) are all this tall: tag one line, the
+## name two, the stats three, then the price / state line. What does not fit ends in «…»
+## and a long press (LONG_PRESS s) opens the whole text (loop review 10.10: the cards were
+## as tall as their text, so a shelf of three looked ragged).
+const ITEM_H := 296.0
+const DESC_LINES := 3
+const TITLE_LINES := 2
+const LONG_PRESS := 0.45
 
 
 func _init() -> void:
@@ -66,16 +81,40 @@ func _ready() -> void:
 		_thumb.offset_bottom = THUMB * 0.5
 		add_child(_thumb)
 		_content.offset_left = 30 + THUMB + 6
+	uniform = uniform or not item.is_empty() or item_slot != ""
+	var cut_labels: Array[Label] = []
+	if uniform:
+		_content.offset_top = 14
+		_content.offset_bottom = -14
+		_content.add_theme_constant_override("separation", 4)
 	if tag != "":
 		var tl := _line(tag, UiTheme.text_bold(), UiTheme.T_SMALL, _frame_color() if _frame_color().a > 0.2 else UiTheme.MUTED)
+		if uniform:
+			tl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+			cut_labels.append(tl)
 		_content.add_child(tl)
 	var tt := _line(title, UiTheme.display(), UiTheme.T_HEAD, UiTheme.INK)
 	tt.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	if uniform:
+		tt.max_lines_visible = TITLE_LINES
+		tt.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		cut_labels.append(tt)
 	_content.add_child(tt)
 	if desc != "":
 		var d := _line(desc, UiTheme.text(), UiTheme.T_SMALL + 2, UiTheme.MUTED)
 		d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		if uniform:
+			d.max_lines_visible = DESC_LINES
+			d.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+			cut_labels.append(d)
 		_content.add_child(d)
+	if extra != "":
+		var e := _line(extra, UiTheme.text_bold(), UiTheme.T_SMALL + 2, UiTheme.INK)
+		e.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		cut_labels.append(e)
+		_content.add_child(e)
+	if uniform:
+		_check_cut.call_deferred(cut_labels)
 
 	_shine = Shine.new()  # epic and up: always; the others only when the card is shown (sweep)
 	(_shine as Shine).always = rarity >= 2
@@ -94,7 +133,7 @@ func _ready() -> void:
 		pivot_offset = size * 0.5
 		_fit.call_deferred())
 	_content.minimum_size_changed.connect(_fit)
-	custom_minimum_size = Vector2(0, 170)
+	custom_minimum_size = Vector2(0, ITEM_H if uniform else 170)
 	_fit.call_deferred()
 	button_down.connect(func() -> void: _hold = true)
 	button_up.connect(func() -> void: _hold = false)
@@ -103,11 +142,65 @@ func _ready() -> void:
 
 ## The card is as tall as its text (wrapped lines included), never shorter than 170.
 func _fit() -> void:
-	if _content == null:
+	if _content == null or uniform:
 		return
 	var h := maxf(170.0, _content.get_combined_minimum_size().y + 44.0)
 	if absf(custom_minimum_size.y - h) > 0.5:
 		custom_minimum_size = Vector2(0, h)
+
+
+## After the layout: was any line of the card cut? Then it wears a small «i» and a long press
+## opens the full text.
+func _check_cut(labels: Array[Label]) -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+	for l in labels:
+		if not is_instance_valid(l):
+			continue
+		var wrapped := l.autowrap_mode != TextServer.AUTOWRAP_OFF
+		if (wrapped and l.max_lines_visible > 0 and l.get_line_count() > l.max_lines_visible) \
+				or (not wrapped and l.get_minimum_size().x > l.size.x + 1.0) \
+				or (wrapped and l.get_line_count() > l.get_visible_line_count()):
+			_cut = true
+	if _cut and _info == null and not face_down:
+		_info = InfoDot.new()
+		_info.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_info.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+		_info.offset_left = -50
+		_info.offset_right = -14
+		_info.offset_top = 12
+		_info.offset_bottom = 48
+		(_info as InfoDot).color = _frame_color() if _frame_color().a > 0.2 else UiTheme.MUTED
+		add_child(_info)
+		move_child(_info, _shine.get_index() if _shine else -1)
+	if _info:
+		_info.visible = _cut and not face_down
+
+
+## The full text of the card, from the bottom (a tap on the veil closes it).
+func show_detail() -> void:
+	if _detail_open or face_down:
+		return
+	_detail_open = true
+	var layer := CanvasLayer.new()
+	layer.layer = UiTheme.LAYER_SHEETS
+	layer.process_mode = Node.PROCESS_MODE_ALWAYS
+	var sheet := UiSheet.new(false)
+	layer.add_child(sheet)
+	get_tree().root.add_child(layer)
+	sheet.body.add_child(sheet.label(tag, UiTheme.text_bold(), UiTheme.T_SMALL, _frame_color() if _frame_color().a > 0.2 else UiTheme.MUTED))
+	sheet.body.add_child(sheet.label(title, UiTheme.display(), UiTheme.T_HEAD, UiTheme.INK))
+	if desc != "":
+		sheet.body.add_child(sheet.label(desc, UiTheme.text(), UiTheme.T_BODY, UiTheme.MUTED))
+	if extra != "":
+		sheet.body.add_child(sheet.label(extra, UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.INK))
+	var close := func() -> void:
+		_detail_open = false
+		disabled = false
+		layer.queue_free()
+	sheet.veil_tapped.connect(close)
+	sheet.actions.add_child(sheet.button("Закрыть", close, "Primary"))
+	sheet.open()
 
 
 func _line(s: String, f: Font, fs: int, c: Color) -> Label:
@@ -252,10 +345,20 @@ func _gui_input(event: InputEvent) -> void:
 	# Pressed and dragged: the card leans toward the finger, like a card held by a corner.
 	if event is InputEventMouseMotion and _hold and size.x > 0.0:
 		_tilt = clampf((event.position.x - size.x * 0.5) / size.x, -0.5, 0.5)
+		_moved += (event as InputEventMouseMotion).relative.length()
 
 
 func _process(delta: float) -> void:
 	_t += delta
+	if _hold and _cut and not _detail_open and not face_down:
+		_held += delta
+		if _held >= LONG_PRESS and _moved < 24.0:
+			_hold = false
+			disabled = true   # the release that follows is not a tap on the card
+			show_detail()
+	elif not _hold:
+		_held = 0.0
+		_moved = 0.0
 	var target := _tilt * 0.07 if _hold else sin(_t * 1.3 + _phase) * 0.006
 	if not _hold:
 		_tilt = lerpf(_tilt, 0.0, 1.0 - exp(-8.0 * delta))
@@ -302,6 +405,17 @@ class Shine extends Control:
 		var band := 0.16 * w
 		var pts := PackedVector2Array([Vector2(x - band, h), Vector2(x, h), Vector2(x + h * 0.45, 0), Vector2(x + h * 0.45 - band, 0)])
 		draw_colored_polygon(pts, Color(1, 1, 1, 0.13 if always else 0.2))
+
+
+## A small «i» in a ring in the corner of a card whose text was cut.
+class InfoDot extends Control:
+	var color := Color.WHITE
+
+	func _draw() -> void:
+		var c := size * 0.5
+		draw_arc(c, 15.0, 0.0, TAU, 24, color, 2.5, true)
+		draw_circle(c + Vector2(0, -7), 2.4, color)
+		draw_line(c + Vector2(0, -2), c + Vector2(0, 8), color, 3.0, true)
 
 
 ## A white flash laid over the card for a moment.

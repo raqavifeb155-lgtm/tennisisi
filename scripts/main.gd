@@ -292,6 +292,10 @@ func _ready() -> void:
 	drill = BallMachine.new()  # v0.2 P: the lesson with the ball machine (listens to GameEvents)
 	add_child(drill)
 	drill.setup(self)
+	# A finished quest of the coach says so on the court (before: nobody listened to quest_done).
+	GameEvents.quest_done.connect(func(info: Dictionary) -> void:
+		if tournament_mode:
+			hud.announcer.toast("ЗАДАНИЕ ГОТОВО  ·  %s  ·  +%d" % [String(info.get("text", "")), int(info.get("gold", 0))], "quest%d" % int(info.get("index", 0)), true))
 	# UI sounds: a dropped-in coin/reward/click sound if there is one, else a built-in.
 	ui.sfx_request.connect(func(sound: String, db: float, pitch: float) -> void:
 		var alt: String = {"bounce": "coin", "hit": "click"}.get(sound, "")

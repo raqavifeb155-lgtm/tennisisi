@@ -24,29 +24,30 @@ static func all() -> Array:
 	return out
 
 
-static func affordable() -> Array:
-	return all().filter(func(g): return int(g["price"]) <= SaveData.gold)
+## extra: gold of a run that is not in the bank yet (the bracket counts it as nearly there).
+static func affordable(extra := 0) -> Array:
+	return all().filter(func(g): return int(g["price"]) <= SaveData.gold + extra)
 
 
 ## The cheapest goal the bank can't pay yet, with "left" = how much is missing ({} = none).
-static func next_goal() -> Dictionary:
+static func next_goal(extra := 0) -> Dictionary:
 	for g in all():
-		if int(g["price"]) > SaveData.gold:
+		if int(g["price"]) > SaveData.gold + extra:
 			var d: Dictionary = g.duplicate()
-			d["left"] = int(g["price"]) - SaveData.gold
+			d["left"] = int(g["price"]) - SaveData.gold - extra
 			return d
 	return {}
 
 
 ## One line for a screen: "По карману: Трибуны (50) · дальше «Бар» — ещё 12" (what the bank
 ## buys now, and how far the nearest thing it can't buy yet is).
-static func line() -> String:
+static func line(extra := 0) -> String:
 	var parts: Array[String] = []
-	var a := affordable()
+	var a := affordable(extra)
 	if not a.is_empty():
 		var g: Dictionary = a.back()  # the dearest one within reach: the most exciting
 		parts.append("По карману: %s · %d" % [g["title"], int(g["price"])])
-	var n := next_goal()
+	var n := next_goal(extra)
 	if not n.is_empty():
 		parts.append(("дальше «%s» — ещё %d" if not a.is_empty() else "До «%s» ещё %d") % [n["title"], int(n["left"])])
 	return "  ·  ".join(parts)
