@@ -1,0 +1,5 @@
+JDUEL id=B_brally8 n=16 a_wins=2 a_pts=66 b_pts=114 srv_a=89 srv_a_won=40 srv_b=91 srv_b_won=65
+JDUEL id=B_aspeed8 n=16 a_wins=10 a_pts=98 b_pts=80 srv_a=89 srv_a_won=57 srv_b=89 srv_b_won=48
+JDUEL id=B_bspeed8 n=16 a_wins=4 a_pts=83 b_pts=104 srv_a=93 srv_a_won=47 srv_b=94 srv_b_won=58
+JDUEL id=B_anet9 n=16 a_wins=11 a_pts=110 b_pts=82 srv_a=96 srv_a_won=58 srv_b=96 srv_b_won=44
+JDUEL id=B_bnet9 n=16 a_wins=14 a_pts=111 b_pts=68 srv_a=88 srv_a_won=61 srv_b=91 srv_b_won=41

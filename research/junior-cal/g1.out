@@ -1,0 +1,5 @@
+JDUEL id=eq3 n=12 a_wins=2 a_pts=51 b_pts=78 srv_a=64 srv_a_won=29 srv_b=65 srv_b_won=43
+JDUEL id=eq8 n=12 a_wins=9 a_pts=78 b_pts=60 srv_a=70 srv_a_won=45 srv_b=68 srv_b_won=35
+JDUEL id=a5b3 n=12 a_wins=12 a_pts=92 b_pts=56 srv_a=74 srv_a_won=48 srv_b=74 srv_b_won=30
+JDUEL id=a5b7 n=12 a_wins=5 a_pts=56 b_pts=73 srv_a=65 srv_a_won=28 srv_b=64 srv_b_won=36
+JDUEL id=a_serve8 n=12 a_wins=7 a_pts=70 b_pts=59 srv_a=64 srv_a_won=38 srv_b=65 srv_b_won=33

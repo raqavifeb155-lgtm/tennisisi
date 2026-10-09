@@ -1,0 +1,5 @@
+JDUEL id=b_serve8 n=12 a_wins=4 a_pts=63 b_pts=77 srv_a=70 srv_a_won=35 srv_b=70 srv_b_won=42
+JDUEL id=a_rally8 n=12 a_wins=12 a_pts=84 b_pts=24 srv_a=53 srv_a_won=43 srv_b=55 srv_b_won=14
+JDUEL id=a_speed8 n=12 a_wins=9 a_pts=88 b_pts=65 srv_a=76 srv_a_won=46 srv_b=77 srv_b_won=35
+JDUEL id=a_net8 n=12 a_wins=8 a_pts=84 b_pts=70 srv_a=77 srv_a_won=44 srv_b=77 srv_b_won=37
+JDUEL id=a_stam8 n=12 a_wins=5 a_pts=69 b_pts=66 srv_a=68 srv_a_won=44 srv_b=67 srv_b_won=42

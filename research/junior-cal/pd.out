@@ -1,0 +1,4 @@
+JDUEL id=D_eq3 n=20 a_wins=11 a_pts=108 b_pts=112 srv_a=108 srv_a_won=57 srv_b=112 srv_b_won=61
+JDUEL id=D_eq6 n=20 a_wins=12 a_pts=128 b_pts=112 srv_a=118 srv_a_won=66 srv_b=122 srv_b_won=60
+JDUEL id=D_eq8 n=20 a_wins=14 a_pts=126 b_pts=94 srv_a=110 srv_a_won=68 srv_b=110 srv_b_won=52
+JDUEL id=D_eq10 n=20 a_wins=7 a_pts=114 b_pts=129 srv_a=121 srv_a_won=59 srv_b=122 srv_b_won=67

@@ -1,0 +1,5 @@
+JDUEL id=eq5_b2.6_s0.085 n=10 a_wins=5 a_pts=47 b_pts=57 srv_a=51 srv_a_won=26 srv_b=53 srv_b_won=32
+JDUEL id=eq5_b3.1_s0.085 n=10 a_wins=8 a_pts=71 b_pts=53 srv_a=63 srv_a_won=38 srv_b=61 srv_b_won=28
+JDUEL id=eq5_b2.6_s0.06 n=10 a_wins=6 a_pts=62 b_pts=58 srv_a=60 srv_a_won=35 srv_b=60 srv_b_won=33
+JDUEL id=eq5_b3.1_s0.06 n=10 a_wins=9 a_pts=71 b_pts=40 srv_a=55 srv_a_won=40 srv_b=56 srv_b_won=25
+JDUEL id=eq5_b2.1_s0.06 n=10 a_wins=5 a_pts=58 b_pts=51 srv_a=55 srv_a_won=33 srv_b=54 srv_b_won=29
