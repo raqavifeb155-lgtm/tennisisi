@@ -65,6 +65,8 @@ var tournament_mode := false
 var autoplay_tournament := false
 var cpu_label := "CPU"
 var cpu_call := "CPU"            # the same in Latin, for the court calls (Calls, UI_FLOW_TZ 5.6)
+var me_label := "ВЫ"             # the near player's name on the score bug (T-4: a student's, in his match)
+var spectate: Node               # T-4: the student's match being watched (JuniorWatch): it plays the near side, nothing is earned
 var _match_over := false
 var _match_stats := {}
 var _after_perks := ""            # screen to open once the pending skill perk choices are made
@@ -182,7 +184,7 @@ var _drop_t := 0.0
 func _ready() -> void:
 	rng.randomize()
 	for a in OS.get_cmdline_user_args():
-		if a == "--autoplay" or a == "--ai-vs-ai":
+		if a == "--autoplay" or a == "--ai-vs-ai" or a == "--junior-duel":
 			autoplay = true  # --ai-vs-ai (AiVsAi, D-6): the bot against OpponentAI, no input
 		elif a.begins_with("--bonus-test"):
 			_bonus_rounds = int(a.get_slice("=", 1)) if "=" in a else 8
@@ -271,7 +273,7 @@ func _ready() -> void:
 	hud.touch.swipe_progress.connect(_on_swipe_progress)
 	hud.touch.tapped.connect(_on_tap)
 	hud.touch.held.connect(_on_hold)
-	hud.show_board(scoreboard, ["ВЫ", cpu_label])
+	hud.show_board(scoreboard, [me_label, cpu_label])
 	hud.menu_requested.connect(_show_menu)
 
 	ui = TournamentUI.new()
@@ -362,6 +364,10 @@ func _ready() -> void:
 				Skills.add_xp(id, _bot_xp)  # --xp: a player some tournaments in
 			Skills.pending = []
 		_start_tournament(_autoplay_format)
+	elif JuniorDuel.requested():
+		var jd := JuniorDuel.new()  # T-4: the student's bot against OpponentAI, for the calibration (scripts/academy/junior_duel.gd)
+		add_child(jd)
+		jd.start(self)
 	elif AiVsAi.requested():
 		var duel := AiVsAi.new()  # D-6: two AIs play tiebreaks to 7 (scripts/ai/ai_vs_ai.gd)
 		add_child(duel)
@@ -1500,7 +1506,7 @@ func _end_point(winner: int, reason: String) -> void:
 			sfx.crowd("crowd_ooh", -6.0)
 		elif winner == Who.PLAYER and (rally >= 6 or reason == "ACE" or reason == "WINNER"):
 			sfx.crowd("applause", -8.0 + minf(rally, 12.0) * 0.4)
-	hud.show_board(scoreboard, ["ВЫ", cpu_label])
+	hud.show_board(scoreboard, [me_label, cpu_label])
 	smash_hub.point_over(winner, reason, ev != MatchScore.Event.POINT)  # v0.2 R: maybe offers «Разбить ракетку»
 
 	_stats["rallies"].append(rally)
@@ -1823,7 +1829,7 @@ func _xp_mult() -> float:
 
 ## Experience for a hit (by timing label) or a raw amount (running).
 func _gain_xp(skill: String, label: String, raw := -1.0) -> void:
-	if phase == Phase.IDLE or drill.holds_xp():  # in the drill only counted balls pay (BallMachine)
+	if phase == Phase.IDLE or drill.holds_xp() or spectate != null:  # in the drill only counted balls pay (BallMachine); a student's match pays nobody here
 		return
 	var amount := raw if raw >= 0.0 else Skills.BASE_XP * float(Skills.TIMING_XP.get(label, 1.0))
 	var lv := Skills.add_xp(skill, amount * _xp_mult() * Career.xp_mult())  # L1: age x1.25 .. x0.7
@@ -1858,6 +1864,8 @@ func _show_menu() -> void:
 
 
 func _stop_match() -> void:
+	if spectate != null:
+		spectate.on_stop()  # T-4: the hero's skills come back before anything reads them
 	drill.stop()
 	if not BallPhysics.net_enabled:
 		court.set_net_up(true)
@@ -2061,7 +2069,7 @@ func _begin_match() -> void:
 	player.area = PLAYER_AREA
 	player.position = PLAYER_HOME
 	cpu.position = CPU_HOME
-	hud.show_board(scoreboard, ["ВЫ", cpu_label])
+	hud.show_board(scoreboard, [me_label, cpu_label])
 	if not autoplay and not _headless():
 		hud.show_tutorial_once()
 	_reset_point()
@@ -2641,6 +2649,9 @@ func _bot_dir(max_deg: float) -> Vector3:
 
 
 func _autoplay_tick() -> void:
+	if spectate != null:
+		spectate.bot_tick()  # T-4: the student's bot (JuniorBot) plays the near side
+		return
 	if phase == Phase.BONUS:
 		if _bonus_state != 0:
 			return
