@@ -61,7 +61,6 @@ const ACCENTS := {
 	"park": [
 		# East River Park: the city across the water, boats, a playground somewhere behind.
 		{"sound": "amb_park_horn", "pos": Vector3(70.0, 6.0, -150.0), "first": [20.0, 45.0], "every": [70.0, 140.0], "db": -12.0},
-		{"sound": "amb_park_ship", "pos": Vector3(-80.0, 0.0, -110.0), "first": [40.0, 80.0], "every": [120.0, 220.0], "db": -10.0},
 		{"sound": "amb_park_siren", "pos": Vector3(120.0, 10.0, -200.0), "first": [60.0, 120.0], "every": [180.0, 320.0], "db": -15.0},
 		{"sound": "amb_park_kids", "pos": Vector3(-45.0, 1.0, 30.0), "first": [15.0, 35.0], "every": [90.0, 180.0], "db": -14.0},
 		{"sound": "amb_pigeons", "pos": Vector3(18.0, 3.0, -25.0), "first": [30.0, 70.0], "every": [80.0, 160.0], "db": -6.0},
