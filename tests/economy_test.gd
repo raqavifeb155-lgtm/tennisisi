@@ -43,6 +43,7 @@ func _run() -> void:
 	test_loop_review()
 	test_newcomer_quests()
 	test_sell_rest()
+	test_one_scale()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -734,4 +735,21 @@ func test_sell_rest() -> void:
 	_plain(live)
 	live.equip["racket"] = _item(Gear.EPIC)
 	check(Locker.sell_rest(live) == 0 and not live.equip["racket"].is_empty(), "never during a run (only when the run is banked)")
+	_reset_save()
+
+
+# --- Loop review P1: the quests and the ball machine, one decision ------------------------
+
+func test_one_scale() -> void:
+	print("quests on the run's scale, the ball machine a daily hook")
+	_reset_save()
+	var tpl := ClubQuests.find_template("net")
+	var q := []
+	var lap := []
+	for played in [0, 8]:
+		SaveData.played = played
+		q.append(int(ClubQuests._make(tpl, 0, false)["gold"]))
+		lap.append(BallMachine.gold_for_lap())
+	check(q[0] == roundi(30 * Tournament.BEGINNER_START) and q[1] == roundi(30 * Tournament.INCOME_SCALE), "a quest pays on the run's income scale (%s)" % [q])
+	check(lap[0] == lap[1] and lap[0] == BallMachine.GOLD_BASE, "a ball machine lap does not (%s): capped at %d a day instead" % [lap, BallMachine.DAILY_CIRCLES])
 	_reset_save()
