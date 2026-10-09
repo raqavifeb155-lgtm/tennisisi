@@ -131,6 +131,7 @@ const TRAIL_TOPSPIN := Color(1.0, 0.55, 0.15)
 const TRAIL_SLICE := Color(0.45, 0.8, 1.0)
 const TRAIL_FLAT := Color(1.0, 1.0, 1.0)
 const AIM_OUT := Color(1.0, 0.3, 0.25, 0.9)
+const AIM_RISK := Color(1.0, 0.58, 0.12, 0.95)   # F-E: the serve is in, but a hard one on a line is a gamble
 var _aim: MeshInstance3D
 var _aim_mat: StandardMaterial3D
 var _aim_hold := 0.0
@@ -1009,18 +1010,20 @@ func _on_swipe_progress(points: PackedVector2Array) -> void:
 	if phase == Phase.SERVE:
 		if server != Who.PLAYER:
 			return
-		var sp := serve_target(origin, dir, 0.5)
-		_set_aim(origin, sp, Court.in_service_box(sp, -1, box_side, 0.0))
+		var pk := _pace_from_speed(g.speed)
+		var st: int = g.type
+		var sp := serve_target(origin, dir, pk)
+		_set_aim(origin, sp, Court.in_service_box(sp, -1, box_side, 0.0), serve_risk_for(sp, ShotType.TOPSPIN if st == ShotType.LOB else (ShotType.SLICE if st == ShotType.DROP else st), pk) >= 0.1)
 	else:
 		var p := rally_target(origin, dir, 0.5)
 		_set_aim(origin, p, Court.is_in_singles(p, -1, 0.0))
 	_aim_hold = INF
 
 
-func _set_aim(origin: Vector3, p: Vector3, inside: bool) -> void:
+func _set_aim(origin: Vector3, p: Vector3, inside: bool, risky := false) -> void:
 	_aim.visible = true
 	_aim.global_position = Vector3(p.x, 0.05, p.z)
-	_aim_mat.albedo_color = AIM_IN if inside else AIM_OUT
+	_aim_mat.albedo_color = (AIM_RISK if risky else AIM_IN) if inside else AIM_OUT
 	_aim_line_origin = origin
 	_aim_line_target = p
 
@@ -1360,17 +1363,25 @@ func error_chance(who: int, q: float, incoming_speed: float) -> float:
 	return clampf(p, 0.0, 0.6)
 
 
-func execute_shot(who: int, hitter: Athlete, contact: Vector3, target: Vector3, pace: float, top: float, q: float, t_err: float, side: int, lob := false, side_spin := 0.0, drop := false, net_margin := 0.3, scatter := 1.0) -> ShotSolver.Result:
+## `force_err` (F-E, a hard first serve whose risk came up): 1 net, 2 long, 3 wide, 4 across the
+## centre line; the serve misses the way a serve does (just past the service line or a sideline).
+func execute_shot(who: int, hitter: Athlete, contact: Vector3, target: Vector3, pace: float, top: float, q: float, t_err: float, side: int, lob := false, side_spin := 0.0, drop := false, net_margin := 0.3, scatter := 1.0, force_err := 0) -> ShotSolver.Result:
 	trail.set_color(TRAIL_TOPSPIN if top >= 200.0 else (TRAIL_SLICE if top < 0.0 else TRAIL_FLAT), who == Who.PLAYER and q >= 0.9)
 	# An unforced or forced error: decided before the shot, shown as a real miss.
 	var incoming := ball.state.vel.length()
-	var err_kind := 0  # 0 none, 1 net, 2 long, 3 wide
-	if incoming > 3.0 and rng.randf() < error_chance(who, q, incoming):
+	var err_kind := force_err  # 0 none, 1 net, 2 long, 3 wide, 4 across the centre line (a serve)
+	if err_kind == 0 and incoming > 3.0 and rng.randf() < error_chance(who, q, incoming):
 		var roll := rng.randf()
 		err_kind = 1 if roll < 0.4 else (2 if roll < 0.75 else 3)
 		_stats["errors"] = _stats.get("errors", 0) + 1
 	var half := -signf(contact.z) if absf(contact.z) > 0.1 else -1.0  # the half the ball goes to
-	if err_kind == 2:
+	if force_err == 2:
+		target.z = half * (Court.SERVICE_LINE + rng.randf_range(0.25, 1.1))  # a serve long: just past the service line
+	elif force_err == 3:
+		target.x = box_side * (Court.half_width() + rng.randf_range(0.15, 0.7))  # wide: just past the sideline
+	elif force_err == 4:
+		target.x = -box_side * rng.randf_range(0.15, 0.7)  # into the other box
+	elif err_kind == 2:
 		# Long: lands past the baseline.
 		target.z = half * (Court.HALF_LENGTH + rng.randf_range(0.25, 1.5))
 	elif err_kind == 3:
@@ -1740,6 +1751,36 @@ func _start_toss() -> void:
 		_bot_offset = rng.randfn(0.0, 0.03)
 
 
+## The pace, spin and side spin a serve of this type is struck with at this swipe strength,
+## before the serve skill and the timing (m/s, rad/s-ish like the rest).
+func _serve_base(type: int, pace_k: float) -> Dictionary:
+	match type:
+		ShotType.FLAT:
+			return {"pace": lerpf(40.0, 58.0, pace_k), "top": 150.0, "side": 0.0}
+		ShotType.SLICE:
+			return {"pace": lerpf(31.0, 42.0, pace_k), "top": 80.0, "side": 330.0}  # curves to the server's left and keeps sliding away after the bounce
+	return {"pace": lerpf(30.0, 42.0, pace_k), "top": lerpf(300.0, 420.0, pace_k) * _curl_k, "side": 0.0}  # kick: dives in, jumps up high
+
+
+## F-E: the chance this first serve goes into the net or out (Skills.serve_risk): its speed with
+## the timing quality q, and how near the aim is to a line. The same number is shown to the
+## player (the aim dot turns orange, the popup says РИСК).
+func serve_risk_for(target: Vector3, type: int, pace_k: float, q := 1.0) -> float:
+	var kmh := float(_serve_base(type, pace_k)["pace"]) * float(Skills.stroke("serve")["pace"]) * lerpf(0.72, 1.06, q) * 3.6
+	var bx := target.x * box_side
+	return Skills.serve_risk(kmh, minf(bx, Court.half_width() - bx), serve_attempt)
+
+
+## Where a serve that the risk caught goes wrong: near a line mostly across it, else into the
+## net or just long (4 / 3 / 1 / 2 of execute_shot's force_err).
+func _serve_miss_kind(target: Vector3) -> int:
+	var bx := target.x * box_side
+	var near_line := 0.6 * (1.0 - clampf(minf(bx, Court.half_width() - bx) / Skills.SERVE_EDGE_SPAN, 0.0, 1.0))
+	if rng.randf() < near_line:
+		return 3 if bx > Court.half_width() * 0.5 else 4
+	return 1 if rng.randf() < 0.4 else 2
+
+
 func _player_serve(dir: Vector3, pace_k: float, type: int) -> void:
 	var bp := ball.state.pos
 	if bp.y < 1.7:
@@ -1751,24 +1792,20 @@ func _player_serve(dir: Vector3, pace_k: float, type: int) -> void:
 	var label: String = tq[1]
 	var origin := Vector3(bp.x, 0.0, bp.z)
 	var target := serve_target(origin, dir, pace_k)
-	var pace: float
-	var top: float
-	var side_spin := 0.0
-	match type:
-		ShotType.FLAT:
-			pace = lerpf(40.0, 58.0, pace_k)
-			top = 150.0
-		ShotType.SLICE:
-			pace = lerpf(31.0, 42.0, pace_k)
-			top = 80.0
-			side_spin = 330.0  # curves to the server's left and keeps sliding away after the bounce
-		_:
-			pace = lerpf(30.0, 42.0, pace_k)
-			top = lerpf(300.0, 420.0, pace_k) * _curl_k  # kick: dives in, jumps up high
+	var base := _serve_base(type, pace_k)
+	var pace: float = base["pace"]
+	var top: float = base["top"]
+	var side_spin: float = base["side"]
 	pace *= sk["pace"]
 	top *= sk["spin"]
+	# F-E: a hard serve is a gamble even when PERFECT: the risk (shown to the player) is rolled
+	# with the match's seeded rng and, if it comes up, the ball really goes into the net or out.
+	var risk := serve_risk_for(target, type, pace_k, q)
+	var miss := 0
+	if risk > 0.0 and rng.randf() < risk:
+		miss = _serve_miss_kind(target)
 	player.swing(1, 0.02, bp, Athlete.Style.SERVE)
-	var r := execute_shot(Who.PLAYER, player, bp, target, pace, top, q, err, 1, false, side_spin, false, 0.12, sk["scatter"])
+	var r := execute_shot(Who.PLAYER, player, bp, target, pace, top, q, err, 1, false, side_spin, false, 0.12, sk["scatter"], miss)
 	_after_serve_hit()
 	_gain_xp("serve", label)
 	if label == "PERFECT":
@@ -1781,7 +1818,7 @@ func _player_serve(dir: Vector3, pace_k: float, type: int) -> void:
 		_aim_hold = 0.8
 	var color := Hud.GOLD if label == "PERFECT" else (COLOR_WARN if label == "EARLY" or label == "LATE" else COLOR_GOOD)
 	var kind: String = ["KICK ×%.1f" % _curl_k, "FLAT", "SLICE"][type]
-	hud.popup(label, color, "SERVE %s  ·  %d KM/H" % [kind, roundi(r.speed * 3.6)])
+	hud.popup(label, color, "SERVE %s  ·  %d KM/H%s" % [kind, roundi(r.speed * 3.6), "  ·  РИСК %d%%" % roundi(risk * 100.0) if risk >= 0.04 else ""])
 	cam.impulse(1.0 if label == "PERFECT" else 0.4)
 	_haptic("perfect" if label == "PERFECT" else "medium")
 	last_shot = {
@@ -1791,7 +1828,7 @@ func _player_serve(dir: Vector3, pace_k: float, type: int) -> void:
 	}
 	GameEvents.player_stroke.emit({
 		"type": "SERVE", "label": label, "kmh": r.speed * 3.6, "q": q, "curl_k": _curl_k if type == ShotType.TOPSPIN else 1.0,
-		"volley": false, "smash": false, "diving": false, "serve": true, "skill": "serve", "side": 1,
+		"volley": false, "smash": false, "diving": false, "serve": true, "skill": "serve", "side": 1, "risk": risk, "risk_miss": miss > 0, "risk_kind": miss,
 	})
 
 
