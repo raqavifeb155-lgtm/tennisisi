@@ -132,6 +132,9 @@ var _slot_released := false    # the swing goes on from the slot: the second hal
 var _swing_len := -1.0         # forward swing length for this stroke when re-timed from the slot
 var _swing_from_twist := 0.0   # shoulders and hips when the swing started (a late start blends
 var _swing_from_hips := 0.0    # from them instead of snapping to the full turn)
+var _gait_v := Vector3.ZERO    # the run velocity in the body's frame, eased: the legs follow this one
+var _gait_d := PI              # how far the right foot's step runs ahead of the left one's (rad), eased:
+                               # PI = alternating run, ~GALLOP_LAG = a sideways shuffle (see _pose)
 
 # Visual nodes
 var look: Dictionary = Looks.DEFAULT.duplicate()
@@ -402,6 +405,15 @@ static func _step_rate(v: float) -> float:
 ## sprint (the rest is the flight of a running stride).
 static func _stance_share(v: float) -> float:
 	return clampf(0.55 - 0.035 * v, 0.33, 0.5)
+
+
+## The direction (x sideways, y along z) the feet travel in: the eased one, so that a stick
+## shivering around a straight run does not swing the stride; where the body has turned
+## round (the eased velocity points the other way) the real one, at once.
+func _gait_dir(local_v: Vector3) -> Vector2:
+	var rv := Vector2(local_v.x, local_v.z)
+	var gv := Vector2(_gait_v.x, _gait_v.z)
+	return (gv if gv.dot(rv) > 0.0 else rv).normalized()
 
 
 ## One foot through its cycle: x from +1 (put down in front) to -1 (pushed off behind) at
@@ -1352,6 +1364,16 @@ func _process(delta: float) -> void:
 	_head_pitch = lerpf(_head_pitch, pitch_t, 1.0 - exp(-8.0 * delta))
 
 	amt = AthleteCasual.shape(self, delta, speed, amt)  # the club's walk: no racket (stream H)
+	# The phase gap between the feet is eased, never switched: which foot leads a shuffle
+	# follows the sign of the sideways speed, and a stick held straight shivers around 0.
+	# A switch moved both planted feet half a step in one frame (the "shaking leg").
+	# The same goes for the velocity the feet follow: a stick held straight shivers a few
+	# cm/s sideways, and the stride (which points along the velocity) shook with it.
+	_gait_v = _gait_v.lerp(local_v, 1.0 - exp(-14.0 * delta))
+	var gdir := _gait_dir(local_v)
+	var lag := lerpf(PI, GALLOP_LAG, clampf((absf(gdir.x) - 0.3) / 0.5, 0.0, 1.0))
+	# (kept continuous: half of it is each foot's phase, so it only wraps by two turns)
+	_gait_d = wrapf(lerp_angle(_gait_d, lag if gdir.x >= 0.0 else TAU - lag, 1.0 - exp(-9.0 * delta)), 0.0, 2.0 * TAU)
 	_pose(local_v, amt, near_contact)
 
 
@@ -1453,16 +1475,18 @@ func _pose(local_v: Vector3, amt: float, near_contact: float) -> void:
 	# body exactly as fast as the body runs on (stride half-length = speed x stance share /
 	# step rate, see _step_rate), then swings forward in the air (docs/MOVEMENT_REALISM.md).
 	var spd := Vector2(local_v.x, local_v.z).length()
+	var gdir := _gait_dir(local_v)
 	var duty := _stance_share(spd)
-	var stride := Vector3(local_v.x, 0, local_v.z) / maxf(spd, 0.01) * (spd * duty / _step_rate(spd)) if amt > 0.05 else Vector3.ZERO
-	var sideways := absf(local_v.x) / maxf(spd, 0.01)
+	var stride := Vector3(gdir.x, 0, gdir.y) * (spd * duty / _step_rate(spd)) if amt > 0.05 else Vector3.ZERO
+	var sideways := absf(gdir.x)
 	# Sideways the feet shuffle (apart, together) on a wider base and never cross: a
 	# crossover only comes in a real sprint (Alcaraz's 5 m run, 3.7 m/s and up). In the
 	# shuffle the lead foot steps out first and the trailing one follows close behind
 	# (a gallop), so the feet stay apart while both keep their grip.
 	var shuffle := clampf(1.0 - (local_v.length() - 3.6) / 1.0, 0.0, 1.0) * sideways
-	var lead_x := 0 if local_v.x >= 0.0 else 1   # the foot on the side it runs to
-	var foot_lag := lerpf(PI, GALLOP_LAG, clampf((sideways - 0.3) / 0.5, 0.0, 1.0))
+	# The foot on the side it runs to steps out first (_gait_d is the right foot's lead,
+	# TAU minus the lag when the left one leads), see _process.
+	var foot_lag := PI - absf(wrapf(_gait_d - PI, -PI, PI))
 	# The base is just wide enough that the stepping feet never meet.
 	var gait_w := 0.08 + absf(stride.x) * foot_lag / PI
 	var sl := _slide * _slide * (3.0 - 2.0 * _slide)
@@ -1479,7 +1503,7 @@ func _pose(local_v: Vector3, amt: float, near_contact: float) -> void:
 	var hip_off: Array[Vector3] = []
 	for i in 2:
 		var sgn := 1.0 if i == 0 else -1.0
-		var phase := _run_phase + (foot_lag if i == lead_x else 0.0)
+		var phase := _run_phase + PI * 0.5 + (_gait_d if i == 0 else -_gait_d) * 0.5
 		var ho := th * Vector3(0.11 * sgn, 0, 0)
 		var neutral := Vector3(maxf(0.17 + 0.07 * shuffle * amt, gait_w) * sgn, 0.05, 0.0)
 		var base: Vector3 = neutral.lerp(stance[i], _stance)

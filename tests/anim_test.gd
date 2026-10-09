@@ -37,6 +37,7 @@ func run_all() -> void:
 	test_human_arms()
 	test_stance_change()
 	test_racket_slot()
+	test_foot_jitter()
 	test_lean()
 	test_swing_retarget()
 	test_tired_pose()
@@ -396,6 +397,109 @@ func test_stances() -> void:
 	var ff := feet_world()
 	check(ath._shoulder_roll > 0.45, "serve contact: right shoulder up (%.0f deg)" % rad_to_deg(ath._shoulder_roll))
 	check(((ff[0] as Vector3) - (ff[1] as Vector3)).length() < 0.32, "serve: feet together in the air (%.2f m)" % ((ff[0] as Vector3) - (ff[1] as Vector3)).length())
+
+
+## Foot and knee jitter on the run (a hotfix: a leg started to shake on the run): in the
+## body's frame a foot never jumps between two frames and never zigzags (its velocity
+## flipping direction at speed several times a second) in any run: straight, sideways,
+## back, snaking, round a circle, a U-turn, a stick shivering around the straight line.
+const JITTER_JUMP := 0.30     # m per frame (18 m/s): a clean gait peaks at ~0.12
+const JITTER_ZIGZAG := 0.5    # quick direction flips (two within 0.1 s, each over 1 m/s: a visible shake, not a 5 mm tremor) of a foot, per second and shoe
+# (a clean gait flips once per stance/swing change, 0.15+ s apart); the knees only for jumps
+
+
+func jitter_input(name: String, t: float) -> Vector2:
+	match name:
+		"fwd_slow": return Vector2(0.0, -0.35)
+		"fwd": return Vector2(0.0, -1.0)
+		"side": return Vector2(1.0, 0.0)
+		"side_left": return Vector2(-1.0, 0.0)
+		"back": return Vector2(0.0, 1.0)
+		"diag": return Vector2(0.6, -0.8)
+		"wobble_slow": return Vector2(0.08 * sin(t * 4.0), -1.0)
+		"wobble_fast": return Vector2(0.08 * sin(t * 23.0), -1.0)
+		"stick_shiver": return Vector2(0.06 if int(t * 60.0) % 2 == 0 else -0.06, -1.0)
+		"snake": return Vector2(sin(t * 1.8), -1.0)
+		"snake_back": return Vector2(sin(t * 2.6), 0.8)
+		"circle": return Vector2(sin(t * 1.4), -cos(t * 1.4))
+		"slow_circle": return Vector2(0.4 * sin(t * 2.2), -0.4 * cos(t * 2.2))
+		"u_turn": return Vector2(0.0, -1.0) if fmod(t, 2.4) < 1.2 else Vector2(0.0, 1.0)
+		"zig": return Vector2(1.0, -0.3) if fmod(t, 0.9) < 0.45 else Vector2(-1.0, -0.3)
+		"creep": return Vector2(0.03 * sin(t * 5.0), -0.12)
+	return Vector2.ZERO
+
+
+## Worst frame jump (m) and zigzag rate (per second) of both feet and both knees in the
+## body's frame over a run of the given input; returns [jump, zigzag, where].
+func jitter_run(name: String, top_speed: float) -> Array:
+	fresh("hard", Vector3(0, 0, 0), Rect2(-80, -80, 160, 160))
+	ath.max_speed = top_speed
+	var t := 0.0
+	var prev := {}
+	var vel_prev := {}
+	var flip_at := {}
+	var frame := 0
+	var jump := 0.0
+	var where := ""
+	var zig := 0
+	var seconds := 0.0
+	for f in 60 * 7:
+		ath.move_input = jitter_input(name, t)
+		var slide_before: float = ath._slide
+		step()
+		if ath._slide > slide_before:
+			prev.clear()   # a hard stop from a sprint snaps into the slide pose on purpose
+			vel_prev.clear()
+		t += DT
+		if t < 1.0:
+			continue
+		seconds += DT
+		frame += 1
+		for key in ["shoe0", "shoe1", "knee0", "knee1"]:
+			var p: Vector3
+			if key.begins_with("shoe"):
+				p = ath._model.global_transform * (bone_ends(key)[0] as Vector3).lerp(bone_ends(key)[1], 0.5)
+			else:
+				p = ath._model.global_transform * (bone_ends("shin" + key.substr(4))[0] as Vector3)
+			p = ath.to_local(p)
+			if prev.has(key):
+				var w: Vector3 = (p - prev[key]) / DT
+				w.y = 0.0
+				if (p - prev[key]).length() > jump:
+					jump = (p - prev[key]).length()
+					where = "%s t=%.2f" % [key, t]
+				if vel_prev.has(key):
+					var u: Vector3 = vel_prev[key]
+					if key.begins_with("shoe") and u.length() > 1.0 and w.length() > 1.0 and u.dot(w) < 0.0:
+						if flip_at.has(key) and frame - int(flip_at[key]) <= 6:
+							zig += 1
+						flip_at[key] = frame
+				vel_prev[key] = w
+			prev[key] = p
+	return [jump, zig / maxf(seconds, 0.01) / 2.0, where]
+
+
+func test_foot_jitter() -> void:
+	print("foot jitter: no jumps, no zigzag of the feet and knees on the run")
+	var names := ["fwd_slow", "fwd", "side", "side_left", "back", "diag", "wobble_slow", "wobble_fast",
+		"stick_shiver", "snake", "snake_back", "circle", "slow_circle", "u_turn", "zig", "creep"]
+	var worst_jump := 0.0
+	var worst_zig := 0.0
+	var wj := ""
+	var wz := ""
+	for top in [2.5, 4.0, 6.2]:
+		for n in names:
+			var r := jitter_run(n, top)
+			if r[0] > worst_jump:
+				worst_jump = r[0]
+				wj = "%s @%.1f %s" % [n, top, r[2]]
+			if r[1] > worst_zig:
+				worst_zig = r[1]
+				wz = "%s @%.1f" % [n, top]
+			if r[0] > JITTER_JUMP or r[1] > JITTER_ZIGZAG:
+				print("    %-12s top %.1f: jump %.3f m, zigzag %.1f /s %s" % [n, top, r[0], r[1], r[2]])
+	check(worst_jump < JITTER_JUMP, "no foot or knee jumps between frames (worst %.3f m: %s)" % [worst_jump, wj])
+	check(worst_zig < JITTER_ZIGZAG, "no foot or knee zigzag (worst %.1f /s: %s)" % [worst_zig, wz])
 
 
 func test_lean() -> void:
