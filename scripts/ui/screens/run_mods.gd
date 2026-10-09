@@ -14,6 +14,7 @@ static var picked: Array = []
 static var format := 1
 static var hardcore := false      # G-6: the mode card picked (after the first title)
 static var from_club := false  # opened by the club's «Условия» link: «Назад» returns to the club
+static var freq := 0           # hub-economy 14: the rate of the opponents' modifiers (Modifiers.FREQS)
 
 
 # --- Entry: the format was chosen -----------------------------------------------------
@@ -25,6 +26,7 @@ static func open(m: Node, fmt: int, club := false) -> void:
 	picked = []
 	hardcore = false
 	from_club = club
+	freq = Modifiers.start_freq(-1)  # the rate picked last time
 	if not Modifiers.enabled or SaveData.played == 0:
 		m._start_tournament(fmt)
 		return
@@ -36,16 +38,15 @@ static func hard_open() -> bool:
 	return SaveData.titles >= 1
 
 
-## What the screen offers: the run pool, minus what hardcore already contains.
+## What the screen offers: this run's rotation of the run pool (hub-economy 14, seeded by the
+## run's number), in the catalog's order; in hardcore without what it already contains.
 static func choices() -> Array:
-	var list := Modifiers.pool("run")
-	if hardcore:
-		list = list.filter(func(e): return not Modifiers.HARD_HAS.has(e["id"]))
-	return list
+	var rot := Modifiers.rotation(SaveData.played + 1, hardcore)
+	return Modifiers.pool("run").filter(func(e): return rot.has(e["id"]))
 
 
 static func total() -> float:
-	return Modifiers.reward((["hardcore"] if hardcore else []) + picked)
+	return Modifiers.total((["hardcore"] if hardcore else []) + picked, freq)
 
 
 static func preset() -> Dictionary:
@@ -66,6 +67,7 @@ static func show(ui: TournamentUI, animate := true) -> void:
 	ui._title("Условия забега")
 	_modes(ui)
 	ui._sub("До трёх условий на весь забег. Чем неудобнее, тем больше золота и лута; каждое снимается одним касанием")
+	_freq_row(ui)
 	if not hardcore:
 		_preset_row(ui)
 	var list := choices()
@@ -83,9 +85,9 @@ static func show(ui: TournamentUI, animate := true) -> void:
 			ui._box.add_child(_row(ui, e, i))
 	var x := total()
 	var chosen := (["hardcore"] if hardcore else []) + picked
-	var capped := Modifiers.reward_raw(chosen) > x + 0.005
+	var capped := Modifiers.total_raw(chosen, freq) > x + 0.005
 	ui._note("Выбрано %d из %d   ·   награда ×%s%s   ·   лут +%d%%" % [picked.size(), Modifiers.MAX_RUN, _k(x), " (потолок)" if capped else "", roundi(Modifiers.RUN_LOOT * 100.0 * picked.size())])
-	ui._primary(("НАЧАТЬ ХАРДКОР  ·  ×%s" % _k(x)) if hardcore else ("НАЧАТЬ ЗАБЕГ" if picked.is_empty() else "НАЧАТЬ ЗАБЕГ  ·  ×%s" % _k(x)), "mods_go")
+	ui._primary(("НАЧАТЬ ХАРДКОР  ·  ×%s" % _k(x)) if hardcore else ("НАЧАТЬ ЗАБЕГ" if x < 1.001 else "НАЧАТЬ ЗАБЕГ  ·  ×%s" % _k(x)), "mods_go")
 
 
 ## Two big cards on top: «ОБЫЧНЫЙ» (all the conditions below) and «ХАРДКОР» (a fixed hard set).
@@ -117,6 +119,38 @@ static func _modes(ui: TournamentUI) -> void:
 			c.pressed.connect(func() -> void: ui._press(c, act, arg, true))
 		row.add_child(c)
 	ui._box.add_child(row)
+
+
+## «Модификаторы соперников: Редко / Обычно / Часто» (hub-economy 14): three plates in a row,
+## the picked one with the gold frame; under them what the picked one means.
+static func _freq_row(ui: TournamentUI) -> void:
+	var h := ui._note("МОДИФИКАТОРЫ СОПЕРНИКОВ")
+	h.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	h.add_theme_color_override("font_color", UiTheme.GOLD)
+	var row := HBoxContainer.new()
+	row.name = "FreqRow"
+	row.add_theme_constant_override("separation", 12)
+	for f in Modifiers.FREQS.size():
+		var fr: Dictionary = Modifiers.FREQS[f]
+		var b := _plate(ui, "mods_freq", f, f == freq, UiTheme.GOLD)
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var v := b.get_child(0) as HBoxContainer
+		v.offset_left = 10
+		v.offset_right = -10
+		v.alignment = BoxContainer.ALIGNMENT_CENTER
+		v.add_theme_constant_override("separation", 8)
+		v.add_child(_label(String(fr["name"]), UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.GOLD if f == freq else UiTheme.INK))
+		v.add_child(_label("×%s" % _k(float(fr["reward"])), UiTheme.display(), UiTheme.T_BODY, UiTheme.GOLD if f == freq else UiTheme.MUTED))
+		row.add_child(b)
+	ui._box.add_child(row)
+	var d := ui._note(String(Modifiers.FREQS[freq]["desc"]))
+	d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+
+
+## The rate's three buttons on screen (tests, the overlay probe).
+static func freq_buttons(ui: TournamentUI) -> Array:
+	var row := ui._box.find_child("FreqRow", false, false)
+	return [] if row == null else row.get_children()
 
 
 static func _preset_row(ui: TournamentUI) -> void:
@@ -206,7 +240,7 @@ static func _k(x: float) -> String:
 static func badge(ui: TournamentUI, t: Tournament, at := -1) -> void:
 	if t == null or not t.hardcore:
 		return
-	var l := ui._text("ХАРДКОР   ·   золото ×%s" % _k(Modifiers.reward(t.run_modifiers)), UiTheme.display(), UiTheme.T_BODY, Color(1.0, 0.35, 0.3))
+	var l := ui._text("ХАРДКОР   ·   золото ×%s" % _k(Modifiers.run_mult(t)), UiTheme.display(), UiTheme.T_BODY, Color(1.0, 0.35, 0.3))
 	ui._box.add_child(l)
 	if at >= 0:
 		ui._box.move_child(l, mini(at, ui._box.get_child_count() - 1))
@@ -215,12 +249,16 @@ static func badge(ui: TournamentUI, t: Tournament, at := -1) -> void:
 ## "Условия: Узкий корт, Туман · награда ×1.68" under the bracket's header.
 static func bracket_extra(ui: TournamentUI, t: Tournament) -> void:
 	var shown: Array = t.run_modifiers.filter(func(id): return id != "hardcore")
-	if shown.is_empty():
-		return
-	var names: Array[String] = []
-	for id in shown:
-		names.append(Modifiers.name(id))
-	ui._note("Условия забега: %s   ·   награда ×%s" % [", ".join(names), _k(Modifiers.reward(t.run_modifiers))])
+	var line := Modifiers.freq_line(t)  # hub-economy 14: the rate, always once the player has finished a run
+	if not shown.is_empty():
+		var names: Array[String] = []
+		for id in shown:
+			names.append(Modifiers.name(id))
+		var fr: String = Modifiers.FREQS[clampi(t.freq, 0, Modifiers.FREQS.size() - 1)]["name"]
+		line = "Условия забега: %s   ·   модификаторы: %s   ·   награда ×%s" % [", ".join(names), fr.to_lower(), _k(Modifiers.run_mult(t))]
+	elif t.freq == 0 and SaveData.played == 0:
+		return  # a new player's first run: nothing was chosen, nothing to say
+	ui._note(line)
 
 
 # --- Actions --------------------------------------------------------------------------
@@ -243,13 +281,17 @@ static func ui_action(m: Node, action: String, arg: int) -> void:
 					if not picked.has(id) and picked.size() < Modifiers.MAX_RUN:
 						picked.append(id)
 			show(m.ui, false)
+		"mods_freq":
+			freq = clampi(arg, 0, Modifiers.FREQS.size() - 1)
+			show(m.ui, false)
 		"mods_mode":
 			hardcore = arg == 1 and hard_open()
 			var keep := picked.filter(func(id): return not hardcore or not Modifiers.HARD_HAS.has(id))
 			picked = keep
 			show(m.ui, false)
 		"mods_go":
-			m._start_tournament(format, picked.duplicate(), hardcore)
+			SaveData.mods_freq = freq  # the next run's screen opens on it (saved with the run's start)
+			m._start_tournament(format, picked.duplicate(), hardcore, freq)
 		"mods_back":
 			if from_club:
 				m._open_menu()  # back to the club, where the link was
