@@ -21,6 +21,9 @@ func _initialize() -> void:
 	test_card()
 	test_hardcore()
 	test_traits()
+	test_rotation()
+	test_freq()
+	test_card_traits()
 	_live.call_deferred()
 
 
@@ -273,6 +276,118 @@ func test_card() -> void:
 		"Modifiers.name / desc: new, old and unknown ids (for the opponent card)")
 
 
+# --- Spec hub-economy 14: the conditions rotate, the opponents' modifiers have a rate ---------
+
+func test_rotation() -> void:
+	print("rotation of the run's conditions")
+	var pro: Array = Modifiers.PRESETS[0]["mods"]
+	var run_ids: Array = Modifiers.pool("run").map(func(e): return e["id"])
+	var sizes_ok := true
+	var pro_ok := true
+	var pool_ok := true
+	var hard_ok := true
+	var same := true
+	var sets := {}
+	var seen := {}
+	for n in range(1, 201):
+		var r: Array = Modifiers.rotation(n)
+		sizes_ok = sizes_ok and r.size() >= 6 and r.size() <= 8
+		pro_ok = pro_ok and pro.all(func(id): return r.has(id))
+		pool_ok = pool_ok and r.all(func(id): return run_ids.has(id))
+		same = same and Modifiers.rotation(n) == r
+		var hr: Array = Modifiers.rotation(n, true)
+		hard_ok = hard_ok and hr.size() >= 6 and hr.size() <= 8 and hr.all(func(id): return run_ids.has(id) and not Modifiers.HARD_HAS.has(id))
+		var key := r.duplicate()
+		key.sort()
+		sets[str(key)] = true
+		for id in r:
+			seen[id] = true
+	check(sizes_ok, "every run shows 6..8 conditions")
+	check(pro_ok, "the «Про» preset's two are always among them")
+	check(pool_ok, "only conditions of the run pool")
+	check(hard_ok, "hardcore: 6..8 too, none of what it holds")
+	check(same, "the same run number, the same set")
+	check(sets.size() > 100, "the set changes from run to run (%d different in 200)" % sets.size())
+	check(seen.size() == run_ids.size(), "every condition shows up sometimes (%d of %d)" % [seen.size(), run_ids.size()])
+
+
+## Rates of the opponents' modifiers: the share of auras and second traits by a big sample, the
+## pay, the save. «Редко» is the old density (x1, the default): nothing moves for a run without it.
+func test_freq() -> void:
+	print("modifier rate")
+	check(Modifiers.FREQS.size() == 3 and Modifiers.FREQS.map(func(f): return f["name"]) == ["Редко", "Обычно", "Часто"], "three rates: Редко / Обычно / Часто")
+	check(Modifiers.FREQS.map(func(f): return f["reward"]) == [1.0, 1.15, 1.35], "they pay x1.0 / x1.15 / x1.35")
+	SaveData.played = 5
+	var plain := Tournament.new(1, 31)
+	check(plain.freq == Modifiers.FREQ_DEFAULT and Modifiers.FREQ_DEFAULT == 0, "a run is «Редко» unless picked")
+	var same_rare := true
+	var auras := [0, 0, 0]
+	var seconds := [0, 0, 0]
+	var opps := 0
+	var runs := 400
+	for k in runs:
+		var base := Tournament.new(1, k + 1)
+		for f in 3:
+			var t := Tournament.new(1, k + 1)
+			Modifiers.set_run(t, [], f)
+			if f == 0:
+				same_rare = same_rare and t.lineup.map(func(l): return l["mods"]) == base.lineup.map(func(l): return l["mods"])
+			for i in range(1, t.rounds()):
+				var m: Array = t.lineup[i]["mods"]
+				auras[f] += 1 if m.any(func(id): return Modifiers.is_aura(id)) else 0
+				seconds[f] += 1 if m.filter(func(id): return Traits.has(id)).size() >= 2 else 0
+		opps += base.rounds() - 1
+	var sh := auras.map(func(a): return float(a) / opps)
+	var s2 := seconds.map(func(a): return float(a) / opps)
+	print("       auras %.1f%% / %.1f%% / %.1f%%, two traits %.1f%% / %.1f%% / %.1f%%" % [sh[0] * 100, sh[1] * 100, sh[2] * 100, s2[0] * 100, s2[1] * 100, s2[2] * 100])
+	check(same_rare, "«Редко» rolls exactly what a run without the choice rolls")
+	check(sh[0] <= 0.10 and sh[1] > sh[0] * 1.6 and sh[2] > sh[1] * 1.6, "more auras with a higher rate")
+	check(s2[1] > s2[0] * 1.4 and s2[2] > s2[1] * 1.2, "more second traits with a higher rate")
+	var a := Tournament.new(1, 7)
+	var b := Tournament.new(1, 7)
+	Modifiers.set_run(a, [], 2)
+	Modifiers.set_run(b, [], 2)
+	check(a.lineup == b.lineup and a.freq == 2, "the same seed and rate, the same opponents")
+	# The pay: in the one gold_mult with its cap.
+	a.lineup[2]["mods"] = []
+	check(absf(Modifiers.gold_mult(a, 2) - 1.35) < 0.001, "«Часто» pays x1.35 a win (%.2f)" % Modifiers.gold_mult(a, 2))
+	var c := Tournament.new(1, 7)
+	Modifiers.set_run(c, ["short_ring", "tier_up"], 1)
+	c.lineup[2]["mods"] = []
+	check(absf(Modifiers.gold_mult(c, 2) - 1.5 * 1.15) < 0.001 and absf(Modifiers.run_mult(c) - 1.5 * 1.15) < 0.001, "«Про» and «Обычно»: x%.3f" % Modifiers.gold_mult(c, 2))
+	var d := Tournament.new(1, 7)
+	Modifiers.set_run(d, ["no_ring", "mirror", "fog"], 2)
+	d.lineup[2]["mods"] = ["showman"]
+	check(Modifiers.gold_mult(d, 2) == Modifiers.MAX_REWARD and Modifiers.run_mult(d) == Modifiers.MAX_REWARD, "the cap holds with the rate")
+	var plain_win := plain.gold_for_win(2)
+	var often := Tournament.new(1, 31)
+	Modifiers.set_run(often, [], 2)
+	often.lineup[2]["mods"] = plain.lineup[2]["mods"]
+	check(absi(often.gold_for_win(2) - roundi(plain_win * 1.35)) <= 1, "a win pays more: %d -> %d" % [plain_win, often.gold_for_win(2)])
+	# Saved with the run and back on «Продолжить».
+	check(Tournament.SAVED.has("freq"), "the rate is a saved field")
+	var back := Tournament.from_dict(a.to_dict())
+	check(back.freq == 2 and back.lineup == a.lineup, "the rate comes back with the run")
+	var old := a.to_dict()
+	old.erase("freq")
+	check(Tournament.from_dict(old).freq == 0, "a run saved before it: «Редко»")
+	check(Modifiers.freq_line(a).contains("Часто") and Modifiers.freq_line(a).contains("1.35"), "the bracket's words: %s" % Modifiers.freq_line(a))
+	SaveData.played = 0
+
+
+## The opponent card (D-5) names traits and auras, and keeps «???» hidden.
+func test_card_traits() -> void:
+	print("opponent card: traits")
+	SaveData.played = 5
+	var t := Tournament.new(1, 12)
+	t.lineup[2]["mods"] = ["serve_cannon", "fog", "moon"]
+	t.lineup[2]["hidden"] = ["moon"]
+	var m: Array = load("res://scripts/ui/screens/opponent_card.gd").info(t, 2)["mods"]  # loaded: it reaches the autoloads
+	check(m.size() == 3 and m[0].begins_with("Пушка подачи") and m[1].begins_with("Туман") and m[2].begins_with("???"), "names, not ids: %s" % [m])
+	check(not m.any(func(x): return String(x).contains("serve_cannon") or String(x).contains("Лунная")), "no raw id, the hidden one not given away")
+	SaveData.played = 0
+
+
 # --- The live scene -----------------------------------------------------------------
 
 func _snap() -> Dictionary:
@@ -413,22 +528,42 @@ func _run_screen() -> void:
 		if c is Button:
 			rows += 1
 	check(rows == RM.choices().size() + 1, "a row per condition and the preset (%d)" % rows)
+	var rot: Array = Modifiers.rotation(SaveData.played + 1)
+	check(RM.choices().map(func(e): return e["id"]) == Modifiers.pool("run").map(func(e): return e["id"]).filter(func(id): return rot.has(id)),
+		"the screen shows this run's rotation (%d), in the catalog's order" % RM.choices().size())
+	var cards: Array = main.ui._box.find_children("*", "GameCard", true, false)
+	check(cards.size() == 2, "both mode cards (ОБЫЧНЫЙ / ХАРДКОР) are always there")
+	check(RM.freq == SaveData.mods_freq and RM.freq_buttons(main.ui).size() == 3, "the rate: three buttons, the remembered one on")
 	RM.ui_action(main, "mods_preset", 0)
 	check(RM.picked == ["short_ring", "tier_up"] and absf(RM.total() - 1.5) < 0.001, "«Про» takes two and pays x1.5")
 	RM.ui_action(main, "mods_toggle", RM.choices().find_custom(func(e): return e["id"] == "tier_up"))
 	check(RM.picked == ["short_ring"] and not RM.preset_on(), "one condition of the preset comes off alone")
 	RM.ui_action(main, "mods_preset", 0)
-	RM.ui_action(main, "mods_toggle", 0)
-	RM.ui_action(main, "mods_toggle", 1)
+	var others: Array = []  # rows that are not the preset's (the rotation puts them anywhere)
+	for k in RM.choices().size():
+		if not RM.preset()["mods"].has(RM.choices()[k]["id"]):
+			others.append(k)
+	RM.ui_action(main, "mods_toggle", others[0])
+	RM.ui_action(main, "mods_toggle", others[1])
 	check(RM.picked.size() == 3, "three at most (%s)" % [RM.picked])
 	RM.ui_action(main, "mods_preset", 0)
-	check(RM.picked.size() == 1 and RM.picked[0] == "no_ring" or RM.picked.size() == 2, "the preset off leaves the others")
+	check(RM.picked == [RM.choices()[others[0]]["id"]], "the preset off leaves the others (%s)" % [RM.picked])
 	RM.picked = ["short_ring", "tier_up", "night"]
+	RM.ui_action(main, "mods_freq", 2)
+	check(RM.freq == 2 and absf(RM.total() - minf(Modifiers.reward_raw(RM.picked) * 1.35, 3.0)) < 0.001, "«Часто» joins the total (x%.2f)" % RM.total())
 	RM.ui_action(main, "mods_go", 0)
 	var t: Tournament = main.tournament
 	check(t != null and t.run_modifiers == ["short_ring", "tier_up", "night"] and t.format == 1, "the run starts with the three")
-	check(t.modifier_value("skill") >= 0.099 and absf(Modifiers.gold_mult(t, 3) - Modifiers.reward(t.run_modifiers) * Modifiers.reward(t.lineup[3]["mods"])) < 0.001,
+	check(t.freq == 2 and SaveData.mods_freq == 2, "...at the rate picked, remembered for the next run")
+	check(t.modifier_value("skill") >= 0.099 and absf(Modifiers.gold_mult(t, 3) - minf(Modifiers.run_mult(t) * Modifiers.reward(t.lineup[3]["mods"]), 3.0)) < 0.001,
 		"opponents a tier up and the prize multiplied")
+	main.ui.show_bracket(t)
+	await process_frame
+	check(main.ui._box.find_children("*", "Label", true, false).any(func(l): return (l as Label).text.contains("Часто")), "the bracket says the rate")
+	RM.open(main, 1)
+	check(RM.freq == 2, "the screen opens on the remembered rate")
+	RM.ui_action(main, "mods_freq", 0)
+	SaveData.mods_freq = 0
 	RM.ui_action(main, "mods_back", 0)
 	# The mode cards: hardcore opens with the first title.
 	SaveData.titles = 0
