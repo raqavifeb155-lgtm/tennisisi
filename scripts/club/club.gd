@@ -30,6 +30,7 @@ var _coach_y := 0.0
 var _npc_btn := ""                    # the person whose button is up
 var npc_life: ClubNpcLife              # the students and the visitor (T-2)
 var quests: ClubQuests.Watch          # the coach's quests, counted from the match's events
+var house: HouseVisit                 # the academy's house: the door, the fade, the rooms (AH-1)
 var active := false
 var _hero := START
 var _move_target := Vector3.INF
@@ -100,6 +101,10 @@ func setup(m: Node) -> void:
 	quests = ClubQuests.Watch.new()
 	add_child(quests)
 	quests.setup(main)
+	AcademyHouse.install()   # the house's seats, growth and ceiling for the school (AH-1)
+	house = HouseVisit.new()
+	add_child(house)
+	house.setup(self)
 
 
 ## Into the club (from the start, a match, a run) or back to it (from a room's screen).
@@ -168,6 +173,8 @@ func close() -> void:
 	if not active:
 		return
 	active = false
+	if house != null:
+		house.shutdown()   # a match or a bracket: the house is freed (AH-1)
 	if npc_life != null:
 		npc_life.set_active(false)
 	if _foreman_on:
@@ -305,6 +312,9 @@ func _process(delta: float) -> void:
 	var vh := get_viewport().get_visible_rect().size.y
 	var tap_mode: bool = get_node("/root/Tuning").tap_controls  # by path: tests compile before autoloads
 	main.hud.touch.stick_zone_top = INF if tap_mode else vh * 0.34
+	if house.inside:   # in the academy's house the club is not drawn nor ticked (AH-1)
+		house.tick(delta)
+		return
 	coach.tick(delta, main.player.position)
 	world.show_interiors_near(main.player.position)
 	_update_place()
@@ -343,15 +353,21 @@ func _show_hud_settings(on: bool) -> void:
 		(b as Control).visible = on
 
 
+## The walls the hero meets: the club's, or the academy's house's while he is in it (AH-1).
+func _walk() -> ClubWalk:
+	return house.walk() if house != null and house.inside else world.walk
+
+
 func _physics_process(delta: float) -> void:
 	if not active or not is_instance_valid(world):
 		return
 	var p: Athlete = main.player
 	# Walls and posts: the body slides along them (Athlete only knows its rectangle).
-	var at := world.walk.resolve(Vector2(p.position.x, p.position.z), Vector2(p.position.x, p.position.z), 0.35, npc.agent_list())
+	var walk := _walk()
+	var at := walk.resolve(Vector2(p.position.x, p.position.z), Vector2(p.position.x, p.position.z), 0.35, [] if house.inside else npc.agent_list())
 	if at.x != p.position.x or at.y != p.position.z:
 		p.position = Vector3(at.x, _hero_y, at.y)
-	_hero_y = move_toward(_hero_y, world.walk.floor_at(Vector2(p.position.x, p.position.z)), 1.6 * delta)
+	_hero_y = move_toward(_hero_y, walk.floor_at(Vector2(p.position.x, p.position.z)), 1.6 * delta)
 	p.position.y = _hero_y
 	var c := coach.body
 	_coach_y = move_toward(_coach_y, world.walk.floor_at(Vector2(c.position.x, c.position.z)), 1.6 * delta)
@@ -381,11 +397,11 @@ func _physics_process(delta: float) -> void:
 		pass
 	elif _move_target != Vector3.INF:
 		if _route.is_empty():
-			_route = world.walk.route(here, Vector2(_move_target.x, _move_target.z))
+			_route = walk.route(here, Vector2(_move_target.x, _move_target.z))
 			if _route.is_empty():
 				_move_target = Vector3.INF  # somewhere the hero can't get to
 		while not _route.is_empty():
-			mv = world.walk.steer(here, _route[0])
+			mv = walk.steer(here, _route[0])
 			if mv != Vector2.ZERO and (_route.size() == 1 or here.distance_to(_route[0]) > 0.45):
 				break
 			_route.pop_front()  # a turning point passed: on to the next
@@ -509,6 +525,8 @@ func _place_buttons(id: String) -> Dictionary:
 			return {"label": "ЗАБРАТЬ  ·  +%d ●" % ClubQuests.claimable_gold(), "action": "club_claim",
 				"extra": [["Навыки", "character"]]}
 		return {"label": "НАВЫКИ", "action": "character", "extra": [["Задания", "club_quests"]]}
+	if id == "academy" and AcademyHouse.is_built():   # the door of the house (AH-1); the students are one quiet tap away
+		return {"label": "В ДОМ АКАДЕМИИ", "action": "club_house", "extra": [["Ученики", "club_students"]]}
 	var st := ClubPlaces.state(id)
 	var extra := []
 	if id == "bar" and Bets.unlocked():
@@ -563,6 +581,8 @@ func _on_choice(action: String, arg: int) -> void:
 func ui_action(action: String, arg: int) -> void:
 	var id := _place if _place != "" else hud.current_place()
 	if AcademyRoom.route(self, action, arg):   # the academy's screens and the students (T-2/T-3)
+		return
+	if HouseRoomSheet.route(self, action, arg):   # the academy's house: the door, the rooms, the sheet (AH-1)
 		return
 	match action:
 		"club_shop":
