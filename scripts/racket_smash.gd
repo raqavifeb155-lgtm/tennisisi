@@ -441,7 +441,7 @@ func _spawn_shards(t: Transform3D, power: float) -> void:
 		return
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 90210 + int(t.origin.x * 100.0)
-	for sm in shard_meshes(racket_item, ath._body == Athlete.Body.TOON):
+	for sm in shard_meshes(racket_item, ath._toon()):
 		var mi := MeshInstance3D.new()
 		mi.mesh = sm["mesh"]
 		mi.material_override = sm["mat"]

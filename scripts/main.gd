@@ -200,6 +200,8 @@ func _ready() -> void:
 			autoplay_points = int(a.get_slice("=", 1))
 		elif a.begins_with("--gfx="):
 			_force_gfx = int(a.get_slice("=", 1))  # profiling: 1 low .. 4 max
+		elif a.begins_with("--body="):
+			Athlete.body_style = int(a.get_slice("=", 1))  # 0 classic, 1 athlete, 2 toon, 3 smooth (one skinned mesh)
 		elif a.begins_with("--profile"):
 			_profile_t = 5.0  # print frame statistics every 5 s (a profiling run, not headless)
 		elif a.begins_with("--bot-sd="):
@@ -1503,6 +1505,9 @@ func _end_point(winner: int, reason: String) -> void:
 	if reason == "WINNER" and rally == 1 and winner == server:
 		reason = "ACE"
 	GameEvents.point.emit({"winner": winner, "reason": reason, "rally": rally, "server": server, "close_call": _close_call.duplicate(), "best": rally >= best_rally})
+	# Faces (the SMOOTH body): the winner is glad, a long rally won is shouted about.
+	player.emote(("shout" if rally >= 6 else "joy") if winner == Who.PLAYER else "sad", 1.8)
+	cpu.emote(("shout" if rally >= 6 else "joy") if winner == Who.CPU else "sad", 1.8)
 	var text := Calls.point(winner == Who.PLAYER, reason, cpu_call)
 	if winner == Who.PLAYER and reason == "ACE":
 		_match_stats["aces"] = _match_stats.get("aces", 0) + 1

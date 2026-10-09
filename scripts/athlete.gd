@@ -154,9 +154,17 @@ var _ends := {}                 # bone -> [from, to] in model space, as last dra
 ##            sneakers, wristbands - one mesh per limb, coloured by the look
 ##   TOON     the ATHLETE body made chunkier with a bigger head, hands and feet,
 ##            cel shading and an outline (the mobile-sports-game look)
-enum Body { CLASSIC, ATHLETE, TOON }
-static var body_style := Body.TOON      # the look of every player (chosen 2026-10-06; CLASSIC / ATHLETE kept)
+##   SMOOTH   the TOON body with fuller limbs, baked into one skinned mesh: knees and
+##            elbows bend as one surface, one outline, a drawn face (AthleteSkin)
+enum Body { CLASSIC, ATHLETE, TOON, SMOOTH }
+static var body_style := Body.SMOOTH    # the look of every player (TOON chosen 2026-10-06, SMOOTH on trial; the others kept)
 var _body := Body.CLASSIC                 # this player's, taken from body_style in setup()
+var _skin: AthleteSkin                    # SMOOTH: the baked body (null for the others)
+
+
+## TOON and SMOOTH share the shapes, the poses' proportions and the toon materials.
+func _toon() -> bool:
+	return _body == Body.TOON or _body == Body.SMOOTH
 
 
 ## `appearance` is a look (see Looks) or, for older callers, just the shirt colour.
@@ -179,6 +187,8 @@ func set_look(l: Dictionary) -> void:
 	_model.queue_free()
 	_shadow.queue_free()
 	_bones = {}
+	_joints = {}
+	_skin = null
 	_build()
 	_lighten.call_deferred()
 
@@ -1438,6 +1448,8 @@ func _process(delta: float) -> void:
 	# (kept continuous: half of it is each foot's phase, so it only wraps by two turns)
 	_gait_d = wrapf(lerp_angle(_gait_d, lag if gdir.x >= 0.0 else TAU - lag, 1.0 - exp(-9.0 * delta)), 0.0, 2.0 * TAU)
 	_pose(local_v, amt, near_contact)
+	if _skin != null:
+		_skin.sync(self, delta)
 
 
 const SERVE_GAZE := 0.62   # head tilt (rad) toward the toss at least, ~35 deg
@@ -1622,7 +1634,7 @@ func _pose(local_v: Vector3, amt: float, near_contact: float) -> void:
 		head_up = up * 0.3
 	var r_sh := chest + tw * (tilt * Vector3(SHOULDER_W, 0, 0))
 	var l_sh := chest + tw * (tilt * Vector3(-SHOULDER_W, 0, 0))
-	var head := chest + head_up * (1.04 if _body == Body.TOON else (0.88 if _body == Body.ATHLETE else 1.0))
+	var head := chest + head_up * (1.04 if _toon() else (0.88 if _body == Body.ATHLETE else 1.0))
 
 	for i in 2:
 		var sgn := 1.0 if i == 0 else -1.0
@@ -1655,8 +1667,8 @@ func _pose(local_v: Vector3, amt: float, near_contact: float) -> void:
 
 	# Torso: hips follow the hip turn, chest the shoulder turn; both are wider than deep,
 	# so the turn reads from any angle.
-	_set_bone("hips", pelvis + th * Vector3(-0.1, 0.0 if _body == Body.TOON else 0.02, 0), pelvis + th * Vector3(0.1, 0.0 if _body == Body.TOON else 0.02, 0))
-	if _body == Body.TOON:
+	_set_bone("hips", pelvis + th * Vector3(-0.1, 0.0 if _toon() else 0.02, 0), pelvis + th * Vector3(0.1, 0.0 if _toon() else 0.02, 0))
+	if _toon():
 		# One piece from the pelvis to the shoulders: no seam across the back.
 		_set_torso("waist", pelvis + Vector3(0, 0.08, 0), chest.lerp(pelvis, 0.45), lerpf(_hip_twist, _twist, 0.5), 1.1, 0.8)
 		_set_torso("chest", pelvis + Vector3(0, 0.06, 0), chest + Vector3(0, -0.04, 0), lerpf(_hip_twist, _twist, 0.75), 1.12, 0.76)
@@ -1706,6 +1718,11 @@ func _pose(local_v: Vector3, amt: float, near_contact: float) -> void:
 	elbow = _human_elbow(r_sh, hand_t, elbow, tw, chest, pelvis, head)
 	var hand := _reach(elbow, hand_t, FOREARM)
 	var rdir := _rdir
+	if _mode == 0 and _slide_dir.x > 0.3 and _slide > 0.2:
+		# Sliding to the forehand side: the racket carries on from the forearm, the wrist
+		# only a little cocked up, never snapped at a right angle to the arm.
+		var along := ((hand - elbow).normalized() + Vector3(0, 0.35, 0)).normalized()
+		rdir = rdir.slerp(along, 0.9 * clampf((_slide - 0.2) / 0.4, 0.0, 1.0))
 	if near_contact > 0.0:
 		var to_ball := _contact_model() - hand
 		if to_ball.length() > 0.05:
@@ -2170,10 +2187,15 @@ func _build() -> void:
 	# Head: face looks along -Z; hair, beard and headwear from the look, eyes.
 	_head = Node3D.new()
 	_model.add_child(_head)
-	if _body == Body.TOON:
-		_head.scale = Vector3.ONE * 1.28
+	if _toon():
+		_head.scale = Vector3.ONE * (1.2 if _body == Body.SMOOTH else 1.28)
 	var skull := _sphere(0.12, skin)
 	skull.scale = Vector3(0.95, 1.05, 1.0)
+	if _body == Body.SMOOTH:
+		# Rounder (it is one mesh with the body anyway) and the face is drawn on it.
+		(skull.mesh as SphereMesh).radial_segments = 20
+		(skull.mesh as SphereMesh).rings = 12
+		skull.set_meta("skull", true)
 	_head.add_child(skull)
 	if _body != Body.CLASSIC:
 		for ex in [-1.0, 1.0]:
@@ -2184,12 +2206,15 @@ func _build() -> void:
 	_build_hair()
 	_build_beard()
 	_build_headwear()
-	for ex in [-0.04, 0.04]:
+	for ex in ([] if _body == Body.SMOOTH else [-0.04, 0.04]):   # SMOOTH: the face is drawn
 		var eye := _no_outline(_sphere(0.016, Color(0.08, 0.08, 0.1)))
 		eye.position = Vector3(ex, 0.015, -0.112)
 		_head.add_child(eye)
 	var nose := _no_outline(_sphere(0.02, skin.darkened(0.08)))
 	nose.position = Vector3(0, -0.02, -0.122)
+	if _body == Body.SMOOTH:
+		nose.scale = Vector3(0.7, 0.85, 0.75)   # a small soft nose under the drawn eyes
+		nose.position = Vector3(0, -0.018, -0.118)
 	_head.add_child(nose)
 
 	# Racket: local +Y runs from the hand to the head; the face lies in the XY plane.
@@ -2197,6 +2222,23 @@ func _build() -> void:
 	_racket = Node3D.new()
 	_model.add_child(_racket)
 	_gear.dress(self)
+	_rebake()
+
+
+## SMOOTH: (re)bakes the parts into the one skinned body, from a standing pose.
+func _rebake() -> void:
+	if _body != Body.SMOOTH or _model == null:
+		return
+	if _skin != null:
+		_skin.clear()
+	_pose(Vector3.ZERO, 0.0, 0.0)
+	_skin = AthleteSkin.bake(self)
+
+
+## A short expression on the SMOOTH body's face: "joy", "sad" or "shout" (others: nothing).
+func emote(kind: String, secs := 1.6) -> void:
+	if _skin != null:
+		_skin.emote(kind, secs)
 
 
 # --- Gear on the body (v0.2 F, scripts/athlete_gear.gd) ------------------------------
@@ -2207,6 +2249,7 @@ func _build() -> void:
 func set_gear(items: Array) -> void:
 	_gear.wear(items)
 	_gear.dress(self)
+	_rebake()
 
 
 ## Only the racket (the trophy in hand, a knocked-out racket); shoes and band stay. A
@@ -2229,6 +2272,7 @@ func gear() -> Dictionary:
 func set_racket_look(c: Color, glow: float) -> void:
 	_gear.tint = {"color": c, "glow": glow}
 	_gear.dress(self)
+	_rebake()
 
 
 # --- Hair, beard, headwear ---------------------------------------------------------
@@ -2456,6 +2500,9 @@ func _set_joint(name: String, at: Vector3) -> void:
 
 
 func _build_body() -> void:
+	if _body == Body.SMOOTH:
+		_build_smooth_body()
+		return
 	var skin := Looks.skin(look)
 	var shirt := Looks.kit(look, "shirt")
 	var shorts := Looks.kit(look, "shorts")
@@ -2463,7 +2510,7 @@ func _build_body() -> void:
 	var white := Color(0.96, 0.96, 0.96)
 	var sock := Color(0.97, 0.97, 0.97)
 	var sole := Color(0.86, 0.86, 0.84)
-	var toon := _body == Body.TOON
+	var toon := _toon()
 	var k := 1.14 if toon else 1.0          # chunkier limbs
 	var hk := 1.4 if toon else 1.0          # bigger hands
 	var fk := 1.3 if toon else 1.0          # bigger feet
@@ -2530,6 +2577,94 @@ func _build_body() -> void:
 		_bones["waist"].visible = false   # the chest is one piece down to the pelvis
 
 
+## SMOOTH: the TOON body's parts with an athlete's volumes - fuller thighs and calves, a
+## deltoid and a biceps, a forearm that tapers to the wrist, a V-shaped chest on a thicker
+## neck, hands with a thumb. Baked into one mesh afterwards (AthleteSkin), so the parts
+## only need to overlap, not to fit: the joints are blended.
+func _build_smooth_body() -> void:
+	var skin := Looks.skin(look)
+	var shirt := Looks.kit(look, "shirt")
+	var shorts := Looks.kit(look, "shorts")
+	var accent := Looks.kit(look, "accent")
+	var white := Color(0.96, 0.96, 0.96)
+	var sock := Color(0.97, 0.97, 0.97)
+	var sole := Color(0.86, 0.86, 0.84)
+	var hem := shorts.darkened(0.18)
+	var cuff := shirt.darkened(0.12)
+	var lk := 1.2                          # legs
+	var ak := 1.16                         # arms
+	var fk := 1.18                         # feet
+	for i in 2:
+		# Thigh (+Z is its front): the shorts' leg with a darker hem, then a full quad in
+		# front tapering to the knee cap.
+		_lathe_bone("thigh%d" % i, THIGH, [
+			[0.0, 0.0, shorts], [0.03, 0.074 * lk, shorts], [0.12, 0.092 * lk, shorts], [0.4, 0.088 * lk, shorts],
+			[0.4, 0.09 * lk, hem], [0.45, 0.088 * lk, hem], [0.45, 0.077 * lk, skin, 0.004], [0.62, 0.072 * lk, skin, 0.007, 0.95],
+			[0.8, 0.06 * lk, skin, 0.005, 0.95], [0.92, 0.052 * lk, skin, 0.004], [0.98, 0.046 * lk, skin, 0.003], [1.0, 0.0, skin]])
+		# Shin: a calf high on the back of the leg (-Z), a flat shin bone in front, a slim
+		# ankle in a white sock.
+		_lathe_bone("shin%d" % i, SHIN, [
+			[0.0, 0.0, skin], [0.03, 0.048 * lk, skin, 0.002], [0.14, 0.054 * lk, skin, -0.006, 0.92],
+			[0.28, 0.06 * lk, skin, -0.012, 0.88], [0.44, 0.052 * lk, skin, -0.008, 0.9], [0.56, 0.043 * lk, skin, -0.003],
+			[0.64, 0.04 * lk, skin], [0.64, 0.044 * lk, sock], [0.7, 0.043 * lk, sock],
+			[0.95, 0.039 * lk, sock], [1.0, 0.0, sock]])
+		_lathe_bone("shoe%d" % i, 0.19, [
+			[0.0, 0.0, sole], [0.04, 0.05 * fk, sole], [0.08, 0.056 * fk, white], [0.38, 0.062 * fk, white], [0.38, 0.064 * fk, accent],
+			[0.5, 0.064 * fk, accent], [0.5, 0.062 * fk, white], [0.85, 0.052 * fk, white], [0.96, 0.04 * fk, white], [1.0, 0.0, white]], 0.6)
+	_lathe_bone("hips", 0.2, [
+		[0.0, 0.0, shorts], [0.0, 0.11, shorts], [0.25, 0.132, shorts], [0.75, 0.132, shorts], [1.0, 0.11, shorts], [1.0, 0.0, shorts]])
+	_lathe_bone("waist", 0.3, [
+		[0.0, 0.0, shirt], [0.0, 0.135, shirt], [0.5, 0.14, shirt], [1.0, 0.15, shirt], [1.0, 0.0, shirt]])
+	# Chest, pelvis -> shoulders in one piece: a narrow waist over the shorts, a broad
+	# chest and the slope of the trapezius up to the neck.
+	# -Z is its front: the chest stands out over a flat belly, the back is straight.
+	_lathe_bone("chest", 0.25, [
+		[0.0, 0.0, shirt], [0.0, 0.13, shirt], [0.04, 0.136, shirt], [0.3, 0.132, shirt, 0.004], [0.55, 0.158, shirt, -0.004],
+		[0.74, 0.184, shirt, -0.012], [0.86, 0.182, shirt, -0.01], [0.95, 0.152, shirt, -0.004], [1.0, 0.1, shirt], [1.0, 0.0, shirt]])
+	# Shoulders, left -> right: round deltoids at the ends, in the shirt.
+	_lathe_bone("shoulders", 0.4, [
+		[0.0, 0.0, shirt], [0.02, 0.064 * ak, shirt], [0.11, 0.078 * ak, shirt], [0.28, 0.07 * ak, shirt],
+		[0.72, 0.07 * ak, shirt], [0.89, 0.078 * ak, shirt], [0.98, 0.064 * ak, shirt], [1.0, 0.0, shirt]])
+	# Neck: thick at the base, the shirt's ribbed collar round it.
+	_lathe_bone("neck", 0.16, [[0.0, 0.0, shirt], [0.0, 0.1, cuff], [0.14, 0.078, cuff],
+		[0.14, 0.066, skin], [0.5, 0.058, skin], [1.0, 0.054, skin], [1.0, 0.0, skin]])
+	for side in ["r", "l"]:
+		# Upper arm: a sleeve with a hem, a biceps under it, the arm slimming to the elbow.
+		_lathe_bone("upper_" + side, UPPER_ARM, [
+			[0.0, 0.0, shirt], [0.04, 0.066 * ak, shirt], [0.2, 0.072 * ak, shirt], [0.44, 0.068 * ak, shirt],
+			[0.44, 0.07 * ak, cuff], [0.5, 0.068 * ak, cuff], [0.5, 0.052 * ak, skin], [0.64, 0.051 * ak, skin],
+			[0.86, 0.043 * ak, skin], [0.97, 0.04 * ak, skin], [1.0, 0.0, skin]])
+		# Forearm: full near the elbow, slim at the wrist, a wristband.
+		_lathe_bone("fore_" + side, FOREARM, [
+			[0.0, 0.0, skin], [0.04, 0.041 * ak, skin], [0.24, 0.048 * ak, skin], [0.5, 0.041 * ak, skin],
+			[0.72, 0.034 * ak, skin], [0.72, 0.042 * ak, accent], [0.94, 0.041 * ak, accent], [0.94, 0.031 * ak, skin], [1.0, 0.0, skin]])
+	# Joints a little thinner than the limbs there: they only fill a deep bend.
+	for i in 2:
+		_joint_ball("knee%d" % i, 0.047 * lk, skin)
+	for side in ["r", "l"]:
+		_joint_ball("elbow_" + side, 0.036 * ak, skin)
+	# Hands: a palm with a thumb along its side (pointing along the forearm, _place_hand).
+	_hand_scale = Vector3(0.8, 1.1, 0.6) * 1.25
+	_hand_r = _hand_mesh(skin, 1.0)
+	_hand_l = _hand_mesh(skin, -1.0)
+	for part in ["shoulders", "neck", "waist"]:
+		_no_outline(_bones[part])
+	_bones["waist"].visible = false
+
+
+## A unit hand (radius 0.05 before _hand_scale): the palm and, on the inner side, a thumb.
+func _hand_mesh(c: Color, side: float) -> MeshInstance3D:
+	_parts_meshes()
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.append_from(_unit_sphere, 0, _tf(Vector3.ZERO, Vector3.ONE * 0.05))
+	st.append_from(_unit_capsule, 0, _tf(Vector3(-0.034 * side, -0.006, -0.022), Vector3(0.034, 0.03, 0.034), Vector3(0.5, 0, 0.45 * side)))
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	mi.material_override = _mat(c)
+	return mi
+
+
 func _joint_ball(name: String, r: float, c: Color) -> void:
 	var mi := MeshInstance3D.new()
 	var sm := SphereMesh.new()
@@ -2545,7 +2680,7 @@ func _joint_ball(name: String, r: float, c: Color) -> void:
 
 func _lathe_bone(bone: String, ref: float, prof: Array, flat := 1.0) -> void:
 	var mi := MeshInstance3D.new()
-	mi.mesh = _lathe(ref, prof, 22 if _body == Body.TOON else 14)
+	mi.mesh = _lathe(ref, prof, 22 if _toon() else 14)
 	mi.material_override = _body_mat()
 	mi.set_meta("ref", ref)
 	if flat != 1.0:
@@ -2554,7 +2689,9 @@ func _lathe_bone(bone: String, ref: float, prof: Array, flat := 1.0) -> void:
 	_bones[bone] = mi
 
 
-## The profile turned round +Y, centred on the origin, with vertex colours. `colour`
+## The profile turned round +Y, centred on the origin, with vertex colours. A ring may
+## carry two more values: [t, r, colour, dz, ex] - its centre moved by dz along +Z (a calf
+## behind the shin, a chest in front) and its width along X scaled by ex. `colour`
 ## (t, angle, row colour) -> Color paints per vertex instead (patterns, AthleteGear); the
 ## UV's x is then t along the bone.
 static func _lathe(len: float, prof: Array, segs: int, colour := Callable()) -> ArrayMesh:
@@ -2569,12 +2706,15 @@ static func _lathe(len: float, prof: Array, segs: int, colour := Callable()) -> 
 		var ib := mini(i + 1, n - 1)
 		var dy: float = (float(prof[ib][0]) - float(prof[ia][0])) * len
 		var dr: float = float(prof[ib][1]) - float(prof[ia][1])
+		var dz := _ring(prof[i], 3, 0.0)
+		var ex := _ring(prof[i], 4, 1.0)
+		var ddz := _ring(prof[ib], 3, 0.0) - _ring(prof[ia], 3, 0.0)
 		for j in segs + 1:
 			var a := TAU * float(j) / float(segs)
-			var rad := Vector3(cos(a), 0.0, sin(a))
+			var rad := Vector3(cos(a) / ex, 0.0, sin(a)).normalized()
 			var nrm := Vector3(0, -1.0 if t < 0.5 else 1.0, 0)
 			if r > 0.0001 and absf(dy) > 0.0001:
-				nrm = (rad - Vector3(0, dr / dy, 0)).normalized()
+				nrm = (rad - Vector3(0, (dr + ddz * sin(a)) / dy, 0)).normalized()
 			elif r > 0.0001:
 				nrm = (rad + nrm * 0.6).normalized()
 			if colour.is_valid():
@@ -2583,7 +2723,7 @@ static func _lathe(len: float, prof: Array, segs: int, colour := Callable()) -> 
 			else:
 				st.set_color(prof[i][2])
 			st.set_normal(nrm)
-			st.add_vertex(rad * r + Vector3(0, (t - 0.5) * len, 0))
+			st.add_vertex(Vector3(cos(a) * r * ex, (t - 0.5) * len, sin(a) * r + dz))
 	for i in n - 1:
 		for j in segs:
 			var a0 := i * (segs + 1) + j
@@ -2595,6 +2735,10 @@ static func _lathe(len: float, prof: Array, segs: int, colour := Callable()) -> 
 			st.add_index(b0 + 1)
 			st.add_index(b0)
 	return st.commit()
+
+
+static func _ring(row: Array, i: int, default: float) -> float:
+	return float(row[i]) if row.size() > i else default
 
 
 static var _toon_outline: StandardMaterial3D
@@ -2612,7 +2756,7 @@ func _body_mat() -> StandardMaterial3D:
 
 ## TOON: flat bands of light and a dark outline (the back faces of a slightly grown copy).
 func _toonify(m: StandardMaterial3D) -> void:
-	if _body != Body.TOON:
+	if not _toon():
 		return
 	# Soft light that wraps round the form (no hard bands), a small toon highlight, a
 	# light rim, and a thin even outline.
