@@ -140,7 +140,7 @@ func test_season_counter() -> void:
 	check(int(c["in_season"]) == 3 and int(c["season"]) == 1, "three runs: still season 1")
 	check(Career.is_final_next(), "the 4th tournament is the season final")
 	var gold0 := SaveData.gold
-	_run(1)
+	_run(1, false, Career.final_loc())
 	check(int(c["season"]) == 2 and int(c["in_season"]) == 0 and int(c["age"]) == 22, "four runs: season 2, 22 years")
 	var s: Dictionary = c["seasons"][0]
 	check(int(s["pts"]) == 10 + 90 + 500 + 45 * 2, "season points: the final counts x2 (%d)" % int(s["pts"]))
@@ -291,6 +291,7 @@ func test_retire() -> void:
 	var score0 := SaveData._score(SaveData._to_config())
 	var gold0 := SaveData.gold
 	var serve_lv := Skills.level("serve")
+	var auction := roundi(Items.price(last.equip["racket"]) * 0.5)
 	var relics := Career.relic_options(last)
 	check(relics.size() == 4, "relic options: worn, the bag and the locker (%d)" % relics.size())
 	var leg := -1
@@ -316,7 +317,6 @@ func test_retire() -> void:
 		lv_ok = lv_ok and Skills.level(id) == int(heir["levels"].get(id, 0))
 	check(lv_ok and Skills.perks.is_empty() and Skills.points == Skills.START_POINTS, "skills: the heir's levels, no perks, the starting points")
 	check(SaveData.look == Looks.sanitize(heir["look"]), "the look is the heir's")
-	var auction := roundi(Items.price(last.equip["racket"]) * 0.5)
 	check(SaveData.gold - gold0 == auction, "the farewell auction sold the worn racket for half its price (not the relic, not the kept shoes): +%d" % (SaveData.gold - gold0))
 	check(last.equip["racket"].is_empty() and last.bag.is_empty(), "the last run's things are gone")
 	# What stays.
@@ -347,7 +347,10 @@ func test_save_roundtrip() -> void:
 	cf.parse(SaveData._to_config().encode_to_text())
 	SaveData._apply(cf)
 	check(SaveData.career == before, "the career section comes back the same (retired, gen, season)")
-	check(Skills.to_profile()["xp"] == prof["xp"] and SaveData.look == look, "the heir's skills and look come back")
+	var same := true
+	for id in Skills.LIST:
+		same = same and Skills.level(id) == Skills.level_of(prof, id)
+	check(same and Skills.perks == prof["perks"] and SaveData.look == look, "the heir's skills and look come back")
 	check(Locker.next_items() == nx, "the relic waits in the locker's 'next'")
 	finished += 1
 
