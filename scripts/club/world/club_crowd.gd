@@ -136,6 +136,7 @@ func _update(delta: float) -> void:
 		var cheer := maxf(0.0, sin(_fan_t * 2.2 + float(i) * 1.7)) * 0.05
 		var fb := Basis.from_euler(Vector3(0.0, -PI * 0.5 + 0.1 * sin(float(i)), 0.03 * sin(_fan_t * 1.3 + float(i)))) * Basis.from_scale(Vector3.ONE * sc)
 		_put(i, Transform3D(fb, at + Vector3(0, cheer, 0)), -1.0)
+	var others := _others()
 	for i in _walkers.size():
 		var w := _walkers[i]
 		var slot := FANS + i
@@ -158,6 +159,11 @@ func _update(delta: float) -> void:
 				var od := _walkers[j].pos - w.pos
 				if od.length() < 0.85 and od.dot(w.heading) > 0.0:
 					move = 0.0
+		# ...nor through the club's own people (students, the guest, the coach)
+		for op in others:
+			var od2: Vector2 = (op as Vector2) - w.pos
+			if od2.length() < 1.0 and od2.dot(w.heading) > 0.0:
+				move = 0.0
 		if move == 0.0:
 			w.waiting += delta
 			if w.waiting > 3.0 and w.cool <= 0.0:
@@ -198,6 +204,14 @@ func _update(delta: float) -> void:
 					move = 0.0
 					w.waiting += delta
 					break
+		for op in others:
+			var dn2 := q.distance_to(op)
+			if w.pos.x < 1.0e4 and dn2 < 0.8 and dn2 < w.pos.distance_to(op):
+				w.s = s0
+				w.off = off0
+				q = w.pos
+				w.waiting += delta
+				break
 		w.pos = q
 		w.heading = tang
 		w.phase += delta * (5.0 + w.speed * 2.0)
@@ -231,6 +245,23 @@ func _update(delta: float) -> void:
 		var lift := 0.0 if p.t >= 0.0 else 0.0
 		var b := Basis.from_euler(Vector3(sin(p.peck) * 0.35 if p.t < 0.0 else -0.25, p.yaw, 0.0))
 		pm.set_instance_transform(i, Transform3D(b, p.pos + Vector3(0, lift, 0)))
+
+
+## Where the club's other people stand now (everybody registered but the strollers and the fans).
+func _others() -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	var main: Node = get_parent().world.get_parent()
+	var club = main.get("club") if main != null else null
+	if not _registered or club == null or club.get("npc") == null:
+		return out
+	var reg: ClubNpc = club.npc
+	for id in reg.ids():
+		if String(id).begins_with("walker_") or String(id).begins_with("fan_"):
+			continue
+		var p := reg.position_of(id)
+		if p != Vector3.INF:
+			out.append(Vector2(p.x, p.z))
+	return out
 
 
 ## Where stroller `i` stands, and where fan `i` does (Vector3.INF = not there).
