@@ -2,8 +2,8 @@ class_name HousePackInfo
 ## Written by tools/academy_models.py: which pack the game asks the page for
 ## (models/academy_props.<VERSION>.glb), the ids in it and each one's size in metres (x, y, z).
 
-const VERSION := "43224320a5"
-const IDS := ["bed_1", "bed_2", "bed_3", "bed_4", "bunk_2", "nightstand_1", "nightstand_2", "nightstand_3", "sofa_1", "sofa_2", "sofa_3", "sofa_4", "armchair_2", "armchair_3", "armchair_4", "table_1", "table_2", "table_3", "table_4", "chair_1", "chair_2", "chair_3", "chair_4", "kitchen_2", "kitchen_3", "kitchen_island_3", "kitchen_4", "dishes_2", "desk_1", "desk_2", "desk_3", "desk_4", "bookcase_4", "rug_a", "rug_b", "rug_c", "lamp_table", "lamp_standing", "frame_s", "frame_m", "frame_l", "plant_s", "plant_m", "door_a", "door_b", "crate_1", "barrel_1"]
+const VERSION := "dda6a1d113"
+const IDS := ["bed_1", "bed_2", "bed_3", "bed_4", "bunk_2", "nightstand_1", "nightstand_2", "nightstand_3", "sofa_1", "sofa_2", "sofa_3", "sofa_4", "armchair_2", "armchair_3", "armchair_4", "table_1", "table_2", "table_3", "table_4", "chair_1", "kitchen_2", "kitchen_3", "kitchen_island_3", "kitchen_4", "dishes_2", "desk_1", "desk_2", "desk_3", "desk_4", "bookcase_4", "rug_a", "rug_b", "rug_c", "lamp_table", "lamp_standing", "frame_s", "frame_m", "frame_l", "plant_s", "plant_m", "door_a", "door_b", "chair_2", "chair_3", "chair_4", "tv_1", "console_3", "speaker_5", "chair_office_1", "fridge_1", "library_4", "bunk_1", "coffee_2", "radio_1", "crate_1", "barrel_1"]
 const SIZES := {
 	"bed_1": Vector3(1.00, 0.43, 1.90),
 	"bed_2": Vector3(0.99, 0.62, 1.86),
@@ -25,14 +25,11 @@ const SIZES := {
 	"table_3": Vector3(2.16, 0.74, 1.20),
 	"table_4": Vector3(2.40, 1.01, 1.36),
 	"chair_1": Vector3(0.36, 0.36, 0.37),
-	"chair_2": Vector3(0.46, 0.78, 0.52),
-	"chair_3": Vector3(0.51, 0.86, 0.57),
-	"chair_4": Vector3(0.52, 0.88, 0.59),
 	"kitchen_2": Vector3(3.80, 1.70, 0.70),
 	"kitchen_3": Vector3(4.80, 2.50, 0.70),
 	"kitchen_island_3": Vector3(2.12, 1.02, 1.00),
-	"kitchen_4": Vector3(6.15, 2.60, 0.72),
-	"dishes_2": Vector3(1.16, 0.17, 0.85),
+	"kitchen_4": Vector3(4.95, 2.60, 0.72),
+	"dishes_2": Vector3(1.06, 0.17, 0.69),
 	"desk_1": Vector3(1.68, 0.82, 0.75),
 	"desk_2": Vector3(1.86, 1.08, 1.00),
 	"desk_3": Vector3(2.10, 1.20, 1.10),
@@ -50,6 +47,18 @@ const SIZES := {
 	"plant_m": Vector3(0.53, 0.50, 0.50),
 	"door_a": Vector3(1.09, 1.96, 0.38),
 	"door_b": Vector3(1.09, 1.96, 0.37),
+	"chair_2": Vector3(0.42, 0.99, 0.42),
+	"chair_3": Vector3(0.42, 0.97, 0.42),
+	"chair_4": Vector3(0.46, 1.01, 0.46),
+	"tv_1": Vector3(1.28, 1.39, 0.65),
+	"console_3": Vector3(1.68, 1.43, 0.42),
+	"speaker_5": Vector3(1.28, 1.65, 0.94),
+	"chair_office_1": Vector3(0.57, 1.03, 0.53),
+	"fridge_1": Vector3(0.73, 1.47, 0.50),
+	"library_4": Vector3(3.12, 2.29, 0.35),
+	"bunk_1": Vector3(1.03, 1.70, 1.97),
+	"coffee_2": Vector3(0.34, 0.32, 0.43),
+	"radio_1": Vector3(0.57, 0.41, 0.18),
 	"crate_1": Vector3(0.60, 0.40, 0.41),
 	"barrel_1": Vector3(0.60, 0.60, 0.60),
 }

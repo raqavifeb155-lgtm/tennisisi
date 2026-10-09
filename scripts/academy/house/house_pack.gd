@@ -21,6 +21,8 @@ static var _pack := {}              # id -> ArrayMesh
 static var _simple := {}            # id -> ArrayMesh
 static var _tinted := {}            # "id|club" -> ArrayMesh (club colour swapped in)
 static var force_simple := false    # tools: show the code forms even when the pack is here
+static var detail := 2              # 0 Low, 1 Medium, 2 High: how much of the pack is drawn (see _code_form)
+static var _lod := {}               # id -> bool, whether Low uses the code form
 
 
 static func request(host: Node) -> void:
@@ -81,11 +83,35 @@ static func in_pack(id: String) -> bool:
 
 ## The mesh of a prop: the pack's, else its simple form; null for an unknown id.
 static func mesh(id: String) -> ArrayMesh:
-	if has_pack() and _pack.has(id):
+	if has_pack() and _pack.has(id) and not _code_form(id):
 		return _pack[id]
 	if not _simple.has(id):
 		_simple[id] = HouseShapes.make(id)
 	return _simple[id]
+
+
+## The pack's models are 3-8 times heavier than their code forms (a bed 600 against 150 triangles),
+## and the house's room budget is 3k triangles on Low, 5k on Medium, 8k on High (spec 8.1). So:
+## Low draws the code form of every pack model over 250 triangles that is at least twice as heavy;
+## Medium of those over 450 that are three times as heavy (kitchens, the biggest sofas); High
+## draws the pack. Cached; HouseShapes.DECOR lists what Low leaves out altogether.
+static func _code_form(id: String) -> bool:
+	if detail >= 2:
+		return false
+	var key := "%s|%d" % [id, detail]
+	if not _lod.has(key):
+		var heavy := false
+		var m: ArrayMesh = _pack[id]
+		var n := (m.surface_get_arrays(0)[Mesh.ARRAY_INDEX] as PackedInt32Array).size() / 3
+		var lim_n := 250 if detail == 0 else 450
+		var ratio := 2 if detail == 0 else 3
+		if n > lim_n:
+			var simple := HouseShapes.make(id)
+			if simple != null:
+				var sn := (simple.surface_get_arrays(0)[Mesh.ARRAY_INDEX] as PackedInt32Array).size() / 3
+				heavy = n >= ratio * sn
+		_lod[key] = heavy
+	return _lod[key]
 
 
 ## The same mesh with the club's two blues (CLUB_BLUE, CLUB_DARK in the vertices) swapped for

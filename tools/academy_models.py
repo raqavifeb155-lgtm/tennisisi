@@ -32,6 +32,7 @@ import os
 import struct
 import sys
 
+sys.dont_write_bytecode = True
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import club_models as cm  # noqa: E402  (reused: Gltf, flatten, club_colour, write_glb, palette)
@@ -43,6 +44,7 @@ INFO = os.path.join(ROOT, "scripts", "academy", "house", "house_pack_info.gd")
 KF = "kaykit-Furniture-Bits/addons/kaykit_furniture_bits/Assets/gltf/"
 KR = "kaykit-Restaurant-Bits/addons/kaykit_restaurant_bits/Assets/gltf/"
 KP = "kaykit-Prototype-Bits/addons/kaykit_prototype_bits/Assets/gltf/"
+KK = "kenney_furniture/"   # Kenney Furniture Kit (CC0), glb files as mirrored by github.com/shorepine/kenney 3d/furniture
 KC = "kaykit-City-Builder-Bits/addons/kaykit_city_builder_bits/Assets/gltf/"
 
 # The house's own interior colours, added after the club's palette (indices >= 36): the colour
@@ -287,6 +289,9 @@ def picks():
                 if pre == "r_" and n.startswith(("food", "crate_", "jar", "lid", "pan", "pot")):
                     continue
                 P["raw_" + pre + n] = [part(sub + n + ".gltf", float(os.environ.get("RAW_S", "0.5")))]
+        for f in sorted(glob.glob(os.path.join(SRC_ROOT, KK, "*.glb"))):
+            n = os.path.basename(f)[:-4]
+            P["raw_k_" + n] = [part(KK + n + ".glb", 1.0)]
         return P
     F = lambda n: KF + n + ".gltf"   # noqa: E731
     R = lambda n: KR + n + ".gltf"   # noqa: E731
@@ -329,47 +334,53 @@ def picks():
     # --- dining ---------------------------------------------------------------------------
     P["table_1"] = [part(T("table_medium_long"), (0.7, 0.72, 0.8), wear=0.85, remap={"blue": (0.72, 0.58, 0.42), "grey": (0.6, 0.5, 0.4)})]
     P["table_2"] = [part(F("table_medium_long"), (0.72, 0.72, 0.62), remap={"wood": WOODL})]
-    P["table_3"] = [part(R("kitchentable_A_large"), (0.72, 0.74, 0.6), remap={"orange": OAK})]
+    P["table_3"] = [part(R("kitchentable_A_large"), (0.72, 0.74, 0.6), remap={"orange": OAK, "blue": OAK, "grey": WOODL})]
     P["table_4"] = [part(F("table_medium_long"), (0.8, 0.74, 0.68), remap={"wood": WOODD}),
                     box((2.0, 0.025, 1.0), (0, 0.745, 0), CREAM), box((0.4, 0.03, 1.02), (0, 0.76, 0), CLUB_BLUE),
                     box((2.0, 0.22, 0.02), (0, 0.63, 0.5), CREAM), box((2.0, 0.22, 0.02), (0, 0.63, -0.5), CREAM),
                     part(F("cactus_small_A"), 0.45, (0, 0.76, 0))]
     P["chair_1"] = [part(T("Box_A"), (0.8, 0.7, 0.8), wear=0.7)]
-    P["chair_2"] = [part(F("chair_A_wood"), 0.62, remap={"blue": SAGE, "wood": WOODL})]
-    P["chair_3"] = [part(F("chair_A_wood"), 0.68, remap={"blue": CLUB_BLUE, "wood": OAK})]
-    P["chair_4"] = [part(F("chair_B"), 0.7, remap={"blue": PLUM, "wood": WOODD})]
 
     # --- kitchens: a run along the back wall (counters 1 m wide, 0.9 high, 0.7 deep) --------
     CK = (0.5, 0.9, 0.34)
     CT = (0.55, 0.9, 0.4)
     FR = (0.4, 0.68, 0.3)
+    SINK = [box((0.6, 0.02, 0.4), (0, 0.925, 0.0), METAL), cyl(0.015, 0.015, 0.3, (0, 1.07, -0.2), METAL, 4), box((0.03, 0.03, 0.14), (0, 1.22, -0.13), METAL)]
+
+    def with_sink(parts, x):
+        for q in SINK:
+            q = dict(q)
+            q["at"] = (q["at"][0] + x, q["at"][1], q["at"][2])
+            parts.append(q)
+        return parts
+
     P["kitchen_2"] = row([(R("fridge_B"), FR, {"remap": {"teal": SAGE}}),
                           (R("kitchencounter_straight_A"), CK, {"remap": {"orange": WOODL}}),
-                          (R("kitchencounter_sink"), (0.5, 0.5, 0.34), {"remap": {"orange": WOODL}}),
-                          (R("kitchencounter_straight_B"), CK, {"remap": {"orange": WOODL}})])
-    P["kitchen_2"].append(part(R("stove_single_countertop"), CT, (2.7, 0.9, 0.0), remap={"orange": WOODL}))
-    P["kitchen_2"].append(part(R("plate"), 0.4, (1.4, 0.9, 0.05)))
+                          (R("kitchencounter_straight_B"), CK, {"remap": {"orange": WOODL}}),
+                          (R("kitchencounter_straight_A"), CK, {"remap": {"orange": WOODL}})])
+    with_sink(P["kitchen_2"], 2.3)
+    P["kitchen_2"].append(part(R("stove_single_countertop"), CT, (3.3, 0.9, 0.0), remap={"orange": WOODL}))
     P["kitchen_3"] = row([(R("fridge_A"), FR, {"remap": {"teal": CLUB_BLUE}}),
                           (R("kitchencounter_straight_A_backsplash"), CK, {"remap": {"orange": OAK}}),
-                          (R("kitchencounter_sink_backsplash"), (0.5, 0.5, 0.34), {"remap": {"orange": OAK}}),
                           (R("kitchencounter_straight_B_backsplash"), CK, {"remap": {"orange": OAK}}),
-                          (R("kitchencounter_straight_A_backsplash"), CK, {"remap": {"orange": OAK}})])
-    P["kitchen_3"].append(part(R("stove_multi_countertop"), (0.55, 0.9, 0.4), (3.3, 0.9, 0.0), remap={"orange": OAK}))
-    P["kitchen_3"].append(part(R("extractorhood"), (0.5, 0.5, 0.3), (3.3, 1.5, -0.1), remap={"orange": OAK}))
-    P["kitchen_island_3"] = [part(R("kitchentable_A_large"), (0.7, 0.9, 0.5), remap={"orange": OAK, "grey": STEEL}),
+                          (R("kitchencounter_straight_A_backsplash"), CK, {"remap": {"orange": OAK}}),
+                          (R("kitchencounter_straight_B_backsplash"), CK, {"remap": {"orange": OAK}})])
+    with_sink(P["kitchen_3"], 2.3)
+    P["kitchen_3"].append(part(R("stove_single_countertop"), CT, (4.3, 0.9, 0.0), remap={"orange": OAK}))
+    P["kitchen_3"].append(part(R("extractorhood"), (0.5, 0.5, 0.3), (4.3, 1.5, -0.1), remap={"orange": OAK}))
+    P["kitchen_island_3"] = [part(R("kitchentable_A_large"), (0.7, 0.9, 0.5), remap={"orange": OAK, "blue": OAK, "grey": WOODL}),
                              part(R("plate"), 0.4, (-0.4, 0.9, 0.0)), part(R("bowl"), 0.4, (0.2, 0.9, 0.1)),
                              part(R("cuttingboard"), 0.5, (0.7, 0.9, -0.1))]
     P["kitchen_4"] = row([(R("fridge_A"), (0.45, 0.7, 0.32), {"remap": {"teal": WHITE}}),
                           (R("kitchencabinet"), (0.5, 0.45, 0.34), {"remap": {"orange": WOODD}}),
-                          (R("kitchencounter_sink_backsplash"), (0.5, 0.5, 0.34), {"remap": {"orange": WOODD}}),
                           (R("kitchencounter_straight_B_backsplash"), CK, {"remap": {"orange": WOODD}}),
                           (R("kitchencounter_straight_A_backsplash"), CK, {"remap": {"orange": WOODD}}),
                           (R("kitchencounter_straight_B_backsplash"), CK, {"remap": {"orange": WOODD}})])
-    P["kitchen_4"].append(part(R("stove_multi_countertop"), (0.55, 0.9, 0.4), (3.5, 0.9, 0.0), remap={"orange": WOODD}))
-    P["kitchen_4"].append(part(R("extractorhood"), (0.55, 0.55, 0.3), (3.5, 1.5, -0.1), remap={"orange": GOLD}))
-    P["kitchen_4"].append(box((6.0, 0.04, 0.72), (2.75, 0.92, 0.0), rgb("dfe6ea")))
-    P["dishes_2"] = [part(R("plate"), 0.45, (-0.3, 0, 0.1)), part(R("plate_small"), 0.4, (0.0, 0, 0.1)),
-                     part(R("bowl"), 0.4, (-0.1, 0, -0.35)), part(R("pot_A"), 0.35, (0.4, 0, -0.1))]
+    with_sink(P["kitchen_4"], 2.3)
+    P["kitchen_4"].append(part(R("stove_multi_countertop"), (0.55, 0.9, 0.4), (4.4, 0.9, 0.0), remap={"orange": WOODD}))
+    P["kitchen_4"].append(part(R("extractorhood"), (0.55, 0.55, 0.3), (4.4, 1.5, -0.1), remap={"orange": GOLD}))
+    P["kitchen_4"].append(box((4.3, 0.04, 0.72), (2.45, 0.92, 0.0), rgb("dfe6ea")))
+    P["dishes_2"] = [part(R("plate"), 0.45, (-0.3, 0, 0.1)), part(R("plate_small"), 0.4, (0.1, 0, 0.1)), part(R("pot_A"), 0.35, (0.3, 0, -0.2))]
 
     # --- the coach's desks ------------------------------------------------------------------
     P["desk_1"] = [box((1.5, 0.07, 0.75), (0, 0.78, 0), (0.75, 0.62, 0.45), wear=0.8),
@@ -407,6 +418,25 @@ def picks():
     P["plant_m"] = [part(F("cactus_medium_A"), 0.6)]
     P["door_a"] = [part(T("Door_A"), (0.68, 0.7, 0.7), remap={"blue": WOODL, "teal": WOODL})]
     P["door_b"] = [part(T("Door_B"), (0.68, 0.7, 0.7))]
+    # --- Kenney Furniture Kit (CC0): what KayKit has not (the sets' native unit is ~0.5 of a metre) ---
+    K = lambda n: KK + n + ".glb"   # noqa: E731
+    P["chair_2"] = [part(K("chair"), 2.1, wear=0.15)]
+    P["chair_3"] = [part(K("chairCushion"), 2.1, remap={"blue": CLUB_BLUE, "red": CLUB_BLUE, "teal": CLUB_BLUE})]
+    P["chair_4"] = [part(K("chairCushion"), 2.2, remap={"blue": PLUM, "red": PLUM, "teal": PLUM, "wood": WOODD}),
+                    box((0.06, 0.08, 0.06), (-0.2, 0.04, -0.2), GOLD), box((0.06, 0.08, 0.06), (0.2, 0.04, -0.2), GOLD),
+                    box((0.06, 0.08, 0.06), (-0.2, 0.04, 0.2), GOLD), box((0.06, 0.08, 0.06), (0.2, 0.04, 0.2), GOLD)]
+    P["tv_1"] = [part(K("cabinetTelevision"), 1.6, wear=0.8), part(K("televisionVintage"), 2.4, (0, 0.5, 0.0), wear=0.7),
+                 part(K("televisionAntenna"), 2.4, (0.0, 1.14, -0.08), wear=0.6)]
+    P["console_3"] = [part(K("cabinetTelevision"), (2.1, 1.7, 1.7), wear=0.0, remap={"wood": OAK}), part(K("televisionModern"), 2.0, (0, 0.52, -0.02)),
+                      box((0.3, 0.05, 0.24), (-0.5, 0.55, 0.05), WHITE), box((0.16, 0.04, 0.1), (0.4, 0.54, 0.1), CLUB_BLUE, yaw=18)]
+    P["speaker_5"] = [part(K("speaker"), 2.6, (-0.45, 0, 0.0)), part(K("speaker"), 2.6, (0.45, 0, 0.0)), box((0.7, 0.5, 0.5), (0.0, 0.25, 0.5), METALD)]
+    P["chair_office_1"] = [part(K("chairDesk"), 1.7, wear=0.8)]
+    P["fridge_1"] = [part(K("kitchenFridge"), (1.7, 1.6, 1.7), wear=0.85)]
+    P["library_4"] = [part(K("bookcaseClosedWide"), (3.0, 2.6, 1.4), remap={"wood": WOODD}), part(K("bookcaseOpen"), (1.6, 2.6, 1.4), (1.6, 0, 0.0)),
+                      part(K("books"), 2.0, (-0.9, 0.0, 0.0))]
+    P["bunk_1"] = [part(K("bedBunk"), (1.8, 2.0, 1.8), wear=0.4)]
+    P["coffee_2"] = [part(K("kitchenCoffeeMachine"), 1.8)]
+    P["radio_1"] = [part(K("radio"), 1.8, wear=0.6)]
     P["crate_1"] = [part(T("Box_B"), 1.0, wear=0.6)]
     P["barrel_1"] = [part(T("Barrel_A"), 0.6, wear=0.7)]
     return P

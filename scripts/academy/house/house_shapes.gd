@@ -67,9 +67,18 @@ const ROOMS := {
 	"lounge": ["sofa_1", "sofa_2", "sofa_3", "sofa_4", "armchair_2", "armchair_3", "armchair_4", "pingpong_2", "console_3", "pouf_3",
 		"library_4", "aquarium_4", "terrace_5", "minibar_5"],
 	"hall": ["reception_1", "candidates_1", "sponsor_2", "trophycase_3", "agentdesk_4", "fame_5", "cup_gold", "cup_silver", "cup_bronze"],
-	"shell": ["door_a", "door_b", "frame_s", "frame_m", "frame_l", "plant_s", "plant_m", "crate_1", "barrel_1", "chalk_here"],
+	"shell": ["door_a", "door_b", "frame_s", "frame_m", "frame_l", "plant_s", "plant_m", "crate_1", "barrel_1", "chalk_here", "rug_b", "rug_c",
+		"lamp_standing", "coffee_2", "radio_1", "bunk_1"],
+	"kids": ["kid_stand_a", "kid_stand_b", "kid_stand_c", "kid_sit_a", "kid_sit_b", "kid_sit_c", "kid_eat_a", "kid_eat_b", "kid_eat_c",
+		"kid_lie_a", "kid_lie_b", "kid_lie_c", "kid_run_a", "kid_run_b", "kid_run_c"],
 	"outside": ["academy_0", "academy_1", "academy_2", "academy_3", "academy_4", "academy_5"],
 }
+
+## Small things that make a room cosy and nothing else: the Low preset leaves them out (docs/CLUB_HUB_TZ.md 9:
+## "мелочь в комнатах скрыта на Низкой"; the house's room budget there is 3k triangles).
+const DECOR := ["dishes_2", "kettle_2", "jumprope_2", "dumbbells_1", "folders_2", "diplomas_4", "cups_5", "fruit_stand_4", "menu_board_4",
+	"nightlight_5", "pouf_3", "fitball_1", "lamp_table", "lamp_standing", "plant_s", "plant_m", "frame_s", "frame_m", "frame_l", "radio_1",
+	"coffee_2", "barrel_1", "crate_1", "rug_a", "rug_b", "rug_c", "plyo_5", "barbell_4"]
 
 static var _ids: Array = []
 
@@ -92,7 +101,7 @@ static func room_of(id: String) -> String:
 static func make(id: String) -> ArrayMesh:
 	var s := ClubShapes.new()
 	var ok := _dorm(id, s) or _canteen(id, s) or _gym(id, s) or _video(id, s) or _coach(id, s) or _med(id, s) \
-			or _lounge(id, s) or _hall(id, s) or _shell(id, s) or _outside(id, s)
+			or _lounge(id, s) or _hall(id, s) or _shell(id, s) or _outside(id, s) or _kids(id, s)
 	return s.build() if ok else null
 
 
@@ -114,10 +123,9 @@ static func _pillow(s: ClubShapes, pos: Vector3, col: Color, yaw := 0.0, w := 0.
 ## A cup (a trophy): base, stem, bowl, two handles.
 static func _cup(s: ClubShapes, pos: Vector3, col: Color, k := 1.0) -> void:
 	s.box(_v(0.16 * k, 0.04 * k, 0.16 * k), pos + _v(0, 0.02 * k, 0), WOODD)
-	s.cyl(0.03 * k, 0.05 * k, 0.1 * k, pos + _v(0, 0.09 * k, 0), col, 6)
-	s.cyl(0.1 * k, 0.04 * k, 0.14 * k, pos + _v(0, 0.2 * k, 0), col, 8)
-	for x in [-1.0, 1.0]:
-		s.box(_v(0.03 * k, 0.1 * k, 0.03 * k), pos + _v(x * 0.115 * k, 0.21 * k, 0), col)
+	s.cyl(0.03 * k, 0.05 * k, 0.1 * k, pos + _v(0, 0.09 * k, 0), col, 5)
+	s.cyl(0.1 * k, 0.04 * k, 0.14 * k, pos + _v(0, 0.2 * k, 0), col, 6)
+	s.box(_v(0.25 * k, 0.04 * k, 0.03 * k), pos + _v(0, 0.22 * k, 0), col)
 
 
 ## A lamp: base, stem, shade.
@@ -249,6 +257,12 @@ static func _dorm(id: String, s: ClubShapes) -> bool:
 			s.flat(Vector2(0.3, 0.18), _v(0, 0.05, 0), CLUB_BLUE, 10)
 		"lamp_table":
 			_lamp(s, _v(0, 0, 0), 0.25, CREAM)
+		"rug_b", "rug_c":
+			s.box(_v(1.5, 0.03, 1.0), _v(0, 0.015, 0), CLUB_BLUE if id == "rug_b" else PLUM)
+			s.box(_v(1.3, 0.035, 0.8), _v(0, 0.017, 0), CREAM if id == "rug_b" else GOLD)
+			s.box(_v(1.2, 0.04, 0.7), _v(0, 0.02, 0), CLUB_BLUE if id == "rug_b" else PLUM)
+		"lamp_standing":
+			_lamp(s, _v(0, 0, 0), 1.4, CREAM)
 		_:
 			return false
 	return true
@@ -412,7 +426,7 @@ static func _canteen(id: String, s: ClubShapes) -> bool:
 			for x in [-0.1, 0.1]:
 				s.cyl(0.085, 0.07, 0.8, _v(x, 0.4, 0), NAVY, 5)
 				s.box(_v(0.12, 0.07, 0.22), _v(x, 0.04, 0.05), METALD)
-			s.ball(0.25, _v(0, 1.17, 0), WHITE, _v(1.0, 1.3, 0.72), 7, 4)
+			s.ball(0.25, _v(0, 1.17, 0), WHITE, _v(1.0, 1.3, 0.72), 6, 3)
 			for k in 3:
 				s.ball(0.025, _v(-0.08 + k * 0.08, 1.18, 0.17), CLUB_BLUE, _v(1, 1, 0.4), 4, 3)
 			s.cyl(0.055, 0.05, 0.5, _v(-0.29, 1.1, 0.0), WHITE, 4)
@@ -421,7 +435,7 @@ static func _canteen(id: String, s: ClubShapes) -> bool:
 			s.ball(0.05, _v(0.28, 1.42, 0.5), METAL, _v(1, 0.5, 1), 5, 3)
 			s.ball(0.15, _v(0, 1.68, 0), SKIN, _v(1, 1.1, 1), 6, 3)
 			s.cyl(0.19, 0.16, 0.12, _v(0, 1.86, 0), WHITE, 8)
-			s.ball(0.2, _v(0, 2.0, 0), WHITE, _v(1, 0.8, 1), 8, 4)
+			s.ball(0.2, _v(0, 2.0, 0), WHITE, _v(1, 0.8, 1), 6, 3)
 			s.box(_v(0.16, 0.035, 0.03), _v(0, 1.62, 0.15), Color("3b2a1e"))
 		_:
 			return false
@@ -501,9 +515,6 @@ static func _gym(id: String, s: ClubShapes) -> bool:
 			s.box(_v(2.9, 1.8, 0.02), _v(0, 1.45, 0.035), GLASS.lightened(0.15))
 			for k in 3:
 				s.box(_v(0.12, 1.9, 0.01), _v(-0.8 + k * 0.7, 1.45, 0.05), WHITE.darkened(0.04), 0.0, _v(0, 0, 0.4))
-			s.cyl(0.025, 0.025, 2.9, _v(0, 1.0, 0.25), METAL, 6, _v(0, 0, PI * 0.5))
-			for x in [-1.3, 0, 1.3]:
-				s.box(_v(0.04, 0.04, 0.22), _v(x, 1.0, 0.14), METALD)
 		"barbell_4":
 			s.cyl(0.02, 0.02, 2.0, _v(0, 0.08, 0.0), METAL, 6, _v(0, 0, PI * 0.5))
 			for sx in [-1.0, 1.0]:
@@ -760,11 +771,11 @@ static func _coach(id: String, s: ClubShapes) -> bool:
 		"strategymap_5":
 			s.box(_v(2.2, 0.8, 1.4), _v(0, 0.4, 0), ESPRESSO)
 			s.box(_v(2.3, 0.06, 1.5), _v(0, 0.83, 0), WOODD)
-			s.box(_v(2.1, 0.03, 1.3), _v(0, 0.87, 0), Color("3d806a"))
-			s.box(_v(2.1, 0.035, 0.03), _v(0, 0.885, 0.0), WHITE)
-			s.box(_v(0.03, 0.035, 1.3), _v(0, 0.885, 0.0), WHITE)
-			s.box(_v(1.0, 0.035, 0.6), _v(-0.5, 0.89, -0.2), CLUB_BLUE)
-			s.box(_v(0.6, 0.035, 0.5), _v(0.6, 0.89, 0.25), Color("2a8a6a"))
+			s.box(_v(2.1, 0.03, 1.3), _v(0, 0.87, 0), Color("e3d6c3"))
+			s.box(_v(1.0, 0.035, 0.6), _v(-0.5, 0.885, -0.2), CLUB_BLUE)
+			s.box(_v(0.7, 0.035, 0.5), _v(0.55, 0.885, 0.25), Color("668f3b"))
+			s.box(_v(0.5, 0.035, 0.35), _v(0.6, 0.885, -0.35), Color("c58c63"))
+			s.box(_v(1.6, 0.04, 0.03), _v(0.0, 0.89, 0.0), Color("b5654a"), 0.4)
 			for k in 6:
 				s.cyl(0.0, 0.05, 0.14, _v(-0.8 + k * 0.32, 0.98, -0.35 + (k % 3) * 0.3), [RED, GOLD, CLUB_BLUE][k % 3], 5)
 			s.ball(0.12, _v(0.1, 1.5, 0.0), WHITE, _v(1, 0.6, 1), 6, 3)       # a lamp over it
@@ -831,11 +842,11 @@ static func _med(id: String, s: ClubShapes) -> bool:
 			s.box(_v(0.5, 0.1, 0.35), _v(0, 0.86, 0.1), TEAL)                  # a towel
 			s.cyl(0.07, 0.07, 0.5, _v(0, 0.9, 0.75), BLUSH, 7, _v(0, 0, PI * 0.5))
 		"icebath_4":
-			s.box(_v(1.0, 0.75, 1.8), _v(0, 0.38, 0), WHITE)
-			s.box(_v(0.9, 0.04, 1.7), _v(0, 0.76, 0), SKY)
+			s.box(_v(1.0, 0.75, 1.8), _v(0, 0.38, 0), TEAL)
 			s.box(_v(1.04, 0.05, 1.84), _v(0, 0.78, 0), METAL)
+			s.box(_v(0.88, 0.03, 1.68), _v(0, 0.77, 0), SKY.lightened(0.1))
 			for k in 7:
-				s.box(_v(0.14, 0.1, 0.14), _v(-0.28 + (k % 3) * 0.28, 0.82, -0.6 + (k / 3) * 0.55), WHITE.lightened(0.1), 0.4 * k, _v(0.3 * k, 0, 0.2))
+				s.box(_v(0.16, 0.12, 0.16), _v(-0.28 + (k % 3) * 0.28, 0.84, -0.6 + (k / 3) * 0.55), Color("e8f6fb"), 0.4 * k, _v(0.3 * k, 0, 0.2))
 			s.box(_v(0.06, 0.4, 0.06), _v(0.55, 0.3, 0.7), METAL)
 			s.box(_v(0.4, 0.04, 0.5), _v(0.0, 0.84, 1.2), WOODL)
 			s.box(_v(0.3, 0.3, 0.02), _v(0.0, 1.2, -0.92), WHITE)
@@ -952,7 +963,7 @@ static func _lounge(id: String, s: ClubShapes) -> bool:
 			s.box(_v(4.2, 0.03, 0.04), _v(0, 0.6, 0.95), METALD)
 			s.cyl(0.55, 0.55, 0.04, _v(0.8, 0.8, -0.1), WHITE, 8)
 			s.cyl(0.04, 0.04, 0.66, _v(0.8, 0.45, -0.1), METAL, 5)
-			s.cyl(0.0, 1.2, 0.35, _v(0.8, 2.2, -0.1), RED, 8)
+			s.cyl(0.0, 0.95, 0.3, _v(0.8, 2.2, -0.1), RED, 8)
 			s.cyl(0.03, 0.03, 1.4, _v(0.8, 1.5, -0.1), METAL, 4)
 			for a in [-0.9, 0.9]:
 				s.box(_v(0.46, 0.05, 0.46), _v(0.8 + a, 0.46, 0.55 if a > 0 else -0.75), CLUB_BLUE)
@@ -1025,7 +1036,7 @@ static func _hall(id: String, s: ClubShapes) -> bool:
 			s.box(_v(1.7, 0.1, 0.04), _v(0, 1.95, 0.24), CLUB_BLUE)
 		"agentdesk_4":
 			s.box(_v(2.3, 0.07, 1.0), _v(0, 0.77, 0), ESPRESSO)
-			s.box(_v(2.34, 0.02, 1.04), _v(0, 0.815, 0), GOLD.darkened(0.2))
+			s.box(_v(2.34, 0.02, 0.06), _v(0, 0.815, 0.5), GOLD)
 			for x in [-1.0, 1.0]:
 				s.box(_v(0.1, 0.74, 0.9), _v(x, 0.37, 0), WOODD)
 			s.box(_v(2.1, 0.5, 0.03), _v(0, 0.55, -0.4), WOODD)
@@ -1051,14 +1062,14 @@ static func _hall(id: String, s: ClubShapes) -> bool:
 				var fy := 2.25 - (k / 4) * 0.85
 				s.box(_v(0.7, 0.6, 0.05), _v(fx, fy, 0.05), WOODD)
 				s.box(_v(0.6, 0.5, 0.02), _v(fx, fy, 0.08), pc[k].lightened(0.35))
-				s.ball(0.11, _v(fx, fy + 0.03, 0.1), SKIN, _v(1, 1.1, 0.3), 6, 4)
-				s.ball(0.17, _v(fx, fy - 0.2, 0.1), pc[k], _v(1, 0.55, 0.3), 6, 3)
+				s.ball(0.11, _v(fx, fy + 0.03, 0.1), SKIN, _v(1, 1.1, 0.3), 5, 3)
+				s.ball(0.17, _v(fx, fy - 0.2, 0.1), pc[k], _v(1, 0.55, 0.3), 5, 2)
 			# the departed's rackets on pegs
 			s.box(_v(3.6, 0.07, 0.08), _v(0, 0.75, 0.08), WOODD)
 			for k in 6:
 				var rx := -1.5 + k * 0.6
 				s.cyl(0.03, 0.03, 0.4, _v(rx, 0.55, 0.12), [RED, CLUB_BLUE, METALD, WHITE, MUSTARD, TEAL][k], 4, _v(0, 0, 0.1 * (k % 3 - 1)))
-				s.cyl(0.15, 0.15, 0.025, _v(rx - 0.012 * (k % 3 - 1), 0.97 - 0.3, 0.12), [RED, CLUB_BLUE, METALD, WHITE, MUSTARD, TEAL][k], 8, _v(PI * 0.5, 0, 0))
+				s.cyl(0.15, 0.15, 0.025, _v(rx - 0.012 * (k % 3 - 1), 0.97 - 0.3, 0.12), [RED, CLUB_BLUE, METALD, WHITE, MUSTARD, TEAL][k], 6, _v(PI * 0.5, 0, 0))
 			s.box(_v(0.9, 0.2, 0.03), _v(0, 0.2, 0.06), GOLD)
 		"cup_gold", "cup_silver", "cup_bronze":
 			_cup(s, Vector3.ZERO, {"cup_gold": GOLD, "cup_silver": SILVER, "cup_bronze": BRONZE}[id], 1.6)
@@ -1097,14 +1108,27 @@ static func _shell(id: String, s: ClubShapes) -> bool:
 			s.cyl(0.26, 0.24, 0.6, _v(0, 0.3, 0), worn(WOODL, 0.6), 8)
 			s.cyl(0.27, 0.27, 0.03, _v(0, 0.18, 0), METALD, 8)
 			s.cyl(0.27, 0.27, 0.03, _v(0, 0.44, 0), METALD, 8)
+		"coffee_2":
+			s.box(_v(0.3, 0.12, 0.35), _v(0, 0.06, 0), METALD)
+			s.box(_v(0.28, 0.28, 0.14), _v(0, 0.22, -0.1), RED)
+			s.cyl(0.04, 0.04, 0.1, _v(0, 0.2, 0.05), WHITE, 6)
+		"radio_1":
+			s.box(_v(0.5, 0.3, 0.16), _v(0, 0.15, 0), worn(RED, 0.5))
+			s.cyl(0.1, 0.1, 0.02, _v(-0.13, 0.15, 0.09), METALD, 8, _v(PI * 0.5, 0, 0))
+			s.box(_v(0.02, 0.4, 0.02), _v(0.18, 0.5, -0.05), METAL, 0.0, _v(0, 0, -0.5))
+		"bunk_1":
+			for x in [-0.5, 0.5]:
+				for z in [-0.92, 0.92]:
+					s.box(_v(0.07, 1.7, 0.07), _v(x, 0.85, z), worn(METALD, 0.5))
+			for y in [0.4, 1.2]:
+				s.box(_v(0.96, 0.1, 1.84), _v(0, y, 0), worn(CREAM, 0.95))
+				s.box(_v(0.98, 0.05, 0.8), _v(0, y + 0.07, 0.4), Color(0.45, 0.5, 0.42))
 		"chalk_here":
 			# "здесь будет": a dark patch on the floor with a chalk outline (1.2 x 1.2)
-			s.box(_v(1.2, 0.012, 1.2), _v(0, 0.006, 0), Color("4b4540"))
+			s.box(_v(1.2, 0.02, 1.2), _v(0, 0.03, 0), Color("4b4540"))
 			for k in 2:
-				s.box(_v(1.2, 0.014, 0.04), _v(0, 0.007, (k - 0.5) * 1.16), WHITE)
-				s.box(_v(0.04, 0.014, 1.2), _v((k - 0.5) * 1.16, 0.007, 0), WHITE)
-			s.box(_v(0.6, 0.014, 0.03), _v(0, 0.007, 0), WHITE, 0.0, _v(0, 0.78, 0))
-			s.box(_v(0.6, 0.014, 0.03), _v(0, 0.007, 0), WHITE, 0.0, _v(0, -0.78, 0))
+				s.box(_v(1.2, 0.024, 0.035), _v(0, 0.032, (k - 0.5) * 1.17), WHITE.darkened(0.1))
+				s.box(_v(0.035, 0.024, 1.2), _v((k - 0.5) * 1.17, 0.032, 0), WHITE.darkened(0.1))
 		_:
 			return false
 	return true
@@ -1343,3 +1367,78 @@ static func _outside(id: String, s: ClubShapes) -> bool:
 		_:
 			return false
 	return true
+
+
+# --- light figures: the academy's kids as one small mesh each (a MultiMesh of them stays two draws) ----------
+
+## A junior (about 1.5 m, the head big) in a pose, facing +z. Letters a/b/c: shirt and hair.
+## sit/eat: the hips on y = 0.46 (a chair seat), the feet forward; lie: on the back, the head toward -z,
+## on y = 0 (put it on the mattress: + the bed's height); run: the stride of a runner on a treadmill.
+static func _kids(id: String, s: ClubShapes) -> bool:
+	if not id.begins_with("kid_"):
+		return false
+	var parts := id.split("_")
+	if parts.size() != 3:
+		return false
+	var v := "abc".find(parts[2])
+	if v < 0:
+		return false
+	var shirt: Color = [CLUB_BLUE, TERRA, TEAL][v]
+	var hair: Color = [Color("3b2a1e"), Color("c9a05a"), Color("6b3a22")][v]
+	var pants := NAVY
+	var skin: Color = [SKIN, Color("c58c63"), Color("f0c8a0")][v]
+	match parts[1]:
+		"stand":
+			for x in [-0.08, 0.08]:
+				s.cyl(0.07, 0.055, 0.66, _v(x, 0.35, 0), pants, 5)
+				s.box(_v(0.1, 0.06, 0.2), _v(x, 0.03, 0.04), WHITE)
+			s.ball(0.19, _v(0, 0.95, 0), shirt, _v(1.0, 1.35, 0.7), 6, 3)
+			for x in [-0.22, 0.22]:
+				s.cyl(0.045, 0.04, 0.45, _v(x, 0.92, 0.0), shirt, 4)
+				s.ball(0.045, _v(x, 0.68, 0.0), skin, _v(1, 1, 1), 4, 3)
+			_kid_head(s, _v(0, 1.37, 0), skin, hair)
+		"sit", "eat":
+			for x in [-0.08, 0.08]:
+				s.cyl(0.07, 0.06, 0.4, _v(x, 0.46, 0.2), pants, 5, _v(PI * 0.5, 0, 0))
+				s.cyl(0.055, 0.05, 0.44, _v(x, 0.24, 0.4), pants, 5)
+				s.box(_v(0.1, 0.06, 0.2), _v(x, 0.03, 0.46), WHITE)
+			s.box(_v(0.28, 0.14, 0.26), _v(0, 0.5, 0.02), pants)
+			s.ball(0.19, _v(0, 0.82, -0.02), shirt, _v(1.0, 1.35, 0.7), 6, 3)
+			var up := parts[1] == "eat"
+			s.cyl(0.045, 0.04, 0.4, _v(-0.22, 0.8, 0.1), shirt, 4, _v(0.9, 0, 0))
+			s.cyl(0.045, 0.04, 0.4, _v(0.22, 0.88 if up else 0.8, 0.14 if up else 0.1), shirt, 4, _v(-0.3 if up else 0.9, 0, 0))
+			s.ball(0.045, _v(-0.22, 0.68, 0.3), skin, _v(1, 1, 1), 4, 3)
+			s.ball(0.045, _v(0.2, 1.1 if up else 0.68, 0.18 if up else 0.3), skin, _v(1, 1, 1), 4, 3)
+			if up:
+				s.cyl(0.012, 0.012, 0.16, _v(0.2, 1.15, 0.2), METAL, 3, _v(0.6, 0, 0))
+			_kid_head(s, _v(0, 1.2, 0.0), skin, hair)
+		"lie":
+			for x in [-0.08, 0.08]:
+				s.cyl(0.07, 0.055, 0.7, _v(x, 0.12, 0.66), pants, 5, _v(PI * 0.5, 0, 0))
+				s.box(_v(0.1, 0.1, 0.2), _v(x, 0.1, 1.08), WHITE)
+			s.ball(0.19, _v(0, 0.14, 0.05), shirt, _v(1.0, 0.7, 1.35), 6, 3)
+			for x in [-0.23, 0.23]:
+				s.cyl(0.045, 0.04, 0.45, _v(x, 0.08, 0.08), shirt, 4, _v(PI * 0.5, 0, 0))
+			s.ball(0.13, _v(0, 0.18, -0.45), skin, _v(1, 1, 1), 6, 3)
+			s.ball(0.14, _v(0, 0.2, -0.47), hair, _v(1, 0.8, 1), 5, 2)
+			s.box(_v(0.45, 0.08, 0.3), _v(0, 0.06, -0.5), WHITE, 0.0)
+			s.box(_v(0.5, 0.07, 0.8), _v(0, 0.2, 0.55), shirt.lightened(0.15))      # the blanket over the legs
+		"run":
+			s.cyl(0.07, 0.055, 0.62, _v(-0.08, 0.5, 0.18), pants, 5, _v(-0.6, 0, 0))
+			s.cyl(0.07, 0.055, 0.62, _v(0.08, 0.5, -0.2), pants, 5, _v(0.5, 0, 0))
+			s.box(_v(0.1, 0.06, 0.2), _v(-0.08, 0.22, 0.42), WHITE)
+			s.box(_v(0.1, 0.06, 0.2), _v(0.08, 0.12, -0.36), WHITE)
+			s.ball(0.19, _v(0, 0.95, 0.0), shirt, _v(1.0, 1.3, 0.7), 6, 3)
+			s.cyl(0.045, 0.04, 0.42, _v(-0.22, 0.95, 0.15), shirt, 4, _v(-0.8, 0, 0))
+			s.cyl(0.045, 0.04, 0.42, _v(0.22, 0.95, -0.15), shirt, 4, _v(0.8, 0, 0))
+			_kid_head(s, _v(0, 1.36, 0.03), skin, hair)
+		_:
+			return false
+	return true
+
+
+static func _kid_head(s: ClubShapes, pos: Vector3, skin: Color, hair: Color) -> void:
+	s.ball(0.17, pos, skin, _v(1, 1.05, 1), 6, 4)
+	s.ball(0.185, pos + _v(0, 0.03, -0.035), hair, _v(1, 0.9, 0.95), 5, 3)
+	for x in [-0.05, 0.05]:
+		s.ball(0.018, pos + _v(x, 0.0, 0.15), Color("1d1d22"), _v(1, 1, 0.5), 4, 3)
