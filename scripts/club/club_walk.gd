@@ -8,19 +8,22 @@ extends RefCounted
 var bounds := Rect2(-60, -44, 120, 100)
 var circles: Array = []   # [Vector2 centre, float radius]
 var boxes: Array = []     # Rect2 in x/z
+var ground := Callable()  # (Vector2) -> float: the ground's height outside the rooms (paths, apron, lawn...)
 var floors: Array = []    # [Rect2, height]: a room's floor stands this high; the walker stands on it
 var waypoints: Array = [] # Vector2: gates, doors, path corners - where a route may turn
 var _circle_tags: Array = []   # per circle: "" or what built it (a construction's level)
 var _box_tags: Array = []
 
 
-## How high the ground is under `p` for a walker: a room's floor, else 0.
+## How high the ground is under `p` for a walker: a room's floor, else the ground (paths, apron, lawn).
 func floor_at(p: Vector2) -> float:
-	var h := 0.0
+	var h := -999.0
 	for f in floors:
 		if (f[0] as Rect2).has_point(p):
 			h = maxf(h, float(f[1]))
-	return h
+	if h > -900.0:
+		return h
+	return float(ground.call(p)) if ground.is_valid() else 0.0
 
 
 func add_circle(c: Vector2, r: float, tag := "") -> void:

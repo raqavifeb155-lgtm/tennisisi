@@ -308,10 +308,10 @@ func _physics_process(delta: float) -> void:
 	var at := world.walk.resolve(Vector2(p.position.x, p.position.z), Vector2(p.position.x, p.position.z), 0.35, npc.agent_list())
 	if at.x != p.position.x or at.y != p.position.z:
 		p.position = Vector3(at.x, _hero_y, at.y)
-	_hero_y = move_toward(_hero_y, world.walk.floor_at(Vector2(p.position.x, p.position.z)), 1.0 * delta + 0.02)
+	_hero_y = move_toward(_hero_y, world.walk.floor_at(Vector2(p.position.x, p.position.z)), 1.6 * delta)
 	p.position.y = _hero_y
 	var c := coach.body
-	_coach_y = move_toward(_coach_y, world.walk.floor_at(Vector2(c.position.x, c.position.z)), 1.0 * delta + 0.02)
+	_coach_y = move_toward(_coach_y, world.walk.floor_at(Vector2(c.position.x, c.position.z)), 1.6 * delta)
 	var cat := world.walk.resolve(Vector2(c.position.x, c.position.z), Vector2(c.position.x, c.position.z), 0.35, npc.agent_list("coach") + [[Vector2(p.position.x, p.position.z), 0.35]])
 	c.position = Vector3(cat.x, _coach_y, cat.y)
 	if main.ui.is_open() or _roulette_on or _foreman_on or _building:

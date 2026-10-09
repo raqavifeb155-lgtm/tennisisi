@@ -479,6 +479,47 @@ func test_in_the_club() -> void:
 		for i in 30:
 			await physics_frame
 		check(hero.position.y >= w.walk.floor_at(Vector2(rc.x, rc.z)) - 0.01 and hero.position.y > 0.1, "in the %s room his feet are on the floor (y %.2f)" % [id, hero.position.y])
+	# the ground under the feet, everywhere: on the grid, along every path, in a few places for real
+	var bad_ground := []
+	var count := 0
+	for gx in range(-52, 53, 6):
+		for gz in range(-38, 41, 4):
+			var gp := Vector2(gx, gz)
+			var gh := w.walk.floor_at(gp)
+			count += 1
+			if gh < -0.26 or gh > 0.16:
+				bad_ground.append("%d,%d" % [gx, gz])
+			elif absf(gx) < 11 and absf(gz) < 19 and absf(gh) > 0.001:
+				bad_ground.append("apron %d,%d" % [gx, gz])
+	for i in ClubPaths.EDGES.size():
+		var ee: Array = ClubPaths.EDGES[i]
+		var ea := ClubPaths.node(ee[0])
+		var eb := ClubPaths.node(ee[1])
+		for k in 8:
+			var q := ea.lerp(eb, (k + 0.5) / 8.0)
+			count += 1
+			if absf(w.walk.floor_at(q) - ClubPaths.surface_y(q)) > 0.01 and w.walk.floor_at(q) < 0.1:
+				bad_ground.append("edge %d" % i)
+	check(bad_ground.is_empty() and count >= 300, "%d points: the ground has a height everywhere, flat in the court, as the paths say along them (%s)" % [count, ", ".join(bad_ground.slice(0, 5))])
+	for gp3 in [Vector3(30, 0, 20), Vector3(0, 0, 36), Vector3(0, 0, 10), Vector3(45, 0, -20), Vector3(-3, 0, -30), Vector3(0, 0, 44)]:
+		hero.position = gp3
+		for i in 60:
+			await physics_frame
+		var want := w.walk.floor_at(Vector2(gp3.x, gp3.z))
+		check(absf(hero.position.y - want) <= 0.01, "his feet are on the ground at (%.0f, %.0f): %.2f / %.2f" % [gp3.x, gp3.z, hero.position.y, want])
+	# the auto-run from the gate to the court, frame by frame: no jump over 3 cm
+	club._travel("gate")
+	await _frames(3)
+	club.travel_run("court")
+	var last_y := hero.position.y
+	var jump := 0.0
+	for i in 400:
+		await physics_frame
+		jump = maxf(jump, absf(hero.position.y - last_y))
+		last_y = hero.position.y
+		if club.running_to() == "":
+			break
+	check(jump <= 0.03, "running from the gate to the court, no jump in the ground over 3 cm (%.3f)" % jump)
 	hero.position = Vector3(0, 0, 14)
 	# a match takes the racket back
 	club._on_choice("practice", 0)

@@ -110,6 +110,7 @@ func _ready() -> void:
 	daytime = ClubDaytime.new()
 	daytime.name = "daytime"
 	add_child(daytime)
+	world.walk.ground = ground_height
 	# the rooms' floors stand above the ground: the walker stands on them (ClubWalk.floor_at)
 	for id in ["locker", "shop", "coach"]:
 		var c: Vector3 = ClubPlaces.find(id)["pos"]
@@ -507,3 +508,18 @@ func window_glow(lit: float) -> void:
 		return
 	windows.visible = lit > 0.01 and windows.mesh != null
 	_window_mat.albedo_color = Color(1, 1, 1) * lerpf(0.4, 1.1, lit)
+
+
+## How high the ground is at `p`, whatever it is made of (the walkers stand on it exactly).
+func ground_height(p: Vector2) -> float:
+	if absf(p.x) < ClubLayout.HX + 3.0 and absf(p.y) < ClubLayout.HZ + 3.0:
+		return 0.0                                    # the court's apron
+	if ClubPaths.near(p, 0.0):
+		return ClubPaths.surface_y(p)
+	if p.x > -50.0 and p.x < -26.0 and p.y > -16.0 and p.y < 16.0:
+		return 0.02                                   # the arena's gravel
+	if p.y > 41.6:
+		return 0.05                                   # the pavement behind the gate
+	if p.y < -41.0:
+		return -0.15                                  # the promenade
+	return ClubLayout.LAWN

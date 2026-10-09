@@ -322,6 +322,7 @@ func _views() -> void:
 		["v15_court_gate", Vector3(0, 0, 21), 0.0, 0],
 		["v16_fans", Vector3(-14, 0, 3), -PI * 0.5, 1],
 		["v17_built", Vector3(0, 0, 30), 0.0, 1],
+		["v26_ramp_side", Vector3(0, 0, 25.5), 0.0, 1],
 		["v22_junction_t", Vector3(0, 0, 36), 0.0, 1],
 		["v23_ring_corner", Vector3(-16, 0, 11), PI, 1],
 		["v24_door_ramp", Vector3(-14, 0, 33.5), 0.0, 1],
@@ -347,7 +348,9 @@ func _views() -> void:
 		main.club.cam.release(0.0)
 		main.club.cam.snap(false)
 		main.club._update_place()
-		await _shot(v[0], 0.9)
+		if v[0] == "v26_ramp_side":   # from the side, low: the hero on the ramp up to the court
+			main.club.cam.frame(Vector3(6.0, 0.55, 23.4), Vector3(0.0, 0.25, 23.4), 0.0)
+		await _shot(v[0], 1.4)
 
 
 ## Which node costs how many draws and triangles from where the hero stands at the gate
