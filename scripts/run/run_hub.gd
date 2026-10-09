@@ -81,6 +81,14 @@ func setup(m: Node) -> void:
 	ev.bounce.connect(meter.on_bounce)
 	ev.knocked.connect(meter.on_knocked)
 	ev.point.connect(_on_point)
+	ev.racket_smashed.connect(_on_racket_smashed)
+
+
+## R: a smashed racket takes its effects out of the match and makes the next point «Психанул».
+func _on_racket_smashed(_info: Dictionary) -> void:
+	meter.vent_next = true
+	if match_fx:
+		match_fx.break_racket()
 
 
 func in_tournament() -> bool:
@@ -238,7 +246,7 @@ func _on_match_finished(info: Dictionary) -> void:
 	if not in_tournament():
 		return
 	var t: Tournament = main.tournament
-	var g := meter.gold(float(t.format_info()["reward"]), t.stage)
+	var g := roundi(meter.gold(float(t.format_info()["reward"]), t.stage) * Modifiers.style_mult(t))  # G-6: hardcore x1.5
 	t.earn("style", g)
 	last_match = {"points": meter.match_points, "gold": g, "best": meter.best}
 	if bool(info.get("won", false)) and t.current_lineup().get("golden", false):

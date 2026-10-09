@@ -27,6 +27,9 @@ static func route(m: Node, action: String, arg: int) -> bool:
 	if action == "club_locker" or action.begins_with("locker_"):
 		RunLocker.ui_action(m, action, arg)
 		return true
+	if action.begins_with("chest_"):
+		RunChest.ui_action(m, action, arg)
+		return true
 	if action.begins_with("sum_"):
 		RunResult.ui_action(m, action, arg)
 		return true
@@ -77,10 +80,7 @@ static func item_tag(item: Dictionary, what := "") -> String:
 
 ## An item as a card with its price line under the stats.
 static func item_card(ui: TournamentUI, item: Dictionary, what: String, extra: String, action := "", arg := 0, selected := false) -> GameCard:
-	var desc := Gear.describe(item)
-	if extra != "":
-		desc += "\n" + extra
-	return ui._card({"tag": item_tag(item, what), "title": item["name"], "desc": desc, "item": item}, action, arg, Color(0, 0, 0, 0), int(item["rarity"]), selected)
+	return ui._card({"tag": item_tag(item, what), "title": item["name"], "desc": Gear.describe(item), "extra": extra, "item": item}, action, arg, Color(0, 0, 0, 0), int(item["rarity"]), selected)
 
 
 # --- The showcase -------------------------------------------------------------------

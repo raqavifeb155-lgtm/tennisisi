@@ -253,6 +253,7 @@ static func record_run(t: Tournament) -> void:
 	load_once()
 	if t.banked:
 		return
+	t.sell_extra()  # the commons and what is below the worn thing go for run gold (before: they just vanished)
 	t.banked = true
 	played += 1
 	Academy.on_run()   # T-2: the students train after every run of the hero

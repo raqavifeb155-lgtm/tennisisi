@@ -15,7 +15,7 @@ extends Node3D
 ## position errors are what make balls miss.
 
 enum Who { NONE = -1, PLAYER = 0, CPU = 1 }
-enum Phase { WAIT, SERVE, RALLY, OVER, IDLE, BONUS }  # IDLE: menus open; BONUS: trophy mini-game
+enum Phase { WAIT, SERVE, RALLY, OVER, IDLE, BONUS, SMASH, DRILL }  # IDLE: menus open; BONUS: trophy mini-game; SMASH: «Разбить ракетку»; DRILL: between the ball machine's balls
 enum ShotType { TOPSPIN, FLAT, SLICE, DROP, LOB }
 
 const PLAYER_HOME := Vector3(0.0, 0.0, 12.6)
@@ -57,7 +57,9 @@ var scoreboard := MatchScore.new(1, 99, 0)  # practice: one endless set
 var ui: TournamentUI
 var run_hub: RunHub
 var mods_hub: ModsHub             # v0.2 G: modifiers of the match (scripts/mods)
+var smash_hub: SmashHub           # v0.2 R: «Разбить ракетку» after a point lost to an error (scripts/run)
 var club: Club                    # v0.2 B: the club as the main screen (scripts/club)
+var drill: BallMachine            # v0.2 P: the ball machine's drill (scripts/run/ball_machine.gd)
 var tournament: Tournament
 var tournament_mode := false
 var autoplay_tournament := false
@@ -77,6 +79,8 @@ var _bot_measure := 0        # v0.2 G: --measure=N: the bot plays N points again
 var _bot_stage := 1
 var _bot_seed := 0
 var _bot_pts := [0, 0]
+var _bot_hard_assist := Modifiers.BOT_HARD_ASSIST   # --bot-hard-assist=
+var _bot_hardcore := false   # v0.2 G-6: --hardcore: the bot runs a hardcore tournament (less auto-positioning too)
 var _cpu_serve_mult := 1.0        # difficulty modifier "Бомбардир"
 var _run_dist := 0.0              # metres run this rally (experience for "Ноги")
 var shot_type := ShotType.TOPSPIN
@@ -198,6 +202,10 @@ func _ready() -> void:
 			_profile_t = 5.0  # print frame statistics every 5 s (a profiling run, not headless)
 		elif a.begins_with("--bot-sd="):
 			_bot_sd = float(a.get_slice("=", 1))  # bot timing error (s): ~0.035 sharp, ~0.07 a thumb on a phone
+		elif a.begins_with("--bot-hard-assist="):
+			_bot_hard_assist = float(a.get_slice("=", 1))
+		elif a == "--hardcore":
+			_bot_hardcore = true
 		elif a.begins_with("--measure="):
 			_bot_measure = int(a.get_slice("=", 1))
 		elif a.begins_with("--stage="):
@@ -208,6 +216,8 @@ func _ready() -> void:
 			_bot_drop = float(a.get_slice("=", 1))  # D-7: the share of the bot's strokes that are drop shots (0..1)
 		elif a.begins_with("--adapt-floor="):
 			Opponents.floor_slope = float(a.get_slice("=", 1))  # D-5: how fast the opponents keep up with the player's level
+		elif a.begins_with("--adapt-round="):
+			Opponents.round_floor = float(a.get_slice("=", 1))
 		elif a.begins_with("--adapt-ease="):
 			Opponents.ease_max = float(a.get_slice("=", 1))
 		elif a.begins_with("--adapt-add="):
@@ -273,9 +283,19 @@ func _ready() -> void:
 	mods_hub = ModsHub.new()  # v0.2 G: auras, the run's conditions (after RunHub: its match comes first)
 	add_child(mods_hub)
 	mods_hub.setup(self)
+	smash_hub = SmashHub.new()  # v0.2 R: the offer, the mini-game, the bonus (scripts/run/smash_hub.gd)
+	add_child(smash_hub)
+	smash_hub.setup(self)
 	club = Club.new()  # v0.2 B: the walkable club replaces the menu list (scripts/club)
 	add_child(club)
 	club.setup(self)
+	drill = BallMachine.new()  # v0.2 P: the lesson with the ball machine (listens to GameEvents)
+	add_child(drill)
+	drill.setup(self)
+	# A finished quest of the coach says so on the court (before: nobody listened to quest_done).
+	GameEvents.quest_done.connect(func(info: Dictionary) -> void:
+		if tournament_mode:
+			hud.announcer.toast("ЗАДАНИЕ ГОТОВО  ·  %s  ·  +%d" % [String(info.get("text", "")), int(info.get("gold", 0))], "quest%d" % int(info.get("index", 0)), true))
 	# UI sounds: a dropped-in coin/reward/click sound if there is one, else a built-in.
 	ui.sfx_request.connect(func(sound: String, db: float, pitch: float) -> void:
 		var alt: String = {"bounce": "coin", "hit": "click"}.get(sound, "")
@@ -557,6 +577,8 @@ func _physics_process(delta: float) -> void:
 	if club.active:
 		return  # the club walks the hero itself
 	game_time += delta
+	if drill.active:
+		drill.tick(delta)
 	match phase:
 		Phase.WAIT:
 			phase_timer -= delta
@@ -586,7 +608,7 @@ func _physics_process(delta: float) -> void:
 	_update_player_hitting()
 	if phase == Phase.BONUS:
 		pass  # the runner is steered by _update_bonus
-	elif phase == Phase.SERVE:
+	elif phase == Phase.SERVE or drill.active:  # the drill's coach stands by the machine
 		cpu.move_input = Vector2.ZERO
 	else:
 		ai.tick(delta, phase == Phase.RALLY and last_hitter == Who.PLAYER and ball.active)
@@ -702,7 +724,7 @@ func _on_ball_crossed() -> void:
 
 
 func _on_tap(pos: Vector2) -> void:
-	if club.active:
+	if club.active or phase == Phase.SMASH:
 		return
 	if phase == Phase.BONUS:
 		if _bonus_state == 0 and not toss_active:
@@ -723,7 +745,7 @@ func _on_tap(pos: Vector2) -> void:
 
 
 func _on_hold(pos: Vector2) -> void:
-	if club.active:
+	if club.active or phase == Phase.SMASH:
 		return
 	if phase == Phase.SERVE and server == Who.PLAYER:
 		if Tuning.tap_controls and not toss_active and _is_serve_step_zone(pos):
@@ -809,6 +831,9 @@ func _read_gesture(points: PackedVector2Array, times: PackedInt32Array) -> ShotG
 
 func _on_swipe(points: PackedVector2Array, times: PackedInt32Array) -> void:
 	if club.active:
+		return
+	if phase == Phase.SMASH:
+		smash_hub.on_swipe(points, times)  # up, down, down: the hero smashes the racket
 		return
 	var g := _read_gesture(points, times)
 	var dir := _swipe_world_dir(g.start, g.apex)
@@ -916,6 +941,9 @@ func _aim_origin() -> Vector3:
 
 func _on_swipe_progress(points: PackedVector2Array) -> void:
 	if club.active:
+		return
+	if phase == Phase.SMASH:
+		smash_hub.on_progress(points)  # the hand follows the finger
 		return
 	var times := PackedInt32Array()
 	times.resize(points.size())
@@ -1172,6 +1200,9 @@ func _spend_stroke(pace_k: float) -> void:
 func _update_player_movement() -> void:
 	if phase == Phase.BONUS and _bonus_state == 3:
 		return  # running to pick up the trophy (steered by _bonus_pickup)
+	if phase == Phase.SMASH:
+		player.move_input = Vector2.ZERO  # the hero stands and smashes his racket (RacketSmash)
+		return
 	var legs := lerpf(1.0, 0.7, _tired())
 	if stamina <= 0.001:
 		legs = minf(legs, 0.6)  # empty: a jog at best
@@ -1200,7 +1231,7 @@ func _update_player_movement() -> void:
 	var assist := Tuning.assist
 	if autoplay:
 		mv = Vector2.ZERO
-		assist = 0.25 if _bot_dive_test else 1.0
+		assist = 0.25 if _bot_dive_test else (_bot_hard_assist if tournament != null and tournament.hardcore else 1.0)
 	var free := mv == Vector2.ZERO and (autoplay or not _assist_suppressed) and not serving
 	if free and assist > 0.0 and _player_can_hit() and t_contact < 2.5:
 		# Auto-positioning toward a comfortable contact point.
@@ -1470,6 +1501,7 @@ func _end_point(winner: int, reason: String) -> void:
 		elif winner == Who.PLAYER and (rally >= 6 or reason == "ACE" or reason == "WINNER"):
 			sfx.crowd("applause", -8.0 + minf(rally, 12.0) * 0.4)
 	hud.show_board(scoreboard, ["ВЫ", cpu_label])
+	smash_hub.point_over(winner, reason, ev != MatchScore.Event.POINT)  # v0.2 R: maybe offers «Разбить ракетку»
 
 	_stats["rallies"].append(rally)
 	var srv_key := ("YOU" if server == Who.PLAYER else "CPU") + " serve: "
@@ -1782,6 +1814,8 @@ func stroke_skill(side: int, type: int, smash: bool, volley: bool) -> String:
 
 ## Experience multiplier: tougher opponents and longer formats pay more; practice pays little.
 func _xp_mult() -> float:
+	if drill.active:
+		return drill.xp_mult()  # the drill pays half a match's, a tenth after the daily laps
 	if not tournament_mode or tournament == null:
 		return 0.3
 	return (1.0 + 0.25 * tournament.stage) * float(tournament.format_info()["reward"])
@@ -1789,7 +1823,7 @@ func _xp_mult() -> float:
 
 ## Experience for a hit (by timing label) or a raw amount (running).
 func _gain_xp(skill: String, label: String, raw := -1.0) -> void:
-	if phase == Phase.IDLE:
+	if phase == Phase.IDLE or drill.holds_xp():  # in the drill only counted balls pay (BallMachine)
 		return
 	var amount := raw if raw >= 0.0 else Skills.BASE_XP * float(Skills.TIMING_XP.get(label, 1.0))
 	var lv := Skills.add_xp(skill, amount * _xp_mult())
@@ -1824,6 +1858,7 @@ func _show_menu() -> void:
 
 
 func _stop_match() -> void:
+	drill.stop()
 	if not BallPhysics.net_enabled:
 		court.set_net_up(true)
 	cpu.recover()
@@ -1853,20 +1888,22 @@ func _start_practice(board: MatchScore = null) -> void:  # board: AiVsAi plays t
 	_begin_match()
 
 
-func _start_tournament(format_index: int, run_conditions: Array = []) -> void:
+func _start_tournament(format_index: int, run_conditions: Array = [], hardcore := false) -> void:
+	hardcore = hardcore or (autoplay and _bot_hardcore)
 	if not autoplay and not Locations.unlocked(_next_location):
 		_next_location = Locations.best_unlocked()  # v0.2 A-4: an old "last tournament" on a closed island
-	tournament = Tournament.new(format_index, _bot_seed)
+	tournament = Tournament.new(format_index, _bot_seed, hardcore)
 	if autoplay and _bot_measure > 0:
 		tournament.stage = clampi(_bot_stage, 0, tournament.rounds() - 1)
 		tournament.current_lineup()["mods"] = []  # the same opponent every time: only --mods differs
-	if not run_conditions.is_empty():
+	if hardcore or not run_conditions.is_empty():
 		Modifiers.set_run(tournament, run_conditions)  # v0.2 G: the run's conditions (RunMods screen)
 	tournament.location = _next_location
 	Locker.board(tournament)  # v0.2 A-2: what was bought in the shop comes along
 	SaveData.active = tournament
 	SaveData.save()
-	set_location(_next_location)
+	if autoplay or not club.active:
+		set_location(_next_location)  # from the club the screens stay over the club: the island comes at "Играть"
 	tournament_mode = true
 	Rewards.restore()
 	if autoplay:
@@ -1960,7 +1997,8 @@ func _continue_tournament() -> void:
 	tournament = t
 	tournament_mode = true
 	_next_location = t.location
-	set_location(t.location)
+	if not club.active:
+		set_location(t.location)  # from the club the screens stay over the club (see _play_match)
 	Rewards.restore()
 	if not t.pending_loot.is_empty():
 		ui.show_loot(t)
@@ -1976,12 +2014,13 @@ func _continue_tournament() -> void:
 func _play_match() -> void:
 	var opp := tournament.opponent()
 	Rewards.apply(tournament.perks)
-	Tuning.ai_skill = clampf(Opponents.adapted_skill(float(opp["skill"]), -1.0, bool(opp.get("boss", false))) + tournament.modifier_value("skill"), 0.0, 1.0)  # D-5: keeps up with the player
+	Tuning.ai_skill = clampf(Opponents.adapted_skill(float(opp["skill"]), -1.0, bool(opp.get("boss", false)), tournament.stage) + tournament.modifier_value("skill"), 0.0, 1.0)  # D-5: keeps up with the player
 	cpu.set_look(opp.get("look", Looks.from_shirt(opp.get("shirt", Color(0.22, 0.28, 0.42)))))
 	_set_opponent_mods(tournament.modifier_value("speed"), tournament.modifier_value("serve"), tournament.current_lineup()["racket"])
 	cpu_label = opp["short"]
 	cpu_call = opp.get("short_en", "CPU")
 	scoreboard = tournament.new_score(rng.randi_range(0, 1))
+	set_location(tournament.location)  # the way to the match ran over the club: now its island
 	ui.close()
 	_begin_match()
 	hud.announcer.intro(tournament.round_name().to_upper(), opp["name"])
@@ -2002,7 +2041,8 @@ func _set_opponent_mods(speed: float, serve: float, cpu_racket: Dictionary) -> v
 
 
 func _begin_match() -> void:
-	GameEvents.match_started.emit({"tournament": tournament_mode, "opponent": tournament.opponent()["id"] if tournament_mode and tournament != null else ""})
+	GameEvents.match_started.emit({"tournament": tournament_mode, "opponent": tournament.opponent()["id"] if tournament_mode and tournament != null else "",
+		"profile": tournament.opponent() if tournament_mode and tournament != null else {}})  # D-8: the draw has random players, the AI takes the profile itself
 	sfx.set_music(false)
 	stamina = mods_hub.start_stamina  # v0.2 G: 1.0, or «Полбака»
 	score = [0, 0]
@@ -2061,13 +2101,16 @@ func _on_ui(action: String, arg: int) -> void:
 			if not Locations.unlocked(Locations.LIST[arg]["id"]):
 				return  # v0.2 A-4: a closed island can't be picked
 			_next_location = Locations.LIST[arg]["id"]
-			set_location(_next_location)
+			if not club.active:
+				set_location(_next_location)
 			ui.show_formats()
 		"format":
 			club.remember(_next_location, arg)  # the club's "Турнир" goes straight to the bracket next time
 			RunMods.open(self, arg)  # v0.2 G: the run's conditions screen, then _start_tournament
 		"practice":
 			_start_practice()
+		"drill":
+			drill.start()  # v0.2 P: the ball machine
 		"character":
 			ui.show_character()
 		"locker":
@@ -2119,6 +2162,8 @@ func _on_ui(action: String, arg: int) -> void:
 			_next_screen("reward")
 		"to_summary":
 			_next_screen("summary")
+		"to_bracket":
+			ui.show_bracket(tournament)  # v0.2 A-7: a win with no chest goes straight on
 		"reward":
 			tournament.take_reward(arg)
 			SaveData.save()
@@ -2133,14 +2178,14 @@ func _on_ui(action: String, arg: int) -> void:
 		"loot":
 			tournament.take_loot(arg == 1)
 			SaveData.save()
-			_next_screen("summary" if tournament.state == Tournament.State.OVER else "reward")
+			_next_screen("summary" if tournament.state == Tournament.State.OVER else ("reward" if tournament.state == Tournament.State.REWARD else "bracket"))
 		"point":
 			Skills.spend_point(Skills.LIST[arg])
 			SaveData.save()
 			ui.show_character(false)
 		"bets", "wheel_chip", "spin", "bet_match", "bet_chip", "bet_win", "bet_sweep", "bet_back":
 			RunBets.ui_action(self, action, arg)  # v0.2 A: the betting desk
-		"mods_toggle", "mods_preset", "mods_go", "mods_back":
+		"mods_toggle", "mods_preset", "mods_mode", "mods_go", "mods_back":
 			RunMods.ui_action(self, action, arg)  # v0.2 G: the run's conditions
 		"bag", "bag_item", "bag_back", "equip", "sell":
 			RunBag.ui_action(self, action, arg)  # v0.2 A: the bag between matches
@@ -2164,6 +2209,8 @@ func _next_screen(target: String) -> void:
 			ui.show_reward(tournament)
 		"summary":
 			ui.show_summary(tournament)
+		"bracket":
+			ui.show_bracket(tournament)
 		_:
 			if SaveData.control_chosen or not SaveData.enabled:
 				_open_menu()
@@ -2175,6 +2222,7 @@ func _next_screen(target: String) -> void:
 ## the club can't be built.
 func _open_menu() -> void:
 	if Club.enabled() and not autoplay and club.open():
+		drill.on_club_opened()  # the first visit: the coach leads to the machine
 		return
 	ui.show_menu()
 
@@ -2189,7 +2237,7 @@ func _levels_text() -> String:
 ## --autoplay --tournament: the bot plays a whole tournament, picking rewards itself.
 func _autoplay_after_match(won: bool, st: String) -> void:
 	var last: Dictionary = tournament.results.back()
-	var opp: Dictionary = Opponents.ROSTER[last["stage"]]
+	var opp: Dictionary = tournament.opp(last["stage"])
 	print("MATCH %s vs %s: %s %s   [%s]" % [Opponents.ROUND_NAMES[last["stage"]], opp["name"], "WON" if won else "LOST", st, _levels_text()])
 	if _bot_measure > 0:  # measuring: the same opponent again, nothing carried over
 		tournament.pending_loot = {}
@@ -2210,7 +2258,15 @@ func _autoplay_after_match(won: bool, st: String) -> void:
 	if tournament.results.size() > 25:
 		tournament.give_up()
 	match tournament.state:
+		Tournament.State.BRACKET:
+			_play_match()  # v0.2 A-7: a win with no chest
 		Tournament.State.REWARD:
+			if not tournament.chest.is_empty():  # v0.2 A-7: a chest by the net
+				var cc: Dictionary = tournament.chest
+				print("  chest: gold %d%s%s%s" % [int(cc["gold"]), ", " + String(cc["item"]["name"]) if not cc["item"].is_empty() else "", ", perk " + String(cc["perk"]) if String(cc["perk"]) != "" else "", ", wildcard" if cc["wildcard"] else ""])
+				tournament.take_chest()
+				_play_match()
+				return
 			var pick := 2 if tournament.wildcards == 0 else (1 if tournament.racket.is_empty() else 0)
 			print("  reward: %s" % tournament.offer[pick]["title"])
 			tournament.take_reward(pick)
@@ -2220,6 +2276,7 @@ func _autoplay_after_match(won: bool, st: String) -> void:
 			print("  wildcard used, replaying")
 			_play_match()
 		_:
+			tournament.take_chest()  # the final's chest
 			print("\n=== TOURNAMENT ===\n%s  ·  gold %d  ·  matches %d\nskills: %s" % [tournament.finish_text(), tournament.gold, tournament.results.size(), _levels_text()])
 			get_tree().quit()
 
@@ -2523,13 +2580,17 @@ func _update_timing_ring() -> void:
 	var lag := Engine.get_physics_interpolation_fraction() / Engine.physics_ticks_per_second
 	# The ring hangs above the player (never over the body or the ball's path) and
 	# leans toward the side of the stroke: right for forehands, left for backhands.
-	var anchor := cam.unproject_position(player.global_position + Vector3(0.0, 2.35, 0.0)) + Vector2(0.0, -70.0)
+	# D-9: the ring follows the player's size on screen (the TV view puts him far): never wider than
+	# his shoulders (0.55 m), never smaller than 0.55 of the normal size, and its distance above him scales too.
+	var shoulders := absf(cam.unproject_position(player.global_position + Vector3(0.275, 0.0, 0.0)).x - cam.unproject_position(player.global_position - Vector3(0.275, 0.0, 0.0)).x)
+	ring.scale_k = clampf(shoulders / (2.0 * TimingRing.INNER), 0.55, 1.0)
+	var anchor := cam.unproject_position(player.global_position + Vector3(0.0, 2.35, 0.0)) + Vector2(0.0, -70.0 * ring.scale_k)
 	ring.anchor = anchor
 	hud.set_stamina(stamina if phase != Phase.IDLE else 1.0)
 	# Everything below the player's feet is the joystick zone for the left thumb.
 	var vh := get_viewport().get_visible_rect().size.y
-	if Tuning.tap_controls:
-		hud.touch.stick_zone_top = INF  # tap mode: no joystick, the whole screen is court
+	if Tuning.tap_controls or phase == Phase.SMASH:
+		hud.touch.stick_zone_top = INF  # tap mode: no joystick, the whole screen is court (so is the smash: swipes down from low)
 	else:
 		hud.touch.stick_zone_top = clampf(cam.unproject_position(player.global_position).y + 28.0, vh * 0.66, vh * 0.9)
 	if autoplay or mods_hub.no_ring:  # v0.2 G: «Без кольца»

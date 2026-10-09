@@ -11,15 +11,18 @@ const BAR_H := 22.0
 
 ## The numbers the card shows, as data (tests read them): stats, captions, mods, prize.
 static func info(t: Tournament, i: int) -> Dictionary:
-	var o: Dictionary = Opponents.ROSTER[clampi(i, 0, Opponents.ROSTER.size() - 1)]
+	var o: Dictionary = t.opp(i)
 	var lu: Dictionary = t.lineup[i] if i < t.lineup.size() else {}
 	var mods: Array[String] = []
 	for m in lu.get("mods", []):
 		mods.append(mod_text(String(m)))
-	var st := Opponents.shown_stats(o)  # as he plays against this player (the roster's, kept up with his level)
+	var st := Opponents.shown_stats(o, -1.0, i)  # as he plays against this player (the roster's, kept up with his level)
 	return {
 		"name": String(o["name"]),
 		"style": String(Opponents.play_style(o)["name"]),
+		"hand": hand_text(o),
+		"tier": String(o.get("tier", "")),
+		"op": bool(o.get("op", false)),
 		"stats": st,
 		"captions": Opponents.captions(st),
 		"mods": mods,
@@ -37,6 +40,16 @@ static func mod_text(id: String) -> String:
 	return id
 
 
+## "левша · одноручный бэкхенд": the label of the top-100 (the rig itself plays right-handed).
+static func hand_text(o: Dictionary) -> String:
+	var parts: Array[String] = []
+	if o.get("left", false):
+		parts.append("левша")
+	if o.get("one_hand", false):
+		parts.append("одноручный бэкхенд")
+	return ", ".join(parts)
+
+
 ## Just the name, for the bracket's line.
 static func mod_name(id: String) -> String:
 	return String(Tournament.MODIFIERS[id]["name"]) if Tournament.MODIFIERS.has(id) else id
@@ -44,11 +57,16 @@ static func mod_name(id: String) -> String:
 
 static func show(ui: TournamentUI, t: Tournament, i: int) -> void:
 	var inf := info(t, i)
-	var o: Dictionary = Opponents.ROSTER[clampi(i, 0, Opponents.ROSTER.size() - 1)]
+	var o: Dictionary = t.opp(i)
 	var boss: bool = o.get("boss", false)
 	ui._open(t, true, "opp_back")
 	ui._title(inf["name"])
-	ui._sub("%s  ·  %s" % [Opponents.ROUND_NAMES[i], inf["style"]])
+	var sub := "%s  ·  %s" % [Opponents.ROUND_NAMES[i], inf["style"]]
+	if inf["hand"] != "":
+		sub += "  ·  " + inf["hand"]
+	ui._sub(sub)
+	if inf["op"]:
+		ui._box.add_child(ui._text("МОНСТР · одна-две стороны на максимуме", UiTheme.display(), UiTheme.T_SMALL + 2, UiTheme.LOSE))
 	var st: Dictionary = inf["stats"]
 	var panel := PanelContainer.new()
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE

@@ -24,6 +24,10 @@ var world: ClubWorld
 var cam: ClubCamera
 var hud: ClubHud
 var coach := ClubCoach.new()
+var npc := ClubNpc.new()              # whoever can be talked to and bumped into (stream H-8)
+var _hero_y := 0.0                     # the floor he stands on, eased (rooms stand above the ground)
+var _coach_y := 0.0
+var _npc_btn := ""                    # the person whose button is up
 var npc_life: ClubNpcLife              # the students and the visitor (T-2)
 var quests: ClubQuests.Watch          # the coach's quests, counted from the match's events
 var active := false
@@ -84,6 +88,12 @@ func setup(m: Node) -> void:
 	main.hud.touch.tapped.connect(_on_tap)
 	main.hud.touch.held.connect(_on_hold)
 	coach.setup(self, main.cpu)
+	npc.setup(self)
+	npc.register("coach", main.cpu, "Поговорить", "", [
+		"Это твой клуб. Пока так себе — но он наш",
+		"Не забудь про разминку: ноги решают всё",
+		"Задания на доске — за них платят золотом",
+		"Хочешь быстрее — тренируйся с пушкой"], {"head": 2.25})
 	npc_life = ClubNpcLife.new()
 	add_child(npc_life)
 	npc_life.setup(self)
@@ -193,6 +203,12 @@ func close() -> void:
 	_move_target = Vector3.INF
 
 
+## Where the hero stands when the club opens next (the ball machine's drill leaves him by
+## the machine, whatever place he left from).
+func stand_at(pos: Vector3) -> void:
+	_hero = pos
+
+
 ## The tournament format just chosen: next time "Турнир" goes straight to the bracket.
 func remember(location: String, format: int) -> void:
 	SaveData.club["last_location"] = location
@@ -280,10 +296,31 @@ func _process(delta: float) -> void:
 	coach.tick(delta, main.player.position)
 	world.show_interiors_near(main.player.position)
 	_update_place()
+	_update_npc(delta)
 	_update_badges()
 	var head := coach.head_position()
+	var talker := npc.head_of(npc.speaker()) if npc.speaker() != "" else Vector3.INF
+	if talker != Vector3.INF:
+		head = talker
 	var on_screen := not cam.is_position_behind(head) and get_viewport().get_visible_rect().grow(-20.0).has_point(cam.unproject_position(head))
 	hud.bubble_at(cam.unproject_position(head), on_screen)
+
+
+## The person within reach gets a button (when no place has one): «Поговорить».
+func _update_npc(delta: float) -> void:
+	var near := npc.tick(main.player.position, delta)
+	if _place != "" or _auto != "" or main.ui.is_open():
+		near = ""
+	if near != "":
+		var e := npc.entry(near)
+		var key := near + "|" + String(e["label"])   # the same person with a new button (T-2: the coach has newcomers)
+		if key != _npc_btn:
+			_npc_btn = key
+			hud.show_place("npc_" + near, String(e["label"]).to_upper(), "club_npc_" + near, e.get("extra", []), 0)
+	elif _npc_btn != "":
+		_npc_btn = ""
+		if _place == "":
+			hud.hide_place()
 
 
 ## Hud's НАСТР button: hidden while the club's own gear is on the screen, back on the
@@ -295,16 +332,19 @@ func _show_hud_settings(on: bool) -> void:
 
 
 func _physics_process(delta: float) -> void:
-	if not active:
+	if not active or not is_instance_valid(world):
 		return
 	var p: Athlete = main.player
 	# Walls and posts: the body slides along them (Athlete only knows its rectangle).
-	var at := world.walk.resolve(Vector2(p.position.x, p.position.z), Vector2(p.position.x, p.position.z))
+	var at := world.walk.resolve(Vector2(p.position.x, p.position.z), Vector2(p.position.x, p.position.z), 0.35, npc.agent_list())
 	if at.x != p.position.x or at.y != p.position.z:
-		p.position = Vector3(at.x, 0.0, at.y)
+		p.position = Vector3(at.x, _hero_y, at.y)
+	_hero_y = move_toward(_hero_y, world.walk.floor_at(Vector2(p.position.x, p.position.z)), 1.6 * delta)
+	p.position.y = _hero_y
 	var c := coach.body
-	var cat := world.walk.resolve(Vector2(c.position.x, c.position.z), Vector2(c.position.x, c.position.z))
-	c.position = Vector3(cat.x, 0.0, cat.y)
+	_coach_y = move_toward(_coach_y, world.walk.floor_at(Vector2(c.position.x, c.position.z)), 1.6 * delta)
+	var cat := world.walk.resolve(Vector2(c.position.x, c.position.z), Vector2(c.position.x, c.position.z), 0.35, npc.agent_list("coach") + [[Vector2(p.position.x, p.position.z), 0.35]])
+	c.position = Vector3(cat.x, _coach_y, cat.y)
 	if main.ui.is_open() or _roulette_on or _foreman_on or _building:
 		p.move_input = Vector2.ZERO
 		return
@@ -367,11 +407,6 @@ func _update_place() -> void:
 	if id != "" and not _open_ids.has(id):
 		id = ""
 	world.highlight(id)
-	if id == "":
-		# Nobody's place: a person within reach gets his button (T-2, ClubNpc).
-		var who := ClubNpc.near(main.player.position)
-		if not who.is_empty():
-			id = "npc_" + String(who["id"])
 	if id == _place:
 		return
 	var left_court := _place == "court" and id == ""
@@ -397,7 +432,9 @@ func _update_place() -> void:
 		world.set_inside("")
 	match id:
 		"court":
-			if ClubQuests.claimable_count() > 0:
+			if bool(SaveData.club.get("drills", {}).get("hint", false)):
+				coach.say("drilled")  # the first lesson is done: «Новая игра» is next
+			elif ClubQuests.claimable_count() > 0:
 				coach.say("reward")
 			else:
 				coach.say("court_run" if SaveData.resumable() != null else "court")
@@ -408,11 +445,9 @@ func _update_place() -> void:
 
 func _show_place(id: String) -> void:
 	var b := place_buttons(id)
-	if b.is_empty():   # the person walked off or was let go
-		_place = ""
-		hud.hide_place()
-		return
 	hud.show_place(id, b["label"], b["action"], b["extra"], upgrade_price(id))
+	# After the first lesson with the ball machine «Новая игра» pulses until a run starts.
+	hud.pulse_primary(id == "court" and bool(SaveData.club.get("drills", {}).get("hint", false)))
 
 
 ## "↑ 340" by a place whose construction's next level is affordable. Not at the gate (its
@@ -434,8 +469,8 @@ func place_buttons(id: String) -> Dictionary:
 		if not ClubLots.is_placed("coach") and Skills.points + Skills.pending.size() > 0:
 			(b["extra"] as Array).append(["Навыки", "character"])
 		return b
-	if id.begins_with("npc_"):
-		return ClubNpc.button(id.substr(4))
+	if id == "machine":
+		return {"label": "ПУШКА", "action": "drill", "extra": [["Свободная игра", "practice"]]}
 	return _place_buttons(id)
 
 
@@ -487,6 +522,12 @@ func _update_badges() -> void:
 
 
 func _on_choice(action: String, arg: int) -> void:
+	if action.begins_with("club_npc_"):
+		npc.talk(action.substr(9))
+		return
+	if action.begins_with("club_say_"):   # a person's quiet «Поговорить»: a line, no action (T-2)
+		npc.talk(action.substr(9), false)
+		return
 	if action == "club_tournament" or action == "club_tournament_new":
 		if action == "club_tournament" and SaveData.resumable() != null:
 			main._on_ui("continue", 0)
@@ -506,7 +547,7 @@ func _on_choice(action: String, arg: int) -> void:
 ## ones that come from TournamentUI screens here too ("club_*").
 func ui_action(action: String, arg: int) -> void:
 	var id := _place if _place != "" else hud.current_place()
-	if action.begins_with("club_npc_"):
+	if action.begins_with("club_train:") or action == "club_guest_hire":
 		_npc_action(action)
 		return
 	match action:
@@ -599,7 +640,7 @@ func roulette_on() -> bool:
 
 
 func roulette_busy() -> bool:
-	return _roulette_on and world.roulette().busy()
+	return _roulette_on and world.roulette() != null and world.roulette().busy()
 
 
 ## The chips the bar takes now: within its level's limit and a quarter of the gold.
@@ -610,6 +651,8 @@ func chips() -> Array:
 func roulette_open() -> void:
 	if _roulette_on:
 		return
+	if world.roulette() == null:
+		return  # the bar is not built yet (T-1 lots)
 	_roulette_on = true
 	main.player.move_input = Vector2.ZERO
 	_move_target = Vector3.INF
@@ -649,7 +692,7 @@ func roulette_close() -> void:
 ## A bet: the field is drawn now (Bets.spin), gold paid out now and saved; the wheel only
 ## shows it. {} when it can't go (the ball still rolls, a stake over the limit).
 func spin(bet: String, stake: int) -> Dictionary:
-	if not _roulette_on or world.roulette().busy() or not chips().has(stake) or not Bets.PAYS.has(bet):
+	if not _roulette_on or world.roulette() == null or world.roulette().busy() or not chips().has(stake) or not Bets.PAYS.has(bet):
 		return {}
 	var field := Bets.spin(main.rng)
 	var paid := Bets.payout(bet, stake, field)
@@ -693,7 +736,7 @@ func travel_run(id: String) -> void:
 		return
 	var here := Vector2(main.player.position.x, main.player.position.z)
 	var to := Vector2(p["pos"].x, p["pos"].z)
-	var route := world.walk.route(here, to)
+	var route := _path_route(here, to)
 	if route.is_empty() or here.distance_to(to) < 4.0:
 		_travel(id)  # next door, or no way to run: as before
 		return
@@ -713,6 +756,25 @@ func travel_run(id: String) -> void:
 	world.highlight("")
 	cam.run_mode = true
 	cam.release(0.3)
+
+
+## The way to run: along the path graph (the shortest), joined to where the hero is and to
+## the place by straight legs that must be clear; else the walk's own route.
+func _path_route(here: Vector2, to: Vector2) -> Array:
+	var g := ClubPaths.route(here, to)
+	if not g.is_empty():
+		var pts: Array = []
+		var prev := here
+		var ok := true
+		for q in g + [to]:
+			if prev.distance_to(q) > 0.05 and not world.walk.clear(prev, q):
+				ok = false
+				break
+			pts.append(q)
+			prev = q
+		if ok:
+			return pts
+	return world.walk.route(here, to)
 
 
 func running_to() -> String:
@@ -1235,26 +1297,18 @@ func _end_lot_build(_lot: String, type: String) -> void:
 
 # --- People: talking, training, hiring (T-2) ----------------------------------------------------
 
-## «club_npc_talk:<id>», «club_npc_train:<student id>», «club_npc_hire:guest».
+## A person's button did its talking (ClubNpc.talk), this is the rest: «club_train:<student id>»
+## opens his card, «club_guest_hire» the visitor's card with «Взять».
 func _npc_action(action: String) -> void:
-	var kind := action.get_slice(":", 0)
-	var who := action.get_slice(":", 1)
-	match kind:
-		"club_npc_talk":
-			if who == "coach":
-				var hire := not Academy.is_full() and not Academy.candidates().is_empty()
-				coach.say("Привёл новичков — выбирай, пока свободны" if hire else ("Твои ученики растут с каждым забегом" if not Academy.students().is_empty() else "Готов? Турнир ждёт"), true)
-			else:
-				npc_life.say(who, npc_life.line_for(who))
-		"club_npc_train":
-			var st := Academy.student(who)
-			if not st.is_empty():
-				AcademyStudent.show(main.ui, st, "card")
-		"club_npc_hire":
-			var g := Academy.guest_candidate()
-			if not g.is_empty():
-				AcademyHire.picked = "guest"
-				AcademyStudent.show(main.ui, g, "guest")
+	if action.begins_with("club_train:"):
+		var st := Academy.student(action.get_slice(":", 1))
+		if not st.is_empty():
+			AcademyStudent.show(main.ui, st, "card")
+	elif action == "club_guest_hire":
+		var g := Academy.guest_candidate()
+		if not g.is_empty():
+			AcademyHire.picked = "guest"
+			AcademyStudent.show(main.ui, g, "guest")
 
 
 ## The hire screens: the list, a candidate's card, «Взять», a new set.

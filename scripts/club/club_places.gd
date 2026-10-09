@@ -28,12 +28,13 @@ const LIST := [
 		],
 	},
 	{
-		# Practice by the ball machine (ClubWorld.ball_machine() on the far half shoots
-		# at this baseline); the integrator's tutorial with the machine starts here too.
+		# The ball machine (ClubWorld.ball_machine() on the far half shoots at this
+		# baseline): its drill (BallMachine), every stroke in turn, trains a little. The
+		# free game on the club court is the quiet button above it (Club.place_buttons).
 		"id": "machine", "name": "Пушка", "pos": Vector3(3.0, 0, 8.5), "r": 1.6,
 		"unlock": "", "sign": "", "travel": false,
 		"levels": [
-			{"label": "Тренировка", "action": "practice", "note": "Свободная игра на своём корте"},
+			{"label": "Пушка", "action": "drill", "note": "Тренировка с пушкой: каждый удар по очереди"},
 		],
 	},
 	{

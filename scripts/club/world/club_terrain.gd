@@ -17,13 +17,13 @@ var _high: ArrayMesh
 func _ready() -> void:
 	_slab_texture()
 	var s := ClubShapes.new()
-	_kerbs(s)
 	_street(s)
 	var hi := ClubShapes.new()
 	_lawn_patches(s, hi)
 	_markings(hi)
 	_low = s.build()
 	_high = ClubShapes.new().merge(s).merge(hi).build()   # High: one mesh with the extras, not two
+	_build_paths()
 	_ground = MeshInstance3D.new()
 	_ground.name = "ground"
 	_ground.mesh = _high
@@ -80,20 +80,6 @@ func _slab_texture() -> void:
 	mat.albedo_color = Color.WHITE
 
 
-## A kerb along both long edges of every path: the paving's slab sits above the lawn.
-func _kerbs(s: ClubShapes) -> void:
-	for i in ClubLayout.PATHS.size() - 1:   # the last one is the river promenade
-		var r: Rect2 = ClubLayout.PATHS[i]
-		var lo := ClubLayout.LAWN
-		var h := 0.09 - lo
-		if r.size.x < r.size.y:
-			for x in [r.position.x - 0.08, r.end.x + 0.08]:
-				s.box(Vector3(0.16, h, r.size.y + 0.32), Vector3(x, lo + h * 0.5, r.get_center().y), KERB)
-		else:
-			for z in [r.position.y - 0.08, r.end.y + 0.08]:
-				s.box(Vector3(r.size.x + 0.32, h, 0.16), Vector3(r.get_center().x, lo + h * 0.5, z), KERB)
-
-
 ## Behind the gate: a pavement, the road with a kerb either side, the far pavement.
 func _street(s: ClubShapes) -> void:
 	var w := 220.0
@@ -144,3 +130,22 @@ func _lawn_patches(s: ClubShapes, hi: ClubShapes) -> void:
 		var tone: Color = tones[rng.randi() % tones.size()]
 		(s if n % 2 == 0 else hi).flat(Vector2(r, r * rng.randf_range(0.5, 0.9)), Vector3(q.x, ClubLayout.LAWN + 0.02 + n * 0.0003, q.y), tone, 7, rng.randf_range(0.0, PI))
 		n += 1
+
+
+## The paths: the graph's one surface (laid in world space with the club's slab paving) and
+## its kerb: two meshes, two draw calls.
+func _build_paths() -> void:
+	var w: Variant = get_parent().world
+	var meshes := ClubPaths.build_meshes(ClubLayout.LAWN)
+	var surf := MeshInstance3D.new()
+	surf.name = "paths"
+	surf.mesh = meshes["surface"]
+	surf.material_override = w.get("_paving")
+	surf.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(surf)
+	var kerb := MeshInstance3D.new()
+	kerb.name = "path_kerbs"
+	kerb.mesh = meshes["curb"]
+	kerb.material_override = ClubScenery.prop_material()
+	kerb.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(kerb)

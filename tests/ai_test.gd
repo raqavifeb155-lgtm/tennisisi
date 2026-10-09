@@ -28,6 +28,9 @@ func _run() -> void:
 		test_adapt,
 		test_ai_profile,
 		test_drop_return,
+		test_top100,
+		test_random_players,
+		test_island_draw,
 	]
 	expected = tests.size()
 	for t in tests:
@@ -404,7 +407,7 @@ func test_tv_camera() -> void:
 			var far := cam.unproject_position(Vector3(-4.1, 0, -11.9)).distance_to(cam.unproject_position(Vector3(4.1, 0, -11.9)))
 			check(far > vp.x * 0.2, "TV: the far baseline is still %.0f px wide (a fifth of the screen at least)" % far)
 		check(err < 0.02, "%s: a screen point maps back to the same court point (%.3f m)" % ["TV" if tv else "normal", err])
-	check(cam.global_position.y > 15.0, "TV: hangs high (%.1f m)" % cam.global_position.y)
+	check(cam.global_position.y > 5.0 and cam.global_position.y < 12.0, "TV: closer and lower (D-9) (%.1f m)" % cam.global_position.y)
 	tuning.tv_camera = false
 	cam.free()
 	target.free()
@@ -692,4 +695,135 @@ func test_drop_return() -> void:
 	check(good["hit"] >= 285, "good net stat: hit %d of %d (ran up and did not swing %d, too far %d)" % [good["hit"], good["n"], good["ran_up"], good["far"]])
 	check(weak["hit"] >= 270, "weak net stat: hit %d of %d (ran up and did not swing %d, too far %d)" % [weak["hit"], weak["n"], weak["ran_up"], weak["far"]])
 	check(good["ran_up"] <= 3 and weak["ran_up"] <= 6, "getting there means hitting: no run-ups without a swing (%d / %d)" % [good["ran_up"], weak["ran_up"]])
+	finished += 1
+
+
+## D-8: the top-100 of RosterData as opponents.
+func test_top100() -> void:
+	print("D-8: the top-100 is in the game")
+	check(RosterData.PLAYERS.size() == 100, "100 records load")
+	var all := Opponents.roster()
+	check(all.size() == Opponents.ROSTER.size() + 100, "roster(): the five fixed ones and the hundred (%d)" % all.size())
+	var ids := {}
+	var ok_stats := true
+	var ok_look := true
+	var ok_band := true
+	var tiers := {}
+	var named_in_data := false
+	for o in all:
+		ids[o["id"]] = true
+		var st: Dictionary = o["stats"]
+		for k in Opponents.STAT_KEYS:
+			ok_stats = ok_stats and int(st[k]) >= 1 and int(st[k]) <= 10
+		ok_look = ok_look and Looks.sanitize(o["look"]) == o["look"]
+		if o.has("rank"):
+			tiers[o["tier"]] = int(tiers.get(o["tier"], 0)) + 1
+			var band: Array = OpponentGen.TIER_BAND[o["tier"]]
+			ok_band = ok_band and float(o["skill"]) >= band[0] - 0.001 and float(o["skill"]) <= band[1] + 0.001
+		if String(o["name"]).contains("Sinner") or String(o["name"]).contains("Alcaraz"):
+			named_in_data = true
+	check(ids.size() == all.size(), "ids are unique")
+	check(ok_stats, "every stat of every player is 1..10")
+	check(ok_look, "every look is a valid Looks dictionary")
+	check(ok_band, "the skill sits in its tier's band")
+	check(tiers == {"S": 4, "A": 11, "B": 20, "C": 25, "D": 20, "E": 20}, "tiers: %s" % str(tiers))
+	check(not named_in_data, "game names only, no real names in the data")
+	check(Opponents.find("p001")["tier"] == "S" and Opponents.find("p100")["tier"] == "E" and float(Opponents.find("p001")["skill"]) > float(Opponents.find("p100")["skill"]), "find(): by id, the best S above the last E")
+	check(Opponents.find("zverev")["id"] == "zverev" and Opponents.find("djokovic").get("boss", false), "the fixed five keep their records (the boss too)")
+	var left := 0
+	for r in RosterData.PLAYERS:
+		left += 1 if r["left"] else 0
+	check(left == 14, "left-handers are a label only: %d of them" % left)
+	check(Opponents.of_tier("S").size() == 2 and Opponents.of_tier("E").size() == 20, "the draw's pool leaves out the twins of the fixed ones (S: %d)" % Opponents.of_tier("S").size())
+	check(OpponentGen.translit("СЕНЕР") == "SENER" and OpponentGen.translit("ОЖЕ-АЛИАС") == "OZHE-ALIAS", "court calls in Latin: %s" % OpponentGen.translit("ОЖЕ-АЛИАС"))
+	finished += 1
+
+
+## D-8: random players by seed.
+func test_random_players() -> void:
+	print("D-8: random players")
+	var a := Opponents.random(77, "B")
+	var b := Opponents.random(77, "B")
+	check(a == b, "the same seed, the same player: %s %s" % [a["name"], str(a["stats"])])
+	check(Opponents.random(78, "B") != a and Opponents.random(77, "E") != a, "another seed or tier, another player")
+	var ok := true
+	var op := 0
+	var n := 6000
+	var op_stats := 0.0
+	var plain_stats := 0.0
+	var plain := 0
+	var weak_ok := true
+	for i in n:
+		var o := Opponents.random(1000 + i, OpponentGen.TIERS[i % 6])
+		for k in Opponents.STAT_KEYS:
+			ok = ok and int(o["stats"][k]) >= 1 and int(o["stats"][k]) <= 10
+		ok = ok and Looks.sanitize(o["look"]) == o["look"] and String(o["name"]).contains(" ") and o["short_en"] != "" and Opponents.PLAY_STYLES.has(o["play_style"])
+		var sum := 0.0
+		for k in Opponents.STAT_KEYS:
+			sum += o["stats"][k]
+		if o.get("op", false):
+			op += 1
+			op_stats += sum / 6.0
+			ok = ok and (o["stats"].values().count(10) >= 1)
+		elif o["tier"] == "C":
+			plain += 1
+			plain_stats += sum / 6.0
+	check(ok, "stats 1..10, a valid look, a name, a style for %d players" % n)
+	check(op >= n * 0.02 and op <= n * 0.04, "overpowered about 3%%: %d of %d" % [op, n])
+	check(op_stats / maxf(op, 1.0) > 6.5, "an overpowered one has a high average (%.1f)" % (op_stats / maxf(op, 1.0)))
+	var strong := Opponents.random(5, "D", {"overpowered": true})
+	var weak := Opponents.random(5, "D", {"overpowered": false, "weakness": "serve"})
+	check(strong.get("op", false) and strong["stats"].values().count(10) >= 1, "opts.overpowered forces it: %s" % str(strong["stats"]))
+	check(int(weak["stats"]["serve"]) <= 2 and weak["weak_stat"] == "serve" and Opponents.captions(weak["stats"]).has("Слабая подача"), "opts.weakness: the weak spot shows on the card (%s)" % str(Opponents.captions(weak["stats"])))
+	check(not Opponents.random(5, "S", {"overpowered": false}).get("op", false) and Opponents.random(5, "D", {"op_chance": 1.0}).get("op", false), "overpowered: false / op_chance")
+	var e := Opponents.random(9, "E")
+	var s := Opponents.random(9, "S")
+	var se := 0.0
+	var ss := 0.0
+	for i in 200:
+		for k in Opponents.STAT_KEYS:
+			se += Opponents.random(i, "E", {"overpowered": false})["stats"][k]
+			ss += Opponents.random(i, "S", {"overpowered": false})["stats"][k]
+	check(ss > se * 1.7, "tiers differ: S averages %.1f, E %.1f" % [ss / 1200.0, se / 1200.0])
+	check(float(e["skill"]) < 0.21 and float(s["skill"]) > 0.79, "the AI skill follows the tier band")
+	finished += 1
+
+
+## D-8: every island draws its opponents by tier, reproducibly, the boss fixed.
+func test_island_draw() -> void:
+	print("D-8: the draw by island")
+	var allowed := {"park": ["E", "D"], "clay": ["D", "C"], "grass": ["C", "B", "A"], "paris": ["B", "A", "S"]}
+	var ok := true
+	var same := true
+	var randoms := 0
+	var total := 0
+	for loc in allowed:
+		for seed_v in range(1, 61):
+			var d := Opponents.draw(loc, seed_v)
+			same = same and d == Opponents.draw(loc, seed_v)
+			ok = ok and d.size() == 5 and d[4] == {"id": "djokovic"}
+			for i in 4:
+				var o := Opponents.resolve(d[i])
+				total += 1
+				randoms += 1 if d[i].has("rnd") else 0
+				ok = ok and allowed[loc].has(o["tier"]) and not o.has("alias_of")
+	check(ok, "five rounds, the boss last, every opponent of the island's tiers")
+	check(same, "the same seed, the same field")
+	check(randoms > total * 0.2 and randoms < total * 0.5, "random players fill %d%% of the places" % roundi(100.0 * randoms / total))
+	check(Opponents.draw("park", 1) != Opponents.draw("park", 2) or Opponents.draw("park", 2) != Opponents.draw("park", 3), "other seed, other field")
+	check(Opponents.draw("park", 5, true)[0] == {"id": "dzumhur"}, "a new player's first match: the old tutorial")
+	var T: GDScript = load("res://scripts/tournament.gd")  # reads autoloads: loaded at run time
+	var t = T.new(1, 11)
+	t.location = "paris"
+	var f: Array = t.field.duplicate(true)
+	var back = T.from_dict(t.to_dict())
+	check(back.field == f and back.opp(1)["name"] == t.opp(1)["name"] and back.location == "paris", "the draw is saved with the run")
+	check(t.opponent()["id"] == Opponents.resolve(t.field[0])["id"] and t.opp(4)["id"] == "djokovic" and t.rounds() == 5, "the tournament's opponents come from the draw")
+	var t2 = T.new(1, 11)
+	t2.location = "paris"
+	check(t2.field == t.field, "a run of the same seed: the same field")
+	var old: Dictionary = t.to_dict()
+	old.erase("field")
+	var legacy = T.from_dict(old)
+	check(legacy.opp(0)["id"] == "dzumhur" and legacy.opp(3)["id"] == "zverev", "a run saved before D-8 keeps its five")
 	finished += 1

@@ -82,6 +82,16 @@ static func unlocked(id: String) -> bool:
 	return int(SaveData.titles_by_loc.get(ORDER[i - 1], 0)) >= 1
 
 
+## The island the FIRST title on `loc` has just opened ("" = none, or the title was not the first
+## one there): Spain by the first title anywhere, the next ones by a title on the island before.
+static func opened_by_title(loc: String) -> String:
+	var i := ORDER.find(loc)
+	if i < 0 or i + 1 >= ORDER.size():
+		return ""
+	var nxt: String = ORDER[i + 1]
+	return nxt if unlocked(nxt) and int(SaveData.titles_by_loc.get(loc, 0)) == 1 else ""
+
+
 ## What opens it, for the lock: "за первый титул", "за титул в Испании".
 static func unlock_hint(id: String) -> String:
 	var i := ORDER.find(id)

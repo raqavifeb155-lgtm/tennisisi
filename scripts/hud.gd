@@ -6,6 +6,7 @@ extends CanvasLayer
 ## UI_FLOW_TZ 5.5). Layers from UiTheme.LAYER_*. No permanent hints.
 
 signal menu_requested
+signal smash_pressed             # «Разбить ракетку» (SmashHub)
 
 const GOLD := Color(1.0, 0.85, 0.25)
 
@@ -19,6 +20,8 @@ var _fps_t := 0.0
 var _fps_label: Label
 var announcer: HudAnnouncer   # every call, level-up, big moment and hint (UI_FLOW_TZ 5)
 var _trophy: TrophyPlate       # the trophy mini-game's balls, where the score bug sits
+var smash_btn: SmashButton      # «Разбить ракетку», beside the stamina ring (SmashHub)
+var smash_prompt: SmashPrompt   # its three swipes
 var _safe_top := 0.0
 var _score: Label
 var _bug: ScoreBug
@@ -106,6 +109,13 @@ func _ready() -> void:
 	announcer = HudAnnouncer.new()
 	announcer.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_root.add_child(announcer)
+	smash_prompt = SmashPrompt.new()
+	_root.add_child(smash_prompt)
+	smash_btn = SmashButton.new()
+	smash_btn.ring = ring
+	smash_btn.pressed.connect(func() -> void: smash_pressed.emit())
+	_root.add_child(smash_btn)
+	touch.blocked_controls.append(smash_btn)  # a press on it is not a tap or a swipe on the court
 
 	# The ⚙ / ❚❚ button, top right (84 px, UI_FLOW_TZ P1-4).
 	_debug_btn = IconButton.new()
@@ -205,6 +215,8 @@ func set_safe_area(top: float, bottom: float) -> void:
 	_bug.position.y = 14.0 + top
 	_rally.offset_top = 14.0 + top
 	_rally.offset_bottom = 58.0 + top
+	smash_btn.top_inset = top
+	smash_btn.bottom_inset = bottom
 	_trophy.position.y = 14.0 + top
 	_debug_btn.offset_top = 14.0 + top
 	_debug_btn.offset_bottom = 14.0 + IconButton.SIZE + top
@@ -253,6 +265,25 @@ func set_stamina(v: float) -> void:
 	if absf(_tired_edge.modulate.a - a) > 0.01:
 		_tired_edge.modulate.a = a
 	_tired_edge.visible = a > 0.0
+
+
+## «Разбить ракетку»: the button with `left` (1..0) of its window, or hidden.
+func show_smash_offer(left: float) -> void:
+	smash_btn.left = left
+	smash_btn.visible = left > 0.0
+
+
+func hide_smash_offer() -> void:
+	smash_btn.visible = false
+
+
+## The three swipes of the smash: `done` of them made, `red` > 0 right after a wrong one.
+## done < 0 hides them.
+func show_smash_prompt(done: int, red := 0.0) -> void:
+	if done < 0:
+		smash_prompt.visible = false
+	else:
+		smash_prompt.show_prompt(done, red)
 
 
 ## Before the player's toss, for the first few serves: what the fingers do.

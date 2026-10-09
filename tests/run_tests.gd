@@ -6,6 +6,7 @@ var failures := 0
 
 
 func _init() -> void:
+	Tournament.BEGINNER_START = 1.0  # tests count a newcomer's prizes at the plain scale
 	test_drop_bounce()
 	test_topspin_dips()
 	test_topspin_kicks_on_bounce()
@@ -31,6 +32,7 @@ func _init() -> void:
 	test_drop_shot()
 	test_stamina_breaks()
 	test_stamina_tank()
+	test_racket_smash_rules()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -236,9 +238,11 @@ func test_tournament_flow() -> void:
 	var t := Tournament.new(0)
 	check(t.opponent()["id"] == "dzumhur" and t.new_score(0).sets_to_win == 1, "level 1: Джумхур, one tiebreak")
 	t.record_match(true, "7:3", rng)
-	check(t.state == Tournament.State.REWARD and t.offer.size() == 3 and t.offer[2]["kind"] == "wildcard", "win -> 3 rewards incl. wildcard")
+	check(t.offer.is_empty() and t.state == (Tournament.State.REWARD if not t.chest.is_empty() else Tournament.State.BRACKET), "v0.2 A-7: a win leaves a chest or nothing, no 1-of-3")
 	check(t.gold == 4, "quick format pays 40%% gold: %d" % t.gold)
-	t.take_reward(2)
+	t.chest = {"round": 0, "gold": 0, "item": {}, "perk": "", "wildcard": true, "opened": false}
+	t.state = Tournament.State.REWARD
+	t.take_chest()
 	check(t.wildcards == 1 and t.state == Tournament.State.BRACKET and t.stage == 1, "wildcard taken, round 2")
 	t.record_match(false, "5:7", rng)
 	check(t.state == Tournament.State.LOST, "loss with a wildcard can be replayed")
@@ -250,9 +254,8 @@ func test_tournament_flow() -> void:
 		if i == w.rounds() - 1:
 			check(w.opponent()["id"] == "djokovic" and w.new_score(0).sets_to_win == 2 and w.new_score(0).games_per_set == 4, "final: Джокович, best of three short sets")
 		w.record_match(true, "4:2 · 4:1", rng)
-		if w.state == Tournament.State.REWARD:
-			w.take_reward(0)
-	check(w.champion and w.state == Tournament.State.OVER and w.perks.size() == 4, "five wins = champion, perks collected")
+		w.take_chest()
+	check(w.champion and w.state == Tournament.State.OVER and w.stage == 5, "five wins = champion")
 
 
 func test_tournament_save() -> void:
@@ -262,6 +265,8 @@ func test_tournament_save() -> void:
 	var t := Tournament.new(1)
 	t.location = "clay"
 	t.record_match(true, "6:3", rng)
+	t.chest = {"round": 0, "gold": 9, "item": {}, "perk": "", "wildcard": false, "opened": false}
+	t.state = Tournament.State.REWARD
 	var d := t.to_dict()
 	var cf := ConfigFile.new()  # through the same file format the game saves to
 	cf.set_value("run", "data", d)
@@ -269,9 +274,9 @@ func test_tournament_save() -> void:
 	back.parse(cf.encode_to_text())
 	var r := Tournament.from_dict(back.get_value("run", "data"))
 	check(r.state == Tournament.State.REWARD and r.stage == t.stage and r.location == "clay" and r.format == 1, "state, round, place and format come back")
-	check(r.offer.size() == 3 and r.gold == t.gold and r.results.size() == 1, "reward cards, gold and results come back")
+	check(r.chest == t.chest and r.gold == t.gold and r.results.size() == 1, "the chest, gold and results come back")
 	check(r.rng.state == t.rng.state, "the random sequence continues where it was")
-	r.take_reward(0)
+	r.take_chest()
 	check(r.state == Tournament.State.BRACKET and r.stage == 1, "and the run goes on")
 
 
@@ -353,7 +358,7 @@ func test_gear_and_loot() -> void:
 	check(Gear.glow(leg) > 1.0 and Gear.glow(Gear.roll(Gear.COMMON, rng)) == 0.0, "legendary glows, common does not")
 	check(Gear.AFFIXES.size() >= 20, "%d affixes in the pool" % Gear.AFFIXES.size())
 	var t := Tournament.new(0, 11)
-	check(t.lineup.size() == 5 and t.lineup[0]["mods"].is_empty(), "lineup rolled up front, the tutorial opponent has no modifiers")
+	check(t.lineup.size() == 5 and t.lineup[0]["mods"].all(func(id): return Traits.has(id)), "lineup rolled up front, the tutorial opponent has no modifiers but a trait (G-7)")
 	# v0.2: each of his items drops by chance (30/20/12/6/3%); drop_bonus 1 = a sure drop.
 	t.lineup[0]["gear"]["racket"] = leg
 	t.drop_bonus = 1.0
@@ -361,10 +366,11 @@ func test_gear_and_loot() -> void:
 	check(t.pending_loot == leg, "a dropped epic or better goes to the trophy game")
 	t.take_loot(true)
 	check(t.racket == leg and t.pending_loot.is_empty(), "trophy equipped")
-	check(t.offer[1]["kind"] == "item", "reward offer: perk, item, wildcard")
-	var rw: Dictionary = t.offer[1]["item"]
-	t.take_reward(1)
-	check(t.equip[rw["slot"]] == rw or t.bag.has(rw), "a reward item is put on (empty slot) or goes into the bag")
+	var rw := Gear.roll(Gear.RARE, rng, "shoes")  # v0.2 A-7: the reward is a chest's item now
+	t.chest = {"round": 0, "gold": 0, "item": rw, "perk": "", "wildcard": false, "opened": false}
+	t.state = Tournament.State.REWARD
+	t.take_chest()
+	check(t.equip[rw["slot"]] == rw or t.bag.has(rw), "a chest item is put on (empty slot) or goes into the bag")
 	t.lineup[1]["gear"]["racket"] = leg
 	t.record_match(false, "3:7", rng)
 	check(t.state == Tournament.State.OVER and t.pending_loot.is_empty(), "lose and the racket is gone")
@@ -682,3 +688,59 @@ func test_stamina_tank() -> void:
 	check(is_equal_approx(Skills.tired_below(), 0.3), "Холодный пот: tired only below 30%")
 	check(Skills.LIST.has("stamina") and Skills.PERKS["stamina"].size() >= 5, "Выносливость is a skill with perks")
 	Skills.reset()
+
+
+## «Разбить ракетку»: when it is offered, how a swipe is read, what the bonus is.
+func test_racket_smash_rules() -> void:
+	print("racket smash rules")
+	var base := {"winner": 1, "reason": "OUT", "rally": 5, "games_since": 3, "roll": 0.0}
+	check(SmashHub.should_offer(base), "a point lost on an out ball is offered")
+	for reason in ["NET", "DOUBLE FAULT"]:
+		var c := base.duplicate()
+		c["reason"] = reason
+		check(SmashHub.should_offer(c), "%s is the player's own error: offered" % reason)
+	for reason in ["WINNER", "ACE"]:
+		var c := base.duplicate()
+		c["reason"] = reason
+		check(not SmashHub.should_offer(c), "%s: the opponent was better, not offered" % reason)
+	var won := base.duplicate()
+	won["winner"] = 0
+	check(not SmashHub.should_offer(won), "a point the player won is never offered")
+	for key in ["match_over", "autoplay", "smashed"]:
+		var c := base.duplicate()
+		c[key] = true
+		check(not SmashHub.should_offer(c), "%s: not offered" % key)
+	var offline := base.duplicate()
+	offline["allowed"] = false
+	check(not SmashHub.should_offer(offline), "online: not offered")
+	var soon := base.duplicate()
+	soon["games_since"] = 2
+	check(not SmashHub.should_offer(soon), "not more often than once in 3 games")
+	var unlucky := base.duplicate()
+	unlucky["roll"] = 0.99
+	check(not SmashHub.should_offer(unlucky), "a bad roll: not offered (sometimes, not always)")
+	var practice := unlucky.duplicate()
+	practice["practice"] = true
+	practice["games_since"] = 0
+	practice["smashed"] = true
+	check(SmashHub.should_offer(practice), "practice: always, whenever, as often as you like")
+	check(is_equal_approx(SmashHub.chance(0), 0.35) and is_equal_approx(SmashHub.chance(99), 0.7) and SmashHub.chance(7) > SmashHub.chance(2), "the chance grows with the rally: 35%..70%")
+	check(SmashHub.WINDOW == 2.5, "the window is 2.5 s")
+	var w := SmashHub.wanted(3, 2)
+	check(is_equal_approx(float(w["forehand_window"]), 0.1) and is_equal_approx(float(w["stamina_change"]), 0.15) and w.has("stamina_rest"), "the bonus: PERFECT window +10%, recovery +15%")
+	check(SmashHub.wanted(0, 1).is_empty() and not SmashHub.wanted(0, 2).has("forehand_window") and not SmashHub.wanted(2, 0).has("stamina_rest"), "the window and the recovery run out separately")
+	# Swipes: only vertical, long enough, up or down; the speed is the strength.
+	var h := 1564.0
+	var up := PackedVector2Array([Vector2(360, 1000), Vector2(362, 800), Vector2(365, 600)])
+	var fast := RacketSmash.classify(up, PackedInt32Array([0, 30, 60]), h)
+	var slow := RacketSmash.classify(up, PackedInt32Array([0, 400, 800]), h)
+	check(fast["dir"] == -1 and slow["dir"] == -1 and float(fast["power"]) > float(slow["power"]) and float(fast["power"]) > 0.7, "a swipe up: the faster the stronger (%.2f vs %.2f)" % [fast["power"], slow["power"]])
+	var down := PackedVector2Array([Vector2(360, 400), Vector2(360, 700)])
+	check(RacketSmash.classify(down, PackedInt32Array([0, 100]), h)["dir"] == 1, "a swipe down is +1")
+	check(RacketSmash.classify(PackedVector2Array([Vector2(300, 800), Vector2(300, 780)]), PackedInt32Array([0, 100]), h)["dir"] == 0, "a short stroke is no swipe")
+	check(RacketSmash.classify(PackedVector2Array([Vector2(200, 800), Vector2(500, 700)]), PackedInt32Array([0, 100]), h)["dir"] == 0, "a sideways swipe is no swipe")
+	# The trick.
+	var plain := StyleRules.evaluate({"won": true, "reason": "WINNER", "last": {"type": "FLAT"}})
+	var vent := StyleRules.evaluate({"won": true, "reason": "WINNER", "last": {"type": "FLAT"}, "vented": true})
+	check(plain["tricks"].is_empty() and vent["tricks"].size() == 1 and vent["tricks"][0]["id"] == "vented" and is_equal_approx(float(vent["mult"]), 1.2), "«Психанул» is x1.2 on the next won point")
+	check(StyleRules.evaluate({"won": false, "reason": "OUT", "vented": true})["tricks"].is_empty(), "...and nothing on a lost one")

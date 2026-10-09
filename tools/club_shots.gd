@@ -336,6 +336,11 @@ func _views() -> void:
 		["v15_court_gate", Vector3(0, 0, 21), 0.0, 0],
 		["v16_fans", Vector3(-14, 0, 3), -PI * 0.5, 1],
 		["v17_built", Vector3(0, 0, 30), 0.0, 1],
+		["v26_ramp_side", Vector3(0, 0, 22.8), 0.0, 1],
+		["v22_junction_t", Vector3(0, 0, 36), 0.0, 1],
+		["v23_ring_corner", Vector3(-16, 0, 11), PI, 1],
+		["v24_door_ramp", Vector3(-14, 0, 33.5), 0.0, 1],
+		["v25_apron_ramp", Vector3(0, 0, 25), 0.0, 1],
 		["v18_corner_nw", Vector3(-49, 0, -36), PI * 0.25, 0],
 		["v19_corner_ne", Vector3(49, 0, -36), -PI * 0.25, 0],
 		["v20_corner_se", Vector3(49, 0, 37), -PI * 0.75, 0],
@@ -357,7 +362,9 @@ func _views() -> void:
 		main.club.cam.release(0.0)
 		main.club.cam.snap(false)
 		main.club._update_place()
-		await _shot(v[0], 0.9)
+		if v[0] == "v26_ramp_side":   # from the side, low: the hero on the ramp up to the court
+			main.club.cam.frame(Vector3(5.5, 0.35, 22.8), Vector3(0.0, 0.4, 22.8), 0.0)
+		await _shot(v[0], 1.4)
 
 
 ## Which node costs how many draws and triangles from where the hero stands at the gate
@@ -671,7 +678,6 @@ func _npc() -> void:
 	club._place = ""
 	club._update_place()
 	club.cam.snap()
-	print("DBG coach ", main.cpu.position, " visible ", main.cpu.visible, " npc ", ClubNpc.get_npc("coach"), " place ", club.hud.current_place(), " hero ", main.player.position)
 	await _shot("01_coach_offers", 1.0)
 	club._on_choice("club_hire", 0)
 	await _shot("02_hire_list", 0.9)
@@ -695,9 +701,9 @@ func _npc() -> void:
 	club._update_place()
 	club.cam.snap()
 	await _shot("04_student_button", 1.0)
-	club._on_choice("club_npc_talk:stu_s1", 0)
+	club._on_choice("club_say_stu_s1", 0)
 	await _shot("05_student_speaks", 0.5)
-	club._on_choice("club_npc_train:s1", 0)
+	club._on_choice("club_train:s1", 0)
 	await _shot("06_student_card", 0.9)
 	main.ui._scroll.scroll_vertical = 700
 	await _shot("06b_student_card_traits", 0.5)

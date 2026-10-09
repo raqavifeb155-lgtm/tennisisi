@@ -12,6 +12,7 @@ const GROUPS := [["run", "Ты"], ["opponent", "Соперники"], ["court", 
 
 static var picked: Array = []
 static var format := 1
+static var hardcore := false      # G-6: the mode card picked (after the first title)
 static var from_club := false  # opened by the club's «Условия» link: «Назад» returns to the club
 
 
@@ -22,6 +23,7 @@ static var from_club := false  # opened by the club's «Условия» link: �
 static func open(m: Node, fmt: int, club := false) -> void:
 	format = fmt
 	picked = []
+	hardcore = false
 	from_club = club
 	if not Modifiers.enabled or SaveData.played == 0:
 		m._start_tournament(fmt)
@@ -29,12 +31,21 @@ static func open(m: Node, fmt: int, club := false) -> void:
 	show(m.ui, true)
 
 
+## Hardcore opens with the first title (like the betting desk).
+static func hard_open() -> bool:
+	return SaveData.titles >= 1
+
+
+## What the screen offers: the run pool, minus what hardcore already contains.
 static func choices() -> Array:
-	return Modifiers.pool("run")
+	var list := Modifiers.pool("run")
+	if hardcore:
+		list = list.filter(func(e): return not Modifiers.HARD_HAS.has(e["id"]))
+	return list
 
 
 static func total() -> float:
-	return Modifiers.reward(picked)
+	return Modifiers.reward((["hardcore"] if hardcore else []) + picked)
 
 
 static func preset() -> Dictionary:
@@ -53,8 +64,10 @@ static func preset_on() -> bool:
 static func show(ui: TournamentUI, animate := true) -> void:
 	ui._open(null, animate, "mods_back")
 	ui._title("Условия забега")
+	_modes(ui)
 	ui._sub("До трёх условий на весь забег. Чем неудобнее, тем больше золота и лута; каждое снимается одним касанием")
-	_preset_row(ui)
+	if not hardcore:
+		_preset_row(ui)
 	var list := choices()
 	for g in GROUPS:
 		var head := true
@@ -69,8 +82,41 @@ static func show(ui: TournamentUI, animate := true) -> void:
 				head = false
 			ui._box.add_child(_row(ui, e, i))
 	var x := total()
-	ui._note("Выбрано %d из %d   ·   награда ×%s   ·   лут +%d%%" % [picked.size(), Modifiers.MAX_RUN, _k(x), roundi(Modifiers.RUN_LOOT * 100.0 * picked.size())])
-	ui._primary("НАЧАТЬ ЗАБЕГ" if picked.is_empty() else "НАЧАТЬ ЗАБЕГ  ·  ×%s" % _k(x), "mods_go")
+	var chosen := (["hardcore"] if hardcore else []) + picked
+	var capped := Modifiers.reward_raw(chosen) > x + 0.005
+	ui._note("Выбрано %d из %d   ·   награда ×%s%s   ·   лут +%d%%" % [picked.size(), Modifiers.MAX_RUN, _k(x), " (потолок)" if capped else "", roundi(Modifiers.RUN_LOOT * 100.0 * picked.size())])
+	ui._primary(("НАЧАТЬ ХАРДКОР  ·  ×%s" % _k(x)) if hardcore else ("НАЧАТЬ ЗАБЕГ" if picked.is_empty() else "НАЧАТЬ ЗАБЕГ  ·  ×%s" % _k(x)), "mods_go")
+
+
+## Two big cards on top: «ОБЫЧНЫЙ» (all the conditions below) and «ХАРДКОР» (a fixed hard set).
+static func _modes(ui: TournamentUI) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	var opened := hard_open()
+	var defs := [
+		{"title": "ОБЫЧНЫЙ", "tag": "как всегда", "desc": "Любые условия ниже", "accent": UiTheme.GOLD, "on": not hardcore, "arg": 0, "action": "mods_mode"},
+		{"title": "ХАРДКОР", "tag": "золото ×%s" % _k(float(Modifiers.find("hardcore")["reward"])) if opened else "закрыто",
+			"desc": "Без помощи в беге, замедления и прицела; кольцо уже; соперники сильнее" if opened else "Нужен первый титул",
+			"accent": Color(0.9, 0.25, 0.25), "on": hardcore, "arg": 1, "action": "mods_mode" if opened else ""},
+	]
+	for d in defs:
+		var c := GameCard.new()
+		c.tag = d["tag"]
+		c.title = d["title"]
+		c.desc = d["desc"]
+		c.accent = d["accent"]
+		c.selected = d["on"]
+		c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		c.custom_minimum_size = Vector2(0, 250)
+		if d["action"] == "":
+			c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			c.modulate = Color(1, 1, 1, 0.5)
+		else:
+			var act: String = d["action"]
+			var arg: int = d["arg"]
+			c.pressed.connect(func() -> void: ui._press(c, act, arg, true))
+		row.add_child(c)
+	ui._box.add_child(row)
 
 
 static func _preset_row(ui: TournamentUI) -> void:
@@ -156,12 +202,23 @@ static func _k(x: float) -> String:
 
 # --- The bracket's line ---------------------------------------------------------------
 
+## «ХАРДКОР» under the title of the bracket, a result and the summary; at: its place in the box.
+static func badge(ui: TournamentUI, t: Tournament, at := -1) -> void:
+	if t == null or not t.hardcore:
+		return
+	var l := ui._text("ХАРДКОР   ·   золото ×%s" % _k(Modifiers.reward(t.run_modifiers)), UiTheme.display(), UiTheme.T_BODY, Color(1.0, 0.35, 0.3))
+	ui._box.add_child(l)
+	if at >= 0:
+		ui._box.move_child(l, mini(at, ui._box.get_child_count() - 1))
+
+
 ## "Условия: Узкий корт, Туман · награда ×1.68" under the bracket's header.
 static func bracket_extra(ui: TournamentUI, t: Tournament) -> void:
-	if t.run_modifiers.is_empty():
+	var shown: Array = t.run_modifiers.filter(func(id): return id != "hardcore")
+	if shown.is_empty():
 		return
 	var names: Array[String] = []
-	for id in t.run_modifiers:
+	for id in shown:
 		names.append(Modifiers.name(id))
 	ui._note("Условия забега: %s   ·   награда ×%s" % [", ".join(names), _k(Modifiers.reward(t.run_modifiers))])
 
@@ -186,8 +243,13 @@ static func ui_action(m: Node, action: String, arg: int) -> void:
 					if not picked.has(id) and picked.size() < Modifiers.MAX_RUN:
 						picked.append(id)
 			show(m.ui, false)
+		"mods_mode":
+			hardcore = arg == 1 and hard_open()
+			var keep := picked.filter(func(id): return not hardcore or not Modifiers.HARD_HAS.has(id))
+			picked = keep
+			show(m.ui, false)
 		"mods_go":
-			m._start_tournament(format, picked.duplicate())
+			m._start_tournament(format, picked.duplicate(), hardcore)
 		"mods_back":
 			if from_club:
 				m._open_menu()  # back to the club, where the link was

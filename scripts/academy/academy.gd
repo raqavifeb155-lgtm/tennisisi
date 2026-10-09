@@ -199,7 +199,7 @@ static func guest_candidate() -> Dictionary:
 	var st := {"id": "guest", "seed": int(g.get("seed", 1)), "name": String(o["name"]), "age": 24, "pot": 0.6, "look": o.get("look", Looks.random(rng)),
 		"stats": Opponents.stats(o), "leanings": ["serve", "forehand"], "revealed": [], "matches": 0, "watched": 0, "trainings": 0, "xp": {}, "rating": 1200,
 		"focus": "serve", "origin": "guest"}
-	st["traits"] = Traits.roll(rng, 2, 1, 1)
+	st["traits"] = Traits.roll_student(rng, 2, 1, 1)
 	st["price"] = roundi(JuniorGen.price(st) * 1.5 / 5.0) * 5
 	return st
 

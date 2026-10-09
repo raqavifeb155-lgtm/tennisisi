@@ -16,7 +16,7 @@ const WEST := -54.6
 const EAST := 54.6
 const NORTH := -40.9
 const SOUTH := 41.0
-const WICKET := Rect2(-4.2, NORTH - 0.2, 2.4, 0.4)     # the opening in the north fence, on the path
+const WICKET := Rect2(-4.4, NORTH - 0.2, 2.8, 0.4)     # the opening in the north fence, on the path
 const GATE_WALL := 14.1                                 # the Entrance's own brick wall reaches this far
 
 var _sides := {}        # "n","s","e","w" -> {"mm": MultiMeshInstance3D, "base": Array of Transform3D}
@@ -37,18 +37,18 @@ func _ready() -> void:
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mat.roughness = 0.85
 	var y := ClubLayout.LAWN
-	_side("n", mesh, mat, _line(Vector2(WEST, NORTH), Vector2(-4.2, NORTH)) + _line(Vector2(-1.8, NORTH), Vector2(EAST, NORTH)), 0.0, y)
+	_side("n", mesh, mat, _line(Vector2(WEST, NORTH), Vector2(-4.4, NORTH)) + _line(Vector2(-1.6, NORTH), Vector2(EAST, NORTH)), 0.0, y)
 	_side("s", mesh, mat, _line(Vector2(WEST, SOUTH), Vector2(-GATE_WALL, SOUTH)) + _line(Vector2(GATE_WALL, SOUTH), Vector2(EAST, SOUTH)), 0.0, y)
 	_side("w", mesh, mat, _line(Vector2(WEST, NORTH), Vector2(WEST, SOUTH)), PI * 0.5, y)
 	_side("e", mesh, mat, _line(Vector2(EAST, NORTH), Vector2(EAST, SOUTH)), PI * 0.5, y)
 	# the walls: east and west are the world's own edge (ClubWalk.bounds); north and south here
-	_walk.add_wall(Vector2(WEST, NORTH), Vector2(-4.2, NORTH), 0.3, "fence")
-	_walk.add_wall(Vector2(-1.8, NORTH), Vector2(EAST, NORTH), 0.3, "fence")
+	_walk.add_wall(Vector2(WEST, NORTH), Vector2(-4.4, NORTH), 0.3, "fence")
+	_walk.add_wall(Vector2(-1.6, NORTH), Vector2(EAST, NORTH), 0.3, "fence")
 	_walk.add_wall(Vector2(WEST, SOUTH), Vector2(-GATE_WALL, SOUTH), 0.3, "fence")
 	_walk.add_wall(Vector2(GATE_WALL, SOUTH), Vector2(EAST, SOUTH), 0.3, "fence")
 	# the way to the embankment: the path through the wicket
-	for w in [Vector2(-3.0, -24.0), Vector2(-3.0, -39.3), Vector2(-3.0, -42.2)]:
-		_walk.waypoints.append(w)
+	for id in ClubPaths.ids():   # a route may turn at every node of the path graph
+		_walk.waypoints.append(ClubPaths.node(id))
 	refresh(0)
 
 

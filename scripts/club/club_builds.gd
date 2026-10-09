@@ -6,7 +6,7 @@ class_name ClubBuilds
 ##
 ## Saved in SaveData.club: "levels" {id: level}, "color" 0..3, "name", "spent".
 
-static var CLUB_PRICE_SCALE := 2.4   # A-6: with Items.PRICE_SCALE, set by the economy sim (income x0.5, the club ~65-75 h)
+static var CLUB_PRICE_SCALE := 3.3   # A-6: with Items.PRICE_SCALE, set by the economy sim (income x0.5, the club ~65-75 h)
 
 ## Hub spec 13 (the long build): every construction has 5 levels and its price row is
 ## base x 1 / 2.2 / 5 / 11.5 / 26 (rounded to 5), the base 30-60 gold; the whole club costs
@@ -117,9 +117,9 @@ const TABLE := {
 	"trophy": {
 		"name": "Трофейная", "place": "trophy", "unlock": "played", "start": "пустое место",
 		"levels": [
-			{"title": "Полка", "now": "полка: кубок за каждый титул", "perk": "Кодекс (скоро)", "price": 45,
+			{"title": "Полка", "now": "полка: кубок за каждый титул", "perk": "", "price": 45,
 				"line": "Полка для кубков. Давай её заполним"},
-			{"title": "Витрина", "now": "витрина: лучшие вещи светятся", "perk": "счётчик удачи (скоро)", "price": 100,
+			{"title": "Витрина", "now": "витрина: лучшие вещи светятся", "perk": "", "price": 100,
 				"line": "Витрина. Пусть все видят, чем играешь"},
 			{"title": "Зал кубков", "now": "зал кубков, прожектор на лучшую вещь", "perk": "", "price": 225,
 				"line": "Зал кубков. Тут и музей открыть можно"},

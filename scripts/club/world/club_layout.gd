@@ -14,16 +14,7 @@ extends RefCounted
 const HX := Scenery.HX
 const HZ := Scenery.HZ
 const LAWN := Scenery.LAWN_Y
-const PATH_TOP := 0.05
 const SHORE := Scenery.SHORE_Z
-
-## The club's paths (ClubWorld._build_paths and Scenery._build_ground), as rectangles.
-const PATHS := [
-	Rect2(-1.2, 17.9, 2.4, 22.0), Rect2(-16.0, 29.8, 34.0, 2.4), Rect2(13.4, -28.0, 2.4, 40.0),
-	Rect2(14.6, -31.2, 8.0, 2.4), Rect2(-21.5, -1.2, 13.0, 2.4), Rect2(-14.2, -26.0, 2.4, 26.0),
-	Rect2(-21.5, -27.2, 9.0, 2.4), Rect2(15.2, 5.0, 8.6, 2.4), Rect2(22.6, -31.2, 6.0, 2.4),
-	Rect2(-4.2, -41.0, 2.4, 20.2), Rect2(-80.0, -45.0, 160.0, 4.0),
-]
 
 const FACADES := [Color(1.0, 0.88, 0.7), Color(0.95, 0.62, 0.5), Color(0.75, 0.86, 0.95), Color(1.0, 0.95, 0.82), Color(0.82, 0.9, 0.78), Color(0.98, 0.78, 0.6)]
 const OAKS := ["tree_round", "tree_fat", "tree_round", "tree_oak", "tree_fat", "tree_small", "tree_round"]
@@ -48,11 +39,10 @@ static func fill(p: ClubProps) -> void:
 # --- Helpers ------------------------------------------------------------------------
 
 static func gy(pos: Vector2) -> float:
-	for r in PATHS:
-		if (r as Rect2).has_point(pos):
-			return PATH_TOP
 	if absf(pos.x) < HX + 2.0 and absf(pos.y) < HZ + 2.0:
 		return 0.0
+	if ClubPaths.near(pos, 0.0):
+		return ClubPaths.surface_y(pos)
 	return LAWN
 
 
@@ -64,9 +54,8 @@ static func open_at(q: Vector2, margin := 0.0) -> bool:
 	for r in ClubWorld.RESERVED:
 		if (r as Rect2).grow(margin).has_point(q):
 			return false
-	for r in PATHS:
-		if (r as Rect2).grow(margin + 0.5).has_point(q):
-			return false
+	if ClubPaths.near(q, margin + 0.5):
+		return false
 	for pl in ClubPlaces.LIST:
 		var c: Vector3 = pl["pos"]
 		if Vector2(q.x - c.x, q.y - c.z).length() < float(pl["r"]) + 1.6 + margin:
@@ -259,32 +248,22 @@ static func _kiosks(p: ClubProps) -> void:
 
 
 static func _paths(p: ClubProps) -> void:
-	# lamps and benches along the paths (the court's own lamps are level 2 of the court)
-	for lz in [22.0, 35.5]:
-		lamp(p, -2.1, lz, Vector2(0.0, lz))
-	lamp(p, 2.1, 27.5, Vector2(0.0, 27.5))
-	lamp(p, -10.0, 33.4, Vector2(-10.0, 31.0))
-	lamp(p, 10.0, 33.4, Vector2(10.0, 31.0)).high = true
-	for lx in [-18.0, 18.0]:
-		lamp(p, lx, 33.4, Vector2(lx, 31.0)).high = true
-	for lz in [-22.0, -6.0]:
-		lamp(p, 17.0, lz, Vector2(14.6, lz))
-	lamp(p, 17.0, 10.0, Vector2(14.6, 10.0)).high = true
-	lamp(p, -10.5, -14.0, Vector2(-13.0, -14.0))
-	# benches facing the court and the paths
-	_bench(p, 17.0, -8.0, Vector2(0.0, -8.0))
-	_bench(p, 17.0, 3.4, Vector2(0.0, 3.4))
-	_bench(p, -16.2, -14.0, Vector2(0.0, -14.0))
-	_bench(p, -16.2, 6.0, Vector2(0.0, 6.0))
-	_bench(p, 3.5, 20.0, Vector2(3.5, 30.0)).owner = ""
-	_bench(p, -3.5, 20.0, Vector2(-3.5, 30.0))
-	_bench(p, -8.0, -22.5, Vector2(-8.0, -32.0))
-	_bench(p, -20.0, 32.0, Vector2(-20.0, 20.0))
-	_bin(p, 18.0, -4.0)
-	_bin(p, -15.5, 8.0)
-	_bin(p, 4.8, 29.0)
-	_bin(p, -4.8, 29.0)
-	_bin(p, 21.0, 32.4)
+	# lamps, benches and bins along the paths, from the graph (the court's own lamps are level 2
+	# of the court): a lamp every ~18 m, alternating sides, its arm over the path; a bench every
+	# ~32 m facing the path, a bin by every other bench
+	var n := 0
+	for f in ClubPaths.furniture(18.0, 6.0, false):
+		var at: Vector2 = f["pos"] + (f["nrm"] as Vector2) * (float(f["half"]) + 0.55)
+		lamp(p, at.x, at.y, f["pos"]).high = n % 2 == 1
+		n += 1
+	n = 0
+	for f in ClubPaths.furniture(32.0, 15.0, false):
+		var at: Vector2 = f["pos"] + (f["nrm"] as Vector2) * (float(f["half"]) + 1.25)
+		_bench(p, at.x, at.y, f["pos"])
+		if n % 2 == 0:
+			var bin_at: Vector2 = at + (f["dir"] as Vector2) * 1.9
+			_bin(p, bin_at.x, bin_at.y)
+		n += 1
 	# a hydrant by the gate, a few signs
 	var h := put(p, "hydrant", -3.2, 38.5, 0.0, 1.1)
 	h.solid = 0.25
@@ -478,17 +457,16 @@ static func _ruin(p: ClubProps) -> void:
 		bare.need = 2
 	# Weeds in the paving everywhere: the cracks of a path nobody sweeps.
 	for k in 36:
-		var r: Rect2 = PATHS[k % (PATHS.size() - 1)]
-		var q := Vector2(_r(r.position.x + 0.1, r.end.x - 0.1), _r(r.position.y + 0.1, r.end.y - 0.1))
-		var t := p.at("tuft_dry" if k % 2 == 0 else "tuft", Vector3(q.x, PATH_TOP, q.y), _r(0, TAU), _r(0.4, 0.8))
+		var q := ClubPaths.sample(_rng)
+		var t := p.at("tuft_dry" if k % 2 == 0 else "tuft", Vector3(q.x, ClubPaths.surface_y(q), q.y), _r(0, TAU), _r(0.4, 0.8))
 		t.owner = "gate" if q.y > 20.0 else ("trophy" if q.y < -20.0 else "court")
 		t.need = 2
 		t.high = k % 2 == 0
 	# Leaning, half-dead lamps on the court's side (the court's level 2 puts new ones up).
 	for sx in [-1.0, 1.0]:
-		lamp(p, sx * (HX + 4.0), HZ + 3.0, Vector2(0.0, HZ), "court", 2, sx * 0.14).tag = "lamp_dead"
+		lamp(p, sx * 13.4, 17.0, Vector2(0.0, 17.0), "court", 2, sx * 0.14).tag = "lamp_dead"
 	lamp(p, -(HX + 4.0), -HZ - 2.0, Vector2(0.0, -HZ), "court", 2, 0.2).tag = "lamp_dead"
-	lamp(p, -17.0, -9.0, Vector2(-13.0, -9.0), "court", 2, -0.1).tag = "lamp_dead"
+	lamp(p, -13.5, -9.0, Vector2(-9.0, -9.0), "court", 2, -0.1).tag = "lamp_dead"
 
 
 ## What a built place has around it that a ruin doesn't: flowers, planters, a bench.
@@ -560,7 +538,7 @@ static func _details(p: ClubProps) -> void:
 		bike.solid = 0.35
 		bike.high = int(absf(q.y)) % 2 == 0
 	# more bins, more beds
-	for q in [Vector2(-21.0, 30.0), Vector2(20.0, 33.0), Vector2(15.5, -20.0), Vector2(-15.0, -20.0), Vector2(30.0, 12.0)]:
+	for q in [Vector2(-21.0, 34.0), Vector2(20.0, 34.0), Vector2(18.5, -19.0), Vector2(-18.5, -19.0), Vector2(30.0, 12.0)]:
 		_bin(p, q.x, q.y)
 	for q in [Vector2(-8.0, -41.0), Vector2(12.0, -41.2), Vector2(-3.4, -39.6), Vector2(26.0, 30.0), Vector2(-26.0, 29.0), Vector2(-10.8, 35.0), Vector2(10.8, 35.4)]:
 		var bed := put(p, "flower_patch", q.x, q.y, _r(0, TAU), _r(1.3, 1.9))
@@ -609,7 +587,7 @@ static func _details(p: ClubProps) -> void:
 
 ## The fence's company: the wicket's two posts and the hedges that grow along it in places.
 static func _perimeter(p: ClubProps) -> void:
-	for x in [-4.35, -1.65]:
+	for x in [-4.55, -1.45]:
 		var gp := p.at("gatepost", Vector3(x, LAWN, ClubFence.NORTH), 0.0, 1.0)
 		gp.far = true
 	var spots := []

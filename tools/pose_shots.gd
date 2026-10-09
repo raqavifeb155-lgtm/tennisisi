@@ -9,7 +9,7 @@ extends SceneTree
 ##       -s tools/pose_shots.gd -- --stroke=fh --out=/tmp/poses
 ## Strokes: fh (forehand topspin), bh (two-handed backhand), bh1 (one-handed backhand),
 ## sl (slice), serve, walk, dive, ready (waiting between points, then to return a serve),
-## slide (sprint sideways on clay and stop), lunge (a wide low forehand), runfh (forehand
+## smash (the racket smash), slide (sprint sideways on clay and stop), lunge (a wide low forehand), runfh (forehand
 ## hit while running sideways), split (split step and first step), volley (forehand and
 ## backhand volleys at the net), sprint (run forward and stop).
 ## --body=0|1|2 draws the player in that body style (Athlete.Body).
@@ -228,6 +228,20 @@ func _build_plan() -> void:
 			plan.append([_at(1.2), func() -> void: ath.move_input = Vector2(1, 0)])
 			plan.append([_at(2.0), func() -> void: ath.move_input = Vector2.ZERO])
 			shots = [0.3, 0.55, 0.7, 0.85, 1.0, 1.35, 1.5, 1.65, 1.8, 2.3]
+		"smash":
+			# The racket smash (scripts/racket_smash.gd): ready, wind-up (up swipe), the first
+			# blow on the court, the rebound, the second blow that breaks it, the shards, the
+			# hero lets his breath out.
+			var rs := RacketSmash.new()
+			var world := Node3D.new()
+			root.add_child(rs)
+			root.add_child(world)
+			plan.append([_at(0.1), func() -> void: rs.begin(ath, world)])
+			plan.append([_at(0.5), func() -> void: rs.progress(0.4)])
+			plan.append([_at(0.7), func() -> void: rs.swipe(-1, 0.8)])
+			plan.append([_at(1.5), func() -> void: rs.swipe(1, 0.9)])
+			plan.append([_at(2.3), func() -> void: rs.swipe(1, 0.9)])
+			shots = [0.3, 0.6, 0.85, 1.0, 1.45, 1.55, 1.6, 1.7, 2.0, 2.35, 2.4, 2.5, 2.8, 3.1]
 		"aroundfh":
 			# Running around the backhand: back and to the left into the corner, then a
 			# forehand down the line with the ball on the right, then back to the middle

@@ -46,7 +46,7 @@ func test_traits() -> void:
 	check(base.size() >= 28, "about thirty traits besides the synergies (%d)" % base.size())
 	var fine := true
 	var kinds := {}
-	for id in Traits.ids():
+	for id in Traits.student_ids():
 		var d := Traits.def(id)
 		fine = fine and d.has("name") and String(d["desc"]).length() <= 60 and int(d["tier"]) >= 1 and int(d["tier"]) <= 3 and Traits.KIND_NAMES.has(d["kind"]) and d.has("reveal")
 		kinds[d["kind"]] = true
@@ -254,17 +254,27 @@ func test_save() -> void:
 
 
 func test_registry() -> void:
-	print("the NPC registry")
-	ClubNpc.clear()
+	print("the NPC registry (stream H's ClubNpc with what T-2 adds)")
+	var reg := ClubNpc.new()
 	var holder := {"p": Vector3(10, 0, 10)}
-	ClubNpc.register("a", func() -> Vector3: return holder["p"], "Поговорить", "club_npc_talk:a", {"kind": "student", "r": 0.5})
-	ClubNpc.register("b", Vector3(0, 0, 0), "Нанять", "club_npc_hire:b")
-	check(ClubNpc.all().size() == 2 and ClubNpc.has("a"), "registered")
-	check(ClubNpc.near(Vector3(10, 0, 11.8))["id"] == "a", "within two metres of his edge: he is the one to talk to")
-	check(ClubNpc.near(Vector3(10, 0, 14.0)).is_empty(), "farther: nobody")
+	var line_said := {"n": 0}
+	var fn := func() -> String:
+		line_said["n"] += 1
+		return "" if line_said["n"] == 1 else "Моё — подача"
+	reg.register("a", func() -> Vector3: return holder["p"], "Тренировать · Миша", "club_train:s1", ["Привет"],
+		{"kind": "student", "name": "Миша", "radius": 0.3, "head": 1.6, "extra": [["Поговорить", "club_say_a"]],
+		"line": fn})
+	reg.register("coach", Vector3(0, 0, 0), "Поговорить", "", ["Готов?"], {"head": 2.25})
+	check(reg.has("a") and reg.entry("a")["kind"] == "student" and reg.entry("a")["name"] == "Миша" and (reg.entry("a")["extra"] as Array).size() == 1, "registered with his kind, name and a quiet button")
+	check(reg.position_of("a") == Vector3(10, 0, 10) and is_equal_approx(reg.head_of("a").y, 1.6), "where he is and where his bubble goes")
 	holder["p"] = Vector3(30, 0, 30)
-	check(ClubNpc.near(Vector3(10, 0, 11.8)).is_empty() and ClubNpc.near(Vector3(30, 0, 31.5))["id"] == "a", "he walks: the button goes with him")
-	check(ClubNpc.button("a")["label"] == "ПОГОВОРИТЬ" and ClubNpc.button("a")["action"] == "club_npc_talk:a", "the button's text and action")
-	ClubNpc.unregister("a")
-	check(not ClubNpc.has("a") and ClubNpc.button("a").is_empty(), "gone")
-	ClubNpc.clear()
+	check(reg.position_of("a") == Vector3(30, 0, 30), "he walks: the registry follows")
+	var ag := reg.agent_list("coach")
+	check(ag.size() == 1 and is_equal_approx(float(ag[0][1]), 0.3), "a body for the hero (his radius)")
+	check(reg._next_line(reg.entry("a")) == "Привет" and reg._next_line(reg.entry("a")) == "Моё — подача", "his own line when he has one, else the list")
+	reg.set_button("coach", "Выбрать ученика", "club_hire", [["Поговорить", "club_say_coach"]])
+	check(reg.entry("coach")["label"] == "Выбрать ученика" and reg.entry("coach")["action"] == "club_hire" and reg.entry("coach")["lines"] == ["Готов?"], "a new button keeps his lines")
+	reg.set_button("nobody", "x", "y")
+	check(not reg.has("nobody"), "a button for nobody: nothing")
+	reg.unregister("a")
+	check(not reg.has("a") and reg.position_of("a") == Vector3.INF, "gone")

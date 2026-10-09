@@ -144,10 +144,15 @@ func _advance() -> void:
 
 func _finish() -> void:
 	visible = false
+	mark_done()
+	finished.emit()
+
+
+## The cards are not shown again on their own (the ball machine's lesson replaces them).
+static func mark_done() -> void:
 	var f := FileAccess.open(DONE_FILE, FileAccess.WRITE)
 	if f:
 		f.store_string("1")
-	finished.emit()
 
 
 func _show_page() -> void:

@@ -4,8 +4,9 @@ extends Node
 ## between stops (the court, the bench, the shop, the coach's room...), stand and train,
 ## show a mark over their heads now and then, and can be talked to. Light figures from the
 ## meshes of ClubCrowd (two MultiMeshes), sized by age (JuniorGen.junior_t: the model's
-## size is stream H's, this is the stub of it). Each is registered in ClubNpc (the button,
-## the collision circles), so is the coach. Nothing here is an Athlete.
+## size is stream H's, this is the stub of it). Each is registered in the club's ClubNpc
+## (stream H-8: the button, the bubble, a body the hero can't walk through); the coach is
+## registered by Club, here he only gets the «Выбрать ученика» button. Nothing here is an Athlete.
 
 const MAX := 5
 const SPEED := 1.6
@@ -32,6 +33,7 @@ class Npc:
 	var bubble: Label3D
 	var bubble_t := 0.0
 	var phase := 0.0
+	var stuck := 0.0
 
 var club: Node
 var world: ClubWorld
@@ -62,9 +64,18 @@ func set_active(on: bool) -> void:
 		for n in _npcs:
 			if n.bubble:
 				n.bubble.visible = false
-		ClubNpc.unregister("coach")
-		for n in _npcs:
-			ClubNpc.unregister(n.id)
+			_registry().unregister(n.id)
+		_registry().set_button("coach", "Поговорить", "")
+
+
+func _registry() -> ClubNpc:
+	return club.npc
+
+
+## Where a person of ours is now (ClubNpc reads it every frame): nowhere while the club is shut.
+func pos_of(id: String) -> Vector3:
+	var n := npc(id)
+	return n.pos if n != null and _active else Vector3.INF
 
 
 func people() -> Array[Npc]:
@@ -97,7 +108,7 @@ func refresh() -> void:
 		for w in want:
 			keep = keep or w[0] == _npcs[i].id
 		if not keep:
-			ClubNpc.unregister(_npcs[i].id)
+			_registry().unregister(_npcs[i].id)
 			if _npcs[i].bubble:
 				_npcs[i].bubble.queue_free()
 			_npcs.remove_at(i)
@@ -168,26 +179,40 @@ func _paint() -> void:
 
 func _register(n: Npc, data: Dictionary) -> void:
 	var id := n.id
-	var p := func() -> Vector3: return n.pos
+	var opts := {"kind": n.kind, "name": n.name, "radius": 0.36 * n.size + 0.04, "head": 2.0 * n.size + 0.1,
+		"line": Callable(self, "line_for").bind(id)}
 	if n.kind == "student":
-		ClubNpc.register(id, p, "Тренировать · %s" % String(n.name).get_slice(" ", 0), "club_npc_train:%s" % String(data["id"]),
-			{"kind": "student", "name": n.name, "r": 0.5 * n.size + 0.1, "extra": [["Поговорить", "club_npc_talk:%s" % id]]})
+		opts["extra"] = [["Поговорить", "club_say_" + id]]
+		_registry().register(id, [self, "pos_of", id], "Тренировать · %s" % String(n.name).get_slice(" ", 0),
+			"club_train:%s" % String(data["id"]), [], opts)
 	else:
 		var cand := Academy.guest_candidate()
 		var can_hire := not cand.is_empty() and not Academy.is_full()
-		ClubNpc.register(id, p, ("Нанять · %d ●" % int(cand.get("price", 0))) if can_hire else "Поговорить",
-			"club_npc_hire:guest" if can_hire else "club_npc_talk:%s" % id,
-			{"kind": "guest", "name": n.name, "extra": [["Поговорить", "club_npc_talk:%s" % id]] if can_hire else []})
+		opts["extra"] = [["Поговорить", "club_say_" + id]] if can_hire else []
+		_registry().register(id, [self, "pos_of", id], ("Нанять · %d ●" % int(cand.get("price", 0))) if can_hire else "Поговорить",
+			"club_guest_hire" if can_hire else "", [], opts)
 
 
+## The coach (Club registers him) gets «Выбрать ученика» while there are newcomers and room.
 func _register_coach() -> void:
-	var body: Athlete = club.coach.body
-	var p := func() -> Vector3: return body.position
-	var hire := not Academy.is_full() and not Academy.candidates().is_empty()
-	if hire:
-		ClubNpc.register("coach", p, "Выбрать ученика", "club_hire", {"kind": "coach", "name": "Тренер", "extra": [["Поговорить", "club_npc_talk:coach"]]})
+	var reg := _registry()
+	if not reg.has("coach"):
+		return
+	if hiring():
+		reg.set_button("coach", "Выбрать ученика", "club_hire", [["Поговорить", "club_say_coach"]])
 	else:
-		ClubNpc.register("coach", p, "Поговорить", "club_npc_talk:coach", {"kind": "coach", "name": "Тренер"})
+		reg.set_button("coach", "Поговорить", "")
+	reg.entry("coach")["line"] = Callable(self, "_coach_line")
+
+
+func hiring() -> bool:
+	return not Academy.is_full() and not Academy.candidates().is_empty()
+
+
+func _coach_line() -> String:
+	if hiring():
+		return "Привёл новичков — выбирай, пока свободны"
+	return "Твои ученики растут с каждым забегом" if not Academy.students().is_empty() and _rng.randf() < 0.4 else ""
 
 
 # --- Life ------------------------------------------------------------------------------------------
@@ -219,14 +244,12 @@ func _process(delta: float) -> void:
 	if not _active or club == null or not club.active or not is_instance_valid(world) or not is_instance_valid(_body):
 		return
 	_clock += delta
-	world.walk.clear_tag("npc_life")   # routes are drawn without them, they are put back below
 	var hero: Vector3 = club.main.player.position
 	var i := 0
 	for n in _npcs:
 		_step(n, delta, hero)
 		var lean := 0.0
 		var bob := 0.0
-		var pos := n.pos
 		if n.route.is_empty():
 			if n.activity == "train":
 				var beat := maxf(0.0, sin(_clock * 4.2 + n.phase))
@@ -240,15 +263,13 @@ func _process(delta: float) -> void:
 			n.phase += delta * 9.0
 			bob = absf(sin(n.phase)) * 0.04
 			lean = sin(n.phase) * 0.04
+		# The ground under him (rooms' floors, ramps: ClubWalk.floor_at), eased like the hero's.
+		n.pos.y = move_toward(n.pos.y, world.walk.floor_at(Vector2(n.pos.x, n.pos.z)), 1.6 * delta)
 		var b := Basis.from_euler(Vector3(-lean, n.yaw, 0.0)) * Basis.from_scale(Vector3.ONE * n.size)
-		_body.multimesh.set_instance_transform(i, Transform3D(b, pos + Vector3(0, bob, 0)))
-		_legs.multimesh.set_instance_transform(i, Transform3D(b, pos + Vector3(0, bob * 0.4, 0)))
+		_body.multimesh.set_instance_transform(i, Transform3D(b, n.pos + Vector3(0, bob, 0)))
+		_legs.multimesh.set_instance_transform(i, Transform3D(b, n.pos + Vector3(0, bob * 0.4, 0)))
 		_bubble_tick(n, delta)
-		world.walk.add_circle(Vector2(n.pos.x, n.pos.z), 0.5 * n.size + 0.1, "npc_life")
 		i += 1
-	# The coach is a person too: a circle the hero can't walk through.
-	var c: Vector3 = club.coach.body.position
-	world.walk.add_circle(Vector2(c.x, c.z), 0.5, "npc_life")
 
 
 func _step(n: Npc, delta: float, hero: Vector3) -> void:
@@ -270,8 +291,18 @@ func _step(n: Npc, delta: float, hero: Vector3) -> void:
 	if to_hero.length() < 1.5 and mv.normalized().dot(to_hero.normalized()) > 0.3:
 		n.yaw = lerp_angle(n.yaw, atan2(-to_hero.x, -to_hero.y), 1.0 - exp(-8.0 * delta))
 		return
-	here += mv * SPEED * delta
-	n.pos = Vector3(here.x, 0.0, here.y)
+	# Other people are bodies too (ClubNpc): he slides round them, never through.
+	var r := 0.36 * n.size + 0.04
+	var to := world.walk.resolve(here, here + mv * SPEED * delta, r, _registry().agent_list(n.id))
+	if to.distance_to(here) < 0.2 * SPEED * delta:
+		n.stuck += delta
+		if n.stuck > 2.5:   # wedged (two people on one path): give up this stop
+			n.stuck = 0.0
+			n.route = []
+			n.dwell = _rng.randf_range(1.0, 3.0)
+		return
+	n.stuck = 0.0
+	n.pos = Vector3(to.x, n.pos.y, to.y)
 	n.yaw = lerp_angle(n.yaw, atan2(-mv.x, -mv.y), 1.0 - exp(-10.0 * delta))
 
 
@@ -323,11 +354,10 @@ func _show_bubble(n: Npc, text: String, secs: float, mark := false) -> void:
 	n.bubble_t = secs
 
 
-## A line over a person's head (the talk button).
+## A line over a person's head: the club's bubble (ClubNpc.say), like everybody's.
 func say(id: String, text: String, secs := 3.5) -> void:
-	var n := npc(id)
-	if n != null:
-		_show_bubble(n, text, secs)
+	if npc(id) != null:
+		_registry().say(id, text, secs)
 
 
 ## What a person says when you talk to him.

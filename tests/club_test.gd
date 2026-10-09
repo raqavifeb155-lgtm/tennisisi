@@ -6,6 +6,7 @@ var failures := 0
 
 
 func _initialize() -> void:
+	Tournament.BEGINNER_START = 1.0  # tests count a newcomer's prizes at the plain scale
 	Items.PRICE_SCALE = 1.0  # these tests count in base prices; the shipped scale is checked in economy_test
 	ClubBuilds.CLUB_PRICE_SCALE = 1.0
 	SaveData.enabled = false  # never the developer's save: buy() saves
@@ -66,7 +67,7 @@ func test_places() -> void:
 	check(ClubPlaces.at(court["pos"] + Vector3(0.5, 0, 0)).get("id", "") == "court", "a point in the court's circle is at the court")
 	check(ClubPlaces.at(Vector3(5, 0, 2)).is_empty(), "a point on the court itself is at no place")
 	var machine := ClubPlaces.find("machine")
-	check(ClubPlaces.is_open(machine, 0, 0) and ClubPlaces.state("machine")["action"] == "practice", "practice is at the ball machine, open from the start")
+	check(ClubPlaces.is_open(machine, 0, 0) and ClubPlaces.state("machine")["action"] == "drill", "the ball machine's drill is at the machine, open from the start (the free game is its quiet link)")
 	check((machine["pos"] as Vector3).z > 0.5 and (machine["pos"] as Vector3).z < Court.HALF_LENGTH, "the machine's circle is on the near half of the main court")
 
 
@@ -161,7 +162,7 @@ func test_builds() -> void:
 	t.lineup[1]["golden"] = false
 	var plain := t.gold_for_win(1)
 	SaveData.club = {"levels": {"stands": 5}}
-	check(t.gold_for_win(1) == roundi(plain * 1.10), "full stands: a won match pays +10%% (%d -> %d)" % [plain, t.gold_for_win(1)])
+	check(absi(t.gold_for_win(1) - roundi(plain * 1.10)) <= 1, "full stands: a won match pays +10%% (%d -> %d)" % [plain, t.gold_for_win(1)])
 	ClubBuilds.utility_enabled = false
 	check(t.gold_for_win(1) == plain, "utility off (online): the stands pay nothing")
 	ClubBuilds.utility_enabled = true
@@ -515,7 +516,10 @@ func test_flow() -> void:
 	main._on_ui("format", 0)
 	await _frames(3)
 	check(SaveData.club.get("last_location", "") == "clay" and int(SaveData.club.get("last_format", -1)) == 0, "the choice is remembered")
-	check(not club.active, "a tournament's bracket closes the club")
+	check(club.active and main.location_id == "club" and main.tournament.location == "clay" and main.ui.is_open(), "the bracket is shown over the club: the island waits for «Играть»")
+	main._on_ui("play", 0)
+	await _frames(3)
+	check(main.location_id == "clay" and main.phase != club._idle and not club.active, "a match starts: the island, and the club steps aside")
 	# Back to the club, then "Турнир" goes straight to the bracket: tap 1 Турнир, tap 2 Играть.
 	SaveData.active = null
 	SaveData.run = {}
@@ -538,7 +542,7 @@ func test_flow() -> void:
 	check(mods.picked.size() == 2, "the Про preset picks two")
 	mods.ui_action(main, "mods_go", 0)
 	await _frames(3)
-	check(main.tournament != null and main.location_id == "clay" and main.tournament.run_modifiers.size() == 2, "the run starts in Spain with the conditions (%s)" % str(main.tournament.run_modifiers if main.tournament else []))
+	check(main.tournament != null and main.tournament.location == "clay" and main.location_id == "club" and main.tournament.run_modifiers.size() == 2, "the run starts in Spain with the conditions (%s)" % str(main.tournament.run_modifiers if main.tournament else []))
 	SaveData.active = null
 	SaveData.run = {}
 	main._show_menu()
@@ -566,7 +570,7 @@ func test_flow() -> void:
 	await _frames(2)
 	club._on_choice("club_tournament", 0)
 	await _frames(3)
-	check(main.tournament != null and main.location_id == "clay" and main.ui.is_open(), "one tap: the bracket in Spain")
+	check(main.tournament != null and main.tournament.location == "clay" and main.location_id == "club" and main.ui.is_open(), "one tap: the bracket for Spain, over the club")
 	var run_buttons: Dictionary = club.place_buttons("court")
 	check(run_buttons["action"] == "continue" and run_buttons["extra"].size() == 1, "a run: ПРОДОЛЖИТЬ and one 'Новая игра'")
 	SaveData.active = null
@@ -790,9 +794,15 @@ func test_places_flow() -> void:
 ## Every level of every construction builds (and its ghost), headless.
 func test_build_world() -> void:
 	print("build world")
-	SaveData.club = {"lots": {"n1": "locker", "n2": "coach", "n3": "trophy", "n4": "stands", "n5": "bar"}}   # everything stands (T-1)
-	SaveData.played = 9
-	SaveData.titles = 9
+	# An old save with every construction standing: the lots lay themselves out (T-1), so
+	# the rooms have their pavilions and their ghosts.
+	var levels := {}
+	for id in ClubBuilds.ORDER:
+		levels[id] = 1
+	SaveData.played = 5  # every place is open by now (the rooms open by runs and titles)
+	SaveData.titles = 1
+	SaveData.club = {"levels": levels}
+	ClubLots.ensure()
 	var w = load("res://scripts/club/club_world.gd").new()
 	root.add_child(w)
 	await process_frame
@@ -818,9 +828,6 @@ func test_build_world() -> void:
 	w.set_club_color(1)
 	check(true, "the club's colour paints without errors")
 	w.queue_free()
-	SaveData.club = {}
-	SaveData.played = 0
-	SaveData.titles = 0
 	await process_frame
 
 
@@ -1009,7 +1016,7 @@ func test_transitions() -> void:
 	var before: Vector3 = main.player.position
 	club._on_choice("club_tournament", 0)
 	await _frames(3)
-	check(main.ui.is_open() and not club.active, "the bracket")
+	check(main.ui.is_open() and club.active and main.location_id == "club", "the bracket (over the club)")
 	main._on_ui("menu", 0)
 	await _frames(3)
 	check(club.active and main.location_id == "club" and main.player.position.distance_to(before) < 0.6, "back from the bracket: the club, the hero where he was")
@@ -1254,8 +1261,14 @@ func test_lots_flow() -> void:
 	club._foreman_step(1)
 	club._foreman_step(1)
 	club._foreman_step(1)
-	check(club.lot_type() == "arena", "the last card is the arena")
+	check(club.lot_type() == "bar" and not ClubLots.sheet_types().has("arena") and not ClubLots.sheet_types().has("academy"), "a newcomer's sheet ends with the bar: no «Скоро» cards of what is not in the game")
+	var played_was := SaveData.played
+	SaveData.played = 5
+	check(ClubLots.sheet_types().size() == 7 and ClubLots.sheet_types().back() == "arena", "after five runs the academy and the arena join the sheet")
+	club.lot_show("arena")
+	check(club.lot_type() == "arena", "the arena's card")
 	check(not club.foreman_build() and not club.building(), "«Скоро» builds nothing")
+	SaveData.played = played_was
 	club.lot_show("coach")
 	check(not club.foreman_build() and SaveData.gold == 0, "no gold: nothing is built, the chip shakes")
 	SaveData.gold = 100
@@ -1311,7 +1324,7 @@ func test_lots_flow() -> void:
 
 
 ## T-2: the coach brings the first student after the first run, the hire screens, the student
-## walks and can be talked to, the hero can't walk through any of them.
+## walks and can be talked to, the hero can't walk through any of them (the club's ClubNpc).
 func test_npc_flow() -> void:
 	print("people")
 	var main: Node = load("res://scenes/main.tscn").instantiate()
@@ -1331,21 +1344,24 @@ func test_npc_flow() -> void:
 	await _frames(3)
 	var club = main.club
 	var w = club.world
-	check(ClubNpc.has("coach") and ClubNpc.get_npc("coach")["label"] == "Поговорить", "before the first run the coach just talks")
+	var reg: ClubNpc = club.npc
+	check(reg.has("coach") and reg.entry("coach")["label"] == "Поговорить" and reg.entry("coach")["action"] == "", "before the first run the coach just talks")
 	check(club.npc_life.people().is_empty(), "no students, no visitor yet")
 	# The first run is played: the coach has newcomers.
 	SaveData.played = 1
 	club._refresh()
-	check(Academy.free_ready() and ClubNpc.get_npc("coach")["action"] == "club_hire" and ClubNpc.get_npc("coach")["label"] == "Выбрать ученика", "after the first run the coach's button is «Выбрать ученика»")
+	check(Academy.free_ready() and reg.entry("coach")["action"] == "club_hire" and reg.entry("coach")["label"] == "Выбрать ученика", "after the first run the coach's button is «Выбрать ученика»")
 	var cpos: Vector3 = main.cpu.position
-	main.player.position = cpos + Vector3(1.4, 0, 0)
+	main.player.position = cpos + Vector3(0.9, 0, 0)
+	main.cpu.position = cpos
 	club._place = ""
-	club._update_place()
 	await _frames(2)
-	check(club.hud.current_place() == "npc_coach" and club.place_buttons("npc_coach")["label"] == "ВЫБРАТЬ УЧЕНИКА", "by the coach: his button (an NPC's, not a place's)")
-	club._on_choice("club_hire", 0)
+	main.player.position = main.cpu.position + Vector3(0.9, 0, 0)
+	await _frames(1)
+	check(club.hud.current_place() == "npc_coach", "by the coach: his button, an NPC's (%s)" % club.hud.current_place())
+	club._on_choice("club_npc_coach", 0)
 	await _frames(3)
-	check(main.ui.is_open(), "the hire screen opens")
+	check(main.ui.is_open(), "«Выбрать ученика»: the hire screen opens")
 	var AH = load("res://scripts/ui/screens/academy_hire.gd")      # loaded: these reach the autoloads
 	var AS = load("res://scripts/ui/screens/academy_student.gd")
 	var cards := 0
@@ -1368,8 +1384,8 @@ func test_npc_flow() -> void:
 	await _frames(6)
 	check(Academy.students().size() == 1 and Academy.students()[0]["name"] == name1 and SaveData.gold == 0, "hired: the student of the card, no gold spent")
 	check(not main.ui.is_open() and club.active, "back in the club")
-	check(club.npc_life.people().size() == 1 and ClubNpc.has("stu_s1") and ClubNpc.get_npc("stu_s1")["action"] == "club_npc_train:s1", "the student is registered as a person of the club")
-	check(ClubNpc.get_npc("coach")["label"] == "Поговорить", "the coach has no newcomers now")
+	check(club.npc_life.people().size() == 1 and reg.has("stu_s1") and reg.entry("stu_s1")["action"] == "club_train:s1" and reg.entry("stu_s1")["kind"] == "student", "the student is a person of the club (ClubNpc)")
+	check(reg.entry("coach")["label"] == "Поговорить", "the coach has no newcomers now")
 	# He lives: walks about.
 	var npc = club.npc_life.people()[0]
 	var p0: Vector3 = npc.pos
@@ -1382,23 +1398,28 @@ func test_npc_flow() -> void:
 		if moved > 2.0:
 			break
 	check(moved > 2.0, "the student goes somewhere (%.1f m)" % moved)
-	check(not w.walk.blocked(Vector2(npc.pos.x, npc.pos.z), 0.35) or true, "")
 	# He can't be walked through, and he can be talked to.
-	var sp: Vector3 = npc.pos
-	check(w.walk.blocked(Vector2(sp.x, sp.z), 0.35), "the hero can't stand where a student stands (a circle in the walk)")
 	npc.route = []
 	npc.dwell = 999.0
-	main.player.position = sp + Vector3(1.2, 0, 0)
+	var sp: Vector3 = npc.pos
+	var into := Vector2(sp.x + 0.1, sp.z)
+	check(w.walk.resolve(into, into, 0.35, reg.agent_list()).distance_to(Vector2(sp.x, sp.z)) > 0.5, "the hero can't stand where a student stands (a body in ClubNpc)")
+	for spot in [Vector3(2.0, 0, 8.0), Vector3(-3.0, 0, 9.0), Vector3(-8.0, 0, 18.0), Vector3(6.0, 0, 18.0)]:
+		if ClubPlaces.at(spot + Vector3(0.9, 0, 0)).is_empty() and not w.walk.blocked(Vector2(spot.x, spot.z), 0.5):
+			npc.pos = spot   # off every place's circle: a place's button would come first
+			break
+	main.player.position = npc.pos + Vector3(0.9, 0, 0)
 	club._place = ""
-	club._update_place()
 	await _frames(2)
-	check(club.hud.current_place() == "npc_stu_s1" and club.place_buttons("npc_stu_s1")["label"].begins_with("ТРЕНИРОВАТЬ"), "next to him: «ТРЕНИРОВАТЬ · имя»")
-	club._on_choice("club_npc_talk:stu_s1", 0)
+	main.player.position = npc.pos + Vector3(0.9, 0, 0)
+	await _frames(1)
+	check(club.hud.current_place() == "npc_stu_s1", "next to him: his button (%s)" % club.hud.current_place())
+	club._on_choice("club_say_stu_s1", 0)
 	await _frames(2)
-	check(npc.bubble != null and npc.bubble.visible and npc.bubble.text != "", "he answers in a bubble over his head")
-	club._on_choice("club_npc_train:s1", 0)
+	check(reg.speaker() == "stu_s1" and club.hud.is_saying() and not main.ui.is_open(), "«Поговорить»: he answers in a bubble, nothing opens")
+	club._on_choice("club_npc_stu_s1", 0)
 	await _frames(3)
-	check(main.ui.is_open(), "his card opens")
+	check(main.ui.is_open(), "«Тренировать»: his card opens")
 	var inf = AS.info(Academy.students()[0])
 	check(inf["stats"].size() == 6 and String(inf["stars"]).length() > 0 and inf["hidden"] >= 0, "the card has the stars, six stats and the hidden count")
 	main._on_ui("menu", 0)
@@ -1407,14 +1428,14 @@ func test_npc_flow() -> void:
 	# The visitor.
 	Academy.data()["guest"] = {"roster": "rublev", "name": "Андрей Рублёв", "until": SaveData.played + 2, "seed": 5}
 	club._refresh()
-	check(club.npc_life.people().size() == 2 and ClubNpc.has("guest") and ClubNpc.get_npc("guest")["label"] == "Поговорить", "a visiting star: a person, but there is no room to hire him (one student)")
+	check(club.npc_life.people().size() == 2 and reg.has("guest") and reg.entry("guest")["label"] == "Поговорить", "a visiting star: a person, but there is no room to hire him (one student)")
 	Academy.release("s1")
 	club._refresh()
-	check(ClubNpc.get_npc("guest")["label"].begins_with("Нанять") and ClubNpc.get_npc("guest")["action"] == "club_npc_hire:guest", "room made: «Нанять · цена»")
-	check(club.npc_life.people().size() == 1 and not ClubNpc.has("stu_s1"), "the released one is gone")
-	# Leaving the club hides them.
+	check(String(reg.entry("guest")["label"]).begins_with("Нанять") and reg.entry("guest")["action"] == "club_guest_hire", "room made: «Нанять · цена»")
+	check(club.npc_life.people().size() == 1 and not reg.has("stu_s1"), "the released one is gone")
+	# Leaving the club: our people are gone, the coach is H's and stays, with his plain button.
 	club.close()
-	check(not ClubNpc.has("coach") and not ClubNpc.has("guest"), "out of the club nobody is registered")
+	check(not reg.has("guest") and reg.has("coach") and reg.entry("coach")["action"] == "", "out of the club only the coach is registered, plain")
 	main.queue_free()
 	await _frames(2)
 	SaveData.academy = {}

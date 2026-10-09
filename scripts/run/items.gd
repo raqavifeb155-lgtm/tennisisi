@@ -21,7 +21,7 @@ class_name Items
 ## are the item's own stats and "strings" the extra line the shop's restringing rolls.
 
 const BUY := [15, 45, 120, 360, 1200]   # buy price by rarity, level 1 (mythic: only for selling and insurance)
-static var PRICE_SCALE := 2.4                # one knob to rebalance every price (items, strings, insurance, rerolls); 2.4 with income x0.5
+static var PRICE_SCALE := 3.3                # one knob to rebalance every price (items, strings, insurance, rerolls); 3.3 with income x0.5 and the chests
 const LEVEL_PRICE := 0.15               # +15% price a level
 const LEVEL_POWER := 0.10               # +10% stats a level
 const SELL_SHARE := 1.0 / 3.0

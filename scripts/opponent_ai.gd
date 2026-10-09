@@ -73,7 +73,8 @@ func setup(g: Node, athlete: Athlete, b: Ball) -> void:
 		ge.bounce.connect(_on_bounce)
 		ge.match_started.connect(func(i: Dictionary) -> void:
 			new_match()
-			set_profile(i.get("profile", Opponents.find(String(i.get("opponent", ""))))))  # "profile": a stats dictionary (AiProfile)
+			var prof = i.get("profile", {})  # a stats dictionary: a random player, an academy pupil (AiProfile)
+			set_profile(prof if prof is Dictionary and not prof.is_empty() else Opponents.find(String(i.get("opponent", "")))))
 		ge.player_stroke.connect(_on_player_stroke)
 		ge.point.connect(_on_point)
 
