@@ -21,6 +21,7 @@ const YAW_K := 2.2         # 1/s, how fast it swings behind a turning hero
 const YAW_K_RUN := 4.5     # the same on the auto-run along a path
 
 var target: Node3D
+var walk_override: ClubWalk     # the walls the camera keeps out of, when not the club's: the academy's house (AH-1)
 var yaw := 0.0                  # the heading it looks along: 0 = north (-z), as Godot's rotation.y
 var run_mode := false           # the auto-run: swing behind faster
 var _frame_pos := Vector3.INF   # a held framing (a room), or INF = follow the hero
@@ -88,6 +89,8 @@ func _in_crown(q: Vector2) -> bool:
 
 
 func _walk() -> ClubWalk:
+	if walk_override != null:
+		return walk_override
 	var club := get_parent()
 	if club != null and club.get("world") != null:
 		var w = club.get("world")
