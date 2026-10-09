@@ -374,6 +374,7 @@ func _ready() -> void:
 		_show_menu()
 		# The menu and the scene render under the loading screen while shaders
 		# compile: the first rally plays without hitches.
+		ShaderWarm.start(self)  # the loot's shaders too, so no chest or knock-out stalls on its first sight
 		add_child(BootLoader.new())
 
 
@@ -2512,12 +2513,19 @@ func _make_drop_racket(item: Dictionary) -> Node3D:
 	handle.material_override = hm
 	handle.position = Vector3(0, 0.15 * 1.6, 0)
 	root.add_child(handle)
-	var light := OmniLight3D.new()
-	light.light_color = c
-	light.light_energy = 1.2
-	light.omni_range = 2.0
-	light.position = ring.position
-	root.add_child(light)
+	# The glow is a mesh, not a light: a real light would give every body and the court near
+	# it another shader variant, compiled on the spot (a stall of a phone's frames) when
+	# the racket flies out; the gear's own glow material is already compiled (ShaderWarm).
+	var halo := MeshInstance3D.new()
+	var hm2 := TorusMesh.new()
+	hm2.inner_radius = 0.105 * 1.6 - 0.03
+	hm2.outer_radius = 0.128 * 1.6 + 0.03
+	halo.mesh = hm2
+	halo.material_override = AthleteGear.glow_material(3, AthleteGear.GLOW_COLORS[clampi(int(item.get("rarity", 0)), 0, Gear.MYTHIC)], 0.7)
+	halo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	halo.rotation = ring.rotation
+	halo.position = ring.position
+	root.add_child(halo)
 	return root
 
 
