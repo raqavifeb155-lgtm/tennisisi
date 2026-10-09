@@ -26,6 +26,7 @@ class Walker:
 	var speed := 1.0
 	var phase := 0.0
 	var lane := 0.0
+	var off := 0.0            # the sideways offset he really stands at (eases to lane * dir when he turns round)
 	var length := 0.0
 	var cool := 0.0           # after turning away from the hero
 	var pos := Vector2(1.0e5, 1.0e5)   # where he stood last frame (the others look at it)
@@ -83,6 +84,7 @@ func _ready() -> void:
 			w.speed = _rng.randf_range(0.8, 1.4)
 			w.phase = _rng.randf_range(0.0, TAU)
 			w.lane = 0.45          # everybody keeps to the same hand: two who meet pass 0.9 m apart
+			w.off = w.lane * w.dir
 			_walkers.append(w)
 			body_col.append(shirts[_rng.randi() % shirts.size()])
 	for k in 2:
@@ -164,6 +166,8 @@ func _update(delta: float) -> void:
 				w.waiting = 0.0
 		else:
 			w.waiting = 0.0
+		var s0 := w.s
+		var off0 := w.off
 		w.s += w.dir * w.speed * WALK_SPEED * delta * move
 		if w.s > w.length:
 			w.s = w.length
@@ -172,13 +176,28 @@ func _update(delta: float) -> void:
 			w.s = 0.0
 			w.dir = 1.0
 		var at := _point(w.route, w.s)
-		var ahead := _point(w.route, clampf(w.s + w.dir * 0.4, 0.0, w.length))
-		var tang := (ahead - at)
-		if tang.length() < 0.001:
-			tang = Vector2(0, -1)
-		tang = tang.normalized()
-		var side := Vector2(-tang.y, tang.x) * w.lane
-		var q := at + side
+		# the way along the route (s growing) and its left side; turning round does not move him
+		# sideways in one jump (that walked him through the one he was facing): the offset eases
+		var fwd := _point(w.route, clampf(w.s + 0.4, 0.0, w.length)) - at
+		if fwd.length() < 0.001:
+			fwd = at - _point(w.route, clampf(w.s - 0.4, 0.0, w.length))
+		fwd = fwd.normalized() if fwd.length() > 0.001 else Vector2(0, -1)
+		var tang := fwd * w.dir
+		w.off = move_toward(w.off, w.lane * w.dir, delta * 0.6)
+		var q := at + Vector2(-fwd.y, fwd.x) * w.off
+		# a last guard, whatever the turns and the sidesteps: no step brings him within 0.7 m of
+		# somebody it did not already (the end of a route, a turn beside a queue)
+		for j in _walkers.size():
+			if j != i and w.pos.x < 1.0e4:
+				var op := _walkers[j].pos
+				var dn := q.distance_to(op)
+				if dn < 0.7 and dn < w.pos.distance_to(op):
+					w.s = s0
+					w.off = off0
+					q = w.pos
+					move = 0.0
+					w.waiting += delta
+					break
 		w.pos = q
 		w.heading = tang
 		w.phase += delta * (5.0 + w.speed * 2.0)
