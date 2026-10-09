@@ -28,9 +28,10 @@ func _main() -> void:
 	test_free_agents()
 	test_heir_sources()
 	test_retire()
+	test_hero_name()
 	test_save_roundtrip()
 	await test_screens()
-	check(finished == 13, "every test ran to its end: %d of 13" % finished)
+	check(finished == 14, "every test ran to its end: %d of 14" % finished)
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -338,6 +339,64 @@ func test_retire() -> void:
 	# The cloud can't undo it.
 	var score1 := SaveData._score(SaveData._to_config())
 	check(score1 > score0, "the save's score after the retirement beats the copy before it (%.0f > %.0f)" % [score1, score0])
+	finished += 1
+
+
+func test_hero_name() -> void:
+	print("hero name")
+	check(Career.clean_name("  Дима   Иванов ") == "Дима Иванов", "trimmed, doubled spaces squeezed")
+	check(Career.clean_name("Ро\u00adма😀★") == "Рома", "symbols and emoji dropped")
+	check(Career.clean_name("Анна-Мария 7") == "Анна-Мария 7", "Cyrillic, hyphen, digits and a space stay")
+	check(Career.clean_name("Alex_Smith!") == "AlexSmith", "Latin stays, the rest goes")
+	check(Career.clean_name("Очень длинное имя героя").length() <= Career.NAME_MAX, "cut to the limit")
+	check(Career.clean_name("   ") == "" and Career.clean_name("😀😀") == "", "nothing usable -> empty")
+	check(Career.clean_name("Сука") == "", "a rude name is refused")
+	check(Career.fit_name("Властимил Кратохвил") == "Властимил", "a long generator name falls back to the first name")
+	check(Career.fit_name("Миша Петров") == "Миша Петров", "a short one stays")
+	# A new player and an old save both get a name (Telegram's on the web, else a random one).
+	_fresh()
+	var n := String(Career.data()["name"])
+	check(n != "" and Career.clean_name(n) == n, "a new hero has a valid name: %s" % n)
+	check(Career.hero_name() == n and Career.hero_short() == n.get_slice(" ", 0).to_upper(), "the name and the board's short form")
+	_fresh()
+	var cf := ConfigFile.new()
+	cf.set_value("meta", "played", 12)
+	cf.set_value("career", "data", {"v": 1, "gen": 1, "name": "", "runs": 3})
+	SaveData._apply(cf)
+	check(String(SaveData.career["name"]) != "" and int(SaveData.career["runs"]) == 3, "an old save without a name is given one on load")
+	var cf2 := ConfigFile.new()
+	cf2.parse(SaveData._to_config().encode_to_text())
+	var kept := String(SaveData.career["name"])
+	SaveData._apply(cf2)
+	check(String(SaveData.career["name"]) == kept, "the name survives a save and a load")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	var ok := true
+	for i in 40:
+		var r := Career.random_name(rng)
+		ok = ok and r != "" and Career.clean_name(r) == r
+	check(ok, "random names are valid and fit")
+	# The price: the very first hero's first change is free, then RENAME_COST from the bank.
+	_fresh()
+	SaveData.gold = 0
+	check(Career.rename_cost() == 0, "the first change of the first hero is free")
+	check(Career.rename_problem("") == "empty" and Career.rename_problem("😀") == "empty", "an empty name is refused")
+	check(Career.rename_problem(String(Career.data()["name"])) == "same", "the same name is no change")
+	check(Career.rename("  Рома ") == "" and Career.hero_name() == "Рома" and SaveData.gold == 0, "renamed for free, trimmed")
+	check(Career.rename_cost() == Career.RENAME_COST, "the second change costs %d" % Career.RENAME_COST)
+	check(Career.rename("Тимур") == "poor" and Career.hero_name() == "Рома" and SaveData.gold == 0, "too poor: nothing changes, nothing is charged")
+	SaveData.gold = Career.RENAME_COST - 1
+	check(Career.rename_problem("Тимур") == "poor", "one coin short is still too poor")
+	SaveData.gold = 250
+	check(Career.rename("Тимур") == "" and Career.hero_name() == "Тимур" and SaveData.gold == 150, "paid: the gold left the bank")
+	check(Career.rename("Тимур") == "same" and SaveData.gold == 150, "the same name again: no charge")
+	check(Career.rename("") == "empty" and SaveData.gold == 150, "empty: no charge")
+	# The heir comes with a random name of his own; his first change is not free.
+	var heir: Dictionary = Career.free_agents(1, 9)[0]
+	check(String(heir["name"]).length() <= Career.NAME_MAX, "an heir's name fits the limit: %s" % heir["name"])
+	Career.data()["retire_due"] = true
+	Career.retire(heir, {}, null)
+	check(String(Career.data()["name"]) == String(heir["name"]) and Career.rename_cost() == Career.RENAME_COST, "the heir keeps his name; changing it costs gold")
 	finished += 1
 
 

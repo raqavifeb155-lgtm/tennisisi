@@ -32,6 +32,8 @@ const RANK_NONE := 999
 const AUCTION := 0.5                                 # the farewell auction: half the price
 const HEIRS := 3
 const FREE_TIERS := ["E", "E", "D"]                  # a free agent's tier, by the candidate's place
+const NAME_MAX := 14                                 # the hero's name: fits the plate, the card, the ceremony
+const RENAME_COST := 100                             # gold from the bank for a new name (the first hero's first change is free)
 
 ## The heir sources (register_heir_source): [{"id", "fn": Callable, "prio": int}].
 static var _sources: Array = []
@@ -46,7 +48,7 @@ static func new_career(name := "", gen := 1, start_played := 0) -> Dictionary:
 		"season": 1, "in_season": 0, "age": START_AGE, "season_pts": 0, "cells": [], "seasons": [],
 		"runs": 0, "titles": 0, "career_pts": 0, "best_rank": RANK_NONE, "season_due": 0,
 		"retire_due": false, "early": false, "heirs": [], "origin": "start", "relic": {},
-		"final_loc": "", "retired": [],
+		"final_loc": "", "retired": [], "renames": 0,
 	}
 
 
@@ -57,6 +59,8 @@ static func migrate(c: Dictionary, played: int) -> Dictionary:
 	for k in base:
 		if not c.has(k):
 			c[k] = base[k]
+	if String(c["name"]) == "":
+		c["name"] = default_name()  # an older save's first hero gets one: Telegram's, else a random one
 	return c
 
 
@@ -82,6 +86,101 @@ static func age_of(s: int) -> int:
 static func hero_name() -> String:
 	var n := String(data()["name"])
 	return n if n != "" else "Ты"
+
+
+## The name on the match board (the little plate): the first word, upper case.
+static func hero_short() -> String:
+	return hero_name().get_slice(" ", 0).to_upper()
+
+
+# --- The hero's name ------------------------------------------------------------------------
+
+## A name as the player may keep it: only letters (Cyrillic, Latin), digits, a space and a
+## hyphen, no doubled spaces, at most NAME_MAX; "" = nothing usable or a rude word.
+static func clean_name(s: String) -> String:
+	var t := ""
+	for ch in s:
+		var u := ch.unicode_at(0)
+		var ok := (u >= 0x30 and u <= 0x39) or (u >= 0x41 and u <= 0x5A) or (u >= 0x61 and u <= 0x7A) \
+			or (u >= 0x410 and u <= 0x44F) or u == 0x401 or u == 0x451 or u == 0x20 or u == 0x2D
+		if ok and not (u == 0x20 and t.ends_with(" ")):
+			t += ch
+	t = t.strip_edges()
+	if t.length() > NAME_MAX:
+		t = t.left(NAME_MAX).strip_edges()
+	while t.begins_with("-") or t.ends_with("-"):
+		t = t.trim_prefix("-").trim_suffix("-").strip_edges()
+	var low := t.to_lower()
+	for w in ClubBuilds.BAD_WORDS:
+		if low.contains(w):
+			return ""
+	return t
+
+
+## A long name (the generator's «Властимил Кратохвил») made to fit: the first name alone, then cut.
+static func fit_name(s: String) -> String:
+	var t := s.strip_edges()
+	if t.length() > NAME_MAX and t.contains(" "):
+		t = t.get_slice(" ", 0)
+	return clean_name(t)
+
+
+## A random name from the opponents' generator (first name + surname, or the first name alone if too long).
+static func random_name(rng: RandomNumberGenerator = null) -> String:
+	if rng == null:
+		rng = RandomNumberGenerator.new()
+		rng.randomize()
+	for _i in 8:
+		var n := fit_name(String(Opponents.random(rng.randi() % 1000000 + 1, "E")["name"]))
+		if n != "":
+			return n
+	return "Игрок"
+
+
+## Telegram's first name (the web build inside Telegram), cleaned; "" outside it or if unusable.
+static func telegram_name() -> String:
+	if not OS.has_feature("web"):
+		return ""
+	var r = JavaScriptBridge.eval("(window.Telegram && Telegram.WebApp && Telegram.WebApp.initDataUnsafe && Telegram.WebApp.initDataUnsafe.user) ? Telegram.WebApp.initDataUnsafe.user.first_name : ''", true)
+	return fit_name(String(r if r != null else ""))
+
+
+## The first hero's default name: Telegram's, else a random one.
+static func default_name() -> String:
+	var n := telegram_name()
+	return n if n != "" else random_name()
+
+
+## What a rename costs now: 0 for the very first hero's first change, else RENAME_COST.
+static func rename_cost() -> int:
+	var c := data()
+	return 0 if int(c["gen"]) == 1 and int(c["renames"]) == 0 else RENAME_COST
+
+
+## "" = the name may be taken now; else why not: "empty", "same" (no change, no charge), "poor".
+static func rename_problem(new_name: String) -> String:
+	var n := clean_name(new_name)
+	if n == "":
+		return "empty"
+	if n == String(data()["name"]):
+		return "same"
+	if SaveData.gold < rename_cost():
+		return "poor"
+	return ""
+
+
+## The new name is confirmed: the gold leaves the bank, the name changes, the save is written.
+## Returns "" or the problem (nothing changes and nothing is charged then).
+static func rename(new_name: String) -> String:
+	var why := rename_problem(new_name)
+	if why != "":
+		return why
+	var c := data()
+	SaveData.gold -= rename_cost()
+	c["name"] = clean_name(new_name)
+	c["renames"] = int(c["renames"]) + 1
+	SaveData.save()
+	return ""
 
 
 ## The experience multiplier of the hero's age (Main._gain_xp).
@@ -303,6 +402,10 @@ static func normalize(cand, origin: String, seed_v: int) -> Dictionary:
 	d["origin"] = String(d.get("origin", origin))
 	d["age"] = int(d.get("age", START_AGE))
 	d["short"] = String(d.get("short", String(d["name"]).get_slice(" ", 1).to_upper()))
+	var fitted := fit_name(String(d["name"]))  # the hero's name has a limit: the heir's too
+	var nr := RandomNumberGenerator.new()
+	nr.seed = seed_v
+	d["name"] = fitted if fitted != "" else random_name(nr)
 	d["perk"] = String(d.get("perk", ""))
 	d["note"] = String(d.get("note", ""))
 	d["traits"] = d.get("traits", [])
@@ -414,7 +517,8 @@ static func retire(heir: Dictionary, relic: Dictionary, t: Tournament) -> Dictio
 	Skills.gear = {}
 	Skills.rebuild_pending()
 	SaveData.look = Looks.sanitize(h.get("look", {}))
-	var next := new_career(String(h.get("name", "")), int(c["gen"]) + 1, SaveData.played)
+	var hn := String(h.get("name", ""))
+	var next := new_career(hn if hn != "" else random_name(), int(c["gen"]) + 1, SaveData.played)
 	next["origin"] = String(h.get("origin", "free"))
 	next["relic"] = item.duplicate(true)
 	next["retired"] = c["retired"]
