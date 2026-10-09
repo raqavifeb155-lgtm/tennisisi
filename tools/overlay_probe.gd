@@ -11,6 +11,7 @@ var main: Node
 var fails := 0
 var checks := 0
 var _chosen := ""
+var retries := 0
 
 
 func _initialize() -> void:
@@ -34,12 +35,54 @@ func _tap_at(p: Vector2) -> void:
 	await _wait(0.35)  # TournamentUI reports a press after its little dip
 
 
-## A tap at the middle of a control.
+## A tap at the middle of a control, once the control stands still: a container re-sorts at the
+## end of a frame and a press dips the button (scale), so under load a rect read right after a
+## fade or a re-open is stale and the finger would land beside the button.
 func _tap(c: Control) -> void:
 	if c == null:
 		await _expect("кнопка для нажатия найдена", func() -> bool: return false)
 		return
+	await _still(c)
+	if not is_instance_valid(c):  # the screen was rebuilt meanwhile: nothing to press any more
+		return
 	await _tap_at(c.get_global_rect().get_center())
+
+
+## Waits (up to 2 s) until `c` is in the tree, not mid-press and has kept its rect for 3 frames.
+func _still(c: Control) -> void:
+	var last := Rect2()
+	var same := 0
+	var t := 0.0
+	while same < 3 and t < 2.0 and is_instance_valid(c):
+		await process_frame
+		t += 0.02
+		if not is_instance_valid(c):
+			return
+		var r := c.get_global_rect()
+		if c.is_visible_in_tree() and r.size.x > 0.0 and c.scale.is_equal_approx(Vector2.ONE) and r == last:
+			same += 1
+		else:
+			same = 0
+		last = r
+
+
+## A tap that must have an effect: taps the control that `find` returns and waits for `done`;
+## if nothing happened (a tap eaten by something that was still fading), looks again and taps
+## again, up to 3 times. Every repeat is printed (RETRY), so a flaky spot stays visible.
+func _tap_until(find: Callable, done: Callable) -> void:
+	for attempt in 3:
+		var c: Control = await find.call()
+		if c == null or not is_instance_valid(c):
+			break
+		await _tap(c)
+		var t := 0.0
+		while not done.call() and t < 2.0:
+			await _wait(0.05)
+			t += 0.05
+		if done.call():
+			return
+		retries += 1
+		print("RETRY  тап по «%s» не сработал, попытка %d" % [c.text if c is Button else str(c.name), attempt + 2])
 
 
 ## A check that may need a moment (a tap's dip, a sheet's fade, a slow frame when other
@@ -137,12 +180,12 @@ func _tutorial_round(ctx: String) -> void:
 	var next := await _find(_tut(), "ДАЛЬШЕ")
 	await _expect("%s: «ДАЛЬШЕ» есть" % ctx, func() -> bool: return next != null)
 	if next:
-		await _tap(next)
+		await _tap_until(func() -> Control: return await _find(_tut(), "ДАЛЬШЕ"), func() -> bool: return _tut()._page == page + 1)
 		await _expect("%s: «ДАЛЬШЕ» листает" % ctx, func() -> bool: return _tut()._page == page + 1)
 	var close := await _find(_tut(), "Закрыть")
 	await _expect("%s: «Закрыть» есть на странице" % ctx, func() -> bool: return close != null)
 	if close:
-		await _tap(close)
+		await _tap_until(func() -> Control: return await _find(_tut(), "Закрыть"), func() -> bool: return not _tut().visible)
 	await _expect("%s: обучение закрылось" % ctx, func() -> bool: return not _tut().visible)
 
 
@@ -205,9 +248,8 @@ func _club_screen(ctx: String, action: String, title: String, back := "menu") ->
 	await _tap(_gear())
 	await _settings_round("%s → ⚙" % ctx)
 	_chosen = ""
-	await _tap(await _find(main.ui.root, "Назад"))
+	await _tap_until(func() -> Control: return await _find(main.ui.root, "Назад"), func() -> bool: return _chosen == back)
 	await _expect("%s: «Назад» нажимается" % ctx, func() -> bool: return _chosen == back)
-	await _wait(0.8)
 	await _expect("%s: назад в клуб" % ctx, func() -> bool: return club.active and club.hud.visible and not main.ui.is_open())
 
 
@@ -460,7 +502,14 @@ func _run() -> void:
 	root.size = Vector2i(720, 1564)
 	main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(main)
-	await create_timer(7.0).timeout
+	# The boot screen (BootLoader) eats every tap until frames come out steady or 6 s have passed,
+	# plus its 0.35 s fade: under load a fixed 7 s was not always enough. Wait for it to be gone.
+	await create_timer(1.0).timeout
+	var boot := 0.0
+	while boot < 60.0 and not main.find_children("*", "BootLoader", false, false).is_empty():
+		await create_timer(0.1).timeout
+		boot += 0.1
+	await create_timer(1.0).timeout  # the club and the menu settle under the faded screen
 	SaveData.control_chosen = true
 	SaveData.enabled = false  # look, don't touch the player's progress
 	Skills.pending = []       # no perk screen in the way of the menu
@@ -480,7 +529,7 @@ func _run() -> void:
 	await _tutorial_round("Клуб 2D → ?")
 	await _expect("Клуб 2D → ?: игра не на паузе после", func() -> bool: return not paused)
 	_chosen = ""
-	await _tap(await _find(main.ui.root, "ТУРНИР"))
+	await _tap_until(func() -> Control: return await _find(main.ui.root, "ТУРНИР"), func() -> bool: return _chosen == "start_tournament")
 	await _expect("Клуб 2D → ?: после закрытия «ТУРНИР» нажимается", func() -> bool: return _chosen == "start_tournament")
 
 	main.ui.show_menu()
@@ -489,7 +538,7 @@ func _run() -> void:
 	await _tap(_gear())
 	await _settings_round("Клуб 2D → ⚙")
 	_chosen = ""
-	await _tap(await _find(main.ui.root, "ТУРНИР"))
+	await _tap_until(func() -> Control: return await _find(main.ui.root, "ТУРНИР"), func() -> bool: return _chosen == "start_tournament")
 	await _expect("Клуб 2D → ⚙ → ГОТОВО: Клуб нажимается", func() -> bool: return _chosen == "start_tournament")
 
 	# --- The walkable 3D club (the main screen since v0.2 B) ----------------------------
@@ -530,17 +579,26 @@ func _run() -> void:
 
 
 		await _bookie_round(club)
-		# The locked island: a row that can't be pressed, with a hint.
-		load("res://scripts/club/club_screens.gd").locations(main.ui, func(id: String) -> bool: return id == "newyork", func(_id: String) -> String: return "за титул в Нью-Йорке")
+		# The locked island: a card that can't be pressed, with a lock, the hint and the prize multiplier
+		# (the one islands screen, RunIslands: the same for the club, the menu and the result).
+		load("res://scripts/ui/screens/run_islands.gd").show_locations(main.ui, func(id: String) -> bool: return id == "park", func(_id: String) -> String: return "за титул в Нью-Йорке")
 		await _wait(0.6)
 		var lock_rows := 0
-		for c in main.ui.root.find_children("*", "Button", true, false):
-			var b := c as Button
-			if b.is_visible_in_tree() and b.find_children("*", "Label", true, false).any(func(l): return "✕" in (l as Label).text):
-				lock_rows += 1
-				_check("Куда едем?: закрытый остров не нажимается", b.disabled)
+		var priced := 0
+		for c in main.ui._box.get_children():
+			if c is GameCard:
+				var gc := c as GameCard
+				priced += 1 if "Призовые ×" in gc.desc else 0
+				if "Закрыто" in gc.tag:
+					lock_rows += 1
+					_check("Куда едем?: закрытый остров не нажимается, с подсказкой «за титул в …»", gc.mouse_filter == Control.MOUSE_FILTER_IGNORE and "за титул в Нью-Йорке" in gc.tag)
 		await _expect("Куда едем?: закрытые острова есть, с замком", func() -> bool: return lock_rows > 0)
+		await _expect("Куда едем?: у каждого острова видны призовые ×", func() -> bool: return priced == main.ui._box.get_children().filter(func(c): return c is GameCard).size() and priced > 0)
 		await _screen_shape("Куда едем? (замки)")
+		# The menu's and the result's way in (TournamentUI.show_locations) is the same screen.
+		main.ui.show_locations()
+		await _wait(0.6)
+		await _expect("Куда едем?: из меню и итога тот же экран", func() -> bool: return main.ui.root.find_children("*", "Label", true, false).any(func(l): return (l as Label).is_visible_in_tree() and (l as Label).text == "Куда едем?") and main.ui._box.get_children().filter(func(c): return c is GameCard).size() == Locations.LIST.size())
 		_chosen = ""
 		await _tap(await _find(main.ui.root, "Назад"))
 		await _wait(0.8)
@@ -848,7 +906,7 @@ func _run() -> void:
 	await _career_round()
 	await _name_round()
 
-	print("\nOVERLAYS: %d checks, %d failed" % [checks, fails])
+	print("\nOVERLAYS: %d checks, %d failed, %d repeated taps" % [checks, fails, retries])
 	quit(1 if fails > 0 else 0)
 
 
