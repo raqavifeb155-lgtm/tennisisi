@@ -690,8 +690,10 @@ func _fly_coins(from: Control, gain: int, to_value: int, into_run := false, drai
 	var base := _run_shown if into_run else _gold_shown
 	var run0 := _run_shown
 	var landed := [0]
+	var last_coin: Coin = null
 	for i in n:
 		var coin := Coin.new()
+		last_coin = coin
 		coin.position = start
 		root.add_child(coin)
 		var burst := start + Vector2(randf_range(-110, 110), randf_range(-130, -30))
@@ -715,6 +717,10 @@ func _fly_coins(from: Control, gain: int, to_value: int, into_run := false, drai
 			sfx_request.emit("bounce", -12.0, 1.7 + 0.02 * landed[0]))
 	if wait:
 		await get_tree().create_timer(0.25 + 0.03 * n + 0.45, true, false, true).timeout
+		# The timer only roughly matches the tweens (frames stretch on a slow device): hold the screen
+		# until the last coin has landed and the chip shows the final value. A cleared screen frees the coins.
+		while landed[0] < n and is_instance_valid(last_coin) and is_inside_tree():
+			await get_tree().process_frame
 
 
 ## The summary: the run's gold leaves its chip and lands in the bank.

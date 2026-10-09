@@ -351,12 +351,17 @@ func test_reward_flow() -> void:
 	check(cards.all(func(c): return c.visible_text() == ""), "none of them shows a word")
 	check(ui.bag_chip.visible and ui.bag_chip.count == BAG.carried(t), "the bag chip is on the screen with the count")
 	var at: Array[int] = []
-	for c in cards:
-		c.flipped.connect(func() -> void: at.append(Time.get_ticks_msec()))
+	var seq: Array[int] = []
+	for i in cards.size():
+		cards[i].flipped.connect(func() -> void:
+			at.append(Time.get_ticks_msec())
+			seq.append(i))
 	await timer(TUI.REVEAL_WAIT + 0.15 * 2 + 0.8)
 	check(cards.all(func(c): return c.is_open() and c.visible_text() != ""), "after the turns all are open and readable")
-	check(at.size() == 3 and (at[1] - at[0]) >= 100 and (at[1] - at[0]) <= 260 and (at[2] - at[1]) >= 100 and (at[2] - at[1]) <= 260,
-		"they turned one after another, about 0.15 s apart: %s" % str(at))
+	# Wall-clock gaps between single turns are not a stable measure: one slow frame on a loaded machine
+	# lands two turns on the same tick. So: the order is kept and the whole row (nominally 0.3 s) spreads.
+	check(at.size() == 3 and seq == [0, 1, 2] and (at[2] - at[0]) >= 120 and (at[2] - at[0]) <= 600,
+		"they turned one after another (in order, the row spread over about 0.3 s): %s %s" % [str(seq), str(at)])
 	ui.show_reward(t)
 	await timer(0.3)
 	cards = _cards(ui)
