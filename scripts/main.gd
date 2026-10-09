@@ -149,6 +149,10 @@ var autoplay_points := 40
 var _bot_armed := false
 var _bot_offset := 0.0
 var bot_serve_x := 2.0          # where across the box the bot aims its serve (tools/ai_bench.gd --serve=wide)
+var bot_serve_k := -1.0         # F-E: the bot's serve pace 0..1 (--serve-k=; -1 = random 0.3..1)
+var bot_serve_type := -1        # F-E: 0 kick / 1 flat / 2 slice (--serve-type=; -1 = random)
+var bot_serve_jitter := 6.0     # F-E: the bot's aim error in degrees (--serve-jitter=; a thumb is nearer 2)
+var bot_serve_gauss := false    # F-E: --serve-human: a normal aim error (sd = jitter / 2) instead of a flat one
 var _stats := {"rallies": [], "reasons": {}, "labels": {}, "player_hits": 0, "cpu_hits": 0, "serve": {}}
 
 
@@ -226,6 +230,16 @@ func _ready() -> void:
 			Opponents.add_slope = float(a.get_slice("=", 1))
 		elif a.begins_with("--xp="):
 			_bot_xp = float(a.get_slice("=", 1))  # every skill starts with this much experience
+		elif a.begins_with("--serve-x="):
+			bot_serve_x = float(a.get_slice("=", 1))  # F-E: where across the box the bot aims (3.6 = wide, 0.4 = T)
+		elif a.begins_with("--serve-k="):
+			bot_serve_k = float(a.get_slice("=", 1))
+		elif a.begins_with("--serve-type="):
+			bot_serve_type = int(a.get_slice("=", 1))
+		elif a.begins_with("--serve-jitter="):
+			bot_serve_jitter = float(a.get_slice("=", 1))
+		elif a == "--serve-human":
+			bot_serve_gauss = true
 
 	_build_environment()
 	court = Court.new()
@@ -2798,7 +2812,10 @@ func _autoplay_tick() -> void:
 		elif game_time >= toss_ideal + _bot_offset:
 			var to_box := Vector3(box_side * bot_serve_x - player.position.x, 0.0, -5.2 - player.position.z).normalized()
 			_curl_k = rng.randf_range(0.9, 1.3)
-			_player_serve(to_box.rotated(Vector3.UP, deg_to_rad(rng.randf_range(-6.0, 6.0))), rng.randf_range(0.3, 1.0), rng.randi_range(0, 2))
+			var jit := rng.randfn(0.0, bot_serve_jitter * 0.5) if bot_serve_gauss else rng.randf_range(-bot_serve_jitter, bot_serve_jitter)
+			var kk := bot_serve_k if bot_serve_k >= 0.0 else rng.randf_range(0.3, 1.0)
+			var ty := bot_serve_type if bot_serve_type >= 0 else rng.randi_range(0, 2)
+			_player_serve(to_box.rotated(Vector3.UP, deg_to_rad(jit)), kk, ty)
 		return
 	if not _player_can_hit():
 		_bot_armed = false
