@@ -25,8 +25,17 @@ const BOSS_TWO := 0.33            # ...and of those, this share with two
 const RARITY_WEIGHT := [50.0, 30.0, 15.0, 5.0]
 const HIDE_EPIC := 0.5            # an epic aura is "???" until the first point this often (mythic: always)
 const MAX_REWARD := 3.0
+const MAX_HARD := 4.0             # the cap with «Хардкор» (its own x2.5 on top of the conditions)
+const HARD_STYLE := 1.5           # «Хардкор»: the match's style gold x
+const HARD_RARITY := 0.02         # «Хардкор»: +2 points to the chance of a legendary item (above epic)
+## The bot has no thumb: its auto-positioning (1.0 in an ordinary run) is cut to this in a
+## hardcore one, as a stand-in for a player steering the legs alone (G-6, table in the spec).
+const BOT_HARD_ASSIST := 0.8
+## What «Хардкор» already contains: not offered again on top of it.
+const HARD_HAS := ["tier_up", "short_ring", "no_slowmo", "blind", "late_flash"]
 const MAX_RUN := 3                # conditions a run may take
 const RUN_LOOT := 0.02            # each run condition adds this to the drop chances
+const TRAIT_LOOT := 0.02          # a trait moves his gear rarity up by this x (rarity + 1)
 const AURA_LOOT := 0.04           # each aura moves his gear rarity up by this x (rarity + 1)
 
 ## Presets of the run screen: a set picked at once, each one can be taken off alone.
@@ -78,6 +87,12 @@ const LIST := [
 	{"id": "tier_up", "name": "Соперники +1 тир", "desc": "Каждый соперник сильнее на тир: точнее, быстрее, подача сильнее", "rarity": RARE,
 		"target": "opponent", "pools": ["run"], "fx": [["opp", "skill", 0.1], ["opp", "speed", 1.05], ["opp", "serve", 1.05]],
 		"color": Color(1.0, 0.5, 0.3), "icon": "+1", "reward": 1.2},
+	# --- The hardcore mode (G-6): a fixed set, chosen before the run instead of the usual conditions.
+	{"id": "hardcore", "name": "Хардкор", "desc": "Без помощи в беге, замедления и прицела, кольцо уже на 30%, соперники на тир сильнее",
+		"rarity": MYTHIC, "target": "run", "pools": [],
+		"fx": [["tuning", "assist", 0.0], ["tuning", "slowmo_enabled", false], ["tuning", "show_aim", false], ["tuning", "show_landing", false],
+			["stat", "all_window", -0.3], ["opp", "skill", 0.1], ["opp", "speed", 1.05], ["opp", "serve", 1.05]],
+		"color": Color(0.9, 0.2, 0.2), "icon": "Х", "reward": 2.5},
 	{"id": "elite", "name": "Элитные чаще", "desc": "Ауры у соперников в 2.5 раза чаще", "rarity": RARE,
 		"target": "run", "pools": ["run"], "fx": [["aura_rate", 2.5]],
 		"color": Color(0.7, 0.38, 1.0), "icon": "Э", "reward": 1.15},
@@ -172,7 +187,17 @@ static func find(id: String) -> Dictionary:
 	for e in LIST:
 		if e["id"] == id:
 			return e
-	return {}
+	return Traits.find(id)  # G-7: the opponents' traits are entries of the same kind
+
+
+## A rare aura (not an old modifier, not a trait): what the "≤ 10% of opponents" is about.
+static func is_aura(id: String) -> bool:
+	var e := find(id)
+	return not e.is_empty() and not e.get("legacy", false) and not e.get("trait", false)
+
+
+static func is_trait(id: String) -> bool:
+	return Traits.has(id)
 
 
 static func ids() -> Array:
@@ -181,6 +206,8 @@ static func ids() -> Array:
 
 ## Entries of a pool ("aura", "run", "boss").
 static func pool(name: String) -> Array:
+	if name == "trait":
+		return Traits.all()
 	return LIST.filter(func(e): return e["pools"].has(name))
 
 
@@ -256,7 +283,8 @@ static func add_auras(t: Tournament) -> void:
 	for i in t.lineup.size():
 		var lu: Dictionary = t.lineup[i]
 		var keep: Array = lu["mods"].filter(func(id): return find(id).get("legacy", false) or find(id).is_empty())
-		var a := roll_auras(t.rng.seed, i, Opponents.ROSTER[i].get("boss", false), elite, newbie)
+		keep += Traits.roll(t.rng.seed, i, t.opp(i))  # G-7: his traits first, then the rare auras
+		var a := roll_auras(t.rng.seed, i, t.opp(i).get("boss", false), elite, newbie)
 		lu["mods"] = keep + a["mods"]
 		lu["hidden"] = a["hidden"]
 
@@ -266,6 +294,8 @@ static func loot_bonus(id: String) -> float:
 	if Tournament.MODIFIERS.has(id):
 		return float(Tournament.MODIFIERS[id]["loot"])
 	var e := find(id)
+	if Traits.has(id):
+		return TRAIT_LOOT * (int(e["rarity"]) + 1)  # G-7: everyone has them, so only a little
 	return 0.0 if e.is_empty() else AURA_LOOT * (int(e["rarity"]) + 1)
 
 
@@ -273,10 +303,15 @@ static func loot_bonus(id: String) -> float:
 
 ## Product of the rewards (an unknown id pays x1), at most MAX_REWARD.
 static func reward(list: Array) -> float:
+	return minf(reward_raw(list), MAX_HARD if list.has("hardcore") else MAX_REWARD)
+
+
+## The same without the cap: the screen says so when the cap eats part of the pay.
+static func reward_raw(list: Array) -> float:
 	var x := 1.0
 	for id in list:
 		x *= float(find(id).get("reward", 1.0))
-	return minf(x, MAX_REWARD)
+	return x
 
 
 ## What beating opponent i pays on top: his auras x the run's conditions.
@@ -284,7 +319,12 @@ static func gold_mult(t: Tournament, i: int) -> float:
 	if not enabled:
 		return 1.0
 	var auras: Array = t.lineup[i]["mods"] if i < t.lineup.size() else []
-	return minf(reward(auras) * reward(t.run_modifiers), MAX_REWARD)
+	return minf(reward(auras) * reward(t.run_modifiers), MAX_HARD if t.hardcore else MAX_REWARD)
+
+
+## «Хардкор»: the match's style gold x.
+static func style_mult(t: Tournament) -> float:
+	return HARD_STYLE if enabled and t != null and t.hardcore else 1.0
 
 
 ## The run's conditions: picked before the run (0..MAX_RUN), they pay for every match and
@@ -293,9 +333,11 @@ static func set_run(t: Tournament, list: Array) -> void:
 	var picked: Array = []
 	for id in list:
 		var e := find(id)
+		if t.hardcore and HARD_HAS.has(id):
+			continue  # «Хардкор» holds it already
 		if not e.is_empty() and e["pools"].has("run") and not picked.has(id) and picked.size() < MAX_RUN:
 			picked.append(id)
-	t.run_modifiers = picked
+	t.run_modifiers = (["hardcore"] if t.hardcore else []) + picked
 	t.drop_bonus += RUN_LOOT * picked.size()
 	add_auras(t)
 
@@ -351,7 +393,7 @@ static func card(lu: Dictionary) -> Array:
 		var hid: bool = lu.get("hidden", []).has(id)
 		out.append({"id": id, "name": "???" if hid else e["name"], "desc": "Раскроется на первом очке" if hid else e["desc"],
 			"color": e["color"], "icon": "?" if hid else e["icon"], "rarity": int(e["rarity"]), "hidden": hid,
-			"reward": float(e["reward"]), "aura": not e.get("legacy", false)})
+			"reward": float(e["reward"]), "aura": not e.get("legacy", false), "trait": e.get("trait", false)})
 	return out
 
 

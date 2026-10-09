@@ -39,6 +39,7 @@ func run_all() -> void:
 	test_lean()
 	test_swing_retarget()
 	test_tired_pose()
+	test_racket_smash()
 	print("\n%s (%d failures)" % ["ALL ANIMATION TESTS PASSED" if failures == 0 else "ANIMATION TESTS FAILED", failures])
 	if ath:
 		ath.free()
@@ -537,3 +538,84 @@ func test_tired_pose() -> void:
 	for i in 60:
 		step()
 	check(ath._pitch < 0.15 and ath._hand.y > 0.9, "back upright when rested (%.2f rad)" % ath._pitch)
+
+
+## The racket smash (RacketSmash, mode 5): the hero lifts the racket in both hands, slams it
+## into the court twice, the second blow breaks it. The arms never go through the trunk or
+## the back, the racket's head meets the court at the blows, the legs stay whole, and the
+## stance, the arms and the racket are back afterwards.
+func test_racket_smash() -> void:
+	print("racket smash: wind-up, two blows, the racket breaks, the stance comes back")
+	fresh("hard", Vector3(0, 0, 11))
+	var world := Node3D.new()
+	root.add_child(world)
+	var rs := RacketSmash.new()
+	root.add_child(rs)
+	var hits: Array[Vector3] = []
+	var broke := [false]
+	var done := [false, false]
+	rs.impact.connect(func(_b: int, _p: float) -> void: hits.append(rs.tip_at_impact))
+	rs.broken.connect(func(_s: float) -> void: broke[0] = true)
+	rs.finished.connect(func(was: bool) -> void:
+		done[0] = true
+		done[1] = was)
+	rs.begin(ath, world)
+	var bad := 0
+	var first_bad := ""
+	var sink := 0.0
+	var stretch := 0.0
+	var hidden_at_break := false
+	var tip_low := 9.0
+	var frames := 0
+	var script := {60: [-1, 0.8], 120: [1, 0.9], 190: [1, 0.9]}
+	while not done[0] and frames < 600:
+		if script.has(frames):
+			var sw: Array = script[frames]
+			rs.swipe(sw[0], sw[1])
+		frames += 1
+		rs._process(DT)
+		step()
+		var pr := AthleteProbe.problems(ath)
+		if not pr.is_empty():
+			bad += 1
+			if first_bad == "":
+				first_bad = "frame %d %s" % [frames, pr]
+		var feet := feet_world()
+		sink = minf(sink, minf((feet[0] as Vector3).y, (feet[1] as Vector3).y))
+		for i in 2:
+			var th: Array = bone_ends("thigh%d" % i)
+			var sh: Array = bone_ends("shin%d" % i)
+			stretch = maxf(stretch, absf(((th[1] as Vector3) - (th[0] as Vector3)).length() - Athlete.THIGH))
+			stretch = maxf(stretch, absf(((sh[1] as Vector3) - (sh[0] as Vector3)).length() - Athlete.SHIN))
+		if rs.state == RacketSmash.S.STRIKE or rs.state == RacketSmash.S.RECOIL:
+			tip_low = minf(tip_low, ath.racket_tip_world().y)
+		if rs.state == RacketSmash.S.BREAK:
+			hidden_at_break = not ath.racket_node().visible
+	check(done[0] and done[1], "the mini-game ends, the racket broken (%d frames)" % frames)
+	check(hits.size() == 2 and broke[0], "two blows reached the court, the second broke it (%d blows)" % hits.size())
+	for h in hits:
+		check(h.y < 0.1 and h.y > -0.08, "the racket's head meets the court at the blow (height %.2f m)" % h.y)
+	check(tip_low > -0.1, "the racket never goes through the court (lowest %.2f m)" % tip_low)
+	check(bad == 0, "no arm through the trunk or behind the back (%d bad frames %s)" % [bad, first_bad])
+	check(sink > -0.06 and stretch < 0.02, "feet on the court, legs whole (sink %.3f, stretch %.3f)" % [sink, stretch])
+	check(hidden_at_break and rs.shard_count() == 6, "the racket is gone and six pieces fly (%d)" % rs.shard_count())
+	for i in 40:
+		step()
+	check(ath._mode == 0 and ath.racket_node().visible, "after: the ready stance, the racket node back")
+	check(ath._pitch < 0.15 and ath._hand.y > 0.9 and absf(ath._twist) < 0.1, "after: upright, the hand at the ready (pitch %.2f, hand %.2f)" % [ath._pitch, ath._hand.y])
+	# A wrong swipe does not count; the hero gives up after IDLE_CANCEL seconds and nothing breaks.
+	fresh("hard", Vector3(0, 0, 11))
+	rs = RacketSmash.new()
+	root.add_child(rs)
+	var res := [false, true]
+	rs.finished.connect(func(was: bool) -> void:
+		res[0] = true
+		res[1] = was)
+	rs.begin(ath, world)
+	check(not rs.swipe(1, 0.9) and rs.swipes == 0 and rs.rejected > 0.0, "a swipe down before the wind-up does not count")
+	for i in int((RacketSmash.IDLE_CANCEL + RacketSmash.CANCEL_T + 0.3) / DT):
+		rs._process(DT)
+		step()
+	check(res[0] and not res[1] and ath._mode == 0, "no swipe for %.0f s: the mini-game ends, nothing broken" % RacketSmash.IDLE_CANCEL)
+	rs.free()
+	world.free()

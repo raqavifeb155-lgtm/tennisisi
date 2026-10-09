@@ -30,6 +30,7 @@ class_name ModEffects
 ##   ["drain_on_loss", f]        his winner or ace takes f of the player's stamina
 ##   ["heal_on_win", f]          the player's winner or ace gives f back
 ##   ["aura_rate", k]            (out of a match: auras k times likelier, see Modifiers)
+##   ["style_hole"]              his weak backhand: a winner to it is a style trick (Traits.hole_hit)
 ##   ["twins"]                   a second opponent on his half
 ##
 ## Stream A can run any of these from an item's trigger: ModEffects.apply(main.mods_hub, fx)
@@ -218,6 +219,11 @@ static func apply(hub: Node, f: Array) -> void:
 			var old := cpu.scale
 			cpu.scale = old * float(f[1])
 			hub.undo.append(func() -> void: cpu.scale = old)
+		"style_hole":
+			hub.hole = true
+			hub.undo.append(func() -> void:
+				hub.hole = false
+				Traits.hole_hit = false)
 		"drain_on_loss":
 			var old: float = hub.drain_on_loss
 			hub.drain_on_loss = old + float(f[1])

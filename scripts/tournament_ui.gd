@@ -409,9 +409,14 @@ func show_bracket(t: Tournament) -> void:
 	_sub(info)
 	if t.gold > 0:
 		_note("Золото забега +%d уйдёт в банк в конце турнира" % t.gold)
+	var goal := Goals.line(t.gold if not t.banked else 0)  # the horizon: what the bank plus this run can buy
+	if goal != "":
+		_note(goal).add_theme_color_override("font_color", UiTheme.GOLD)
 	RunBag.bracket_extra(self, t)  # v0.2 A: the bag
 	RunBets.bracket_extra(self, t)  # v0.2 A: a bet on the coming match
 	RunMods.bracket_extra(self, t)  # v0.2 G: the run's conditions
+	RunMods.badge(self, t)  # G-6: «ХАРДКОР»
+	RunResult.bracket_quests(self, t)  # the coach's quests are seen while playing
 	for i in t.rounds():
 		_bracket_row(t, i)
 	var opp := t.opponent()
@@ -427,9 +432,10 @@ func show_opponent_card(t: Tournament, i: int) -> void:
 
 func show_result(t: Tournament, won: bool, score_text: String, stats: Dictionary) -> void:
 	_open(t)
-	var opp: Dictionary = Opponents.ROSTER[t.results.back()["stage"]]
+	var opp: Dictionary = t.opp(t.results.back()["stage"])
 	_box.add_child(_text("ПОБЕДА" if won else "ПОРАЖЕНИЕ", UiTheme.display(), UiTheme.T_HERO, UiTheme.WIN if won else UiTheme.LOSE))
 	_sub("против: %s" % opp["name"])
+	RunMods.badge(self, t)  # G-6: «ХАРДКОР»
 	_box.add_child(_text(score_text, UiTheme.display(), 64, UiTheme.INK))
 	if not MatchStats.block(self, stats, String(opp.get("short", "соперник"))):  # C-5: the match's numbers
 		_sub("PERFECT: %d   ·   эйсы: %d   ·   лучший розыгрыш: %d" % [stats.get("perfect", 0), stats.get("aces", 0), stats.get("best_rally", 0)])
@@ -444,17 +450,21 @@ func show_result(t: Tournament, won: bool, score_text: String, stats: Dictionary
 	elif won and t.missed_loot != "":
 		_box.add_child(_text("Трофей упущен: %s" % t.missed_loot, UiTheme.text(), UiTheme.T_SMALL + 2, UiTheme.LOSE))
 	RunResult.extra(self, t)  # v0.2 A: style of the match, the best point's replay
+	if won and not t.chest.is_empty():  # v0.2 A-7: a chest by the net
+		_box.add_child(_text("Сундук у сетки!", UiTheme.display(), UiTheme.T_HEAD, UiTheme.GOLD))
 	if won and not t.pending_loot.is_empty():
 		_primary("ЗАБРАТЬ ТРОФЕЙ", "to_loot")
 		return
 	match t.state:
+		Tournament.State.BRACKET:
+			_primary("ДАЛЬШЕ", "to_bracket")
 		Tournament.State.REWARD:
-			_primary("ВЫБРАТЬ НАГРАДУ", "to_reward")
+			_primary("ОТКРЫТЬ СУНДУК" if not t.chest.is_empty() else "ВЫБРАТЬ НАГРАДУ", "to_reward")
 		Tournament.State.LOST:
 			_primary("ВАЙЛД-КАРД: ПЕРЕИГРАТЬ (%d)" % t.wildcards, "wildcard")
 			_secondary("Закончить турнир", "give_up")
 		_:
-			_primary("ИТОГИ", "to_summary")
+			_primary("ОТКРЫТЬ СУНДУК" if won and not t.chest.is_empty() else "ИТОГИ", "to_summary")
 
 
 func show_skill_perk(skill: String, offer: Array) -> void:
@@ -531,6 +541,9 @@ func _item_card(item: Dictionary, what: String, action := "") -> GameCard:
 ## read), wait a moment, then turn over one after another, 0.15 s apart, each with its win
 ## effect; a tap on a back turns the whole row at once, a tap on an open card takes it.
 func show_reward(t: Tournament) -> void:
+	if not t.chest.is_empty():  # v0.2 A-7: a chest, not «1 из 3»
+		RunChest.show_chest(self, t)
+		return
 	_open(t)
 	show_stash(RunBag.carried(t))
 	_title("Награда")
@@ -560,7 +573,11 @@ func show_reward(t: Tournament) -> void:
 
 
 func show_summary(t: Tournament) -> void:
+	if not t.chest.is_empty() and t.state == Tournament.State.OVER:  # the final's chest comes first
+		RunChest.show_chest(self, t)
+		return
 	RunResult.show_summary(self, t)  # v0.2 A-2: income by lines, the locker, the next goal
+	RunMods.badge(self, t, 1)  # G-6: «ХАРДКОР» under the title
 	if t.gold > 0 and t.banked:  # C-4: the run's gold flies into the bank chip
 		_set_run(t.gold, true)
 		_bank_run(t.gold)
@@ -847,10 +864,12 @@ func _card(c: Dictionary, action: String, i: int, accent: Color, rarity := -1, s
 	card.selected = selected
 	card.item = c.get("item", {})        # v0.2 L: a thing's card wears its picture...
 	card.item_slot = String(c.get("slot", ""))  # ...an empty slot's card the stock one
+	card.extra = String(c.get("extra", ""))     # a thing's price / state line, never cut off
+	card.uniform = bool(c.get("uniform", false))  # a thing's card even without its picture
 	card.face_down = bool(c.get("face_down", false))
-	if action == "":
-		card.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	else:
+	if action == "" and not card.uniform and card.item.is_empty() and card.item_slot == "":
+		card.mouse_filter = Control.MOUSE_FILTER_IGNORE   # (a thing's card stays touchable: a long press shows it all)
+	elif action != "":
 		card.pressed.connect(func() -> void:
 			if card.face_down:
 				_reveal_all()  # a tap on a back turns the whole row at once
@@ -892,7 +911,7 @@ func _scroll_to_current() -> void:
 
 
 func _bracket_row(t: Tournament, i: int) -> void:
-	var o: Dictionary = Opponents.ROSTER[i]
+	var o: Dictionary = t.opp(i)
 	var current := i == t.stage
 	var done := i < t.stage
 	var panel := PanelContainer.new()

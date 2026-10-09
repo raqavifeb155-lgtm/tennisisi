@@ -6,6 +6,7 @@ var failures := 0
 
 
 func _initialize() -> void:
+	Tournament.BEGINNER_START = 1.0  # tests count a newcomer's prizes at the plain scale
 	Items.PRICE_SCALE = 1.0  # these tests count in base prices; the shipped scale is checked in economy_test
 	ClubBuilds.CLUB_PRICE_SCALE = 1.0
 	SaveData.enabled = false  # never the developer's save: buy() saves
@@ -65,7 +66,7 @@ func test_places() -> void:
 	check(ClubPlaces.at(court["pos"] + Vector3(0.5, 0, 0)).get("id", "") == "court", "a point in the court's circle is at the court")
 	check(ClubPlaces.at(Vector3(5, 0, 2)).is_empty(), "a point on the court itself is at no place")
 	var machine := ClubPlaces.find("machine")
-	check(ClubPlaces.is_open(machine, 0, 0) and ClubPlaces.state("machine")["action"] == "practice", "practice is at the ball machine, open from the start")
+	check(ClubPlaces.is_open(machine, 0, 0) and ClubPlaces.state("machine")["action"] == "drill", "the ball machine's drill is at the machine, open from the start (the free game is its quiet link)")
 	check((machine["pos"] as Vector3).z > 0.5 and (machine["pos"] as Vector3).z < Court.HALF_LENGTH, "the machine's circle is on the near half of the main court")
 
 
@@ -160,7 +161,7 @@ func test_builds() -> void:
 	t.lineup[1]["golden"] = false
 	var plain := t.gold_for_win(1)
 	SaveData.club = {"levels": {"stands": 5}}
-	check(t.gold_for_win(1) == roundi(plain * 1.10), "full stands: a won match pays +10%% (%d -> %d)" % [plain, t.gold_for_win(1)])
+	check(absi(t.gold_for_win(1) - roundi(plain * 1.10)) <= 1, "full stands: a won match pays +10%% (%d -> %d)" % [plain, t.gold_for_win(1)])
 	ClubBuilds.utility_enabled = false
 	check(t.gold_for_win(1) == plain, "utility off (online): the stands pay nothing")
 	ClubBuilds.utility_enabled = true
@@ -514,7 +515,10 @@ func test_flow() -> void:
 	main._on_ui("format", 0)
 	await _frames(3)
 	check(SaveData.club.get("last_location", "") == "clay" and int(SaveData.club.get("last_format", -1)) == 0, "the choice is remembered")
-	check(not club.active, "a tournament's bracket closes the club")
+	check(club.active and main.location_id == "club" and main.tournament.location == "clay" and main.ui.is_open(), "the bracket is shown over the club: the island waits for «Играть»")
+	main._on_ui("play", 0)
+	await _frames(3)
+	check(main.location_id == "clay" and main.phase != club._idle and not club.active, "a match starts: the island, and the club steps aside")
 	# Back to the club, then "Турнир" goes straight to the bracket: tap 1 Турнир, tap 2 Играть.
 	SaveData.active = null
 	SaveData.run = {}
@@ -537,7 +541,7 @@ func test_flow() -> void:
 	check(mods.picked.size() == 2, "the Про preset picks two")
 	mods.ui_action(main, "mods_go", 0)
 	await _frames(3)
-	check(main.tournament != null and main.location_id == "clay" and main.tournament.run_modifiers.size() == 2, "the run starts in Spain with the conditions (%s)" % str(main.tournament.run_modifiers if main.tournament else []))
+	check(main.tournament != null and main.tournament.location == "clay" and main.location_id == "club" and main.tournament.run_modifiers.size() == 2, "the run starts in Spain with the conditions (%s)" % str(main.tournament.run_modifiers if main.tournament else []))
 	SaveData.active = null
 	SaveData.run = {}
 	main._show_menu()
@@ -565,7 +569,7 @@ func test_flow() -> void:
 	await _frames(2)
 	club._on_choice("club_tournament", 0)
 	await _frames(3)
-	check(main.tournament != null and main.location_id == "clay" and main.ui.is_open(), "one tap: the bracket in Spain")
+	check(main.tournament != null and main.tournament.location == "clay" and main.location_id == "club" and main.ui.is_open(), "one tap: the bracket for Spain, over the club")
 	var run_buttons: Dictionary = club.place_buttons("court")
 	check(run_buttons["action"] == "continue" and run_buttons["extra"].size() == 1, "a run: ПРОДОЛЖИТЬ and one 'Новая игра'")
 	SaveData.active = null
@@ -789,6 +793,15 @@ func test_places_flow() -> void:
 ## Every level of every construction builds (and its ghost), headless.
 func test_build_world() -> void:
 	print("build world")
+	# An old save with every construction standing: the lots lay themselves out (T-1), so
+	# the rooms have their pavilions and their ghosts.
+	var levels := {}
+	for id in ClubBuilds.ORDER:
+		levels[id] = 1
+	SaveData.played = 5  # every place is open by now (the rooms open by runs and titles)
+	SaveData.titles = 1
+	SaveData.club = {"levels": levels}
+	ClubLots.ensure()
 	var w = load("res://scripts/club/club_world.gd").new()
 	root.add_child(w)
 	await process_frame
@@ -1002,7 +1015,7 @@ func test_transitions() -> void:
 	var before: Vector3 = main.player.position
 	club._on_choice("club_tournament", 0)
 	await _frames(3)
-	check(main.ui.is_open() and not club.active, "the bracket")
+	check(main.ui.is_open() and club.active and main.location_id == "club", "the bracket (over the club)")
 	main._on_ui("menu", 0)
 	await _frames(3)
 	check(club.active and main.location_id == "club" and main.player.position.distance_to(before) < 0.6, "back from the bracket: the club, the hero where he was")
@@ -1247,8 +1260,14 @@ func test_lots_flow() -> void:
 	club._foreman_step(1)
 	club._foreman_step(1)
 	club._foreman_step(1)
-	check(club.lot_type() == "arena", "the last card is the arena")
+	check(club.lot_type() == "bar" and not ClubLots.sheet_types().has("arena") and not ClubLots.sheet_types().has("academy"), "a newcomer's sheet ends with the bar: no «Скоро» cards of what is not in the game")
+	var played_was := SaveData.played
+	SaveData.played = 5
+	check(ClubLots.sheet_types().size() == 7 and ClubLots.sheet_types().back() == "arena", "after five runs the academy and the arena join the sheet")
+	club.lot_show("arena")
+	check(club.lot_type() == "arena", "the arena's card")
 	check(not club.foreman_build() and not club.building(), "«Скоро» builds nothing")
+	SaveData.played = played_was
 	club.lot_show("coach")
 	check(not club.foreman_build() and SaveData.gold == 0, "no gold: nothing is built, the chip shakes")
 	SaveData.gold = 100

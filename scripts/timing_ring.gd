@@ -25,6 +25,7 @@ const STAMINA_HALF := Color(1.0, 0.6, 0.2)
 const STAMINA_EMPTY := Color(0.95, 0.25, 0.2)
 
 ## Where the ring hangs (screen px). Updated every frame.
+var scale_k := 1.0         # D-9: the ring follows the player's size on screen (Main sets it; 1 = the normal view)
 var anchor := Vector2.ZERO
 var top_inset := 0.0         # Telegram's buttons and the notch (HUD sets it): the verdict moves down
 var stamina := 1.0           # 0..1, drawn as an arc inside the target circle (HUD sets it)
@@ -133,12 +134,21 @@ func _fb_age() -> float:
 
 func _draw() -> void:
 	if _active:
+		_scaled_about(_pos)
 		_draw_ring()
 	if show_stamina and (_active or stamina < 0.995):
-		_draw_stamina(_pos if _active else anchor)
+		var c := _pos if _active else anchor
+		_scaled_about(c)
+		_draw_stamina(c)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	var age := _fb_age()
 	if age < FEEDBACK_TIME and _fb_text != "":
 		_draw_feedback(age)
+
+
+## D-9: everything round is drawn scale_k times as big, about its centre c.
+func _scaled_about(c: Vector2) -> void:
+	draw_set_transform(c * (1.0 - scale_k), 0.0, Vector2(scale_k, scale_k))
 
 
 func _draw_ring() -> void:
@@ -188,7 +198,7 @@ func _draw_feedback(age: float) -> void:
 	var vp := get_viewport_rect().size
 	var c := _fb_pos
 	var fade := 1.0 - clampf((age - 0.6) / 0.35, 0.0, 1.0)
-	draw_set_transform(c, 0.0, Vector2(FB_FX, FB_FX))
+	draw_set_transform(c, 0.0, Vector2(FB_FX, FB_FX) * scale_k)
 	c = Vector2.ZERO
 
 	# Rings and sparks around the circle.

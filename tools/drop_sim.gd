@@ -15,12 +15,13 @@ func _initialize() -> void:
 		var c := _sim(float(row[1]), bool(row[2]))
 		print("DROPS %s: epic %.2f  legendary %.2f  mythic %.3f  (rare %.2f, matches %.1f, wins %.1f)" % [row[0],
 			c[2], c[3], c[4], c[1], c[5], c[6]])
+		print("   of which from chests: %.2f items" % c[7])
 	quit()
 
 
 ## Average per 10 runs: [common, rare, epic, legendary, mythic, matches, wins].
 func _sim(xp0: float, grows: bool) -> Array:
-	var total := [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+	var total := [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 2026
 	for rep in REPEATS:
@@ -42,9 +43,14 @@ func _sim(xp0: float, grows: bool) -> Array:
 				if not t.pending_loot.is_empty():
 					total[int(t.pending_loot["rarity"])] += 1
 					t.take_loot(true)
+				if not t.chest.is_empty():  # v0.2 A-7: a chest by the net (counted with the drops)
+					if not t.chest["item"].is_empty():
+						total[int(t.chest["item"]["rarity"])] += 1
+						total[7] += 1
+					t.take_chest()
 				match t.state:
 					Tournament.State.REWARD:
-						t.take_reward(2 if t.wildcards == 0 else (1 if t.racket.is_empty() else 0))
+						t.take_chest()
 					Tournament.State.LOST:
 						t.use_wildcard()
 	return total.map(func(v): return v / REPEATS)

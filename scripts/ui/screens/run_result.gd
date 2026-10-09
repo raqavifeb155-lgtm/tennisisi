@@ -65,11 +65,61 @@ static func extra(ui: TournamentUI, t: Tournament) -> void:
 		ui._box.add_child(b)
 
 
+# --- The coach's quests and the islands, where the player is (loop review 10.10) -----------
+# The quests used to live only on the club's chalkboard: while playing they were invisible,
+# and a finished one was never mentioned on the summary. Now the bracket lists them, a toast
+# says when one is done (Main), and the summary says what waits at the coach's.
+
+## The bracket: this run's quests with progress (dealt here at the latest: the first bracket).
+static func bracket_quests(ui: TournamentUI, t: Tournament) -> void:
+	if t.state == Tournament.State.OVER or t.champion:
+		return
+	ClubQuests.start_run(str(t.rng.seed), ClubQuests.tier_of(t.location))
+	var lines: Array[String] = []
+	var any_done := false
+	for q in ClubQuests.current():
+		if q["claimed"]:
+			continue
+		var mark := "✓" if q["done"] else "%s/%s" % [ClubQuests._num(q["have"]), ClubQuests._num(q["need"])]
+		any_done = any_done or q["done"]
+		lines.append("%s  %s  ·  +%d%s" % [mark, q["text"], int(q["gold"]), " и вещь" if q["item"] else ""])
+	if lines.is_empty():
+		return
+	ui._sub("Задания тренера")
+	var l := ui._note("\n".join(lines))
+	if any_done:
+		l.add_theme_color_override("font_color", UiTheme.GOLD)
+
+
+## The summary: what waits at the coach's (gold is paid there), and what burns.
+static func summary_quests(ui: TournamentUI) -> void:
+	var left := 0
+	for q in ClubQuests.current():
+		if not q["done"] and not q["claimed"]:
+			left += 1
+	var ready := ClubQuests.claimable_count()
+	if ready == 0 and left == 0:
+		return
+	var parts: Array[String] = []
+	if ready > 0:
+		parts.append("Задания готовы: %d — забери +%d ● у тренера" % [ready, ClubQuests.claimable_gold()])
+	if left > 0:
+		parts.append("не выполнено %d — сгорят" % left)
+	var l := ui._text("  ·  ".join(parts), UiTheme.text_bold(), UiTheme.T_SMALL + 2, UiTheme.GOLD if ready > 0 else UiTheme.MUTED)
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	ui._box.add_child(l)
+
+
+## The island this title opened (the next one in the order, if it is open now), or "".
+static func new_island(t: Tournament) -> String:
+	return Locations.opened_by_title(t.location) if t.champion else ""
+
+
 # --- The run's summary (v0.2 A-2, spec 1 and 9.2) -------------------------------------
 # Income by lines with coins, flying into the bank; one item into the locker; the next
 # goal. TournamentUI.show_summary hands over to show_summary.
 
-const INCOME_NAMES := {"prize": "Призовые", "style": "Стиль", "sell": "Продажа вещей", "quests": "Задания", "bonus": "Бонусы"}
+const INCOME_NAMES := {"prize": "Призовые", "chest": "Сундуки", "style": "Стиль", "sell": "Продажа вещей", "quests": "Задания", "bonus": "Бонусы"}
 static var _flown: Tournament = null     # the run whose coins already flew into the chip
 static var _msg := ""
 static var _msg_good := true
@@ -104,19 +154,34 @@ static func show_summary(ui: TournamentUI, t: Tournament) -> void:
 		ui._box.add_child(ui._text(_msg, UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.WIN if _msg_good else UiTheme.LOSE))
 		_msg = ""
 	var total_label := _income_panel(ui, t)
+	summary_quests(ui)
+	var news := new_island(t)
+	if news != "":
+		var nl := ui._text("Открыт остров: %s  ·  %s" % [Locations.find(news)["name"], RunIslands.level_text(news)], UiTheme.display(), UiTheme.T_BODY, UiTheme.GOLD)
+		nl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		ui._box.add_child(nl)
 	var goal := Goals.line()
 	if goal != "":
 		var gl := ui._text(goal, UiTheme.text_bold(), UiTheme.T_SMALL + 2, UiTheme.GOLD)
 		gl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		ui._box.add_child(gl)
 	_locker_block(ui, t)
-	ui._primary("ЕЩЁ ТУРНИР", "start_tournament")
+	# One tap to the next run in the same place and format (the conditions screen, if any,
+	# comes next), the way the club's «Новая игра» goes; a new island is offered first.
+	var again_id := news if news != "" else t.location
+	var again_i := _island_index(again_id)
+	if again_i >= 0:
+		ui._primary(("ИДТИ НА ОСТРОВ  ·  " if news != "" else "ЕЩЁ ТУРНИР  ·  ") + String(Locations.LIST[again_i]["name"]).to_upper(), "sum_again", again_i)
+	else:
+		ui._primary("ЕЩЁ ТУРНИР", "start_tournament")
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 12)
 	ui._actions.add_child(row)
 	var pairs := [["В клуб", "menu"], ["Магазин", "sum_shop"]]
 	if not ClubBuilds.is_open("shop"):
 		pairs = [["В клуб", "menu"], ["Тренерская", "character"]]
+	if Locations.best_unlocked() != "park":
+		pairs.append(["Острова", "start_tournament"])
 	for pair in pairs:
 		var b := ui._make_button(pair[0], pair[1], 0, "")
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -239,6 +304,13 @@ static func _replace_screen(ui: TournamentUI, t: Tournament, cand: int) -> void:
 		RunShop.item_card(ui, li[i], "Ячейка %d" % (i + 1), "Продать +%d и положить новую" % gain, "sum_replace", i)
 
 
+static func _island_index(id: String) -> int:
+	for k in Locations.LIST.size():
+		if Locations.LIST[k]["id"] == id:
+			return k
+	return -1
+
+
 static func ui_action(m: Node, action: String, arg: int) -> void:
 	var t: Tournament = m.tournament
 	var ui: TournamentUI = m.ui
@@ -246,6 +318,13 @@ static func ui_action(m: Node, action: String, arg: int) -> void:
 		m._on_ui("menu", 0)
 		return
 	match action:
+		"sum_again":
+			var id: String = Locations.LIST[arg]["id"]
+			if not Locations.unlocked(id):
+				return
+			m._next_location = id
+			m.club.remember(id, t.format)
+			RunMods.open(m, t.format)
 		"sum_keep":
 			var why := Locker.save_from(t, arg)
 			if why.begins_with("шкафчик полон"):

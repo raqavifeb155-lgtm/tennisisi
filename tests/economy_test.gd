@@ -6,6 +6,12 @@ extends SceneTree
 var failures := 0
 
 
+## Traits (G-7) multiply the prizes: the economy checks want the plain numbers.
+static func _plain(t: Tournament) -> void:
+	for l in t.lineup:
+		l["mods"] = []
+
+
 func _initialize() -> void:
 	SaveData.enabled = false
 	_run.call_deferred()
@@ -15,6 +21,8 @@ func _run() -> void:
 	var shipped := Items.PRICE_SCALE
 	test_shipped_scale(shipped)
 	Items.PRICE_SCALE = 1.0  # the rest counts in base prices
+	var beginner := Tournament.BEGINNER_START
+	Tournament.BEGINNER_START = 1.0
 	ClubBuilds.CLUB_PRICE_SCALE = 1.0
 	test_prices()
 	test_item_level()
@@ -22,6 +30,7 @@ func _run() -> void:
 	test_prize_money()
 	test_income_scale()
 	test_package()
+	test_chest()
 	test_income()
 	test_sell_extra()
 	test_locker()
@@ -30,6 +39,7 @@ func _run() -> void:
 	test_shop()
 	test_strings()
 	test_islands()
+	test_loop_review()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -96,42 +106,49 @@ func test_drop_chances() -> void:
 	var rng := _rng(11)
 	for k in 6000:
 		var t := Tournament.new(1, 500 + k)
+		_plain(t)
 		for it in Tournament.drops(t.lineup[1]["gear"], rng, 0.0):
 			got[int(it["rarity"])] += 1
 		slots += 3
 	var per := got.map(func(c): return float(c) / slots)
-	check(absf(per[0] - 0.33) < 0.04 and absf(per[1] - 0.18) < 0.03, "common ~35%%, rare ~18%% a slot %s" % [per.map(func(x): return snappedf(x, 0.001))])
-	check(per[2] > 0.06 and per[2] < 0.10 and per[3] < 0.03 and per[3] > 0.005 and per[4] < 0.008, "epic ~7-9%%, legendary ~2%%, mythic ~0.4%% a slot (golden ones add legendaries)")
+	check(absf(per[0] - 0.30) < 0.04 and absf(per[1] - 0.18) < 0.03, "common ~30%%, rare ~18%% a slot %s" % [per.map(func(x): return snappedf(x, 0.001))])
+	check(per[2] > 0.06 and per[2] < 0.10 and per[3] < 0.03 and per[3] > 0.005 and per[4] < 0.02 and per[4] > 0.006, "epic ~7-9%%, legendary ~2%%, mythic ~1%% a slot (golden ones add legendaries)")
 	check(Tournament.DROP_CHANCE[Gear.EPIC] > Tournament.DROP_CHANCE[Gear.LEGENDARY], "a legendary drops less often than an epic")
 
 
 func test_prize_money() -> void:
 	print("prize money")
 	var t := Tournament.new(1, 5)
+	_plain(t)
 	t.record_match(false, "2:6", _rng(1))
 	check(t.state == Tournament.State.OVER and t.gold == 20, "out in the first round: 20 gold of prize money (%d)" % t.gold)
 	t = Tournament.new(1, 5)
+	_plain(t)
 	t.wildcards = 1
 	t.record_match(false, "2:6", _rng(1))
 	check(t.gold == 0 and t.state == Tournament.State.LOST, "a loss with a wildcard pays nothing yet")
 	t.give_up()
 	check(t.gold == 20, "...giving up after it pays the round (%d)" % t.gold)
 	t = Tournament.new(1, 5)
+	_plain(t)
 	t.give_up()
 	check(t.gold == 0, "giving up before playing pays nothing")
 	var by_round := []
 	for out in 6:
 		var u := Tournament.new(1, 9)
+		_plain(u)
 		u.drop_bonus = -1.0
 		for i in out:
 			u.record_match(true, "6:1", _rng(i))
+			u.chest = {}  # (a chest's gold is counted by test_chest)
 			if u.state == Tournament.State.REWARD:
-				u.take_reward(0)  # a perk: no wildcard, the loss ends the run
+				u.state = Tournament.State.BRACKET
 		if out < 5:
 			u.record_match(false, "1:6", _rng(9))
 		by_round.append(u.gold)
 	check(by_round == [20, 35, 60, 95, 150, 225], "income by the round of exit %s" % [by_round])
 	var quick := Tournament.new(0, 5)
+	_plain(quick)
 	quick.record_match(false, "2:7", _rng(1))
 	check(quick.gold == 8, "the quick format pays x0.4 (%d)" % quick.gold)
 
@@ -139,6 +156,7 @@ func test_prize_money() -> void:
 func test_income() -> void:
 	print("income lines")
 	var t := Tournament.new(1, 21)
+	_plain(t)
 	t.earn("style", 6)
 	t.drop_bonus = 1.0
 	t.record_match(true, "6:2", _rng(2))
@@ -159,6 +177,7 @@ func test_income() -> void:
 func test_sell_extra() -> void:
 	print("sell everything extra")
 	var t := Tournament.new(1, 4)
+	_plain(t)
 	t.equip["racket"] = _item(Gear.RARE)
 	t.bag = [_item(Gear.COMMON, 1, "shoes"), _item(Gear.COMMON, 1, "racket"), _item(Gear.RARE, 1, "band"),
 		_item(Gear.EPIC, 1, "racket"), _item(Gear.RARE, 1, "racket")]
@@ -221,6 +240,7 @@ func test_locker_in_run() -> void:
 	Locker.put(_item(Gear.RARE, 1, "racket"), 0)
 	SaveData.locker["next"] = [_item(Gear.COMMON, 1, "band")]
 	var t := Tournament.new(1, 3)
+	_plain(t)
 	Locker.board(t)
 	check(t.equip["band"]["rarity"] == Gear.COMMON and Locker.next_items().is_empty(), "what was bought comes along by itself (put on)")
 	check(t.can_take_locker(), "before the first match the locker is open")
@@ -365,7 +385,9 @@ func test_islands() -> void:
 	check(SaveData._score(SaveData._to_config()) >= before, "the save's score never falls with a title")
 	# opponents get stronger, richer, better geared
 	var park := Tournament.new(1, 11)
+	_plain(park)
 	var paris := Tournament.new(1, 11)
+	_plain(paris)
 	paris.location = "paris"
 	park.stage = 2
 	paris.stage = 2
@@ -386,6 +408,7 @@ func test_islands() -> void:
 	for k in 400:
 		for j in 2:
 			var t := Tournament.new(1, 5000 + k)
+			_plain(t)
 			if j == 1:
 				t.location = "paris"
 			for l in t.lineup:
@@ -402,13 +425,16 @@ func test_islands() -> void:
 func test_income_scale() -> void:
 	print("income scale")
 	_reset_save()
-	check(is_equal_approx(Tournament.income_scale(), 1.0), "a newcomer is paid in full")
-	SaveData.played = 3
-	check(is_equal_approx(Tournament.income_scale(), Tournament.INCOME_SCALE + (1.0 - Tournament.INCOME_SCALE) * 0.5), "halfway through the first runs")
-	SaveData.played = 6
+	Tournament.BEGINNER_START = 2.0
+	check(is_equal_approx(Tournament.income_scale(), Tournament.BEGINNER_START), "a newcomer is paid double")
+	SaveData.played = Tournament.BEGINNER_RUNS / 2
+	check(is_equal_approx(Tournament.income_scale(), Tournament.INCOME_SCALE + (Tournament.BEGINNER_START - Tournament.INCOME_SCALE) * 0.5), "halfway through the first runs")
+	SaveData.played = Tournament.BEGINNER_RUNS
 	var t := Tournament.new(1, 3)
+	_plain(t)
 	check(is_equal_approx(Tournament.income_scale(), Tournament.INCOME_SCALE), "after %d runs the long-run scale" % Tournament.BEGINNER_RUNS)
 	check(t.prize_on_loss(0) == roundi(20 * Tournament.INCOME_SCALE) and t.gold_for_win(4) == roundi(50 * Tournament.INCOME_SCALE), "prizes follow it (%d, %d)" % [t.prize_on_loss(0), t.gold_for_win(4)])
+	Tournament.BEGINNER_START = 1.0
 	_reset_save()
 
 
@@ -433,3 +459,139 @@ func test_package() -> void:
 	check(float(band["mods"]["serve_window"]) > 0.1, "an epic wristband widens every PERFECT window")
 	var lv := Items.set_level(Items.instance(Items.find("sledgehammer")), 3)
 	check(float(lv["mods"]["forehand_pace"]) > float(epic["mods"]["forehand_pace"]) * 1.15, "level 3 strengthens the package too")
+
+
+# --- A-7: the chest by the net ---------------------------------------------------------
+
+func test_chest() -> void:
+	print("chest")
+	_reset_save()
+	# frequency by round over many matches: 35% / 55% / the final always; pity: never 3 dry wins
+	var n := [0, 0, 0, 0]
+	var total := [0, 0, 0, 0]
+	var longest_dry := 0
+	for k in 1000:
+		var t := Tournament.new(1, 100 + k)
+		_plain(t)
+		t.drop_bonus = -1.0  # no trophy muddies the pity count
+		var dry := 0
+		for r in 4:
+			t.record_match(true, "6:1", _rng(k))
+			total[r] += 1
+			if not t.chest.is_empty():
+				n[r] += 1
+				dry = 0
+			else:
+				dry += 1
+				longest_dry = maxi(longest_dry, dry)
+			t.chest = {}
+			t.state = Tournament.State.BRACKET
+	var fr := n.map(func(v): return float(v) / 1000.0)
+	check(fr[0] > 0.30 and fr[0] < 0.40, "round 1: %.0f%% of wins leave a chest (the 35%% chance)" % [fr[0] * 100.0])
+	check(fr[1] > 0.30 and fr[1] < 0.42, "round 2: %.0f%%" % [fr[1] * 100.0])
+	check(fr[2] > fr[0] and fr[2] > 0.55, "quarter-final: %.0f%%" % [fr[2] * 100.0])
+	check(longest_dry <= Tournament.CHEST_PITY, "never more than %d wins in a row with no chest (longest %d)" % [Tournament.CHEST_PITY, longest_dry])
+	var f := Tournament.new(1, 5)
+	_plain(f)
+	f.stage = 4
+	f.record_match(true, "6:1", _rng(1))
+	check(f.champion and not f.chest.is_empty(), "the final always leaves a chest")
+	# the same run and match: the same chest
+	var a := Tournament.new(1, 77)
+	_plain(a)
+	var b := Tournament.new(1, 77)
+	_plain(b)
+	a.dry = 2
+	b.dry = 2
+	a.record_match(true, "6:1", _rng(1))
+	b.record_match(true, "6:1", _rng(2))
+	check(a.chest == b.chest and not a.chest.is_empty(), "the chest comes from the run's seed, not from the match's random")
+	# contents: gold only / item / both / perk or wildcard, the item at the island's level
+	var kinds := {"gold": 0, "item": 0, "both": 0, "other": 0}
+	var perks_seen := 0
+	var epics := 0
+	var items_n := 0
+	var levels_ok := true
+	var cr := _rng(3)
+	var holder := Tournament.new(1, 8)
+	_plain(holder)
+	holder.location = "paris"
+	for k in 1000:
+		var c := holder.make_chest(2, cr)
+		perks_seen += 1 if String(c["perk"]) != "" else 0
+		if c["wildcard"]:
+			kinds["other"] += 1
+		elif c["gold"] > 0 and not c["item"].is_empty():
+			kinds["both"] += 1
+		elif not c["item"].is_empty():
+			kinds["item"] += 1
+		else:
+			kinds["gold"] += 1
+		if not c["item"].is_empty():
+			levels_ok = levels_ok and Items.level(c["item"]) == 4
+			items_n += 1
+			epics += 1 if int(c["item"]["rarity"]) >= Gear.EPIC else 0
+	check(kinds["gold"] > 100 and kinds["gold"] < 220 and kinds["item"] > 330 and kinds["both"] > 280 and kinds["other"] > 60 and kinds["other"] < 140, "contents %s" % [kinds])
+	check(perks_seen == 0, "1000 chests: no temporary perks")
+	check(levels_ok, "every chest item in Paris is level 4")
+	check(float(epics) / items_n > 0.45 and float(epics) / items_n < 0.65, "quarter-final chests: epic+ in %d of %d items" % [epics, items_n])
+	# taking it: gold into the run's lines, the item worn or in the bag, state goes on
+	var t2 := Tournament.new(1, 12)
+	_plain(t2)
+	t2.state = Tournament.State.REWARD
+	t2.chest = {"round": 1, "gold": 30, "item": _item(Gear.RARE, 1, "band"), "perk": "light_feet", "wildcard": true, "opened": false}
+	t2.open_chest()
+	check(t2.gold == 30 and int(t2.income["chest"]) == 30 and t2.perks == ["light_feet"] and t2.wildcards == 1, "open: gold on its line, a perk, a wildcard")
+	t2.open_chest()
+	check(t2.gold == 30, "opened once")
+	t2.take_chest()
+	check(t2.equip["band"]["rarity"] == Gear.RARE and t2.chest.is_empty() and t2.state == Tournament.State.BRACKET, "taken: the band is on, on with the run")
+	var saved := Tournament.from_dict(Tournament.new(1, 5).to_dict())
+	check(saved.chest.is_empty() and saved.dry == 0, "chest and pity survive a save")
+	var t3 := Tournament.new(1, 6)
+	_plain(t3)
+	t3.chest = {"round": 0, "gold": 5, "item": {}, "perk": "", "wildcard": false, "opened": false}
+	t3.dry = 1
+	check(Tournament.from_dict(t3.to_dict()).chest == t3.chest and Tournament.from_dict(t3.to_dict()).dry == 1, "a chest waiting survives a save")
+	_reset_save()
+
+
+# --- Loop review 10.10: the places where the cycle leaked ------------------------------
+
+func test_loop_review() -> void:
+	print("loop review")
+	_reset_save()
+	# The run's end sells what is extra (it used to vanish) before the gold goes to the bank.
+	var t := Tournament.new(1, 21)
+	_plain(t)
+	t.bag = [_item(Gear.COMMON, 1, "shoes"), _item(Gear.EPIC, 1, "racket")]
+	t.state = Tournament.State.OVER
+	var before := SaveData.gold
+	SaveData.record_run(t)
+	check(int(t.income.get("sell", 0)) == Items.sell_price(_item(Gear.COMMON, 1, "shoes")) and t.bag.size() == 1, "record_run: the common is sold on the 'sell' line, the epic stays")
+	check(SaveData.gold == before + t.gold and t.gold >= int(t.income.get("sell", 0)), "...and it is in the bank with the rest")
+	# The title pays by the conditions (a hardcore run's bonus is x2.5, like its matches).
+	var plain := Tournament.new(1, 22)
+	_plain(plain)
+	var hard := Tournament.new(1, 22, true)
+	_plain(hard)
+	Modifiers.set_run(hard, [])
+	_plain(hard)  # (set_run dealt the final's auras again)
+	check(hard.champion_bonus() == roundi(plain.champion_bonus() * Modifiers.find("hardcore")["reward"]) or absi(hard.champion_bonus() - roundi(float(plain.champion_bonus()) * float(Modifiers.find("hardcore")["reward"]))) <= 1, "a hardcore title pays x2.5 (%d vs %d)" % [hard.champion_bonus(), plain.champion_bonus()])
+	check(Modifiers.reward_raw(["hardcore", "tier_up", "short_ring"]) >= Modifiers.reward(["hardcore", "tier_up", "short_ring"]), "reward_raw is the pay before the cap")
+	# The horizon: the bracket counts the run's gold that is not in the bank yet.
+	SaveData.played = 1
+	SaveData.gold = 0
+	check(Goals.line(100000).begins_with("По карману"), "Goals.line(extra): the bank plus the run's gold buys things")
+	check(not Goals.line(0).begins_with("По карману"), "...and without it the bank buys nothing")
+	# The island a title opens.
+	var champ := Tournament.new(1, 23)
+	champ.champion = true
+	champ.location = "park"
+	SaveData.titles_by_loc = {"park": 1}
+	check(Locations.opened_by_title(champ.location) == "clay", "the first title in New York opens Spain")
+	SaveData.titles_by_loc = {"park": 2}
+	check(Locations.opened_by_title(champ.location) == "", "...and it is news only once")
+	champ.location = "paris"
+	check(Locations.opened_by_title(champ.location) == "", "Paris is the last island")
+	_reset_save()

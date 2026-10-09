@@ -39,6 +39,8 @@ var wind_side := 0.0
 var fog := false
 var night := false
 var aura_color := Color(0, 0, 0, 0)
+var hole := false                 # «Дыра слева»: the player's strokes are checked for his backhand side
+var traits: Array = []            # his traits this match (ids), shown by the strip and a small glow
 
 var _in_match := false
 var _points := 0
@@ -88,7 +90,9 @@ func _on_match_started(_info: Dictionary) -> void:
 		list = []  # practice: no modifiers (only the bot's --mods runs)
 	apply(list)
 	if t != null:
-		auras = t.current_lineup()["mods"].filter(func(id): return list.has(id))
+		var mine: Array = t.current_lineup()["mods"].filter(func(id): return list.has(id))
+		auras = mine.filter(func(id): return not Traits.has(id))
+		traits = mine.filter(func(id): return Traits.has(id))
 	_show_glow()
 	if not list.is_empty():
 		_announce.call_deferred(list)
@@ -114,6 +118,9 @@ func revert() -> void:
 	undo.clear()
 	active = []
 	auras = []
+	traits = []
+	hole = false
+	Traits.hole_hit = false
 	_in_match = false
 	start_stamina = 1.0
 	no_ring = false
@@ -166,7 +173,11 @@ func _on_shot(who: int, info: Dictionary) -> void:
 	ball.launch(contact, r.velocity, r.spin)
 
 
-func _on_stroke(_info: Dictionary) -> void:
+func _on_stroke(info: Dictionary) -> void:
+	if _in_match and hole and not info.get("serve", false):
+		# «Дыра слева»: did this stroke go to his backhand (a right-hander's left: -right() side)?
+		var tg: Vector2 = main.last_shot.get("target", Vector2.ZERO)
+		Traits.hole_hit = tg.x * (main.cpu as Athlete).right().x < -0.8
 	if _in_match and reaction_add != 0.0:
 		main.ai._reaction = maxf(0.02, float(main.ai._reaction) + reaction_add)
 
@@ -197,13 +208,19 @@ func _announce(list: Array) -> void:
 		return
 	var lu: Dictionary = main.tournament.current_lineup() if main.tournament_mode and main.tournament != null else {}
 	var conds: Array[String] = []
+	var tn: Array[String] = []
 	for id in list:
 		var e := Modifiers.find(id)
+		if traits.has(id):
+			tn.append(String(e["name"]))
+			continue
 		if auras.has(id):
 			var hid: bool = lu.get("hidden", []).has(id)
 			_strip("АУРА", "???" if hid else _name_now(e), Color(0.8, 0.8, 0.85) if hid else e["color"])
 		else:
 			conds.append(_name_now(e))
+	if not tn.is_empty():
+		_strip("ЧЕРТА" if tn.size() == 1 else "ЧЕРТЫ", ", ".join(tn), Modifiers.find(traits[0])["color"])
 	if not conds.is_empty():
 		_strip("УСЛОВИЯ", ", ".join(conds), UiTheme.GOLD)
 
@@ -337,6 +354,10 @@ static func _vertical() -> GradientTexture2D:
 
 func _show_glow() -> void:
 	if auras.is_empty():
+		if not traits.is_empty():  # a trait: the ring on the ground only (one draw call)
+			var tc: Color = Modifiers.find(traits[0])["color"]
+			(_halo.material_override as StandardMaterial3D).albedo_color = Color(tc, 0.6)
+			_halo.visible = true
 		return
 	var c: Color = Modifiers.find(auras[0])["color"]
 	var lu: Dictionary = main.tournament.current_lineup() if main.tournament_mode and main.tournament != null else {}

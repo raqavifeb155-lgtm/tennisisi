@@ -19,6 +19,8 @@ const LINES := {
 	"locker": "Новая форма — новая игра",
 	"reward": "Есть награда за задания — заходи в тренерскую",
 	"lot": "Пустой участок. Построй здесь что-нибудь",
+	"drill_first": "Покажу удары. Пойдём к пушке",
+	"drilled": "Теперь в турнир. Жми «Новая игра»",
 }
 
 var body: Athlete
@@ -42,7 +44,7 @@ func setup(c: Node, b: Athlete) -> void:
 
 ## Into the club: dressed, at his spot by the court.
 func enter() -> void:
-	body.set_look(LOOK)
+	AthleteCasual.make_elder(body)
 	body.set_meta("club_coach", true)
 	body.area = club.world.walk.bounds
 	body.position = HOME
@@ -69,6 +71,10 @@ func tick(delta: float, hero: Vector3) -> void:
 		mv = club.world.walk.steer(Vector2(body.position.x, body.position.z), Vector2(t.x, t.z))
 		if mv == Vector2.ZERO:
 			_path.pop_front()
+	# he stops for the hero in his way, and waits
+	var hv := Vector2(hero.x - body.position.x, hero.z - body.position.z)
+	if mv != Vector2.ZERO and hv.length() < 1.7 and hv.normalized().dot(mv.normalized()) > 0.3:
+		mv = Vector2.ZERO
 	body.max_speed = SPEED
 	body.move_input = mv
 	var look := Vector2(body.velocity.x, body.velocity.z)
@@ -85,7 +91,7 @@ func say(key: String, force := false) -> bool:
 		return false
 	var text: String = LINES.get(key, key)
 	_last_say = _clock
-	club.hud.say(text)
+	club.npc.say("coach", text)
 	_murmur = []
 	var n := clampi(text.length() / 7, 3, 7)
 	for i in n:
