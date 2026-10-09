@@ -214,6 +214,8 @@ func _ready() -> void:
 			_bot_seed = int(a.get_slice("=", 1))
 		elif a.begins_with("--bot-drop="):
 			_bot_drop = float(a.get_slice("=", 1))  # D-7: the share of the bot's strokes that are drop shots (0..1)
+		elif a == "--no-chase":
+			Footwork.chase = false  # D-10: without running down a short ball (for the before/after numbers)
 		elif a.begins_with("--adapt-floor="):
 			Opponents.floor_slope = float(a.get_slice("=", 1))  # D-5: how fast the opponents keep up with the player's level
 		elif a.begins_with("--adapt-round="):
@@ -1233,9 +1235,10 @@ func _update_player_movement() -> void:
 		mv = Vector2.ZERO
 		assist = 0.25 if _bot_dive_test else (_bot_hard_assist if tournament != null and tournament.hardcore else 1.0)
 	var free := mv == Vector2.ZERO and (autoplay or not _assist_suppressed) and not serving
-	if free and assist > 0.0 and _player_can_hit() and t_contact < 2.5:
+	var hang := Footwork.hanging_contact(incoming, player.position.z - Athlete.CONTACT_FORWARD, ball.state) if t_contact >= 2.5 else Vector3.INF  # D-10: a drop shot that lands short is run down
+	if free and assist > 0.0 and _player_can_hit() and (t_contact < 2.5 or hang != Vector3.INF):
 		# Auto-positioning toward a comfortable contact point.
-		var ideal := _ideal_contact()
+		var ideal := _ideal_contact() if t_contact < 2.5 else hang
 		var side := 1 if player.lateral_of(ideal) >= 0.0 else -1
 		side = Footwork.auto_side(side, player.lateral_of(ideal), player.position.distance_to(player.stance_for(ideal, 1)), t_contact, player.max_speed)  # D-3: run around the backhand
 		var stance := player.stance_for(ideal, side)
