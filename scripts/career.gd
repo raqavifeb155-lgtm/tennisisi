@@ -316,7 +316,7 @@ static func normalize(cand, origin: String, seed_v: int) -> Dictionary:
 static func free_agents(n: int, seed_v: int) -> Array:
 	var out: Array = []
 	for i in n:
-		var o := Opponents.random(absi(seed_v + 7919 * (i + 1)) % 1000000 + 1, FREE_TIERS[i % FREE_TIERS.size()], {"overpowered": false})
+		var o := Opponents.random(absi(("free:%d:%d" % [seed_v, i]).hash()) % 1000000 + 1, FREE_TIERS[i % FREE_TIERS.size()], {"overpowered": false})
 		var st: Dictionary = o["stats"]
 		var lv := func(v) -> int: return clampi(int(round(float(v))) - 2, 0, 3)
 		var levels := {

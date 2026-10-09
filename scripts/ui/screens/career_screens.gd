@@ -29,8 +29,10 @@ static func route(m: Node, action: String, arg: int) -> bool:
 		"career_season":
 			show_season(ui)
 		"career_retire":
+			_preview(m, {})
 			show_retire(ui, t)
 		"career_relic_go":
+			_preview(m, {})
 			show_relic(ui, t)
 		"career_relic":
 			_relic = arg
@@ -38,6 +40,8 @@ static func route(m: Node, action: String, arg: int) -> bool:
 			show_heirs(ui)
 		"career_heir":
 			_heir = arg
+			var hs := Career.heir_candidates()
+			_preview(m, hs[arg]["look"] if arg >= 0 and arg < hs.size() else {})  # the court behind shows him
 			show_heirs(ui, false)
 		"career_heir_go":
 			finish(m)
@@ -62,6 +66,13 @@ static func gate(m: Node) -> bool:
 		return false
 	show_retire(m.ui, m.get("tournament"))
 	return true
+
+
+## The player on the court behind the screen wears the candidate's look ({} = the hero's own).
+static func _preview(m: Node, look: Dictionary) -> void:
+	var p = m.get("player")
+	if p != null:
+		p.set_look(look if not look.is_empty() else SaveData.look)
 
 
 ## The relic and the heir picked on the screens become the retirement (one step).
@@ -187,8 +198,6 @@ static func summary_extra(ui: TournamentUI, t: Tournament) -> void:
 ## the club; from the 3rd season the quiet «Завершить карьеру сейчас».
 static func character_extra(ui: TournamentUI) -> void:
 	var c := Career.data()
-	ui._gap(12)
-	ui._sub("Карьера")
 	ui._box.add_child(ui._text(season_line(), UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.GOLD))
 	ui._note("%s  ·  опыт навыков ×%s  ·  навыки не падают" % [Career.SEASON_NAMES[Career.season() - 1], _x(Career.xp_mult())])
 	if not Career.retire_due():
@@ -355,7 +364,7 @@ static func levels_text(levels: Dictionary) -> String:
 static func show_welcome(ui: TournamentUI) -> void:
 	var c := Career.data()
 	var ret: Array = c["retired"]
-	ui._open(null, true, "", TournamentUI.VEIL_CLUB)
+	ui._open(null)
 	ui._title("Новый сезон")
 	ui._sub("%s, %d %s · поколение %d" % [Career.hero_name(), int(c["age"]), _years(int(c["age"])), int(c["gen"])])
 	if not ret.is_empty():
