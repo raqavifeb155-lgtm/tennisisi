@@ -35,6 +35,7 @@ func _run() -> void:
 	test_sell_extra()
 	test_locker()
 	test_locker_in_run()
+	test_insured_once()
 	test_goals()
 	test_shop()
 	test_strings()
@@ -258,6 +259,68 @@ func test_locker_in_run() -> void:
 	check(Locker.save_from(t, 1) != "", "only one per run")
 	var back := Tournament.from_dict(t.to_dict())
 	check(back.locker_done, "the choice survives a save")
+	_reset_save()
+
+
+# --- Hub spec 15: the locker's insurance is paid once ----------------------------------
+
+func test_insured_once() -> void:
+	print("insurance once (hub spec 15)")
+	_reset_save()
+	SaveData.club = {"levels": {"locker": 1}}
+	SaveData.gold = 100
+	check(Locker.put(_item(Gear.LEGENDARY), 5) == "" and SaveData.gold == 64, "the first time a legendary goes in: 36 paid")
+	check(bool(Locker.items()[0].get("insured", false)), "...and it is insured")
+	check(Locker.insurance(Locker.items()[0]) == 0, "an insured thing owes no insurance")
+	check(Locker.put(_item(Gear.EPIC, 1, "band"), 5) == "" and not Locker.items()[1].has("insured"), "an epic needs none and is not marked")
+	# a run with it: under risk like any taken thing, but kept again for free
+	var t := Tournament.new(1, 31)
+	_plain(t)
+	t.take_from_locker(0)
+	check(bool(t.equip["racket"].get("insured", false)) and Locker.items().size() == 1, "taken into the run, still insured")
+	var back := Tournament.from_dict(t.to_dict())
+	check(bool(back.equip["racket"].get("insured", false)), "the flag survives a run's save")
+	t.stage = 4
+	t.record_match(false, "1:6", _rng(1))
+	SaveData.gold = 0
+	var gold := SaveData.gold
+	SaveData.record_run(t)
+	var ci := -1
+	var cands := Locker.candidates(t)
+	for i in cands.size():
+		if bool(cands[i]["item"].get("insured", false)):
+			ci = i
+	check(ci >= 0 and Locker.check(cands[ci]["item"], Locker.exit_round(t)) == "", "on the summary it is one of the picks, and with no gold it can go back")
+	check(Locker.save_from(t, ci) == "" and SaveData.gold == gold + t.gold and Locker.items().size() == 2, "kept again: nothing paid")
+	check(bool(Locker.items()[1]["insured"]), "...still insured in the locker")
+	# bought legendaries come insured (the full price is ten insurances)
+	_reset_save()
+	SaveData.club = {"levels": {"shop": 2}}
+	SaveData.gold = 100000
+	var bought := false
+	for k in 40:
+		var st := Shop.stock()
+		for i in st.size():
+			if not (st[i] as Dictionary).is_empty() and int(st[i]["rarity"]) >= Gear.LEGENDARY and Shop.buy(i) == "":
+				bought = true
+				break
+		if bought:
+			break
+		SaveData.played += 1
+	check(bought and bool(Locker.next_items().back().get("insured", false)), "a legendary bought in the shop is insured")
+	# an old save: locker items with no flag load, pay once, then carry it
+	_reset_save()
+	var cf := ConfigFile.new()
+	cf.set_value("meta", "gold", 500)
+	cf.set_value("locker", "data", {"items": [_item(Gear.LEGENDARY)]})
+	SaveData._apply(cf)
+	check(Locker.items().size() == 1 and not Locker.items()[0].has("insured") and Locker.insurance(Locker.items()[0]) == 36, "an old save's legendary: no flag, owes 36 once")
+	var old: Dictionary = Locker.take(0)
+	check(Locker.put(old, 5) == "" and SaveData.gold == 464 and bool(Locker.items()[0]["insured"]), "...paid once on the next keep, insured from then on")
+	var cf2 := SaveData._to_config()
+	SaveData.locker = {}
+	SaveData._apply(cf2)
+	check(bool(Locker.items()[0].get("insured", false)), "the flag survives the save file")
 	_reset_save()
 
 

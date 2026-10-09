@@ -53,13 +53,27 @@ static func cap_text(round_i: int) -> String:
 	return ["до редкой", "до редкой", "до эпической", "до эпической", "до легендарной", "любая"][clampi(round_i, 0, 5)]
 
 
+## Hub spec 15: paid once, when the thing first goes into the locker; from then on it is
+## marked "insured" and owes nothing on any later keep. It is still the run's one pick: a
+## thing taken into a run must be kept again on the summary (free), or it is gone.
 static func insurance(item: Dictionary) -> int:
-	if item.is_empty() or int(item.get("rarity", 0)) < Gear.LEGENDARY:
+	if item.is_empty() or int(item.get("rarity", 0)) < Gear.LEGENDARY or is_insured(item):
 		return 0
 	return roundi(Items.price(item) * INSURANCE * (1.0 - ClubApi.insurance_discount()))
 
 
 ## Where the run ended for the ceiling: the title = 5, else the round it went out in.
+static func is_insured(item: Dictionary) -> bool:
+	return bool(item.get("insured", false))
+
+
+## A legendary or a mythic gets the mark (a copy goes into the locker, see put / gift / Shop.buy).
+static func insure(item: Dictionary) -> Dictionary:
+	if int(item.get("rarity", 0)) >= Gear.LEGENDARY:
+		item["insured"] = true
+	return item
+
+
 static func exit_round(t: Tournament) -> int:
 	return 5 if t.champion else clampi(t.stage, 0, 4)
 
@@ -89,7 +103,7 @@ static func put(item: Dictionary, round_i: int, replace := -1) -> String:
 		SaveData.gold += Items.sell_price(items()[replace])
 		items().remove_at(replace)
 	spend(insurance(item))
-	items().append(item.duplicate(true))
+	items().append(insure(item.duplicate(true)))
 	return ""
 
 
@@ -99,9 +113,9 @@ static func gift(item: Dictionary) -> String:
 	if item.is_empty():
 		return ""
 	if items().size() < slots():
-		items().append(item.duplicate(true))
+		items().append(insure(item.duplicate(true)))
 		return "locker"
-	next_items().append(item.duplicate(true))
+	next_items().append(insure(item.duplicate(true)))
 	return "next"
 
 
