@@ -133,14 +133,20 @@ static func ids() -> Array:
 	return LIST.map(func(e): return e["id"])
 
 
+## What an id nobody knows is called on screen: a code word is never shown (owner, 10.10).
+const UNKNOWN_NAME := "Особая черта"
+const UNKNOWN_DESC := "Подробности раскроются в игре"
+
+
+## The shown name of any trait id (an opponent's, a student's), or UNKNOWN_NAME: never the id.
 static func name(id: String) -> String:
-	var e := find(id)
-	return id if e.is_empty() else String(e["name"])
+	var d := def(id)
+	return UNKNOWN_NAME if d.is_empty() else String(d.get("name", UNKNOWN_NAME))
 
 
 static func desc(id: String) -> String:
-	var e := find(id)
-	return "" if e.is_empty() else String(e["desc"])
+	var d := def(id)
+	return "" if d.is_empty() else String(d.get("desc", ""))
 
 
 static func _full(e: Dictionary) -> Dictionary:
@@ -303,7 +309,7 @@ static func base_ids() -> Array:
 
 static func text(id: String) -> String:
 	var d := def(id)
-	return "%s · %s" % [d["name"], d["desc"]] if not d.is_empty() else id
+	return "%s · %s" % [d["name"], d["desc"]] if not d.is_empty() else UNKNOWN_NAME
 
 
 # --- A student's traits ------------------------------------------------------------------------
