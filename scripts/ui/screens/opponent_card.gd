@@ -15,7 +15,7 @@ static func info(t: Tournament, i: int) -> Dictionary:
 	var lu: Dictionary = t.lineup[i] if i < t.lineup.size() else {}
 	var mods: Array[String] = []
 	for m in lu.get("mods", []):
-		mods.append(mod_text(String(m)))
+		mods.append(mod_text(String(m), lu))
 	var st := Opponents.shown_stats(o, -1.0, i)  # as he plays against this player (the roster's, kept up with his level)
 	return {
 		"name": String(o["name"]),
@@ -34,10 +34,17 @@ static func info(t: Tournament, i: int) -> Dictionary:
 
 ## A modifier id as a line: "Железный · реже ошибается". Ids this class does not know (the
 ## catalog of stream G) are shown as they are, so a new aura never breaks the card.
-static func mod_text(id: String) -> String:
+## G-6/G-7: the traits and auras by their name from Modifiers (a hidden aura stays "???").
+static func mod_text(id: String, lu := {}) -> String:
+	if (lu.get("hidden", []) as Array).has(id):
+		return "??? · раскроется на первом очке"
 	if Tournament.MODIFIERS.has(id):
 		var m: Dictionary = Tournament.MODIFIERS[id]
 		return "%s · %s" % [m["name"], m["desc"]]
+	var e := Modifiers.find(id)
+	if not e.is_empty():
+		var d := String(e.get("desc", ""))
+		return "%s · %s" % [e["name"], d.left(1).to_lower() + d.substr(1)] if d != "" else String(e["name"])
 	return id
 
 
