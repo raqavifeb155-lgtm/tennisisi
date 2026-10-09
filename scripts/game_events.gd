@@ -59,3 +59,7 @@ signal season_over(info: Dictionary)
 ##   record (the entry added to SaveData.career["retired"]: the future coach, stream T),
 ##   heir (the candidate chosen, Career.heir_candidates())
 signal career_retired(info: Dictionary)
+
+## AH-1 (the academy's house): a room of the house got a level (bought, or its scaffolding came down):
+##   room (HouseRooms id), level (1..5)
+signal house_room_built(info: Dictionary)

@@ -1532,7 +1532,8 @@ func test_academy_flow() -> void:
 	club._place = ""
 	club._update_place()
 	await _frames(2)
-	check(club.hud.current_place() == "academy" and club.place_buttons("academy")["action"] == "club_students", "by the academy: «УЧЕНИКИ»")
+	var pb: Dictionary = club.place_buttons("academy")
+	check(club.hud.current_place() == "academy" and pb["action"] == "club_house" and pb["extra"] == [["Ученики", "club_students"]], "by the academy: «В ДОМ АКАДЕМИИ», the students one quiet tap away")
 	club._on_choice("club_students", 0)
 	await _frames(3)
 	var AR = load("res://scripts/ui/screens/academy_room.gd")
