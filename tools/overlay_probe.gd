@@ -253,6 +253,65 @@ func _club_screen(ctx: String, action: String, title: String, back := "menu") ->
 	await _expect("%s: назад в клуб" % ctx, func() -> bool: return club.active and club.hud.visible and not main.ui.is_open())
 
 
+## AH-1: the academy's house. The door's button at the academy, in (the fade, the club put away), the hall's
+## door out, a room's button and its quiet «Улучшить», the sheet (shaped for a thumb, the gear over it, «Назад»
+## back to the house), out (the club back).
+func _house_round(club) -> void:
+	var house = club.house
+	var kept_levels = SaveData.club.get("levels", {}).duplicate(true)
+	var kept_lots = SaveData.club.get("lots", {}).duplicate(true)
+	var kept_played := SaveData.played
+	var kept_gold := SaveData.gold
+	SaveData.played = 5
+	SaveData.gold = 2000
+	SaveData.club["lots"] = {"n7": "academy"}
+	SaveData.club["levels"] = {"academy": 2}
+	SaveData.house = {}
+	club._refresh()
+	club._travel("academy")
+	await _wait(0.8)
+	await _expect("Дом: у двери академии кнопка «В дом»", func() -> bool: return club.hud.current_place() == "academy" and _button(club.hud.root, "В ДОМ АКАДЕМИИ") != null)
+	var door := _button(club.hud.root, "В ДОМ АКАДЕМИИ")
+	_check("Дом: кнопка двери не меньше 84 px и целиком на экране", door.size.y >= 84.0 and Rect2(Vector2.ZERO, Vector2(root.size)).grow(2.0).encloses(door.get_global_rect()))
+	await _tap(door)
+	await _expect("Дом: тап по «В дом» — мы внутри, клуб не рисуется", func() -> bool: return house.inside and not club.world.visible)
+	await _wait(0.8)
+	await _expect("Дом: у двери «Выйти из дома»", func() -> bool: return club.hud.current_place() == "house_exit" and _button(club.hud.root, "ВЫЙТИ ИЗ ДОМА") != null)
+	_check("Дом: быстрый переход убран, ⚙ на месте", not club.hud._travel_btn.visible and _gear().is_visible_in_tree())
+	# a room: walk in
+	var c := HouseWorld.room_center("dorm")
+	main.player.position = Vector3(c.x + 1.6, 0.0, c.z + HouseWorld.DOOR_DZ)
+	await _wait(1.2)
+	await _expect("Дом: в спальне кнопка комнаты и тихая «Улучшить»", func() -> bool: return club.hud.current_place() == "house_dorm" and _button(club.hud.root, "Улучшить") != null)
+	var up := _button(club.hud.root, "Улучшить")
+	_check("Дом: «Улучшить» и кнопка комнаты не меньше 76 px и целиком на экране", up.size.y >= 76.0 and Rect2(Vector2.ZERO, Vector2(root.size)).grow(2.0).encloses(up.get_global_rect()) and club.hud._primary.size.y >= 84.0)
+	await _tap(up)
+	await _expect("Дом: «Улучшить» покупает первый уровень (75)", func() -> bool: return AcademyHouse.level("dorm") == 1 and SaveData.gold == 1925)
+	await _tap(club.hud._primary)
+	await _expect("Дом: кнопка комнаты открывает лист улучшения", func() -> bool: return main.ui.is_open() and main.ui.root.find_children("*", "Label", true, false).any(func(l): return (l as Label).is_visible_in_tree() and "Спальня" in (l as Label).text))
+	await _screen_shape("Дом · лист улучшения")
+	await _expect("Дом · лист: ⚙ видна над листом", func() -> bool: return _gear().is_visible_in_tree())
+	await _tap(_gear())
+	await _settings_round("Дом · лист → ⚙")
+	await _tap(await _find(main.ui.root, "УЛУЧШИТЬ"))
+	await _expect("Дом · лист: «Улучшить» покупает второй уровень (170)", func() -> bool: return AcademyHouse.level("dorm") == 2 and SaveData.gold == 1755)
+	_chosen = ""
+	await _tap(await _find(main.ui.root, "Назад"))
+	await _expect("Дом · лист: «Назад» — мы в доме, лист закрыт", func() -> bool: return house.inside and not main.ui.is_open() and club.hud.visible)
+	# out
+	main.player.position = HouseWorld.exit_center()
+	await _wait(0.8)
+	await _tap(await _find(club.hud.root, "ВЫЙТИ ИЗ ДОМА"))
+	await _expect("Дом: «Выйти» — клуб вернулся, мы у двери академии", func() -> bool: return not house.inside and club.world.visible and club.hud.visible and club.hud.current_place() == "academy")
+	await _expect("Дом: в клубе вернулись быстрый переход и тренер", func() -> bool: return club.hud._travel_btn.visible and main.cpu.visible)
+	SaveData.house = {}
+	SaveData.club["levels"] = kept_levels
+	SaveData.club["lots"] = kept_lots
+	SaveData.played = kept_played
+	SaveData.gold = kept_gold
+	club._refresh()
+
+
 ## «Условия забега» from the club's link (hub-economy 14): shaped for a thumb, the gear over it,
 ## the rate's three plates in a row inside the screen, a tap picks a rate (the total moves),
 ## «Назад» comes back to the club.
@@ -679,6 +738,7 @@ func _run() -> void:
 		await _expect("Отпустить?: «Назад» — ученик остаётся", func() -> bool: return acad.students().size() == 1 and _label_has("Отпустить"))
 		main._on_ui("menu", 0)
 		await _wait(0.6)
+		await _house_round(club)
 		SaveData.academy = {}
 		SaveData.club["lots"] = {"n1": "locker", "n2": "coach", "n3": "trophy", "n4": "stands", "n5": "bar"}
 		club._refresh()

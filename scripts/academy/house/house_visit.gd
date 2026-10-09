@@ -24,6 +24,7 @@ var _veil: ColorRect
 var _layer: CanvasLayer
 var _room := ""                     # the room the hero stands in ("" = the hall)
 var _key := ""                      # what the place button shows now
+var _blob_was := true
 var _shut := ""                     # the shut door the hero stands at
 var _tw: Tween
 
@@ -39,6 +40,8 @@ func setup(c: Node) -> void:
 	_veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_veil.visible = false
 	_layer.add_child(_veil)
+	if AcademyHouse.is_built():
+		HousePack.request(self)   # the models come while the club is played: the first visit has them (the web downloads them)
 
 
 ## The ClubWalk of the house (what the hero and the camera collide with), null outside.
@@ -84,13 +87,19 @@ func _swap_in() -> void:
 	if club.npc_life != null:
 		club.npc_life.set_active(false)
 	main.cpu.visible = false
+	HousePack.request(self)
+	# how much of the pack is drawn: Low shows the light forms and leaves the small things out (spec 8.1)
+	var gl: int = int(main.graphics.level)
+	HousePack.detail = 1 if gl == GraphicsQuality.CUSTOM else clampi(gl - GraphicsQuality.LOW, 0, 2)
 	if world == null:
 		world = HouseWorld.new()
 		club.add_child(world)
 		build_ms = float(Time.get_ticks_usec() - t0) / 1000.0
 	world.visible = true
 	world.process_mode = Node.PROCESS_MODE_INHERIT
-	world.set_shadows(club.world.high_quality())
+	world.set_shadows(false)
+	_blob_was = Athlete.blob_shadows
+	Athlete.blob_shadows = true   # no sun shadows in the house: the people keep their round ones
 	var done := AcademyHouse.complete_ready()   # the scaffolding that came down over the runs played
 	world.sync()
 	inside = true
@@ -144,6 +153,7 @@ func _swap_out(at_door: bool) -> void:
 	var main: Node = club.main
 	club.cam.walk_override = null
 	club.cam.environment = null
+	Athlete.blob_shadows = _blob_was
 	club.hud._travel_btn.visible = true
 	if world != null:
 		world.visible = false

@@ -55,6 +55,7 @@ var _inside := ""
 var _exit_sign: Label3D
 var _hall_sign: Label3D
 var _bounce: Tween
+var _pack_key := ""       # what the things were drawn from (the pack arrived, the detail or the club colour changed): redraw
 
 
 func _init() -> void:
@@ -165,6 +166,8 @@ func _build_environment() -> void:
 	add_child(sun)
 
 
+## Real shadows are off in the house on every preset (the hero's and the students' own blob shadows are on):
+## with the sun's shadow map on the High presets the floors burn out, and the interior has no use for it.
 func set_shadows(on: bool) -> void:
 	sun.shadow_enabled = on
 
@@ -370,6 +373,11 @@ func _build_walk() -> void:
 ## Brings the rooms to what AcademyHouse says: the objects of the built levels, the chalk mark of the
 ## next one, the scaffolding, the door and the sign. Safe to call again.
 func sync() -> void:
+	var key := _key()
+	if key != _pack_key:
+		_pack_key = key
+		for id in _rooms:
+			_rooms[id]["built"] = -1   # redraw every room's things
 	var shut_changed := false
 	for id in HouseRooms.ids():
 		var r: Dictionary = _rooms[id]
@@ -383,6 +391,17 @@ func sync() -> void:
 			_door_blocker(id)
 	for id in HouseRooms.ids():
 		_sync_room(id)
+
+
+## What the drawn things depend on besides the levels: the model pack (arrived or not), how much of it Low shows,
+## the club's colour.
+func _key() -> String:
+	return "%d|%d|%d|%s" % [HousePack.state, HousePack.generation, HousePack.detail, ClubBuilds.club_color().to_html()]
+
+
+func _process(_delta: float) -> void:
+	if visible and _key() != _pack_key:
+		sync()   # the pack arrived while the hero is here (the web): the forms of code give way to the models
 
 
 func _door_blocker(id: String) -> void:

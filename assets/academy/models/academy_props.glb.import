@@ -4,11 +4,12 @@ importer="scene"
 importer_version=1
 type="PackedScene"
 uid="uid://sgdpbii2jcx7"
-valid=false
+path="res://.godot/imported/academy_props.glb-f4d10e0440edf1955b5e6ad7e99c0183.scn"
 
 [deps]
 
 source_file="res://assets/academy/models/academy_props.glb"
+dest_files=["res://.godot/imported/academy_props.glb-f4d10e0440edf1955b5e6ad7e99c0183.scn"]
 
 [params]
 

@@ -20,6 +20,8 @@ var stats := false
 var flow := false
 var tag := ""
 var hour := 11.0
+var noshadow := false
+var only: Array = []      # --rooms=dorm,gym: just these rooms (and no hall shots)
 
 
 func _initialize() -> void:
@@ -36,6 +38,12 @@ func _initialize() -> void:
 			stats = true
 		elif a == "--flow":
 			flow = true
+		elif a == "--noshadow":
+			noshadow = true
+		elif a.begins_with("--rooms="):
+			only = Array(a.get_slice("=", 1).split(","))
+		elif a.begins_with("--hour="):
+			hour = float(a.get_slice("=", 1))
 		elif a.begins_with("--tag="):
 			tag = a.get_slice("=", 1) + "_"
 	out = ProjectSettings.globalize_path("user://house_%s%d_" % [tag, h])
@@ -101,6 +109,8 @@ func _enter() -> void:
 			break
 	await create_timer(0.7).timeout
 	club.hud._bubble.visible = false
+	if noshadow:
+		club.house.world.set_shadows(false)
 
 
 func _to(room: String, dx := 0.0, dz := 0.0) -> void:
@@ -143,14 +153,18 @@ func _run() -> void:
 	club._place = ""
 	club._update_place()
 	club.cam.snap()
-	await _shot("00_door", 1.2)
+	if only.is_empty():
+		await _shot("00_door", 1.2)
 	await _enter()
-	await _shot("01_hall_in", 0.5)
-	main.player.position = HouseWorld.ORIGIN + Vector3(0, 0, -12.0)
-	await _shot("02_hall_mid", 1.2)
-	main.player.position = HouseWorld.ORIGIN + Vector3(0, 0, -22.0)
-	await _shot("03_hall_end", 1.2)
+	if only.is_empty():
+		await _shot("01_hall_in", 0.5)
+		main.player.position = HouseWorld.ORIGIN + Vector3(0, 0, -12.0)
+		await _shot("02_hall_mid", 1.2)
+		main.player.position = HouseWorld.ORIGIN + Vector3(0, 0, -22.0)
+		await _shot("03_hall_end", 1.2)
 	for r in HouseRooms.ids():
+		if not only.is_empty() and not only.has(r):
+			continue
 		await _to(r, -HouseRooms.ROOMS[r]["side"] * 1.6, HouseWorld.DOOR_DZ)
 		await _shot("room_%s" % r, 1.1)
 	quit()
@@ -165,7 +179,7 @@ func _stats() -> void:
 	await _enter()
 	for preset in [1, 2, 3]:
 		main.graphics.set_preset(preset)
-		club.house.world.set_shadows(preset >= 3)
+		HousePack.detail = preset - 1
 		await create_timer(0.6).timeout
 		main.player.position = HouseWorld.spawn()
 		await create_timer(1.0).timeout

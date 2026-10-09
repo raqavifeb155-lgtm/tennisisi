@@ -334,16 +334,31 @@ func test_world() -> void:
 	var every_level := true
 	for r in HouseRooms.ids():
 		for lv in range(1, 6):
-			every_level = every_level and not HouseProps.items(r, lv).is_empty() and not HouseProps.marks(r, lv).is_empty()
+			var adds := false
+			for it in HouseLayout.items(r):
+				adds = adds or int(it["from"]) == lv
+			every_level = every_level and adds and not HouseProps.marks(r, lv).is_empty()
 	check(every_level, "every one of the 40 levels adds an object, and has a place for its chalk mark")
 	check(tris[0] > 0 and tris[5] > tris[2] and tris[3] > tris[1], "the gym's mesh grows with its levels: %s triangles (level 0 is only the chalk mark of the first)" % str(tris))
-	var box_all := 0
-	for r in HouseRooms.ids():
-		SaveData.house = {"levels": {r: 5}}
-		w.sync()
-		var arr := w.stuff(r).mesh.surface_get_arrays(0)
-		box_all += (arr[Mesh.ARRAY_INDEX] as PackedInt32Array).size() / 3
-		check((arr[Mesh.ARRAY_INDEX] as PackedInt32Array).size() / 3 < 3000, "%s at level 5 is under 3000 triangles (%d)" % [r, (arr[Mesh.ARRAY_INDEX] as PackedInt32Array).size() / 3])
+	var host := Node.new()
+	root.add_child(host)
+	HousePack.request(host)
+	check(HousePack.state == HousePack.READY, "the house's model pack loads from res:// off the web")
+	var limits := [3000, 5000, 8000]
+	var over: Array = []
+	var worst := [0, 0, 0]
+	for detail in 3:
+		HousePack.detail = detail
+		for r in HouseRooms.ids():
+			SaveData.house = {"levels": {r: 5}}
+			w.sync()
+			var arr := w.stuff(r).mesh.surface_get_arrays(0)
+			var n: int = (arr[Mesh.ARRAY_INDEX] as PackedInt32Array).size() / 3
+			worst[detail] = maxi(worst[detail], n)
+			if n > limits[detail]:
+				over.append("%s@%d=%d" % [r, detail, n])
+	check(over.is_empty(), "a room at level 5 fits its budget (Low 3k, Medium 5k, High 8k): worst %s, over: %s" % [str(worst), ", ".join(over)])
+	HousePack.detail = 2
 	SaveData.house = {"levels": {"dorm": 2}, "building": {"gym": {"level": 4, "until": 99}}}
 	_fresh_keep_levels_3()
 	w.sync()
