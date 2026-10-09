@@ -481,6 +481,7 @@ static func sync() -> Array:
 	var grew: Array = []
 	var from := int(d["trained_at"])
 	if from >= SaveData.played:
+		d["trained_at"] = SaveData.played   # an older copy of the save came back: count from it
 		return grew
 	for r in range(from + 1, SaveData.played + 1):
 		grew += on_run(r)
