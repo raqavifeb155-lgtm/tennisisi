@@ -48,6 +48,9 @@ cp assets/sfx/amb_*.ogg assets/sfx/music_*.ogg assets/sfx/birds.ogg build/web/sf
 rm -rf build/web/models && mkdir -p build/web/models
 PACK_V=$(grep -o 'VERSION := "[0-9a-f]*"' scripts/club/world/club_pack_info.gd | grep -o '[0-9a-f]\{10\}')
 cp assets/club/models/club_props.glb "build/web/models/club_props.$PACK_V.glb"
+# The academy's house pack (HousePack) goes the same way: models/academy_props.<version>.glb.
+HOUSE_V=$(grep -o 'VERSION := "[0-9a-f]*"' scripts/academy/house/house_pack_info.gd | grep -o '[0-9a-f]\{10\}')
+cp assets/academy/models/academy_props.glb "build/web/models/academy_props.$HOUSE_V.glb"
 
 # The game pack carries its content in its name: a browser may keep it for good, and a
 # new build is a new name, so a cached old pack can never come back after an update.
