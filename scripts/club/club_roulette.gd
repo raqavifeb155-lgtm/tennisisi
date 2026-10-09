@@ -412,7 +412,7 @@ func _process(delta: float) -> void:
 	var frames: PackedVector3Array = _sim["frames"]
 	var wheel: PackedFloat32Array = _sim["wheel"]
 	var dt: float = _sim["dt"]
-	var f := _t / dt
+	var f := minf(_t / dt, float(frames.size() - 1))  # skip() sets _t = INF: int(INF) is out of range
 	var i := mini(int(f), frames.size() - 1)
 	var j := mini(i + 1, frames.size() - 1)
 	var k := clampf(f - i, 0.0, 1.0)
