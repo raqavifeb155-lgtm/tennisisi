@@ -33,13 +33,15 @@ static func attach(a: Athlete, pose_name: String, phase_ := 0.0) -> HousePose:
 	return hp
 
 
-## A node to put the athlete under to lay it on its back on a bed (head toward `head_dir`: -z or +z).
+## A node to put the athlete under to lay it on its back on a bed: `at` is the mattress top, the head toward
+## (sin yaw, cos yaw). Add the returned node to the scene; the athlete is inside it.
 static func lie_parent(a: Athlete, at: Vector3, yaw: float) -> Node3D:
-	var n := Node3D.new()
-	n.position = at + Vector3(0, 0.2, 0)
-	n.rotation = Vector3(PI * 0.5, 0, 0)
 	var w := Node3D.new()
-	w.rotation.y = yaw
+	w.position = at                       # where the back lies (the mattress top)
+	w.rotation.y = yaw                    # the head toward (sin yaw, cos yaw)
+	var n := Node3D.new()
+	n.position = Vector3(0, 0.12, 0)
+	n.rotation = Vector3(PI * 0.5, 0, 0)
 	w.add_child(n)
 	n.add_child(a)
 	return w

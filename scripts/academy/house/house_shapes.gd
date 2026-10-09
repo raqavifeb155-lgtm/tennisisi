@@ -1125,7 +1125,7 @@ static func _shell(id: String, s: ClubShapes) -> bool:
 				s.box(_v(0.98, 0.05, 0.8), _v(0, y + 0.07, 0.4), Color(0.45, 0.5, 0.42))
 		"chalk_here":
 			# "здесь будет": a dark patch on the floor with a chalk outline (1.2 x 1.2)
-			s.box(_v(1.2, 0.02, 1.2), _v(0, 0.03, 0), Color("4b4540"))
+			s.box(_v(1.2, 0.02, 1.2), _v(0, 0.03, 0), Color("8a7a66"))
 			for k in 2:
 				s.box(_v(1.2, 0.024, 0.035), _v(0, 0.032, (k - 0.5) * 1.17), WHITE.darkened(0.1))
 				s.box(_v(0.035, 0.024, 1.2), _v((k - 0.5) * 1.17, 0.032, 0), WHITE.darkened(0.1))

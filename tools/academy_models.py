@@ -9,8 +9,10 @@ club's pack (scripts/academy/house/house_pack.gd).
                                                        # (+ scripts/academy/house/house_pack_info.gd)
     python3 tools/academy_models.py SRC_DIR --info     # what each model costs
 
-SRC_DIR holds the unpacked sets (git clone --depth 1 of github.com/KayKit-Game-Assets/KayKit-*-1.0):
-    kaykit-Furniture-Bits/  kaykit-Restaurant-Bits/  kaykit-Prototype-Bits/
+SRC_DIR holds the unpacked sets (git clone --depth 1 of github.com/KayKit-Game-Assets/KayKit-*-1.0, folder names
+as below) and the Kenney Furniture Kit's glb files (github.com/shorepine/kenney 3d/furniture/*.glb, a CC0 mirror):
+    kaykit-Furniture-Bits/  kaykit-Restaurant-Bits/  kaykit-Prototype-Bits/  kenney_furniture/
+(kaykit-City-Builder-Bits/ is only read by RAW=1, the gallery of the sets themselves.)
 Everything the sets do not have (gym machines, screens, the ball machine, lockers, the
 facade...) is made in code: scripts/academy/house/house_shapes.gd. Every pack id has a
 simple code form there too, so the house stands before the pack arrives.

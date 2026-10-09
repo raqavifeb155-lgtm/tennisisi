@@ -9,6 +9,7 @@ extends SceneTree
 ## options: --room=dorm,gym | all (default all)   --levels=1,3,5 (default)   --size=1564|1480 (the
 ##   phone's height, 720 wide)   --gfx=low|medium (low: no shadows, no outlines)   --simple (the
 ##   code forms, not the pack)   --evening   --nocast (no kids)   --clean (no caption)
+##   --poses: the poses of HousePose in a row (and a sleeper), for the animation list of the brief
 ##   --check: every id of the pack has a code form, every layout id exists; triangles pack vs code
 ##   --gallery [--room=dorm] [--ids=a,b] [--prefix=bed] [--simple]: the models on a grid
 ##   --tag=art: files user://academy_<tag>_<size>_<room>_<level>.png (all worktrees share user://)
@@ -32,6 +33,7 @@ var shadows := false
 var hide_decor_off := false   # --decor: keep the small things on Low too
 var gallery := false
 var check := false
+var poses := false
 var ids_wanted: Array = []
 var room_filter := ""
 var prefix := ""
@@ -42,6 +44,7 @@ var _stage: Node3D
 var _cam: Camera3D
 var _caption: Label
 var _rows: Array = []
+var _floor_c := Color.GRAY
 
 
 func _initialize() -> void:
@@ -80,6 +83,8 @@ func _initialize() -> void:
 			gallery = true
 		elif a == "--check":
 			check = true
+		elif a == "--poses":
+			poses = true
 	rooms = HouseLayout.ROOM_ORDER if (room_filter in ["", "all"] or gallery) else Array(room_filter.split(","))
 	_run.call_deferred()
 
@@ -98,6 +103,10 @@ func _run() -> void:
 		return
 	if check:
 		_check()
+		quit()
+		return
+	if poses:
+		await _poses()
 		quit()
 		return
 	root.size = Vector2i(720, size_h)
@@ -126,7 +135,7 @@ func _setup_world() -> void:
 	_sun = DirectionalLight3D.new()
 	_sun.rotation_degrees = Vector3(-52, -28, 0)
 	_sun.light_color = Color(1.0, 0.92, 0.8) if not evening else Color(1.0, 0.7, 0.45)
-	_sun.light_energy = 1.0 if not evening else 0.55
+	_sun.light_energy = (0.8 if shadows else 1.0) if not evening else 0.55
 	_sun.shadow_enabled = shadows
 	root.add_child(_sun)
 	_cam = Camera3D.new()
@@ -299,6 +308,7 @@ func _shell(room: String, level: int, look: Dictionary, out: Array) -> void:
 	var trim_c: Color = look["trim"]
 	var dingy := Color(0.62, 0.58, 0.52)
 	floor_c = floor_c.lerp(dingy, 0.35 * (1.0 - k)).darkened(0.12 * (1.0 - k))
+	_floor_c = floor_c
 	wall_c = wall_c.lerp(dingy, 0.5 * (1.0 - k)).darkened(0.1 * (1.0 - k))
 	var s := ClubShapes.new()
 	s.box(Vector3(6.6, 0.3, 6.6), Vector3(0, -0.15, 0), floor_c.darkened(0.25))
@@ -374,7 +384,7 @@ func _items(room: String, level: int, out: Array) -> void:
 			continue
 		if id == "":
 			if level < int(it["from"]):
-				_chalk(it, out)
+				_chalk(it, out, _floor_c)
 			continue
 		var m: ArrayMesh = HousePack.mesh(id)
 		if m == null:
@@ -385,7 +395,7 @@ func _items(room: String, level: int, out: Array) -> void:
 
 
 ## "Здесь будет": a dark patch with a chalk outline where the next levels put something (floor things only).
-func _chalk(it: Dictionary, out: Array) -> void:
+func _chalk(it: Dictionary, out: Array, floor_c: Color) -> void:
 	var ids = it["ids"]
 	var id := String(ids) if ids is String else String(ids[ids.keys()[0]])
 	var m: ArrayMesh = HousePack.mesh(id)
@@ -397,7 +407,12 @@ func _chalk(it: Dictionary, out: Array) -> void:
 		ys = maxf(ys, (sp as Vector4).w)
 	if bb.position.y > 0.3 or bb.size.y > 2.3 or (bb.size.x < 0.5 and bb.size.z < 0.5) or ys > 0.0 or absf((it["spots"][0] as Vector4).x) > 3.0 or absf((it["spots"][0] as Vector4).y) > 3.0:
 		return
-	var chalk := HouseShapes.make("chalk_here")
+	var cs := ClubShapes.new()
+	cs.box(Vector3(1.2, 0.02, 1.2), Vector3(0, 0.03, 0), floor_c.darkened(0.3))
+	for k in 2:
+		cs.box(Vector3(1.2, 0.024, 0.035), Vector3(0, 0.032, (k - 0.5) * 1.17), floor_c.lightened(0.45))
+		cs.box(Vector3(0.035, 0.024, 1.2), Vector3((k - 0.5) * 1.17, 0.032, 0), floor_c.lightened(0.45))
+	var chalk := cs.build()
 	for sp in it["spots"]:
 		var xf := _xf(Vector4(sp.x, sp.y, sp.z, 0.0))
 		xf.basis = xf.basis * Basis.from_scale(Vector3(maxf(bb.size.x, 0.5) / 1.2, 1, maxf(bb.size.z, 0.5) / 1.2))
@@ -441,6 +456,67 @@ func _cast(_room: String, level: int, parent: Node3D) -> Array:
 				HousePose.attach(a, pose, 0.7)
 			made.append(pivot)
 	return made
+
+
+# --- the poses ---
+
+func _poses() -> void:
+	root.size = Vector2i(1500, 560)
+	_setup_world()
+	_caption.visible = false
+	var names := HousePose.POSES.duplicate()
+	names.append("lie")
+	var step := 1.25
+	for i in names.size():
+		var n: String = names[i]
+		var x := i * step
+		var pivot := Node3D.new()
+		root.add_child(pivot)
+		var seated := n in ["sit", "watch", "eat"]
+		if seated:
+			var chair := MeshInstance3D.new()
+			chair.mesh = HousePack.mesh("chair_3")
+			chair.material_override = ClubScenery.prop_material()
+			chair.position = Vector3(0, 0, 0.05)
+			chair.rotation.y = PI
+			pivot.add_child(chair)
+		var a := Athlete.new()
+		if n == "lie":
+			var bed := MeshInstance3D.new()
+			bed.mesh = HousePack.mesh("bed_3")
+			bed.material_override = ClubScenery.prop_material()
+			bed.position = Vector3(x, 0, 0)
+			bed.rotation.y = PI * 0.5
+			root.add_child(bed)
+			var w := HousePose.lie_parent(a, Vector3(x, 0.55, 0), -PI * 0.5)
+			root.add_child(w)
+		else:
+			pivot.position = Vector3(x, 0, 0)
+			pivot.rotation.y = PI + 0.6
+			pivot.add_child(a)
+		a.setup(-1.0, Color(0.9, 0.4, 0.3), Rect2(-20, -20, 40, 40))
+		a.set_look({"skin": 3, "hair": 5, "hair_color": 3, "beard": 0, "head": 0, "shirt": 5, "shorts": 3, "accent": 5})
+		AthleteCasual.set_junior(a, 0.85)
+		if n != "lie":
+			HousePose.attach(a, n, 0.3 * i)
+		else:
+			a.set_meta("casual", true)
+		var l := Label3D.new()
+		l.text = n
+		l.font_size = 40
+		l.pixel_size = 0.006
+		l.position = Vector3(x, 0.01, 0.9)
+		l.rotation = Vector3(-PI * 0.5, 0, 0)
+		root.add_child(l)
+	_cam.projection = Camera3D.PROJECTION_ORTHOGONAL
+	_cam.size = 5.4
+	_cam.position = Vector3(names.size() * step * 0.5 - 0.6, 3.2, 6.0)
+	_cam.rotation_degrees = Vector3(-24, 0, 0)
+	await create_timer(1.2).timeout
+	await process_frame
+	var path := ProjectSettings.globalize_path("user://academy_%s_poses.png" % tag)
+	root.get_texture().get_image().save_png(path)
+	print("saved ", path)
 
 
 # --- the check ---

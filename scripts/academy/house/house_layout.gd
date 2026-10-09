@@ -58,11 +58,11 @@ static func items(room: String) -> Array:
 	match room:
 		"dorm":
 			return [
-				_it(1, {1: "bed_1", 3: "bed_2", 4: "bed_3", 5: "bed_4"}, [_s(-2.1, -2.05), _s(-0.4, -2.05)]),
+				_it(1, {1: "bed_1", 3: "bed_2", 4: "bed_3", 5: "bed_4"}, [_s(-2.2, -2.05), _s(-0.3, -2.05)]),
 				_it(1, {1: "nightstand_1", 3: "nightstand_3"}, [_s(-1.25, -2.75)]),
-				_it(2, "bunk_2", [_s(1.35, -2.05)]),
-				_it(2, "wardrobe_2", [_s(2.45, -2.7)]),
-				_it(3, "nightstand_3", [_s(0.45, -2.75)]),
+				_it(2, "bunk_2", [_s(1.5, -2.05)]),
+				_it(2, "wardrobe_2", [_s(2.5, -2.7)]),
+				_it(3, "nightstand_3", [_s(0.62, -2.75)]),
 				_it(3, "curtain_3", [_s(0.0, -2.9)]),
 				_it(4, "rug_a", [_s(-0.4, 0.5)]),
 				_it(5, "partition_5", [_s(-1.25, -1.2, 90)]),
@@ -179,8 +179,8 @@ static func cast(room: String) -> Array:
 	match room:
 		"dorm":
 			return [
-				{"kind": "kid", "id": "kid_lie_a", "at": _s(-2.1, -2.05, 0, 0.0), "y": {1: 0.3, 3: 0.5, 4: 0.58, 5: 0.7}},
-				{"kind": "kid", "id": "kid_sit_b", "at": _s(-0.4, -1.4, 180, 0.0), "y": {1: -0.12, 3: 0.0, 4: 0.05, 5: 0.15}},
+				{"kind": "kid", "id": "kid_lie_a", "at": _s(-2.2, -2.05, 0, 0.0), "y": {1: 0.3, 3: 0.5, 4: 0.58, 5: 0.7}},
+				{"kind": "kid", "id": "kid_sit_b", "at": _s(-0.3, -1.4, 180, 0.0), "y": {1: -0.12, 3: 0.0, 4: 0.05, 5: 0.15}},
 				{"kind": "athlete", "id": "talk", "at": _s(1.6, 0.6, -150), "junior": 0.82},
 			]
 		"canteen":
