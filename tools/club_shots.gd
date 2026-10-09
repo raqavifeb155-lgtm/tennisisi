@@ -939,7 +939,7 @@ func _budget() -> void:
 			var all := Vector2(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME), Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME) / 1000.0)
 			var bodies := 0
 			for n in people:
-				bodies += int(n.body != null and n.body.visible)
+				bodies += 1 if (n.body != null and n.body.visible) else 0
 			var pv: bool = hero.visible
 			var cv: bool = main.cpu.visible
 			hero.visible = false
