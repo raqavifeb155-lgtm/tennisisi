@@ -1889,6 +1889,8 @@ func _start_practice(board: MatchScore = null) -> void:  # board: AiVsAi plays t
 
 
 func _start_tournament(format_index: int, run_conditions: Array = [], hardcore := false) -> void:
+	if CareerUi.gate(self):  # L1: a due retirement comes first (the ceremony opens instead)
+		return
 	hardcore = hardcore or (autoplay and _bot_hardcore)
 	if not autoplay and not Locations.unlocked(_next_location):
 		_next_location = Locations.best_unlocked()  # v0.2 A-4: an old "last tournament" on a closed island
