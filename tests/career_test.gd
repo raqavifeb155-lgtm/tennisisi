@@ -11,6 +11,10 @@ var finished := 0
 
 ## _initialize, not _init: the autoloads (Tuning, GameEvents) are in the tree by now.
 func _initialize() -> void:
+	_main.call_deferred()  # the screens need the tree running (TournamentUI._ready)
+
+
+func _main() -> void:
 	SaveData.enabled = false  # never the developer's save
 	Tournament.BEGINNER_START = 1.0
 	test_profile()
@@ -25,7 +29,7 @@ func _initialize() -> void:
 	test_heir_sources()
 	test_retire()
 	test_save_roundtrip()
-	test_screens()
+	await test_screens()
 	check(finished == 13, "every test ran to its end: %d of 13" % finished)
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
@@ -52,7 +56,7 @@ func _fresh(played := 0) -> void:
 
 
 ## A closed run: out in round `stage` (index), or the title.
-func _run(stage: int, champion := false, loc := "park", seed_v := 11) -> Tournament:
+func _close_run(stage: int, champion := false, loc := "park", seed_v := 11) -> Tournament:
 	var t := Tournament.new(1, seed_v)
 	t.location = loc
 	t.results = [{"stage": stage, "won": champion, "score": "6:3"}]
@@ -131,16 +135,16 @@ func test_points_and_rank() -> void:
 func test_season_counter() -> void:
 	print("season counter")
 	_fresh()
-	_run(0)
+	_close_run(0)
 	var c := SaveData.career
 	check(int(c["in_season"]) == 1 and Career.runs() == 1 and int(c["season_pts"]) == 10, "one run: tournament 1 of 4, 10 points")
 	check((c["cells"] as Array).size() == 1 and String(c["cells"][0]["loc"]) == "park", "the calendar has the run's cell")
-	_run(2)
-	_run(1, true)
+	_close_run(2)
+	_close_run(1, true)
 	check(int(c["in_season"]) == 3 and int(c["season"]) == 1, "three runs: still season 1")
 	check(Career.is_final_next(), "the 4th tournament is the season final")
 	var gold0 := SaveData.gold
-	_run(1, false, Career.final_loc())
+	_close_run(1, false, Career.final_loc())
 	check(int(c["season"]) == 2 and int(c["in_season"]) == 0 and int(c["age"]) == 22, "four runs: season 2, 22 years")
 	var s: Dictionary = c["seasons"][0]
 	check(int(s["pts"]) == 10 + 90 + 500 + 45 * 2, "season points: the final counts x2 (%d)" % int(s["pts"]))
@@ -158,7 +162,7 @@ func test_season_final() -> void:
 	SaveData.titles = 1
 	SaveData.titles_by_loc = {"park": 1}  # Spain is open
 	for i in 3:
-		_run(0)
+		_close_run(0)
 	check(String(SaveData.career["final_loc"]) == "clay", "the final goes to the best open island")
 	var t := Tournament.new(1, 5)
 	t.location = "clay"
@@ -195,9 +199,9 @@ func test_retire_due() -> void:
 	print("retirement after 5 seasons")
 	_fresh()
 	for i in 19:
-		_run(0)
+		_close_run(0)
 	check(not Career.retire_due() and int(SaveData.career["season"]) == 5 and int(SaveData.career["in_season"]) == 3, "19 runs: the farewell season's last tournament is next")
-	_run(0)
+	_close_run(0)
 	check(Career.retire_due(), "20 runs: the retirement is due")
 	check(int(SaveData.career["season"]) == 5 and (SaveData.career["seasons"] as Array).size() == 5, "five seasons in the books")
 	check(Career.runs() == 20, "20 career runs")
@@ -208,10 +212,10 @@ func test_early() -> void:
 	print("early retirement")
 	_fresh()
 	for i in 4:
-		_run(0)
+		_close_run(0)
 	check(not Career.can_retire_early(), "season 2: no early retirement")
 	for i in 4:
-		_run(0)
+		_close_run(0)
 	check(Career.can_retire_early(), "season 3: the quiet link is there")
 	Career.request_early()
 	check(Career.retire_due() and bool(SaveData.career["early"]), "asked: the retirement is due, marked early")
@@ -275,7 +279,7 @@ func test_retire() -> void:
 	Skills.add_xp("serve", 6000.0)
 	Skills.take_perk("sv_bomb")
 	for i in 19:
-		_run(1)
+		_close_run(1)
 	var kept := _item(Gear.RARE, "band", 3)
 	Locker.items().append(kept.duplicate(true))
 	var last := Tournament.new(1, 77)
@@ -359,9 +363,10 @@ func test_screens() -> void:
 	print("screens")
 	var ui: CanvasLayer = load("res://scripts/tournament_ui.gd").new()
 	root.add_child(ui)
+	await process_frame
 	_fresh()
 	for i in 4:
-		_run(i % 3)
+		_close_run(i % 3)
 	var t := Tournament.new(1, 9)
 	var screens := load("res://scripts/ui/screens/career_screens.gd")
 	screens.bracket_extra(ui, t)
