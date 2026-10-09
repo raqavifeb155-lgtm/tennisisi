@@ -41,6 +41,7 @@ func _run() -> void:
 	test_strings()
 	test_islands()
 	test_loop_review()
+	test_newcomer_quests()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -666,4 +667,38 @@ func test_loop_review() -> void:
 	check(Locations.opened_by_title(champ.location) == "", "...and it is news only once")
 	champ.location = "paris"
 	check(Locations.opened_by_title(champ.location) == "", "Paris is the last island")
+	_reset_save()
+
+
+# --- Loop review P1: the first runs' quests fit one match --------------------------------
+
+func test_newcomer_quests() -> void:
+	print("quests for a newcomer")
+	_reset_save()
+	var one_match := true
+	var easier := true
+	for run in ClubQuests.NEWCOMER_RUNS:
+		SaveData.played = run
+		for k in 20:
+			SaveData.club = {}
+			ClubQuests.start_run("new%d_%d" % [run, k], 0)
+			for q in ClubQuests.current():
+				var tpl := ClubQuests.find_template(q["tpl"])
+				one_match = one_match and tpl.has("first")
+				easier = easier and float(q["need"]) <= float(tpl["n"][0]) and not String(q["text"]).contains("%")
+	check(one_match, "the first %d runs deal only quests a single match can finish" % ClubQuests.NEWCOMER_RUNS)
+	check(easier, "...at the newcomer's threshold (never above the first island's)")
+	SaveData.played = ClubQuests.NEWCOMER_RUNS
+	var wide := {}
+	for k in 40:
+		SaveData.club = {}
+		ClubQuests.start_run("old%d" % k, 0)
+		for q in ClubQuests.current():
+			wide[q["tpl"]] = true
+	check(wide.has("wins") or wide.has("bagel"), "from run %d the whole pool (wins, bagel...)" % (ClubQuests.NEWCOMER_RUNS + 1))
+	SaveData.played = 0
+	SaveData.club = {}
+	ClubQuests.start_run("n1", 0)
+	var aces := ClubQuests.find_template("aces")
+	check(int(aces["first"]) == 1 and ClubQuests._make(aces, 0, false, true)["text"] == "Подай эйс за матч", "a newcomer's text reads right: «%s»" % ClubQuests._make(aces, 0, false, true)["text"])
 	_reset_save()
