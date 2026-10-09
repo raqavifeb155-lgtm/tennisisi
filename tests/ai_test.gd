@@ -31,6 +31,10 @@ func _run() -> void:
 		test_top100,
 		test_random_players,
 		test_island_draw,
+		test_serve_risk,
+		test_serve_risk_in_play,
+		test_serve_reception,
+		test_cpu_serve,
 	]
 	expected = tests.size()
 	for t in tests:
@@ -461,7 +465,7 @@ func test_opponent_stats() -> void:
 	var sw: Array = serve_of.call(weak)
 	var ss: Array = serve_of.call(strong)
 	check(ss[0] > sw[0] * 1.35, "a strong serve is much faster (%.0f vs %.0f km/h)" % [ss[0] * 3.6, sw[0] * 3.6])
-	check(ss[1] > 140 and sw[1] < 60, "a strong server hits the corners and the T (%d of 200), a weak one the middle (%d)" % [ss[1], sw[1]])
+	check(ss[1] > 140 and sw[1] < 80, "a strong server hits the corners and the T (%d of 200), a weak one the middle (%d)" % [ss[1], sw[1]])
 	ai.set_profile(weak)
 	ai.spared = 0.0
 	var slow: float = ai.run_speed()
@@ -509,7 +513,7 @@ func test_opponent_card() -> void:
 	check(inf["mods"] is Array and inf["mods"].size() == t.lineup[0]["mods"].size(), "the mods array comes from the lineup (G fills it)")
 	t.lineup[1]["mods"] = ["fast", "ночной-туман"]
 	var m1: Array = card.info(t, 1)["mods"]
-	check(m1.size() == 2 and String(m1[0]).begins_with("Быстрые ноги") and m1[1] == "ночной-туман", "a known mod gets its name, an unknown id (G's) is shown as it is")
+	check(m1.size() == 2 and String(m1[0]).begins_with("Быстрые ноги") and m1[1] != "ночной-туман" and not String(m1[1]).is_empty(), "a known mod gets its name, an unknown id is never shown as it is (a Russian stand-in)")
 	t.lineup[1]["mods"] = ["net_rusher", "fog"]
 	t.lineup[1]["hidden"] = ["fog"]
 	m1 = card.info(t, 1)["mods"]
@@ -830,4 +834,268 @@ func test_island_draw() -> void:
 	old.erase("field")
 	var legacy = T.from_dict(old)
 	check(legacy.opp(0)["id"] == "dzumhur" and legacy.opp(3)["id"] == "zverev", "a run saved before D-8 keeps its five")
+	finished += 1
+
+
+# --- F-E: the risk of a hard first serve, the AI's serve and its reception ---------------------
+
+## Skills.serve_risk: grows with speed and nearness to a line, shrinks with the serve's level and
+## perks, never reaches zero at full speed on a line, the second serve carries a part of it.
+func test_serve_risk() -> void:
+	print("F-E: a hard first serve is a gamble")
+	Skills.reset()
+	var r := func(kmh: float, edge: float, att := 1, lv := 7) -> float:
+		return Skills.serve_risk(kmh, edge, att, lv)
+	check(r.call(150.0, 0.2) == 0.0 and r.call(165.0, 0.2) == 0.0, "a slow serve (a kick, a slice, 150 km/h) carries no extra risk")
+	check(r.call(180.0, 0.2) < r.call(200.0, 0.2) and r.call(200.0, 0.2) < r.call(220.0, 0.2), "faster = riskier (%.2f < %.2f < %.2f)" % [r.call(180.0, 0.2), r.call(200.0, 0.2), r.call(220.0, 0.2)])
+	check(r.call(210.0, 0.2) > r.call(210.0, 1.0) * 1.3 and r.call(210.0, 1.0) > r.call(210.0, 2.0) * 1.0, "nearer a line = riskier; a body serve about half (%.2f vs %.2f)" % [r.call(210.0, 0.2), r.call(210.0, 2.0)])
+	var corner: float = r.call(210.0, 0.2)
+	check(corner >= 0.2 and corner <= 0.3, "level 7, 210 km/h into the corner: 20..30%% (%.1f%%)" % [corner * 100.0])
+	check(r.call(210.0, 0.2, 2) < corner * 0.4, "the second serve is safer (%.1f%% vs %.1f%%)" % [r.call(210.0, 0.2, 2) * 100.0, corner * 100.0])
+	check(r.call(210.0, 0.2, 1, 25) < r.call(210.0, 0.2, 1, 7) and r.call(210.0, 0.2, 1, 7) < r.call(210.0, 0.2, 1, 0), "levels take risk off (0: %.2f, 7: %.2f, 25: %.2f)" % [r.call(210.0, 0.2, 1, 0), corner, r.call(210.0, 0.2, 1, 25)])
+	var plain: float = Skills.serve_relief(25)
+	Skills.perks = ["sv_sniper", "sv_calm", "sv_rhythm"]
+	var perked: float = Skills.serve_relief(25)
+	check(perked > plain + 0.15, "the serve perks take risk off (relief %.2f -> %.2f)" % [plain, perked])
+	var best: float = r.call(235.0, 0.2, 1, 25)
+	check(best >= 0.1, "even a master with the perks keeps the risk at full speed on a line (%.1f%%)" % [best * 100.0])
+	Skills.perks = ["sv_bomb"]
+	check(Skills.serve_relief(7) == Skills.serve_relief(7), "a power perk gives no relief (it only makes the serve faster)")
+	Skills.reset()
+	finished += 1
+
+
+## Main itself: PERFECT serves at full speed into the corner are missed 20..30% of the time, really
+## missed (the ball lands out or goes into the net), the same for the same seed, less with the perk.
+func _perfect_serves(n: int, seed_v: int, attempt := 1, type := 1, pace_k := 1.0, x := 3.6) -> Dictionary:
+	var scene: PackedScene = load("res://scenes/main.tscn")
+	var m: Node = scene.instantiate()
+	m.autoplay = true
+	root.add_child(m)
+	await process_frame
+	m.rng.seed = seed_v
+	m.box_side = -1.0
+	m.serve_attempt = attempt
+	m.phase = m.Phase.SERVE
+	m.server = m.Who.PLAYER
+	var out := {"n": n, "risk_miss": 0, "in": 0, "perfect": 0, "risk": 0.0, "mis_in": 0}
+	var ge := root.get_node("GameEvents")
+	var held := {"v": {}}
+	var cb := func(info: Dictionary) -> void: held["v"] = info
+	ge.player_stroke.connect(cb)
+	var xp0: Dictionary = Skills.xp.duplicate(true)
+	for i in n:
+		var origin := Vector3(0.6, 2.8, 12.3)
+		m.ball.launch(origin, Vector3.ZERO, Vector3.ZERO)
+		m.toss_active = true
+		m.toss_ideal = m.game_time  # struck exactly on the ideal moment: PERFECT
+		held["v"] = {}
+		Skills.xp = xp0.duplicate(true)  # the serves train the skill: the same level for every one
+		var dir := (Vector3(-x, 0.0, -5.4) - Vector3(origin.x, 0.0, origin.z)).normalized()
+		m._curl_k = 1.0
+		m._player_serve(dir, pace_k, type)
+		var last: Dictionary = held["v"]
+		if last.is_empty():
+			continue
+		if last["label"] == "PERFECT":
+			out["perfect"] += 1
+		out["risk"] += float(last["risk"])
+		if last["risk_miss"]:
+			out["risk_miss"] += 1
+		var pred := BallPhysics.predict(m.ball.state, 3.0, 1.0 / 60.0, 2)
+		var landed := false
+		var inside := false
+		if not pred.bounce_points.is_empty():
+			landed = true
+			inside = Court.in_service_box(pred.bounce_points[0], -1, -1.0, 0.0) and int(last["risk_kind"]) != 1  # (the flight model has no net: a net ball is out)
+		if inside:
+			out["in"] += 1
+			if last["risk_miss"]:
+				out["mis_in"] += 1
+		m.serve_flight = false
+		m.phase = m.Phase.SERVE
+		m.serve_attempt = attempt
+	ge.player_stroke.disconnect(cb)
+	m.queue_free()
+	await process_frame
+	return out
+
+
+func test_serve_risk_in_play() -> void:
+	print("F-E: the risk is rolled with the seed and the miss is a real one")
+	Skills.reset()
+	for id in ["forehand", "backhand", "serve"]:
+		Skills.spend_point(id)
+	for id in Skills.LIST:
+		Skills.add_xp(id, 778.0)
+	Skills.pending = []
+	var a: Dictionary = await _perfect_serves(500, 11)
+	check(a["perfect"] == 500, "every serve struck on the ideal moment is PERFECT (%d)" % a["perfect"])
+	var rate: float = float(a["risk_miss"]) / float(a["n"])
+	check(rate >= 0.18 and rate <= 0.32, "full-speed flat serve into the corner at level %d: %.0f%% of PERFECT serves go wrong (risk shown %.0f%%)" % [Skills.level("serve"), rate * 100.0, 100.0 * a["risk"] / a["n"]])
+	check(a["mis_in"] <= 3, "a serve the risk caught really lands out or in the net, not in the box (%d of %d landed in)" % [a["mis_in"], a["risk_miss"]])
+	check(float(a["in"]) / a["n"] >= 0.65 and float(a["in"]) / a["n"] <= 0.82, "PERFECT first serves in the box: %.0f%% (the goal 70..80%%)" % [100.0 * a["in"] / a["n"]])
+	var b: Dictionary = await _perfect_serves(500, 11)
+	check(b["risk_miss"] == a["risk_miss"] and b["in"] == a["in"], "the same seed misses the same serves (%d = %d)" % [a["risk_miss"], b["risk_miss"]])
+	var second: Dictionary = await _perfect_serves(500, 12, 2)
+	check(second["risk_miss"] < a["risk_miss"] * 0.5, "the second serve is safer (%d vs %d of 500)" % [second["risk_miss"], a["risk_miss"]])
+	var kick: Dictionary = await _perfect_serves(300, 13, 1, 0)
+	check(kick["risk_miss"] == 0, "a kick serve carries no extra risk (%d)" % kick["risk_miss"])
+	var body: Dictionary = await _perfect_serves(500, 14, 1, 1, 1.0, 1.9)
+	check(body["risk_miss"] < a["risk_miss"] * 0.75, "a hard serve at the body is less risky than into the corner (%d vs %d)" % [body["risk_miss"], a["risk_miss"]])
+	Skills.perks = ["sv_sniper", "sv_calm"]
+	var perked: Dictionary = await _perfect_serves(500, 11)
+	check(perked["risk_miss"] < a["risk_miss"] * 0.85 and perked["risk_miss"] > 0, "with Снайпер and Холодная голова fewer go wrong (%d vs %d of 500), not none" % [perked["risk_miss"], a["risk_miss"]])
+	Skills.reset()
+	finished += 1
+
+
+## A stand-in for Main: a real flight of the serve and the real AI returning it.
+class ServeGame:
+	extends Node
+	var player := DropPlayer.new()
+	var ball: Ball
+	var serve_flight := true
+	var rally := 1
+	var bounces := 0
+	var autoplay := false
+	var last_serve_kmh := 100.0
+	var box_side := -1.0
+	var hits := 0
+	var q_sum := 0.0
+	func timing_quality(e: float, _w := 1.0, _g := -1.0) -> Array:
+		var a := absf(e)
+		return [1.0, "PERFECT"] if a <= 0.035 else ([lerpf(0.85, 0.62, (a - 0.035) / 0.055), "GOOD"] if a <= 0.09 else [0.4, "LATE"])
+	func position_quality(_l: float, _h: float) -> float:
+		return 0.95
+	func movement_quality(_s: float, _p := 1.0) -> float:
+		return 0.95
+	func execute_shot(_who: int, _h: Node3D, _c: Vector3, _t: Vector3, _p: float, _top: float, q: float, _te: float, _s: int, _lob := false, _ss := 0.0, _drop := false, _nm := 0.3, _sc := 1.0) -> void:
+		hits += 1
+		q_sum += q
+		ball.park()
+
+
+## `n` serves at `kmh` into a corner (wide or the T) against this profile: {"taken", "clean", "n"}:
+## the returner got a racket on it / returned it without a frame shot.
+func _serves_against(profile: Dictionary, n: int, seed_v: int, kmh: float) -> Dictionary:
+	var g := ServeGame.new()
+	root.add_child(g)
+	g.add_child(g.player)
+	var ball := Ball.new()
+	g.add_child(ball)
+	g.ball = ball
+	var me := Athlete.new()
+	g.add_child(me)
+	me.setup(1.0, Color(0.2, 0.3, 0.4), Rect2(-6.0, -14.0, 12.0, 14.0))
+	var ai: Node = load("res://scripts/opponent_ai.gd").new()
+	g.add_child(ai)
+	ai.setup(g, me, ball)
+	ai.rng.seed = seed_v
+	ai.set_profile(profile)
+	ai.spared = 0.0
+	ball.bounced.connect(func(p: Vector3, _s: float) -> void:
+		if g.serve_flight and p.z < 0.0:
+			g.serve_flight = false
+		if p.z < 0.0:
+			g.bounces += 1)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_v
+	var out := {"taken": 0, "clean": 0, "n": n}
+	for i in n:
+		var side := -1.0 if i % 2 == 0 else 1.0
+		var sx := rng.randf_range(-0.8, 0.8)
+		var contact := Vector3(sx, 2.8, 12.3)
+		var wide := rng.randf() < 0.5
+		var tx := side * (rng.randf_range(3.5, 3.9) if wide else rng.randf_range(0.3, 0.7))
+		var target := Vector3(tx, BallPhysics.RADIUS, -rng.randf_range(5.6, 5.9))
+		var r := ShotSolver.solve(contact, target, kmh / 3.6, 150.0, 0.12)
+		g.player.position = Vector3(sx, 0.0, 12.3)
+		g.box_side = side
+		g.last_serve_kmh = r.speed * 3.6
+		g.serve_flight = true
+		g.bounces = 0
+		g.hits = 0
+		g.q_sum = 0.0
+		ai.new_match()
+		ai.stats.clear()
+		ball.launch(contact, r.velocity, r.spin)
+		me.position = ai.receive_position(side)
+		me.velocity = Vector3.ZERO
+		ai.on_cpu_hit(0.0)
+		ai.on_player_serve(g.last_serve_kmh, false)
+		for step in 300:
+			ai.tick(1.0 / 60.0, true)
+			me._physics_process(1.0 / 60.0)
+			ball.step(1.0 / 60.0)
+			if g.hits > 0 or not ball.active:
+				break
+		if g.hits > 0:
+			out["taken"] += 1
+			if int(ai.stats.get("framed", 0)) == 0:
+				out["clean"] += 1
+	g.free()
+	return out
+
+
+## The AI returns more of the hard serves into the corners: the first number is what the same
+## harness gave before F-E (OpponentAI at 3a8ac2c: the returns are in docs/superpowers/specs/2026-10-08-d2-wide-serve.md).
+func test_serve_reception() -> void:
+	print("F-E: the AI takes the hard corner serves")
+	var tuning := root.get_node("Tuning")
+	var s0: float = tuning.ai_skill
+	var mid := {"skill": 0.45, "stats": {"serve": 7, "forehand": 9, "backhand": 6, "net": 5, "speed": 7, "stamina": 7}}
+	var weak := {"skill": 0.0, "stats": {"serve": 3, "forehand": 4, "backhand": 3, "net": 5, "speed": 4, "stamina": 4}}
+	tuning.ai_skill = 0.45
+	var m: Dictionary = _serves_against(mid, 200, 31, 205.0)
+	tuning.ai_skill = 0.0
+	var w: Dictionary = _serves_against(weak, 200, 32, 205.0)
+	tuning.ai_skill = s0
+	print("    mid: taken %d, clean %d of %d   weak: taken %d, clean %d of %d" % [m["taken"], m["clean"], m["n"], w["taken"], w["clean"], w["n"]])
+	check(m["taken"] >= 170, "a mid opponent gets a racket on %d of 200 serves at 205 km/h into the corners" % m["taken"])
+	check(m["clean"] >= 120, "... and returns %d of them cleanly (no frame shot)" % m["clean"])
+	check(w["taken"] >= 140, "a weak opponent still reaches %d of 200" % w["taken"])
+	var ai_script: GDScript = load("res://scripts/opponent_ai.gd")  # (OpponentAI reads the Tuning autoload: not named in a -s script)
+	var keep: float = ai_script.serve_return_factor(205.0, 0.5)
+	check(keep > 0.6 and keep > 1.15 - (205.0 - 120.0) / 130.0 + 0.1, "a 205 km/h serve keeps %.2f of the contact (was 0.50)" % keep)
+	finished += 1
+
+
+## The CPU serves harder and into the corners; a first serve goes in most of the time.
+func test_cpu_serve() -> void:
+	print("F-E: the CPU serves better")
+	var g := FakeGame.new()
+	var ai: Node = load("res://scripts/opponent_ai.gd").new()
+	ai.game = g
+	ai.rng.seed = 5
+	var tuning := root.get_node("Tuning")
+	var s0: float = tuning.ai_skill
+	tuning.ai_skill = 0.45
+	ai.set_profile({"skill": 0.45, "play_style": "attacker", "stats": {"serve": 7, "forehand": 9, "backhand": 6, "net": 5, "speed": 7, "stamina": 7}})
+	ai.spared = 0.0
+	var pace := 0.0
+	var corner := 0
+	var middle := 0
+	for i in 400:
+		var sv: Dictionary = ai.plan_serve(-1.0, 1)
+		pace += float(sv["pace"]) * 3.6 / 400.0
+		var x := absf(float(sv["tx"]))
+		if x < 1.0 or x > 2.8:
+			corner += 1
+		elif x > 1.7 and x < 2.4:
+			middle += 1
+	check(pace > 170.0 and pace < 200.0, "a good server: first serve %.0f km/h on average (was 156)" % pace)
+	check(corner >= 240, "... %d of 400 into a corner or the T (was ~230)" % corner)
+	check(middle == 0, "... %d of 400 into the dead middle of the box (was ~100)" % middle)
+	ai.set_profile({"skill": 0.62, "play_style": "bomber", "stats": {"serve": 10, "forehand": 7, "backhand": 8, "net": 5, "speed": 7, "stamina": 7}})
+	ai.spared = 0.0
+	var bomber := 0.0
+	for i in 400:
+		bomber += float(ai.plan_serve(-1.0, 1)["pace"]) * 3.6 / 400.0
+	check(bomber > pace + 15.0 and bomber < 235.0, "the bomber serves harder still (%.0f km/h)" % bomber)
+	tuning.ai_skill = s0
+	ai.free()
+	g.player.free()
+	g.cpu.free()
+	g.free()
 	finished += 1

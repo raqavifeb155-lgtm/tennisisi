@@ -236,16 +236,61 @@ static func rarity_color(r: int) -> Color:
 	return UiTheme.rarity_color([0, 1, 2, 4][clampi(r, 0, 3)])
 
 
-## For stream D's card and any screen: the shown name and one-line effect of an id
-## (the old fast / steady / bomber too). An unknown id gives itself and "".
-static func name(id: String) -> String:
+## The one place that turns an id into words (v0.2 hotfix, owner 10.10: «иногда пишется на английском
+## кодовое слово»): the shown name of an aura, a run condition, an old modifier (fast / steady /
+## bomber) or a trait of an opponent or a student. An id nobody knows gets UNKNOWN_NAME, never
+## itself. Every screen asks here (name / desc / label / OpponentCard.mod_text).
+const UNKNOWN_NAME := "Особый модификатор"
+const UNKNOWN_DESC := "Подробности раскроются в игре"
+
+
+static func human_name(id: String) -> String:
 	var e := find(id)
-	return String(Tournament.MODIFIERS.get(id, {}).get("name", id)) if e.is_empty() else String(e["name"])
+	if not e.is_empty():
+		return _text_or(e.get("name", ""), UNKNOWN_NAME)
+	if Tournament.MODIFIERS.has(id):
+		return _text_or(Tournament.MODIFIERS[id].get("name", ""), UNKNOWN_NAME)
+	var d := Traits.def(id)  # a student's trait
+	if not d.is_empty():
+		return _text_or(d.get("name", ""), Traits.UNKNOWN_NAME)
+	return UNKNOWN_NAME
+
+
+static func human_desc(id: String) -> String:
+	var e := find(id)
+	if not e.is_empty():
+		return _text_or(e.get("desc", ""), "")
+	if Tournament.MODIFIERS.has(id):
+		return _text_or(Tournament.MODIFIERS[id].get("desc", ""), "")
+	var d := Traits.def(id)
+	if not d.is_empty():
+		return _text_or(d.get("desc", ""), "")
+	return UNKNOWN_DESC
+
+
+## A name that is empty or looks like a code word (snake_case, latin only) is as good as missing.
+static func _text_or(v, fallback: String) -> String:
+	var t := String(v).strip_edges()
+	if t == "" or is_code_word(t):
+		return fallback
+	return t
+
+
+## "net_rusher", "serve_cannon": lower-case latin words joined by underscores.
+static func is_code_word(t: String) -> bool:
+	var rx := RegEx.new()
+	rx.compile("^[a-z0-9]+(_[a-z0-9]+)+$")
+	return rx.search(t) != null
+
+
+## For stream D's card and any screen: the shown name and one-line effect of an id
+## (the old fast / steady / bomber too). Unknown ids get a Russian stand-in, see human_name.
+static func name(id: String) -> String:
+	return human_name(id)
 
 
 static func desc(id: String) -> String:
-	var e := find(id)
-	return String(Tournament.MODIFIERS.get(id, {}).get("desc", "")) if e.is_empty() else String(e["desc"])
+	return human_desc(id)
 
 
 # --- Auras --------------------------------------------------------------------------
@@ -482,10 +527,7 @@ static func opp_value(t: Tournament, key: String, v: float) -> float:
 static func label(id: String, lu := {}) -> String:
 	if lu.get("hidden", []).has(id):
 		return "???"
-	var e := find(id)
-	if e.is_empty():
-		return String(Tournament.MODIFIERS.get(id, {}).get("name", id))
-	return e["name"]
+	return human_name(id)
 
 
 ## For the opponent card (stream D) and the bracket: everything he comes with.

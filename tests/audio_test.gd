@@ -45,6 +45,21 @@ func _run() -> void:
 			var len_s := s.get_length()
 			_check(len_s >= 30.0 and len_s <= 75.0, "%s: bed is %.0f s (30..75 s keeps browser memory low)" % [id, len_s])
 
+	print("no helicopter")
+	# 10.10: the park / club bed carried one (tools/rebed_park.py); nothing named so may come back.
+	var dir := DirAccess.open("res://assets/sfx")
+	var bad := 0
+	for f in dir.get_files():
+		var fl := f.to_lower()
+		if fl.contains("heli") or fl.contains("rotor") or fl.contains("chopper") or fl.contains("plane"):
+			bad += 1
+	_check(bad == 0, "no helicopter / plane sound files in assets/sfx")
+	for loc in Sfx.ACCENTS:
+		for spec in Sfx.ACCENTS[loc]:
+			var snd: String = spec["sound"]
+			var sl := snd.to_lower()
+			_check(not (sl.contains("heli") or sl.contains("rotor") or sl.contains("chopper") or sl.contains("plane")), "%s accent %s is not a helicopter" % [loc, snd])
+
 	var sfx := Sfx.new()
 	root.add_child(sfx)
 	await process_frame

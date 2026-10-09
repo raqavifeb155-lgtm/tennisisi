@@ -54,6 +54,13 @@ const UNIT_TURN_TIME := 0.42     # the shoulder turn is gradual, 0.5-0.7 s, done
 const SPLIT_TIME := 0.5          # a split step is a low wide load, not a hop
 const LEAN_MAX := 0.26           # ~15 deg: the most a body leans into a sprint start
 const SLIDE_DECEL := 9.0         # clay: a hard stop glides (measured 6-8 m/s2, 0.85-1.6 m)
+# Gait (docs/MOVEMENT_REALISM.md): quick short steps at low speed, ~4.5 steps/s and
+# ~1.35 m steps at a sprint; a planted foot does not slide over the court.
+const STEP_RATE_0 := 3.0         # steps per second when just starting to move...
+const STEP_RATE_K := 0.25        # ...plus this per m/s of speed
+const GALLOP_LAG := 0.4 * PI     # sideways shuffle: the trailing foot follows this far behind
+const SPLIT_LEAD := 0.07         # the split step takes off this long before the other's contact,
+                                 # landing ~0.15 s after it (experts: -40..+34 ms, +130..160 ms)
 
 var facing := -1.0             # -1 faces -Z (near player), +1 faces +Z (opponent)
 var velocity := Vector3.ZERO
@@ -120,6 +127,14 @@ var _toss_t := 0.0             # seconds into the toss (racket arm low, then up 
 var _stretch := false          # the ball is out wide: a reaching shot with a short, low finish
 var _swing_e := 0.0           # 0..1 through the forward swing (for the arm poles)
 var _tilt := 0.0               # trunk tipped sideways from the hips toward a wide ball (rad, + = right)
+var _slot_hold := false        # the racket waits in the slot for the swipe (slot())
+var _slot_released := false    # the swing goes on from the slot: the second half starts at the hand
+var _swing_len := -1.0         # forward swing length for this stroke when re-timed from the slot
+var _swing_from_twist := 0.0   # shoulders and hips when the swing started (a late start blends
+var _swing_from_hips := 0.0    # from them instead of snapping to the full turn)
+var _gait_v := Vector3.ZERO    # the run velocity in the body's frame, eased: the legs follow this one
+var _gait_d := PI              # how far the right foot's step runs ahead of the left one's (rad), eased:
+                               # PI = alternating run, ~GALLOP_LAG = a sideways shuffle (see _pose)
 
 # Visual nodes
 var look: Dictionary = Looks.DEFAULT.duplicate()
@@ -139,9 +154,17 @@ var _ends := {}                 # bone -> [from, to] in model space, as last dra
 ##            sneakers, wristbands - one mesh per limb, coloured by the look
 ##   TOON     the ATHLETE body made chunkier with a bigger head, hands and feet,
 ##            cel shading and an outline (the mobile-sports-game look)
-enum Body { CLASSIC, ATHLETE, TOON }
-static var body_style := Body.TOON      # the look of every player (chosen 2026-10-06; CLASSIC / ATHLETE kept)
+##   SMOOTH   the TOON body with fuller limbs, baked into one skinned mesh: knees and
+##            elbows bend as one surface, one outline, a drawn face (AthleteSkin)
+enum Body { CLASSIC, ATHLETE, TOON, SMOOTH }
+static var body_style := Body.SMOOTH    # the look of every player (TOON chosen 2026-10-06, SMOOTH on trial; the others kept)
 var _body := Body.CLASSIC                 # this player's, taken from body_style in setup()
+var _skin: AthleteSkin                    # SMOOTH: the baked body (null for the others)
+
+
+## TOON and SMOOTH share the shapes, the poses' proportions and the toon materials.
+func _toon() -> bool:
+	return _body == Body.TOON or _body == Body.SMOOTH
 
 
 ## `appearance` is a look (see Looks) or, for older callers, just the shirt colour.
@@ -164,6 +187,8 @@ func set_look(l: Dictionary) -> void:
 	_model.queue_free()
 	_shadow.queue_free()
 	_bones = {}
+	_joints = {}
+	_skin = null
 	_build()
 	_lighten.call_deferred()
 
@@ -189,7 +214,46 @@ func stance_for(p: Vector3, side: int) -> Vector3:
 
 
 func is_swinging() -> bool:
-	return _mode == 2
+	return _mode == 2 and not _slot_hold
+
+
+## Racket in the slot (see slot()): dropped under the ball, waiting for the stroke.
+func is_slotted() -> bool:
+	return _mode == 2 and _slot_hold
+
+
+## The racket drops into the slot ahead of a stroke the player has not swiped yet: the
+## first half of the forward swing (takeback -> racket below the ball, hips starting)
+## runs by itself, then holds there. The swipe (swing()) plays the second half, drop ->
+## contact, in whatever time is left, so a swipe made at the moment of contact is a quick
+## whip from the slot and not the whole stroke squeezed into a frame or two (real forward
+## swings take ~0.16-0.24 s, most of the racket speed in the last ~0.1 s). Only the look:
+## the shot is still played by the swipe. Call it every frame while the ball comes in.
+func slot(side: int, time_to_contact: float, contact_world: Vector3, style := Style.TOPSPIN) -> void:
+	if _mode == 2 and not _slot_hold:
+		return
+	if _mode == 2 and side != _side:
+		unslot()  # the ball went to the other wing: the swipe will swing from the ready stance
+		return
+	if _mode != 2 and time_to_contact < _swing_time() * 0.5:
+		return    # too late to drop into the slot for this ball
+	if _mode == 2:
+		_contact = to_local(contact_world)
+		_contact_at = _clock + maxf(time_to_contact, _swing_time() * 0.5)
+		_stretch = _is_stretch()
+		return
+	swing(side, time_to_contact, contact_world, style)
+	_slot_hold = true
+	_slot_released = false
+
+
+## The ball went by without a swipe (or switched wings): the racket comes back up into the
+## takeback the way it dropped, and from there to the ready position (relax()).
+func unslot() -> void:
+	if _mode == 2 and _slot_hold:
+		_slot_hold = false
+		_mode = 1
+		_prep_t = UNIT_TURN_TIME
 
 
 ## Unit turn toward the side the ball is coming to.
@@ -275,6 +339,26 @@ func racket_node() -> Node3D:
 
 ## Start a swing that meets the ball at contact_world after time_to_contact (game seconds).
 func swing(side: int, time_to_contact: float, contact_world: Vector3, style := Style.TOPSPIN) -> void:
+	if _mode == 2 and _slot_hold:
+		_slot_hold = false
+		if side == _side:
+			# Released: the rest of the forward swing in the time left, from where it is
+			# now. From the slot itself (drop -> contact) it starts at the hand, in the
+			# stroke the swipe asked for.
+			var left := maxf(time_to_contact, 0.05)
+			var swing_t := _swing_time()
+			var u := clampf((_clock - (_contact_at - swing_t)) / swing_t, 0.0, 0.98)
+			_style = style
+			_contact = to_local(contact_world)
+			_stretch = _is_stretch()
+			_contact_at = _clock + left
+			_swing_len = left / (1.0 - u)
+			if u >= 0.49:
+				_swing_from_hand = _hand
+				_swing_from_dir = _rdir
+				_slot_released = true
+			return
+		_mode = 0  # the other wing after all: a fresh swing below
 	if _mode == 2 and side == _side and not _serve_style() and _clock <= _contact_at + 0.08:
 		# Already swinging at this ball (the swing was started ahead of contact so the
 		# racket comes through): keep the motion, only correct where and when it meets
@@ -291,12 +375,17 @@ func swing(side: int, time_to_contact: float, contact_world: Vector3, style := S
 	_side = side
 	_style = style
 	_volley = _at_net(style)
+	_slot_hold = false
+	_slot_released = false
+	_swing_len = -1.0
 	_clock = 0.0
 	_contact_at = maxf(time_to_contact, 0.05)
 	_contact = to_local(contact_world)
 	_stretch = _is_stretch()
 	_swing_from_hand = _hand
 	_swing_from_dir = _rdir
+	_swing_from_twist = _twist
+	_swing_from_hips = _hip_twist
 
 
 ## Refine where the strings meet the ball once the real contact point is known.
@@ -312,7 +401,39 @@ func _is_stretch() -> bool:
 
 
 func split_step() -> void:
+	if _hop < 0.4:
+		return  # already in the air for this ball (Main starts it a beat before contact)
 	_hop = 0.0
+
+
+## Steps per second at a run speed (m/s).
+static func _step_rate(v: float) -> float:
+	return STEP_RATE_0 + STEP_RATE_K * v
+
+
+## Share of a foot's cycle it spends on the court: about half when jogging, a third in a
+## sprint (the rest is the flight of a running stride).
+static func _stance_share(v: float) -> float:
+	return clampf(0.55 - 0.035 * v, 0.33, 0.5)
+
+
+## The direction (x sideways, y along z) the feet travel in: the eased one, so that a stick
+## shivering around a straight run does not swing the stride; where the body has turned
+## round (the eased velocity points the other way) the real one, at once.
+func _gait_dir(local_v: Vector3) -> Vector2:
+	var rv := Vector2(local_v.x, local_v.z)
+	var gv := Vector2(_gait_v.x, _gait_v.z)
+	return (gv if gv.dot(rv) > 0.0 else rv).normalized()
+
+
+## One foot through its cycle: x from +1 (put down in front) to -1 (pushed off behind) at
+## an even pace while on the court, then a smooth swing forward; y is the lift 0..1.
+static func _gait(phase: float, duty: float) -> Vector2:
+	var c := fposmod(phase, TAU) / TAU
+	if c < duty:
+		return Vector2(1.0 - 2.0 * c / duty, 0.0)
+	var s := (c - duty) / (1.0 - duty)
+	return Vector2(-cos(PI * s), sin(PI * s))
 
 
 static func speed_of(v: Vector3) -> float:
@@ -345,6 +466,8 @@ func _serve_kick() -> float:
 
 ## Forward swing (racket drop -> contact) and follow-through lengths for the stroke.
 func _swing_time() -> float:
+	if _swing_len > 0.0:
+		return _swing_len
 	return VOLLEY_SWING if _volley else SWING_TO_CONTACT
 
 
@@ -490,7 +613,7 @@ func _physics_process(delta: float) -> void:
 	var speed := velocity.length()
 	var decel := (_prev_speed - speed) / maxf(delta, 0.0001)
 	var slide_from := 3.8 if surface == "clay" else 4.6
-	if _down < 0.0 and _slide < 0.2 and _prev_speed > slide_from and (decel > 20.0 or (_mode == 2 and _prev_speed > slide_from + 0.6)):
+	if _down < 0.0 and _slide < 0.2 and _prev_speed > slide_from and (decel > 20.0 or (is_swinging() and _prev_speed > slide_from + 0.6)):
 		_slide = 1.0
 		if surface == "grass" and _prev_speed > 5.4 and _slip_rng.randf() < GRASS_SLIP_CHANCE:
 			_slip()
@@ -622,11 +745,13 @@ func _key(style: int, phase: String, side: int) -> Array:
 				hand = Vector3(0.46 * sv, 1.24, 0.02)
 				dir = Vector3(0.25 * sv, 0.85, 0.35)
 			"drop":
-				hand = Vector3(0.5 * sv, maxf(c.y + 0.12, 0.7), -0.06)
+				hand = Vector3(0.5 * sv, clampf(c.y + 0.12, 0.7, HIGH_DROP), -0.06)
 				dir = Vector3(0.6 * sv, 0.55, 0.1)
 			"contact":
 				dir = Vector3(1.0 * sv, 0.3, -0.35)
-				hand = c - dir.normalized() * RACKET_REACH
+				var hc := _contact_hand(c, dir, float(side))
+				hand = hc[0]
+				dir = hc[1]
 			_:
 				hand = Vector3(0.3 * sv, maxf(c.y, 0.9), -0.62)
 				dir = Vector3(0.45 * sv, 0.35, -0.82)
@@ -640,11 +765,13 @@ func _key(style: int, phase: String, side: int) -> Array:
 				hand = Vector3(-0.2, 1.3, 0.34)
 				dir = Vector3(0.3, 0.7, 0.65)
 			"drop":
-				hand = Vector3(-0.4, maxf(c.y - 0.32, 0.5), 0.14)
+				hand = Vector3(-0.4, clampf(c.y - 0.32, 0.5, HIGH_DROP), 0.14)
 				dir = Vector3(-0.3, -0.7, 0.62)
 			"contact":
 				dir = Vector3(-1.0, -0.02, -0.25)
-				hand = c - dir.normalized() * RACKET_REACH
+				var hc := _contact_hand(c, dir, float(side))
+				hand = hc[0]
+				dir = hc[1]
 			_:
 				# The arm swings on through, past the right shoulder: up and out to the
 				# right side, straight, the racket head up and behind (the classic
@@ -670,11 +797,13 @@ func _key(style: int, phase: String, side: int) -> Array:
 			"drop":
 				# The racket head drops only to hip height, still pointing back; the hands
 				# stay out to the left, arms long (BH-4/5).
-				hand = Vector3(-0.52, maxf(c.y - 0.06, 0.84), 0.06)
+				hand = Vector3(-0.52, clampf(c.y - 0.06, 0.84, HIGH_DROP), 0.06)
 				dir = Vector3(-0.45, -0.3, 0.84)
 			"contact":
 				dir = Vector3(-1.0, -0.03, -0.28)
-				hand = c - dir.normalized() * RACKET_REACH
+				var hc := _contact_hand(c, dir, float(side))
+				hand = hc[0]
+				dir = hc[1]
 			_:
 				if style == Style.FLAT:
 					hand = Vector3(0.36, 1.25, -0.38)
@@ -694,11 +823,13 @@ func _key(style: int, phase: String, side: int) -> Array:
 					hand = Vector3(0.4 * s, 1.42, 0.3)
 					dir = Vector3(0.2 * s, 0.85, 0.45)
 				"drop":
-					hand = Vector3(0.42 * s, maxf(c.y + 0.2, 0.9), 0.1)
+					hand = Vector3(0.42 * s, clampf(c.y + 0.2, 0.9, HIGH_DROP), 0.1)
 					dir = Vector3(0.75 * s, 0.35, 0.3)
 				"contact":
 					dir = Vector3(1.0 * s, 0.18, -0.25)
-					hand = c - dir.normalized() * RACKET_REACH
+					var hc := _contact_hand(c, dir, float(side))
+					hand = hc[0]
+					dir = hc[1]
 				_:
 					if style == Style.DROP:
 						# Soft hands: the racket stops short, face still open under the ball.
@@ -713,11 +844,13 @@ func _key(style: int, phase: String, side: int) -> Array:
 					hand = Vector3(0.45 * s, 1.15, 0.32)
 					dir = Vector3(0.2 * s, 0.6, 0.78)
 				"drop":
-					hand = Vector3(0.48 * s, c.y - 0.05, 0.15)
+					hand = Vector3(0.48 * s, minf(c.y - 0.05, HIGH_DROP), 0.15)
 					dir = Vector3(0.6 * s, -0.1, 0.7)
 				"contact":
 					dir = Vector3(1.0 * s, 0.03, -0.25)
-					hand = c - dir.normalized() * RACKET_REACH
+					var hc := _contact_hand(c, dir, float(side))
+					hand = hc[0]
+					dir = hc[1]
 				_:
 					hand = Vector3(-0.38 * s, 1.22, -0.36)
 					dir = Vector3(-0.6 * s, 0.25, 0.65)
@@ -733,11 +866,13 @@ func _key(style: int, phase: String, side: int) -> Array:
 				"drop":
 					# The racket head drops behind and below the hand; the hand itself stays
 					# up at the hip, elbow bent ~90 deg (FH-4) — it never hangs down straight.
-					hand = Vector3(0.42 * s, maxf(c.y + 0.02, 0.96), 0.24)
+					hand = Vector3(0.42 * s, clampf(c.y + 0.02, 0.96, HIGH_DROP), 0.24)
 					dir = Vector3(0.3 * s, -0.68, 0.67)
 				"contact":
 					dir = Vector3(1.0 * s, -0.05, -0.22)
-					hand = c - dir.normalized() * RACKET_REACH
+					var hc := _contact_hand(c, dir, float(side))
+					hand = hc[0]
+					dir = hc[1]
 				_:
 					if side > 0:
 						# Nadal's lasso: the arm whips up over the head on the same side,
@@ -749,6 +884,56 @@ func _key(style: int, phase: String, side: int) -> Array:
 						hand = Vector3(-0.3 * s, 1.5, -0.24)
 						dir = Vector3(-0.25 * s, 0.35, 0.9)
 	return [hand, dir.normalized()]
+
+
+## A racket direction turned from `a` to `b` by the share w, at an even rate along the
+## shortest way (a straight blend of two directions far apart races through the middle:
+## the racket drop -> a high contact turned ~130 deg, 45-55 deg in one frame).
+func _turn_dir(a: Vector3, b: Vector3, w: float) -> Vector3:
+	var an := a.normalized()
+	var bn := b.normalized()
+	if an.dot(bn) < -0.98:
+		return an.lerp(bn, w).normalized() if an.dot(bn) > -0.9999 else an
+	return an.slerp(bn, w).normalized()
+
+
+## HIGH_REACH: how far from the shoulder the strings-side hand may be at contact (m): the
+## arm is 0.58 m long, a little bent is still a comfortable stroke.
+const HIGH_REACH := 0.5
+## The racket drop for a high ball stays at the shoulders: the hand does not go up over
+## the head behind the back (that is the serve's racket drop).
+const HIGH_DROP := 1.4
+## The strings-side hand of a forehand stays this far right of the spine at contact (m).
+const HAND_X_MIN := 0.12
+## Where the hand is for a ball at `c` with the racket along `dir`, and the racket direction
+## to use. Every stroke's contact key points the racket sideways (dir is flat), so the hand
+## sits half a metre to the side of the ball at the ball's height: for a ball above the
+## shoulders that is a hand over the head (or past what the arm reaches), the arm shoots
+## straight up and twists round the racket held across it (a forehand or a backhand at head
+## height, below the smash threshold). Above the shoulders the racket tilts up instead (the
+## wrist cocked, the head above the hand) until the hand is within the arm's comfortable
+## reach, the way a high volley or a high topspin is hit. Smooth in c: the tilt grows with
+## the height and takes only what the reach asks for, along the shortest way (slerp).
+func _contact_hand(c: Vector3, dir: Vector3, side: float) -> Array:
+	var d0 := dir.normalized()
+	if side > 0.0:
+		# A ball close to the body on the racket side: the hand would be put across the
+		# chest, left of the spine, the arm sweeping over the face to get there. The hand
+		# stays at the racket shoulder and the racket points more to the front instead.
+		var dx := clampf((c.x - HAND_X_MIN) / RACKET_REACH, -0.2, 0.9)
+		if dx < d0.x:
+			var yz := Vector2(d0.y, d0.z).normalized() * sqrt(1.0 - dx * dx)
+			d0 = Vector3(dx, yz.x, yz.y)
+	var gate := smoothstep(1.25, 1.6, c.y)   # only balls up by the shoulders; wide and low ones stay as they were
+	if gate <= 0.0:
+		return [c - d0 * RACKET_REACH, d0]
+	var sh := Vector3(SHOULDER_W, SHOULDER_H, 0.0)
+	var up := Vector3(d0.x * 0.3, 1.0, d0.z * 0.3).normalized()
+	var t := smoothstep(1.3, 2.0, c.y) * 0.45
+	while t < 1.0 and (c - d0.slerp(up, t) * RACKET_REACH - sh).length() > HIGH_REACH:
+		t += 0.02
+	var d := d0.slerp(up, minf(t, 1.0) * gate).normalized()
+	return [c - d * RACKET_REACH, d]
 
 
 ## HAND_R_MIN: a hand's centre keeps at least this far from the spine while it travels.
@@ -823,6 +1008,8 @@ func _process(delta: float) -> void:
 	if _mode == 2:
 		_clock += delta
 		var swing_t := _swing_time()
+		if _slot_hold:
+			_clock = minf(_clock, _contact_at - swing_t * 0.5)  # waiting in the slot
 		var start := _contact_at - swing_t
 		var prep: Array = _key(_style, "prep", _side)
 		var drop: Array = _key(_style, "drop", _side)
@@ -837,18 +1024,20 @@ func _process(delta: float) -> void:
 			_hip_twist = lerpf(_hip_twist, -turn * HIP_RATIO, k)
 		elif _clock < _contact_at:
 			var u := clampf((_clock - start) / swing_t, 0.0, 1.0)
-			var from_h: Vector3 = prep[0] if start > 0.0 else _swing_from_hand
-			var from_d: Vector3 = prep[1] if start > 0.0 else _swing_from_dir
+			var from_h: Vector3 = prep[0] if start > 0.0 and _swing_len < 0.0 else _swing_from_hand
+			var from_d: Vector3 = prep[1] if start > 0.0 and _swing_len < 0.0 else _swing_from_dir
 			var e := u * u * (3.0 - 2.0 * u)
 			swing_e = e
 			if e < 0.5:
 				var w := e * 2.0
 				_hand = from_h.cubic_interpolate(drop[0], from_h, con[0], w)
-				_rdir = from_d.lerp(drop[1], w).normalized()
+				_rdir = _turn_dir(from_d, drop[1], w)
 			else:
 				var w := (e - 0.5) * 2.0
-				_hand = (drop[0] as Vector3).cubic_interpolate(con[0], from_h, fol[0], w)
-				_rdir = (drop[1] as Vector3).lerp(con[1], w).normalized()
+				var mid_h: Vector3 = _swing_from_hand if _slot_released else drop[0]
+				var mid_d: Vector3 = _swing_from_dir if _slot_released else drop[1]
+				_hand = mid_h.cubic_interpolate(con[0], from_h, fol[0], w)
+				_rdir = _turn_dir(mid_d, con[1], w)
 			# Kinetic chain: the hips fire first, the shoulders stay turned while the
 			# racket drops (FH-4, BH-4) and unwind late, into the ball. A slice keeps
 			# the body side-on through the ball.
@@ -867,6 +1056,14 @@ func _process(delta: float) -> void:
 			else:
 				_twist = lerpf(-turn, 0.0, sh_e)
 				_hip_twist = lerpf(-turn * HIP_RATIO, turn * 0.15, hip_e)
+			if start <= 0.0 and e < 0.5:
+				# Started late (from the ready stance or on the run, not from a full
+				# takeback): the shoulders come round from where they were by the time
+				# the racket drops, instead of snapping there (and the left arm with them).
+				var b := e * 2.0
+				b = b * b * (3.0 - 2.0 * b)
+				_twist = lerpf(_swing_from_twist, _twist, b)
+				_hip_twist = lerpf(_swing_from_hips, _hip_twist, b)
 		else:
 			var u := clampf((_clock - _contact_at) / _follow_time(), 0.0, 1.0)
 			var e := 1.0 - (1.0 - u) * (1.0 - u)
@@ -905,8 +1102,10 @@ func _process(delta: float) -> void:
 				# (Alcaraz 7.75-8.07 s): never out to the side behind the shoulder.
 				var w := (e - 0.5) / 0.5
 				w = w * w * (3.0 - 2.0 * w)
-				_hand = (fol[0] as Vector3).lerp(Vector3(0.3, 1.22, -0.34), w)
-				_rdir = (fol[1] as Vector3).slerp(Vector3(-0.25, 0.75, -0.6).normalized(), w).normalized()
+				# From where the finish has the hand now (not from the finish key: that
+				# jumped the hand ~0.8 m in one frame half way through the finish).
+				_hand = _hand.lerp(Vector3(0.3, 1.22, -0.34), w)
+				_rdir = _rdir.slerp(Vector3(-0.25, 0.75, -0.6).normalized(), w).normalized()
 				_elbow_up = e * (1.0 - w)
 			# The one-hander keeps the chest mostly sideways (the arm does the travelling);
 			# everything else turns through.
@@ -1090,7 +1289,7 @@ func _process(delta: float) -> void:
 		_attach = lerpf(minf(_attach, 1.0), attach, 1.0 - exp(-14.0 * delta))
 
 	# --- Body: crouch, hop, lean, stance ---
-	_run_phase += delta * (5.0 + speed * 2.2)
+	_run_phase += delta * PI * _step_rate(speed)  # two steps per turn of the phase
 	var amt := clampf(speed / 4.0, 0.0, 1.0)
 	var target_crouch := 0.06 - amt * 0.03
 	if _mode == 0 and stance_style == 1:
@@ -1236,8 +1435,21 @@ func _process(delta: float) -> void:
 	_head_yaw = lerpf(_head_yaw, yaw_t, 1.0 - exp(-8.0 * delta))
 	_head_pitch = lerpf(_head_pitch, pitch_t, 1.0 - exp(-8.0 * delta))
 
+	_pose_dt = delta
 	amt = AthleteCasual.shape(self, delta, speed, amt)  # the club's walk: no racket (stream H)
+	# The phase gap between the feet is eased, never switched: which foot leads a shuffle
+	# follows the sign of the sideways speed, and a stick held straight shivers around 0.
+	# A switch moved both planted feet half a step in one frame (the "shaking leg").
+	# The same goes for the velocity the feet follow: a stick held straight shivers a few
+	# cm/s sideways, and the stride (which points along the velocity) shook with it.
+	_gait_v = _gait_v.lerp(local_v, 1.0 - exp(-14.0 * delta))
+	var gdir := _gait_dir(local_v)
+	var lag := lerpf(PI, GALLOP_LAG, clampf((absf(gdir.x) - 0.3) / 0.5, 0.0, 1.0))
+	# (kept continuous: half of it is each foot's phase, so it only wraps by two turns)
+	_gait_d = wrapf(lerp_angle(_gait_d, lag if gdir.x >= 0.0 else TAU - lag, 1.0 - exp(-9.0 * delta)), 0.0, 2.0 * TAU)
 	_pose(local_v, amt, near_contact)
+	if _skin != null:
+		_skin.sync(self, delta)
 
 
 const SERVE_GAZE := 0.62   # head tilt (rad) toward the toss at least, ~35 deg
@@ -1334,12 +1546,24 @@ func _pose(local_v: Vector3, amt: float, near_contact: float) -> void:
 	# shuffles, higher in a sprint); for a stroke they take that stroke's stance; a
 	# stretched ball spreads them toward it and a slide spreads them along the slide. The
 	# hips then sit as low as it takes for both feet to reach the court.
-	var stride := Vector3(local_v.x, 0, local_v.z).normalized() * 0.4 * amt if amt > 0.05 else Vector3.ZERO
-	var sideways := absf(local_v.x) / maxf(Vector2(local_v.x, local_v.z).length(), 0.01)
+	# A planted foot stays put on the court: through the stance it travels back under the
+	# body exactly as fast as the body runs on (stride half-length = speed x stance share /
+	# step rate, see _step_rate), then swings forward in the air (docs/MOVEMENT_REALISM.md).
+	var spd := Vector2(local_v.x, local_v.z).length()
+	var gdir := _gait_dir(local_v)
+	var duty := _stance_share(spd)
+	var stride := Vector3(gdir.x, 0, gdir.y) * (spd * duty / _step_rate(spd)) if amt > 0.05 else Vector3.ZERO
+	var sideways := absf(gdir.x)
 	# Sideways the feet shuffle (apart, together) on a wider base and never cross: a
-	# crossover only comes in a real sprint (Alcaraz's 5 m run, 3.7 m/s and up).
+	# crossover only comes in a real sprint (Alcaraz's 5 m run, 3.7 m/s and up). In the
+	# shuffle the lead foot steps out first and the trailing one follows close behind
+	# (a gallop), so the feet stay apart while both keep their grip.
 	var shuffle := clampf(1.0 - (local_v.length() - 3.6) / 1.0, 0.0, 1.0) * sideways
-	stride.x *= lerpf(1.0, 0.32, shuffle)
+	# The foot on the side it runs to steps out first (_gait_d is the right foot's lead,
+	# TAU minus the lag when the left one leads), see _process.
+	var foot_lag := PI - absf(wrapf(_gait_d - PI, -PI, PI))
+	# The base is just wide enough that the stepping feet never meet.
+	var gait_w := 0.08 + absf(stride.x) * foot_lag / PI
 	var sl := _slide * _slide * (3.0 - 2.0 * _slide)
 	var lead := 1.0 if _slide_dir.x >= 0.0 else -1.0  # the foot on the slide's side leads
 	var ball_side := signf(_lunge_dir.x) if absf(_lunge_dir.x) > 0.2 else float(_side)
@@ -1354,13 +1578,14 @@ func _pose(local_v: Vector3, amt: float, near_contact: float) -> void:
 	var hip_off: Array[Vector3] = []
 	for i in 2:
 		var sgn := 1.0 if i == 0 else -1.0
-		var phase := _run_phase + (0.0 if i == 0 else PI)
+		var phase := _run_phase + PI * 0.5 + (_gait_d if i == 0 else -_gait_d) * 0.5
 		var ho := th * Vector3(0.11 * sgn, 0, 0)
-		var neutral := Vector3((0.17 + 0.07 * shuffle * amt) * sgn, 0.05, 0.0)
+		var neutral := Vector3(maxf(0.17 + 0.07 * shuffle * amt, gait_w) * sgn, 0.05, 0.0)
 		var base: Vector3 = neutral.lerp(stance[i], _stance)
-		var foot := base + stride * sin(phase)
-		foot.y += maxf(0.0, cos(phase)) * lerpf(0.18, 0.09, sideways) * amt
-		foot = foot.lerp(stance[i], planted * 0.5)
+		base = base.lerp(stance[i], planted * 0.5)
+		var g := _gait(phase, duty)
+		var foot := base + stride * g.x
+		foot.y += g.y * lerpf(0.18, 0.09, sideways) * amt
 		if sl > 0.0:
 			# Slide: the legs spread wide along it, the lead leg bent, the trailing one
 			# straight, both feet flat on the clay (~1.4 m apart).
@@ -1409,7 +1634,7 @@ func _pose(local_v: Vector3, amt: float, near_contact: float) -> void:
 		head_up = up * 0.3
 	var r_sh := chest + tw * (tilt * Vector3(SHOULDER_W, 0, 0))
 	var l_sh := chest + tw * (tilt * Vector3(-SHOULDER_W, 0, 0))
-	var head := chest + head_up * (1.04 if _body == Body.TOON else (0.88 if _body == Body.ATHLETE else 1.0))
+	var head := chest + head_up * (1.04 if _toon() else (0.88 if _body == Body.ATHLETE else 1.0))
 
 	for i in 2:
 		var sgn := 1.0 if i == 0 else -1.0
@@ -1442,8 +1667,8 @@ func _pose(local_v: Vector3, amt: float, near_contact: float) -> void:
 
 	# Torso: hips follow the hip turn, chest the shoulder turn; both are wider than deep,
 	# so the turn reads from any angle.
-	_set_bone("hips", pelvis + th * Vector3(-0.1, 0.0 if _body == Body.TOON else 0.02, 0), pelvis + th * Vector3(0.1, 0.0 if _body == Body.TOON else 0.02, 0))
-	if _body == Body.TOON:
+	_set_bone("hips", pelvis + th * Vector3(-0.1, 0.0 if _toon() else 0.02, 0), pelvis + th * Vector3(0.1, 0.0 if _toon() else 0.02, 0))
+	if _toon():
 		# One piece from the pelvis to the shoulders: no seam across the back.
 		_set_torso("waist", pelvis + Vector3(0, 0.08, 0), chest.lerp(pelvis, 0.45), lerpf(_hip_twist, _twist, 0.5), 1.1, 0.8)
 		_set_torso("chest", pelvis + Vector3(0, 0.06, 0), chest + Vector3(0, -0.04, 0), lerpf(_hip_twist, _twist, 0.75), 1.12, 0.76)
@@ -1493,6 +1718,11 @@ func _pose(local_v: Vector3, amt: float, near_contact: float) -> void:
 	elbow = _human_elbow(r_sh, hand_t, elbow, tw, chest, pelvis, head)
 	var hand := _reach(elbow, hand_t, FOREARM)
 	var rdir := _rdir
+	if _mode == 0 and _slide_dir.x > 0.3 and _slide > 0.2:
+		# Sliding to the forehand side: the racket carries on from the forearm, the wrist
+		# only a little cocked up, never snapped at a right angle to the arm.
+		var along := ((hand - elbow).normalized() + Vector3(0, 0.35, 0)).normalized()
+		rdir = rdir.slerp(along, 0.9 * clampf((_slide - 0.2) / 0.4, 0.0, 1.0))
 	if near_contact > 0.0:
 		var to_ball := _contact_model() - hand
 		if to_ball.length() > 0.05:
@@ -1549,7 +1779,113 @@ func _pose(local_v: Vector3, amt: float, near_contact: float) -> void:
 		face = Vector3(0, 1, 0) - y * y.y
 	face = face.normalized()
 	var x := y.cross(face).normalized()
-	_racket.transform = Transform3D(Basis(x, y, x.cross(y)), hand)
+	_racket.transform = _racket_follow(Transform3D(Basis(x, y, x.cross(y)), hand))
+
+
+# --- The racket on a fall -------------------------------------------------------------
+# A dive that lands, a slip, a knockout: the racket leaves the hand, tumbles on and slides
+# over the court until it lies flat, and the player picks it up again while getting up (or
+# when the point restarts). One node, simple physics, in world space; the pose never
+# depends on it (the arm hangs as it did).
+
+const RACKET_LIE_Y := 0.012          # m: how high a racket lying flat on the court sits
+const RACKET_PICKUP := 0.4           # s: from the court back into the hand
+const RACKET_BODY := [Vector3(0.0, -0.14, 0.0), Vector3(0.0, 0.2, 0.0), Vector3(0.0, 0.52, -0.0), Vector3(0.14, 0.52, 0.0), Vector3(-0.14, 0.52, 0.0), Vector3(0.0, 0.38, 0.0), Vector3(0.0, 0.68, 0.0), Vector3(0.11, 0.62, 0.0), Vector3(-0.11, 0.62, 0.0), Vector3(0.11, 0.42, 0.0), Vector3(-0.11, 0.42, 0.0)]
+var _pose_dt := 0.0
+var _rk_used := false                # this fall has already dropped it
+var _rk := 0                         # 0 in the hand, 1 loose on the court, 2 on its way back to the hand
+var _rk_pos := Vector3.ZERO          # world: the grip end
+var _rk_quat := Quaternion.IDENTITY  # world
+var _rk_vel := Vector3.ZERO
+var _rk_yaw := 0.0                   # spin about the vertical (rad/s)
+var _rk_t := 0.0                     # 0..1 through the pick-up
+var _rk_from_pos := Vector3.ZERO
+var _rk_from_quat := Quaternion.IDENTITY
+
+
+## True while the racket is out of the hand (falling, lying, being picked up).
+func racket_loose() -> bool:
+	return _rk != 0
+
+
+## The lowest point of the racket's frame and strings, world space (for the court test).
+func racket_lowest_y() -> float:
+	var tf := _racket.global_transform
+	var low := 99.0
+	for q in RACKET_BODY:
+		low = minf(low, (tf * (q as Vector3)).y)
+	return low
+
+
+## Where the racket is, given where the hand puts it (model space) this frame.
+func _racket_follow(held: Transform3D) -> Transform3D:
+	var dt := clampf(_pose_dt, 0.0, 0.05)
+	var hand_w := _model.global_transform * held
+	var up_late := _down_kind == 1 and _down >= DIVE_TIME + GROUND_TIME + GETUP_TIME * 0.45
+	match _rk:
+		0:
+			if _down < 0.0:
+				_rk_used = false
+			# (a dive lands, or the hand is on its way into the court: the racket goes first)
+			var drops := not _rk_used and _mode != 5 and ((_down_kind == 1 and (_down >= DIVE_TIME or (_down > 0.12 and hand_w.origin.y < 0.2))) or (_down_kind == 3 and _down >= 0.05))
+			if not drops:
+				return held
+			# Lets go: it leaves with the body's speed, a little to the side, and spins.
+			_rk = 1
+			_rk_used = true
+			_rk_pos = hand_w.origin
+			_rk_pos.y = maxf(_rk_pos.y, 0.15)
+			_rk_quat = hand_w.basis.get_rotation_quaternion()
+			_rk_vel = velocity * 0.15 + right() * _down_dir * 0.4 + Vector3.UP * 1.0
+			_rk_yaw = 7.0 * _down_dir
+			return held
+		1:
+			if _down < 0.0 or up_late:
+				_rk = 2
+				_rk_t = 0.0
+				_rk_from_pos = _rk_pos
+				_rk_from_quat = _rk_quat
+				return _racket_follow(held)   # (the same frame: the racket stays where it lies, whatever the body did)
+			_rk_vel.y -= 9.8 * dt
+			_rk_pos += _rk_vel * dt
+			_rk_yaw *= exp(-4.0 * dt)
+			# Settles flat, the strings up (or down, whichever side it is on): the
+			# handle->head line stays horizontal and turns on.
+			var y := _rk_quat * Vector3.UP
+			var z := _rk_quat * Vector3.BACK
+			var heading := Vector3(y.x, 0.0, y.z)
+			heading = heading.normalized() if heading.length() > 0.05 else Vector3(0, 0, -1)
+			heading = heading.rotated(Vector3.UP, _rk_yaw * dt)
+			var zf := Vector3.UP if z.y >= 0.0 else Vector3.DOWN
+			var xf := heading.cross(zf).normalized()
+			var flat := Quaternion(Basis(xf, heading, xf.cross(heading)).orthonormalized())
+			_rk_quat = _rk_quat.slerp(flat, 1.0 - exp(-9.0 * dt)).normalized()
+			var low := 99.0
+			for q in RACKET_BODY:
+				low = minf(low, (_rk_pos + _rk_quat * (q as Vector3)).y)
+			if low < RACKET_LIE_Y:
+				_rk_pos.y += RACKET_LIE_Y - low
+				if _rk_vel.y < 0.0:
+					_rk_vel.y = -_rk_vel.y * 0.3 if _rk_vel.y < -1.0 else 0.0
+				var k := exp(-9.0 * dt)
+				var flat_v := Vector2(_rk_vel.x, _rk_vel.z) * k
+				flat_v = flat_v.move_toward(Vector2.ZERO, 1.5 * dt)
+				_rk_vel.x = flat_v.x
+				_rk_vel.z = flat_v.y
+			return _model.global_transform.affine_inverse() * Transform3D(Basis(_rk_quat), _rk_pos)
+		_:
+			_rk_t = minf(_rk_t + dt / RACKET_PICKUP, 1.0)
+			var e := _rk_t * _rk_t * (3.0 - 2.0 * _rk_t)
+			var pos := _rk_from_pos.lerp(hand_w.origin, e) + Vector3.UP * 0.25 * sin(e * PI)
+			var quat := _rk_from_quat.slerp(hand_w.basis.get_rotation_quaternion(), e).normalized()
+			var low := 99.0
+			for q in RACKET_BODY:
+				low = minf(low, (pos + quat * (q as Vector3)).y)
+			pos.y += maxf(RACKET_LIE_Y - low, 0.0)    # turning up out of the court, never through it
+			if _rk_t >= 1.0:
+				_rk = 0
+				return held
+			return _model.global_transform.affine_inverse() * Transform3D(Basis(quat), pos)
 
 
 ## A hand sits on the end of the forearm and points along it.
@@ -1851,10 +2187,15 @@ func _build() -> void:
 	# Head: face looks along -Z; hair, beard and headwear from the look, eyes.
 	_head = Node3D.new()
 	_model.add_child(_head)
-	if _body == Body.TOON:
-		_head.scale = Vector3.ONE * 1.28
+	if _toon():
+		_head.scale = Vector3.ONE * (1.2 if _body == Body.SMOOTH else 1.28)
 	var skull := _sphere(0.12, skin)
 	skull.scale = Vector3(0.95, 1.05, 1.0)
+	if _body == Body.SMOOTH:
+		# Rounder (it is one mesh with the body anyway) and the face is drawn on it.
+		(skull.mesh as SphereMesh).radial_segments = 20
+		(skull.mesh as SphereMesh).rings = 12
+		skull.set_meta("skull", true)
 	_head.add_child(skull)
 	if _body != Body.CLASSIC:
 		for ex in [-1.0, 1.0]:
@@ -1865,12 +2206,15 @@ func _build() -> void:
 	_build_hair()
 	_build_beard()
 	_build_headwear()
-	for ex in [-0.04, 0.04]:
+	for ex in ([] if _body == Body.SMOOTH else [-0.04, 0.04]):   # SMOOTH: the face is drawn
 		var eye := _no_outline(_sphere(0.016, Color(0.08, 0.08, 0.1)))
 		eye.position = Vector3(ex, 0.015, -0.112)
 		_head.add_child(eye)
 	var nose := _no_outline(_sphere(0.02, skin.darkened(0.08)))
 	nose.position = Vector3(0, -0.02, -0.122)
+	if _body == Body.SMOOTH:
+		nose.scale = Vector3(0.7, 0.85, 0.75)   # a small soft nose under the drawn eyes
+		nose.position = Vector3(0, -0.018, -0.118)
 	_head.add_child(nose)
 
 	# Racket: local +Y runs from the hand to the head; the face lies in the XY plane.
@@ -1878,6 +2222,23 @@ func _build() -> void:
 	_racket = Node3D.new()
 	_model.add_child(_racket)
 	_gear.dress(self)
+	_rebake()
+
+
+## SMOOTH: (re)bakes the parts into the one skinned body, from a standing pose.
+func _rebake() -> void:
+	if _body != Body.SMOOTH or _model == null:
+		return
+	if _skin != null:
+		_skin.clear()
+	_pose(Vector3.ZERO, 0.0, 0.0)
+	_skin = AthleteSkin.bake(self)
+
+
+## A short expression on the SMOOTH body's face: "joy", "sad" or "shout" (others: nothing).
+func emote(kind: String, secs := 1.6) -> void:
+	if _skin != null:
+		_skin.emote(kind, secs)
 
 
 # --- Gear on the body (v0.2 F, scripts/athlete_gear.gd) ------------------------------
@@ -1888,6 +2249,7 @@ func _build() -> void:
 func set_gear(items: Array) -> void:
 	_gear.wear(items)
 	_gear.dress(self)
+	_rebake()
 
 
 ## Only the racket (the trophy in hand, a knocked-out racket); shoes and band stay. A
@@ -1910,6 +2272,7 @@ func gear() -> Dictionary:
 func set_racket_look(c: Color, glow: float) -> void:
 	_gear.tint = {"color": c, "glow": glow}
 	_gear.dress(self)
+	_rebake()
 
 
 # --- Hair, beard, headwear ---------------------------------------------------------
@@ -2137,6 +2500,9 @@ func _set_joint(name: String, at: Vector3) -> void:
 
 
 func _build_body() -> void:
+	if _body == Body.SMOOTH:
+		_build_smooth_body()
+		return
 	var skin := Looks.skin(look)
 	var shirt := Looks.kit(look, "shirt")
 	var shorts := Looks.kit(look, "shorts")
@@ -2144,7 +2510,7 @@ func _build_body() -> void:
 	var white := Color(0.96, 0.96, 0.96)
 	var sock := Color(0.97, 0.97, 0.97)
 	var sole := Color(0.86, 0.86, 0.84)
-	var toon := _body == Body.TOON
+	var toon := _toon()
 	var k := 1.14 if toon else 1.0          # chunkier limbs
 	var hk := 1.4 if toon else 1.0          # bigger hands
 	var fk := 1.3 if toon else 1.0          # bigger feet
@@ -2211,6 +2577,94 @@ func _build_body() -> void:
 		_bones["waist"].visible = false   # the chest is one piece down to the pelvis
 
 
+## SMOOTH: the TOON body's parts with an athlete's volumes - fuller thighs and calves, a
+## deltoid and a biceps, a forearm that tapers to the wrist, a V-shaped chest on a thicker
+## neck, hands with a thumb. Baked into one mesh afterwards (AthleteSkin), so the parts
+## only need to overlap, not to fit: the joints are blended.
+func _build_smooth_body() -> void:
+	var skin := Looks.skin(look)
+	var shirt := Looks.kit(look, "shirt")
+	var shorts := Looks.kit(look, "shorts")
+	var accent := Looks.kit(look, "accent")
+	var white := Color(0.96, 0.96, 0.96)
+	var sock := Color(0.97, 0.97, 0.97)
+	var sole := Color(0.86, 0.86, 0.84)
+	var hem := shorts.darkened(0.18)
+	var cuff := shirt.darkened(0.12)
+	var lk := 1.2                          # legs
+	var ak := 1.16                         # arms
+	var fk := 1.18                         # feet
+	for i in 2:
+		# Thigh (+Z is its front): the shorts' leg with a darker hem, then a full quad in
+		# front tapering to the knee cap.
+		_lathe_bone("thigh%d" % i, THIGH, [
+			[0.0, 0.0, shorts], [0.03, 0.074 * lk, shorts], [0.12, 0.092 * lk, shorts], [0.4, 0.088 * lk, shorts],
+			[0.4, 0.09 * lk, hem], [0.45, 0.088 * lk, hem], [0.45, 0.077 * lk, skin, 0.004], [0.62, 0.072 * lk, skin, 0.007, 0.95],
+			[0.8, 0.06 * lk, skin, 0.005, 0.95], [0.92, 0.052 * lk, skin, 0.004], [0.98, 0.046 * lk, skin, 0.003], [1.0, 0.0, skin]])
+		# Shin: a calf high on the back of the leg (-Z), a flat shin bone in front, a slim
+		# ankle in a white sock.
+		_lathe_bone("shin%d" % i, SHIN, [
+			[0.0, 0.0, skin], [0.03, 0.048 * lk, skin, 0.002], [0.14, 0.054 * lk, skin, -0.006, 0.92],
+			[0.28, 0.06 * lk, skin, -0.012, 0.88], [0.44, 0.052 * lk, skin, -0.008, 0.9], [0.56, 0.043 * lk, skin, -0.003],
+			[0.64, 0.04 * lk, skin], [0.64, 0.044 * lk, sock], [0.7, 0.043 * lk, sock],
+			[0.95, 0.039 * lk, sock], [1.0, 0.0, sock]])
+		_lathe_bone("shoe%d" % i, 0.19, [
+			[0.0, 0.0, sole], [0.04, 0.05 * fk, sole], [0.08, 0.056 * fk, white], [0.38, 0.062 * fk, white], [0.38, 0.064 * fk, accent],
+			[0.5, 0.064 * fk, accent], [0.5, 0.062 * fk, white], [0.85, 0.052 * fk, white], [0.96, 0.04 * fk, white], [1.0, 0.0, white]], 0.6)
+	_lathe_bone("hips", 0.2, [
+		[0.0, 0.0, shorts], [0.0, 0.11, shorts], [0.25, 0.132, shorts], [0.75, 0.132, shorts], [1.0, 0.11, shorts], [1.0, 0.0, shorts]])
+	_lathe_bone("waist", 0.3, [
+		[0.0, 0.0, shirt], [0.0, 0.135, shirt], [0.5, 0.14, shirt], [1.0, 0.15, shirt], [1.0, 0.0, shirt]])
+	# Chest, pelvis -> shoulders in one piece: a narrow waist over the shorts, a broad
+	# chest and the slope of the trapezius up to the neck.
+	# -Z is its front: the chest stands out over a flat belly, the back is straight.
+	_lathe_bone("chest", 0.25, [
+		[0.0, 0.0, shirt], [0.0, 0.13, shirt], [0.04, 0.136, shirt], [0.3, 0.132, shirt, 0.004], [0.55, 0.158, shirt, -0.004],
+		[0.74, 0.184, shirt, -0.012], [0.86, 0.182, shirt, -0.01], [0.95, 0.152, shirt, -0.004], [1.0, 0.1, shirt], [1.0, 0.0, shirt]])
+	# Shoulders, left -> right: round deltoids at the ends, in the shirt.
+	_lathe_bone("shoulders", 0.4, [
+		[0.0, 0.0, shirt], [0.02, 0.064 * ak, shirt], [0.11, 0.078 * ak, shirt], [0.28, 0.07 * ak, shirt],
+		[0.72, 0.07 * ak, shirt], [0.89, 0.078 * ak, shirt], [0.98, 0.064 * ak, shirt], [1.0, 0.0, shirt]])
+	# Neck: thick at the base, the shirt's ribbed collar round it.
+	_lathe_bone("neck", 0.16, [[0.0, 0.0, shirt], [0.0, 0.1, cuff], [0.14, 0.078, cuff],
+		[0.14, 0.066, skin], [0.5, 0.058, skin], [1.0, 0.054, skin], [1.0, 0.0, skin]])
+	for side in ["r", "l"]:
+		# Upper arm: a sleeve with a hem, a biceps under it, the arm slimming to the elbow.
+		_lathe_bone("upper_" + side, UPPER_ARM, [
+			[0.0, 0.0, shirt], [0.04, 0.066 * ak, shirt], [0.2, 0.072 * ak, shirt], [0.44, 0.068 * ak, shirt],
+			[0.44, 0.07 * ak, cuff], [0.5, 0.068 * ak, cuff], [0.5, 0.052 * ak, skin], [0.64, 0.051 * ak, skin],
+			[0.86, 0.043 * ak, skin], [0.97, 0.04 * ak, skin], [1.0, 0.0, skin]])
+		# Forearm: full near the elbow, slim at the wrist, a wristband.
+		_lathe_bone("fore_" + side, FOREARM, [
+			[0.0, 0.0, skin], [0.04, 0.041 * ak, skin], [0.24, 0.048 * ak, skin], [0.5, 0.041 * ak, skin],
+			[0.72, 0.034 * ak, skin], [0.72, 0.042 * ak, accent], [0.94, 0.041 * ak, accent], [0.94, 0.031 * ak, skin], [1.0, 0.0, skin]])
+	# Joints a little thinner than the limbs there: they only fill a deep bend.
+	for i in 2:
+		_joint_ball("knee%d" % i, 0.047 * lk, skin)
+	for side in ["r", "l"]:
+		_joint_ball("elbow_" + side, 0.036 * ak, skin)
+	# Hands: a palm with a thumb along its side (pointing along the forearm, _place_hand).
+	_hand_scale = Vector3(0.8, 1.1, 0.6) * 1.25
+	_hand_r = _hand_mesh(skin, 1.0)
+	_hand_l = _hand_mesh(skin, -1.0)
+	for part in ["shoulders", "neck", "waist"]:
+		_no_outline(_bones[part])
+	_bones["waist"].visible = false
+
+
+## A unit hand (radius 0.05 before _hand_scale): the palm and, on the inner side, a thumb.
+func _hand_mesh(c: Color, side: float) -> MeshInstance3D:
+	_parts_meshes()
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.append_from(_unit_sphere, 0, _tf(Vector3.ZERO, Vector3.ONE * 0.05))
+	st.append_from(_unit_capsule, 0, _tf(Vector3(-0.034 * side, -0.006, -0.022), Vector3(0.034, 0.03, 0.034), Vector3(0.5, 0, 0.45 * side)))
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	mi.material_override = _mat(c)
+	return mi
+
+
 func _joint_ball(name: String, r: float, c: Color) -> void:
 	var mi := MeshInstance3D.new()
 	var sm := SphereMesh.new()
@@ -2226,7 +2680,7 @@ func _joint_ball(name: String, r: float, c: Color) -> void:
 
 func _lathe_bone(bone: String, ref: float, prof: Array, flat := 1.0) -> void:
 	var mi := MeshInstance3D.new()
-	mi.mesh = _lathe(ref, prof, 22 if _body == Body.TOON else 14)
+	mi.mesh = _lathe(ref, prof, 22 if _toon() else 14)
 	mi.material_override = _body_mat()
 	mi.set_meta("ref", ref)
 	if flat != 1.0:
@@ -2235,7 +2689,9 @@ func _lathe_bone(bone: String, ref: float, prof: Array, flat := 1.0) -> void:
 	_bones[bone] = mi
 
 
-## The profile turned round +Y, centred on the origin, with vertex colours. `colour`
+## The profile turned round +Y, centred on the origin, with vertex colours. A ring may
+## carry two more values: [t, r, colour, dz, ex] - its centre moved by dz along +Z (a calf
+## behind the shin, a chest in front) and its width along X scaled by ex. `colour`
 ## (t, angle, row colour) -> Color paints per vertex instead (patterns, AthleteGear); the
 ## UV's x is then t along the bone.
 static func _lathe(len: float, prof: Array, segs: int, colour := Callable()) -> ArrayMesh:
@@ -2250,12 +2706,15 @@ static func _lathe(len: float, prof: Array, segs: int, colour := Callable()) -> 
 		var ib := mini(i + 1, n - 1)
 		var dy: float = (float(prof[ib][0]) - float(prof[ia][0])) * len
 		var dr: float = float(prof[ib][1]) - float(prof[ia][1])
+		var dz := _ring(prof[i], 3, 0.0)
+		var ex := _ring(prof[i], 4, 1.0)
+		var ddz := _ring(prof[ib], 3, 0.0) - _ring(prof[ia], 3, 0.0)
 		for j in segs + 1:
 			var a := TAU * float(j) / float(segs)
-			var rad := Vector3(cos(a), 0.0, sin(a))
+			var rad := Vector3(cos(a) / ex, 0.0, sin(a)).normalized()
 			var nrm := Vector3(0, -1.0 if t < 0.5 else 1.0, 0)
 			if r > 0.0001 and absf(dy) > 0.0001:
-				nrm = (rad - Vector3(0, dr / dy, 0)).normalized()
+				nrm = (rad - Vector3(0, (dr + ddz * sin(a)) / dy, 0)).normalized()
 			elif r > 0.0001:
 				nrm = (rad + nrm * 0.6).normalized()
 			if colour.is_valid():
@@ -2264,7 +2723,7 @@ static func _lathe(len: float, prof: Array, segs: int, colour := Callable()) -> 
 			else:
 				st.set_color(prof[i][2])
 			st.set_normal(nrm)
-			st.add_vertex(rad * r + Vector3(0, (t - 0.5) * len, 0))
+			st.add_vertex(Vector3(cos(a) * r * ex, (t - 0.5) * len, sin(a) * r + dz))
 	for i in n - 1:
 		for j in segs:
 			var a0 := i * (segs + 1) + j
@@ -2276,6 +2735,10 @@ static func _lathe(len: float, prof: Array, segs: int, colour := Callable()) -> 
 			st.add_index(b0 + 1)
 			st.add_index(b0)
 	return st.commit()
+
+
+static func _ring(row: Array, i: int, default: float) -> float:
+	return float(row[i]) if row.size() > i else default
 
 
 static var _toon_outline: StandardMaterial3D
@@ -2293,7 +2756,7 @@ func _body_mat() -> StandardMaterial3D:
 
 ## TOON: flat bands of light and a dark outline (the back faces of a slightly grown copy).
 func _toonify(m: StandardMaterial3D) -> void:
-	if _body != Body.TOON:
+	if not _toon():
 		return
 	# Soft light that wraps round the form (no hard bands), a small toon highlight, a
 	# light rim, and a thin even outline.

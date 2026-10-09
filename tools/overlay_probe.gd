@@ -213,6 +213,7 @@ func _pause_shape(ctx: String) -> void:
 	for c in _pause().find_children("*", "Button", true, false):
 		if (c as Button).is_visible_in_tree() and (c as Button).size.y < 84.0:
 			small += 1
+	await _no_code_words(ctx)
 	await _expect("%s: кнопки не меньше 84 px" % ctx, func() -> bool: return small == 0)
 
 
@@ -233,6 +234,26 @@ func _screen_shape(ctx: String) -> void:
 			outside += 1
 	await _expect("%s: кнопки не меньше 84 px" % ctx, func() -> bool: return small == 0)
 	await _expect("%s: кнопки целиком на экране" % ctx, func() -> bool: return outside == 0)
+
+
+## No screen shows a raw id («net_rusher», «serve_cannon»): every visible text of the screen
+## and of the HUD is free of lower-case snake_case words (owner, 10.10).
+func _no_code_words(ctx: String) -> void:
+	var rx := RegEx.new()
+	rx.compile("[a-z]+_[a-z_]+")
+	var found := PackedStringArray()
+	for base in [main.ui.root, main.hud]:
+		if base == null:
+			continue
+		for c in base.find_children("*", "Control", true, false):
+			var txt := ""
+			if c is Label or c is Button:
+				txt = c.text
+			elif c is RichTextLabel:
+				txt = (c as RichTextLabel).get_parsed_text()
+			if txt != "" and (c as Control).is_visible_in_tree() and rx.search(txt) != null:
+				found.append(txt.left(60))
+	await _expect("%s: на экране нет кодовых слов вида snake_case %s" % [ctx, str(found)], func() -> bool: return found.is_empty())
 
 
 ## A club screen on TournamentUI's frame (the coach's board, the islands, a shop, a place's
@@ -364,6 +385,77 @@ func _run_mods_round(club) -> void:
 	await _expect("%s: назад в клуб" % ctx, func() -> bool: return club.active and club.hud.visible and not main.ui.is_open())
 	SaveData.played = played
 	SaveData.mods_freq = mf
+
+
+## Hub spec 16: «Что берёшь в забег» before the first match, at both phone heights: the cards sit
+## inside the screen, do not overlap each other nor the gear, «Идти без вещей» is a thumb's
+## size; a tap on a card takes it (the limit reached: the bracket), the rest stays in the locker.
+func _locker_pick_round() -> void:
+	var club0 = SaveData.club
+	var locker0 = SaveData.locker
+	var tour0 = main.tournament
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	var gear = load("res://scripts/gear.gd")
+	for size in [Vector2i(720, 1564), Vector2i(720, 1480)]:
+		root.size = size
+		await _wait(0.4)
+		var ctx := "Что берёшь в забег (%d)" % size.y
+		# level 4: three of four ride; level 1: one of two
+		for lv in [4, 1]:
+			var n := 4 if lv == 4 else 2
+			SaveData.club = {"levels": {"locker": lv}}
+			var li: Array = [gear._affix_item(gear.RARE, rng, "shoes"), gear._affix_item(gear.EPIC, rng, "racket"),
+				Locker.insure(gear._affix_item(gear.LEGENDARY, rng, "band")), gear._affix_item(gear.RARE, rng, "racket")]
+			SaveData.locker = {"items": li.slice(0, n)}
+			var t2 := Tournament.new(1, 11)
+			main.tournament = t2
+			main.tournament_mode = true
+			var load_ui = load("res://scripts/ui/screens/run_locker.gd")
+			load_ui.pre_run(main.ui, t2)
+			await _wait(0.8)
+			var tag := "%s, ур. %d, %d вещи" % [ctx, lv, n]
+			await _expect("%s: лист открылся" % tag, func() -> bool: return _label_has("Что берёшь в забег"))
+			await _expect("%s: карточек столько же, сколько вещей" % tag, func() -> bool: return _cards().size() == n)
+			var frame := Rect2(Vector2.ZERO, Vector2(root.size))
+			var cs := _cards()
+			var ok := true
+			for k in cs.size():
+				var r: Rect2 = (cs[k] as Control).get_global_rect()
+				if not frame.grow(2.0).encloses(r) or r.intersects(_gear().get_global_rect()) or (k > 0 and r.intersects((cs[k - 1] as Control).get_global_rect())):
+					ok = false
+			_check("%s: карточки целиком в экране, не налезают друг на друга и на ⚙" % tag, ok)
+			await _screen_shape(tag)
+			_check("%s: подпись лимита есть" % tag, _label_has("В забег: "))
+			var first := true
+			var want := 3 if lv == 4 else 1
+			for k in want:
+				cs = _cards()
+				if cs.is_empty():
+					break
+				var before := Locker.items().size()
+				await _tap(cs[1] if cs.size() > 1 else cs[0])
+				await _expect("%s: тап %d берёт вещь" % [tag, k + 1], func() -> bool: return Locker.items().size() == before - 1 and t2.locker_taken == k + 1)
+				first = false
+				if k + 1 < want:
+					await _expect("%s: после тапа %d лист остаётся (ещё можно)" % [tag, k + 1], func() -> bool: return _label_has("Что берёшь в забег"))
+			await _expect("%s: лимит выбран — сетка" % tag, func() -> bool: return _label_has("НА КОРТ") or _button(main.ui.root, "НА КОРТ") != null)
+			_check("%s: остальное осталось в шкафчике (%d)" % [tag, Locker.items().size()], Locker.items().size() == n - want)
+			if lv == 1:
+				# the skip button: nothing taken, nothing lost
+				SaveData.locker = {"items": li.slice(0, 2)}
+				var t3 := Tournament.new(1, 12)
+				main.tournament = t3
+				load_ui.pre_run(main.ui, t3)
+				await _wait(0.8)
+				_chosen = ""
+				await _tap(await _find(main.ui.root, "Идти без вещей"))
+				await _expect("%s: «Идти без вещей» — сетка, ничего не взято" % tag, func() -> bool: return _chosen == "locker_pick_skip" and t3.locker_taken == 0 and Locker.items().size() == 2)
+	root.size = Vector2i(720, 1564)
+	await _wait(0.4)
+	SaveData.club = club0
+	SaveData.locker = locker0
+	main.tournament = tour0
 
 
 ## The visible cards (GameCard) of the screen. By the script's name: the class needs the autoloads.
@@ -788,6 +880,7 @@ func _run() -> void:
 	await _expect("Карточка соперника: «Коэф.» выше «ИГРАТЬ» и не под ней", func() -> bool: return play != null and odds_l.size() == 1 and (odds_l[0] as Label).get_global_rect().end.y <= play.get_global_rect().position.y)
 	await _screen_shape("Карточка соперника")
 	SaveData.titles = titles1
+	await _locker_pick_round()
 
 	# --- A practice match and its pause ------------------------------------------------
 	main.tournament = null
@@ -894,6 +987,9 @@ func _run() -> void:
 
 	# --- Gold: the bank on the chip, the run's gold apart until the summary (C-4) ---------
 	var bank0 := SaveData.gold
+	var career_saved: Dictionary = SaveData.career.duplicate(true)  # the run below must not close a season of the saved career
+	var career_gd = load("res://scripts/career.gd")  # by path: a -s script compiles before the autoloads
+	career_gd.data()["in_season"] = 0
 	var g := Tournament.new(1)
 	g.gold = 75
 	main.ui.show_bracket(g)
@@ -911,6 +1007,7 @@ func _run() -> void:
 	await _expect("Золото: итоги начинаются с банка до забега", func() -> bool: return main.ui.chip_values().x == bank0 and main.ui.run_chip_shown())
 	await _wait(2.0)
 	await _expect("Золото: на итогах забег ушёл в банк", func() -> bool: return main.ui.chip_values().x == bank0 + 75 and not main.ui.run_chip_shown())
+	SaveData.career = career_saved
 
 	# --- Loot cards (v0.2 L): backs, the turn, the bag chip, the flight into it ---------------
 	var lt := Tournament.new(1, 5)
@@ -925,9 +1022,13 @@ func _run() -> void:
 		{"kind": "item", "item": Gear.roll(Gear.COMMON, lrng, "band"), "title": "Напульсник", "desc": "x"},
 		Rewards.WILDCARD.duplicate()]
 	main.ui.show_reward(lt)
-	await _wait(0.4)
+	# The backs turn over by themselves after 0.8 s: look at them by frames, not by a timer that a
+	# loaded machine stretches past that (a 0.4 s wait there could return after the turn).
+	await process_frame
+	await process_frame
 	var cards: Array = main.ui._box.get_children().filter(func(c): return c is GameCard)
 	_check("Награда: три карточки, все рубашкой вверх, читать нечего", cards.size() == 3 and cards.all(func(c): return c.face_down and c.visible_text() == ""))
+	await _wait(0.4)
 	_check("Награда: чип сумки виден, не налезает на ⚙, золото и забег", _chip_clear(main.ui))
 	await _tap(cards[0])
 	await _expect("Награда: тап по рубашке открывает весь ряд", func() -> bool: return cards.all(func(c): return c.is_open() and c.visible_text() != ""))

@@ -317,6 +317,7 @@ func _process(delta: float) -> void:
 		return
 	coach.tick(delta, main.player.position)
 	world.show_interiors_near(main.player.position)
+	world.walk.warm(1000)  # the way-finding graph, a little each frame: no stall at the first route
 	_update_place()
 	_update_npc(delta)
 	_update_badges()

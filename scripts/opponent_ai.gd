@@ -118,18 +118,26 @@ func plan_serve(box_side: float, attempt: int, mult := 1.0) -> Dictionary:
 	if attempt == 1:
 		var x: float
 		var side_spin := 0.0
-		var pace := lerpf(30.0, 50.0, t) * rng.randf_range(0.92, 1.04) * mult * serve_mult()
-		if rng.randf() < lerpf(0.15, 0.85, t):
+		# F-E: harder (up to 57 m/s = 205 km/h before the style) and nearer the lines: the T and the
+		# sideline corner, not the middle of the box (the owner: the AI served worse than he did).
+		var pace := lerpf(SERVE_PACE_WEAK, SERVE_PACE_BEST, t) * rng.randf_range(0.94, 1.04) * mult * serve_mult()
+		if rng.randf() < lerpf(SERVE_CORNER_WEAK, SERVE_CORNER_BEST, t):
 			var wide := rng.randf() < 0.5
-			x = rng.randf_range(2.9, 3.7) if wide else rng.randf_range(0.35, 0.9)
+			x = rng.randf_range(3.3, 3.85) if wide else rng.randf_range(0.3, 0.8)
 			if wide and rng.randf() < 0.5:
 				pace *= 0.88
 				side_spin = 240.0 * -box_side  # slice curving out wide
 		else:
-			x = rng.randf_range(1.2, 2.6)
+			x = rng.randf_range(1.1, 1.7) if rng.randf() < 0.5 else rng.randf_range(2.4, 3.0)  # a body serve leans to a side, never the dead middle
 		_count("serve_corner" if x < 1.0 or x > 2.8 else "serve_middle")
-		return {"tx": box_side * x, "tz": rng.randf_range(lerpf(4.4, 5.0, t), 5.9), "pace": pace, "top": 120.0, "side_spin": side_spin}
-	return {"tx": box_side * rng.randf_range(0.9, 2.6), "tz": rng.randf_range(4.2, 5.4), "pace": lerpf(25.0, 36.0, t), "top": 320.0, "side_spin": 0.0}
+		return {"tx": box_side * x, "tz": rng.randf_range(lerpf(4.8, 5.3, t), 5.95), "pace": pace, "top": 120.0, "side_spin": side_spin}
+	return {"tx": box_side * rng.randf_range(0.9, 2.6), "tz": rng.randf_range(4.2, 5.4), "pace": lerpf(26.0, 38.0, t), "top": 320.0, "side_spin": 0.0}
+
+
+const SERVE_PACE_WEAK := 33.0     # m/s of the first serve by the serve stat (before the style): was 30 .. 50
+const SERVE_PACE_BEST := 57.0
+const SERVE_CORNER_WEAK := 0.2    # the share of first serves into a corner / the T: was 0.15 .. 0.85
+const SERVE_CORNER_BEST := 0.92
 
 
 ## First serve pace multiplier of the play style (the "bomber" serves bigger).
@@ -181,7 +189,9 @@ func on_player_hit() -> void:
 ## Called after the player serves: a big serve is read later.
 func on_player_serve(kmh: float, underarm: bool) -> void:
 	on_player_hit()
-	_reaction += clampf((kmh - 140.0) / 350.0, 0.0, 0.16)
+	# F-E: the returner reads the toss and the server's stance, so a serve is picked up sooner than a
+	# rally ball (was 0.30 .. 0.09 s + up to 0.16 s for a big one): a big serve still costs a beat.
+	_reaction = lerpf(0.24, 0.07, stat("speed")) + clampf((kmh - 150.0) / 500.0, 0.0, 0.09)
 	_serve_speeds.append(kmh)
 	if _serve_speeds.size() > 6:
 		_serve_speeds.pop_front()
@@ -195,7 +205,8 @@ func on_player_serve(kmh: float, underarm: bool) -> void:
 const RETURN_WIDE_X := 3.9        # the widest serve's bounce, across the box
 const RETURN_T_X := 0.3           # the T serve's bounce
 const RETURN_LEAN := 0.5          # 0 = on the T line .. 1 = on the wide line; 0.5 = the bisector
-const RETURN_READ := 0.22         # how far the read habit shifts that (x wide_bias)
+const RETURN_STEADY := 0.85       # F-E: the returner's error chance on a serve x this
+const RETURN_READ := 0.30         # how far the read habit shifts that (x wide_bias); F-E: was 0.22
 
 
 func receive_position(box_side: float) -> Vector3:
@@ -220,9 +231,16 @@ func receive_position(box_side: float) -> Vector3:
 	return Vector3(x, 0.0, -depth)
 
 
+## How much of its contact quality a returner keeps against a serve of this speed (F-E). Big serves
+## are blocked back rather than driven, but not framed: was 1.15 - (kmh - 120) / 130, floor 0.4, which
+## left a 210 km/h serve 0.46 and a third of the returns flying anywhere. s: the wing's stat 0..1.
+static func serve_return_factor(kmh: float, s: float) -> float:
+	return clampf(1.15 - (kmh - 125.0) / 190.0, lerpf(0.52, 0.64, s), 1.0)
+
+
 ## How far the returner can stretch for a serve (a full lunge is the rally's REACH).
 func return_reach() -> float:
-	return lerpf(1.35, 1.6, stat("speed"))
+	return lerpf(1.45, 1.75, stat("speed"))  # F-E: was 1.35 .. 1.6
 
 
 ## Top run speed by the speed stat (m/s), before the modifiers.
@@ -409,7 +427,7 @@ func _hit(bp: Vector3) -> void:
 	q *= lerpf(0.72, 0.96, s)  # the CPU never plays quite as cleanly as a perfect swipe
 	if game.rally == 1:
 		# Returning serve: big serves are only blocked back.
-		q *= clampf(1.15 - (game.last_serve_kmh - 120.0) / 130.0, 0.4, 1.0)
+		q *= serve_return_factor(game.last_serve_kmh, s)
 	# How far it had to run for this ball: errors grow with it (error_chance).
 	var run := Vector2(bp.x - _pos_at_player_hit.x, bp.z - _pos_at_player_hit.z).length() - Athlete.IDEAL_LATERAL
 	_stretch = clampf((run - 1.5) / 3.5, 0.0, 1.0)
@@ -472,7 +490,10 @@ func error_chance(q: float, incoming: float, stretch := -1.0) -> float:
 	var forced := (0.4 * st + 0.35 * heavy * (1.0 - q * 0.5)) * lerpf(0.4, 0.16, s)
 	var poor := pow(1.0 - q, 2.0) * 0.26
 	# x0.85: the AI's contact model is harsher than a thumb's (as before D-3).
-	var p := clampf((base + forced + poor + _risk) * float(style.get("risk", 1.0)) * 0.85, 0.0, 0.6)
+	var p := (base + forced + poor + _risk) * float(style.get("risk", 1.0)) * 0.85
+	if game != null and int(game.get("rally")) == 1:
+		p *= RETURN_STEADY  # F-E: a returner is set for the serve (it blocks it back), a rally ball finds it moving
+	p = clampf(p, 0.0, 0.6)
 	if stretch < 0.0:
 		# Bot metrics: this model against the old one (Main.error_chance before D-3).
 		var pressure := clampf((incoming - 16.0) / 22.0, 0.0, 1.0)

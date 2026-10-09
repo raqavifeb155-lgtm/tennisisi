@@ -112,6 +112,8 @@ var _tap_marker_hold := 0.0
 # Player hitting state
 var incoming: BallPhysics.Prediction
 var t_contact := INF            # predicted game seconds until the ball reaches the contact plane
+var _slot_type := ShotType.TOPSPIN  # the stroke the racket drops into the slot for (the last one played)
+var _split_done := false        # the waiting side has split-stepped for the ball in flight
 var contact_pred := Vector3.ZERO
 var pending_swing := {}
 var late_until := -1.0
@@ -129,6 +131,7 @@ const TRAIL_TOPSPIN := Color(1.0, 0.55, 0.15)
 const TRAIL_SLICE := Color(0.45, 0.8, 1.0)
 const TRAIL_FLAT := Color(1.0, 1.0, 1.0)
 const AIM_OUT := Color(1.0, 0.3, 0.25, 0.9)
+const AIM_RISK := Color(1.0, 0.58, 0.12, 0.95)   # F-E: the serve is in, but a hard one on a line is a gamble
 var _aim: MeshInstance3D
 var _aim_mat: StandardMaterial3D
 var _aim_hold := 0.0
@@ -147,6 +150,10 @@ var autoplay_points := 40
 var _bot_armed := false
 var _bot_offset := 0.0
 var bot_serve_x := 2.0          # where across the box the bot aims its serve (tools/ai_bench.gd --serve=wide)
+var bot_serve_k := -1.0         # F-E: the bot's serve pace 0..1 (--serve-k=; -1 = random 0.3..1)
+var bot_serve_type := -1        # F-E: 0 kick / 1 flat / 2 slice (--serve-type=; -1 = random)
+var bot_serve_jitter := 6.0     # F-E: the bot's aim error in degrees (--serve-jitter=; a thumb is nearer 2)
+var bot_serve_gauss := false    # F-E: --serve-human: a normal aim error (sd = jitter / 2) instead of a flat one
 var _stats := {"rallies": [], "reasons": {}, "labels": {}, "player_hits": 0, "cpu_hits": 0, "serve": {}}
 
 
@@ -198,6 +205,8 @@ func _ready() -> void:
 			autoplay_points = int(a.get_slice("=", 1))
 		elif a.begins_with("--gfx="):
 			_force_gfx = int(a.get_slice("=", 1))  # profiling: 1 low .. 4 max
+		elif a.begins_with("--body="):
+			Athlete.body_style = int(a.get_slice("=", 1))  # 0 classic, 1 athlete, 2 toon, 3 smooth (one skinned mesh)
 		elif a.begins_with("--profile"):
 			_profile_t = 5.0  # print frame statistics every 5 s (a profiling run, not headless)
 		elif a.begins_with("--bot-sd="):
@@ -224,6 +233,16 @@ func _ready() -> void:
 			Opponents.add_slope = float(a.get_slice("=", 1))
 		elif a.begins_with("--xp="):
 			_bot_xp = float(a.get_slice("=", 1))  # every skill starts with this much experience
+		elif a.begins_with("--serve-x="):
+			bot_serve_x = float(a.get_slice("=", 1))  # F-E: where across the box the bot aims (3.6 = wide, 0.4 = T)
+		elif a.begins_with("--serve-k="):
+			bot_serve_k = float(a.get_slice("=", 1))
+		elif a.begins_with("--serve-type="):
+			bot_serve_type = int(a.get_slice("=", 1))
+		elif a.begins_with("--serve-jitter="):
+			bot_serve_jitter = float(a.get_slice("=", 1))
+		elif a == "--serve-human":
+			bot_serve_gauss = true
 
 	_build_environment()
 	court = Court.new()
@@ -372,6 +391,7 @@ func _ready() -> void:
 		_show_menu()
 		# The menu and the scene render under the loading screen while shaders
 		# compile: the first rally plays without hitches.
+		ShaderWarm.start(self)  # the loot's shaders too, so no chest or knock-out stalls on its first sight
 		add_child(BootLoader.new())
 
 
@@ -613,8 +633,29 @@ func _physics_process(delta: float) -> void:
 	else:
 		ai.tick(delta, phase == Phase.RALLY and last_hitter == Who.PLAYER and ball.active)
 	_update_player_movement()
+	_update_split_steps()
 	if autoplay:
 		_autoplay_tick()
+
+
+## The side waiting for the ball split-steps as the other one hits: off the court a beat
+## before their contact, landing ~0.15 s after it, loaded to push off (the expert timing,
+## docs/MOVEMENT_REALISM.md). Only the look: the run itself starts as before.
+func _update_split_steps() -> void:
+	if _split_done or phase != Phase.RALLY or not ball.active:
+		return
+	if last_hitter == Who.CPU:
+		if t_contact <= Athlete.SPLIT_LEAD:
+			_split_done = true
+			cpu.split_step()
+	elif last_hitter == Who.PLAYER:
+		var v := ball.state.vel
+		if v.z >= -0.5:
+			return
+		var t := (ball.state.pos.z - (cpu.position.z + Athlete.CONTACT_FORWARD)) / -v.z
+		if t <= Athlete.SPLIT_LEAD:
+			_split_done = true
+			player.split_step()
 
 
 func _process(_delta: float) -> void:
@@ -667,6 +708,7 @@ func _update_player_hitting() -> void:
 		t_contact = INF
 		incoming = null
 		_prev_rel = rel
+		player.unslot()
 		return
 
 	incoming = BallPhysics.predict(ball.state, 2.5, 1.0 / 120.0, 2)
@@ -686,6 +728,7 @@ func _update_player_hitting() -> void:
 
 	if t_contact < 1.2 and pending_swing.is_empty():
 		player.prepare(1 if player.lateral_of(contact_pred) >= 0.0 else -1)
+	_update_racket_slot()
 
 	# Out of reach but within a dive, with a swing on the way: throw the body at it.
 	if not pending_swing.is_empty() and not player.is_down() and t_contact < Athlete.DIVE_TIME * 0.8 and contact_pred.y < 1.7:
@@ -702,6 +745,20 @@ func _update_player_hitting() -> void:
 	if late_until > 0.0 and game_time > late_until:
 		late_until = -1.0
 		ball_used = true
+
+
+## No swipe yet and the ball is close: the racket drops into the slot by itself, so the
+## swipe plays only the whip through the ball (Athlete.slot). The stroke it guesses is the
+## last one played; the swipe still decides the shot.
+func _update_racket_slot() -> void:
+	if not pending_swing.is_empty() or player.is_swinging() or player.is_down() or serve_flight:
+		return
+	var reach := Vector2(contact_pred.x - player.position.x, contact_pred.z - player.position.z).length()
+	var ok := t_contact <= Athlete.SWING_TO_CONTACT and t_contact > 0.0 and reach <= Athlete.REACH and contact_pred.y > 0.15 and contact_pred.y <= SMASH_MIN_H
+	if ok:
+		player.slot(1 if player.lateral_of(contact_pred) >= 0.0 else -1, t_contact, contact_pred, _swing_style(_slot_type, contact_pred.y))
+	elif player.is_slotted() and t_contact != INF and reach > Athlete.REACH + 0.3:
+		player.unslot()  # the ball moved out of reach: back to the ready position
 
 
 func _on_ball_crossed() -> void:
@@ -860,6 +917,7 @@ func _on_swipe(points: PackedVector2Array, times: PackedInt32Array) -> void:
 func _swing_input(dir: Vector3, pace_k: float, type: int) -> void:
 	if not _player_can_hit():
 		return
+	_slot_type = type as ShotType
 	if late_until > 0.0:
 		_player_hit(game_time - late_cross_time, dir, pace_k, type)
 		return
@@ -955,18 +1013,20 @@ func _on_swipe_progress(points: PackedVector2Array) -> void:
 	if phase == Phase.SERVE:
 		if server != Who.PLAYER:
 			return
-		var sp := serve_target(origin, dir, 0.5)
-		_set_aim(origin, sp, Court.in_service_box(sp, -1, box_side, 0.0))
+		var pk := _pace_from_speed(g.speed)
+		var st: int = g.type
+		var sp := serve_target(origin, dir, pk)
+		_set_aim(origin, sp, Court.in_service_box(sp, -1, box_side, 0.0), serve_risk_for(sp, ShotType.TOPSPIN if st == ShotType.LOB else (ShotType.SLICE if st == ShotType.DROP else st), pk) >= 0.1)
 	else:
 		var p := rally_target(origin, dir, 0.5)
 		_set_aim(origin, p, Court.is_in_singles(p, -1, 0.0))
 	_aim_hold = INF
 
 
-func _set_aim(origin: Vector3, p: Vector3, inside: bool) -> void:
+func _set_aim(origin: Vector3, p: Vector3, inside: bool, risky := false) -> void:
 	_aim.visible = true
 	_aim.global_position = Vector3(p.x, 0.05, p.z)
-	_aim_mat.albedo_color = AIM_IN if inside else AIM_OUT
+	_aim_mat.albedo_color = (AIM_RISK if risky else AIM_IN) if inside else AIM_OUT
 	_aim_line_origin = origin
 	_aim_line_target = p
 
@@ -1306,17 +1366,25 @@ func error_chance(who: int, q: float, incoming_speed: float) -> float:
 	return clampf(p, 0.0, 0.6)
 
 
-func execute_shot(who: int, hitter: Athlete, contact: Vector3, target: Vector3, pace: float, top: float, q: float, t_err: float, side: int, lob := false, side_spin := 0.0, drop := false, net_margin := 0.3, scatter := 1.0) -> ShotSolver.Result:
+## `force_err` (F-E, a hard first serve whose risk came up): 1 net, 2 long, 3 wide, 4 across the
+## centre line; the serve misses the way a serve does (just past the service line or a sideline).
+func execute_shot(who: int, hitter: Athlete, contact: Vector3, target: Vector3, pace: float, top: float, q: float, t_err: float, side: int, lob := false, side_spin := 0.0, drop := false, net_margin := 0.3, scatter := 1.0, force_err := 0) -> ShotSolver.Result:
 	trail.set_color(TRAIL_TOPSPIN if top >= 200.0 else (TRAIL_SLICE if top < 0.0 else TRAIL_FLAT), who == Who.PLAYER and q >= 0.9)
 	# An unforced or forced error: decided before the shot, shown as a real miss.
 	var incoming := ball.state.vel.length()
-	var err_kind := 0  # 0 none, 1 net, 2 long, 3 wide
-	if incoming > 3.0 and rng.randf() < error_chance(who, q, incoming):
+	var err_kind := force_err  # 0 none, 1 net, 2 long, 3 wide, 4 across the centre line (a serve)
+	if err_kind == 0 and incoming > 3.0 and rng.randf() < error_chance(who, q, incoming):
 		var roll := rng.randf()
 		err_kind = 1 if roll < 0.4 else (2 if roll < 0.75 else 3)
 		_stats["errors"] = _stats.get("errors", 0) + 1
 	var half := -signf(contact.z) if absf(contact.z) > 0.1 else -1.0  # the half the ball goes to
-	if err_kind == 2:
+	if force_err == 2:
+		target.z = half * (Court.SERVICE_LINE + rng.randf_range(0.25, 1.1))  # a serve long: just past the service line
+	elif force_err == 3:
+		target.x = box_side * (Court.half_width() + rng.randf_range(0.15, 0.7))  # wide: just past the sideline
+	elif force_err == 4:
+		target.x = -box_side * rng.randf_range(0.15, 0.7)  # into the other box
+	elif err_kind == 2:
 		# Long: lands past the baseline.
 		target.z = half * (Court.HALF_LENGTH + rng.randf_range(0.25, 1.5))
 	elif err_kind == 3:
@@ -1354,6 +1422,7 @@ func execute_shot(who: int, hitter: Athlete, contact: Vector3, target: Vector3, 
 		v.y = (h_net - contact.y + 0.5 * BallPhysics.gravity() * t_net * t_net) / t_net
 	ball.launch(contact, v, r.spin)
 	last_hitter = who as Who
+	_split_done = false
 	bounces = 0
 	net_touched = false
 	if who == Who.CPU:
@@ -1462,6 +1531,9 @@ func _end_point(winner: int, reason: String) -> void:
 	if reason == "WINNER" and rally == 1 and winner == server:
 		reason = "ACE"
 	GameEvents.point.emit({"winner": winner, "reason": reason, "rally": rally, "server": server, "close_call": _close_call.duplicate(), "best": rally >= best_rally})
+	# Faces (the SMOOTH body): the winner is glad, a long rally won is shouted about.
+	player.emote(("shout" if rally >= 6 else "joy") if winner == Who.PLAYER else "sad", 1.8)
+	cpu.emote(("shout" if rally >= 6 else "joy") if winner == Who.CPU else "sad", 1.8)
 	var text := Calls.point(winner == Who.PLAYER, reason, cpu_call)
 	if winner == Who.PLAYER and reason == "ACE":
 		_match_stats["aces"] = _match_stats.get("aces", 0) + 1
@@ -1685,6 +1757,36 @@ func _start_toss() -> void:
 		_bot_offset = rng.randfn(0.0, 0.03)
 
 
+## The pace, spin and side spin a serve of this type is struck with at this swipe strength,
+## before the serve skill and the timing (m/s, rad/s-ish like the rest).
+func _serve_base(type: int, pace_k: float) -> Dictionary:
+	match type:
+		ShotType.FLAT:
+			return {"pace": lerpf(40.0, 58.0, pace_k), "top": 150.0, "side": 0.0}
+		ShotType.SLICE:
+			return {"pace": lerpf(31.0, 42.0, pace_k), "top": 80.0, "side": 330.0}  # curves to the server's left and keeps sliding away after the bounce
+	return {"pace": lerpf(30.0, 42.0, pace_k), "top": lerpf(300.0, 420.0, pace_k) * _curl_k, "side": 0.0}  # kick: dives in, jumps up high
+
+
+## F-E: the chance this first serve goes into the net or out (Skills.serve_risk): its speed with
+## the timing quality q, and how near the aim is to a line. The same number is shown to the
+## player (the aim dot turns orange, the popup says РИСК).
+func serve_risk_for(target: Vector3, type: int, pace_k: float, q := 1.0) -> float:
+	var kmh := float(_serve_base(type, pace_k)["pace"]) * float(Skills.stroke("serve")["pace"]) * lerpf(0.72, 1.06, q) * 3.6
+	var bx := target.x * box_side
+	return Skills.serve_risk(kmh, minf(bx, Court.half_width() - bx), serve_attempt)
+
+
+## Where a serve that the risk caught goes wrong: near a line mostly across it, else into the
+## net or just long (4 / 3 / 1 / 2 of execute_shot's force_err).
+func _serve_miss_kind(target: Vector3) -> int:
+	var bx := target.x * box_side
+	var near_line := 0.6 * (1.0 - clampf(minf(bx, Court.half_width() - bx) / Skills.SERVE_EDGE_SPAN, 0.0, 1.0))
+	if rng.randf() < near_line:
+		return 3 if bx > Court.half_width() * 0.5 else 4
+	return 1 if rng.randf() < 0.4 else 2
+
+
 func _player_serve(dir: Vector3, pace_k: float, type: int) -> void:
 	var bp := ball.state.pos
 	if bp.y < 1.7:
@@ -1696,24 +1798,20 @@ func _player_serve(dir: Vector3, pace_k: float, type: int) -> void:
 	var label: String = tq[1]
 	var origin := Vector3(bp.x, 0.0, bp.z)
 	var target := serve_target(origin, dir, pace_k)
-	var pace: float
-	var top: float
-	var side_spin := 0.0
-	match type:
-		ShotType.FLAT:
-			pace = lerpf(40.0, 58.0, pace_k)
-			top = 150.0
-		ShotType.SLICE:
-			pace = lerpf(31.0, 42.0, pace_k)
-			top = 80.0
-			side_spin = 330.0  # curves to the server's left and keeps sliding away after the bounce
-		_:
-			pace = lerpf(30.0, 42.0, pace_k)
-			top = lerpf(300.0, 420.0, pace_k) * _curl_k  # kick: dives in, jumps up high
+	var base := _serve_base(type, pace_k)
+	var pace: float = base["pace"]
+	var top: float = base["top"]
+	var side_spin: float = base["side"]
 	pace *= sk["pace"]
 	top *= sk["spin"]
+	# F-E: a hard serve is a gamble even when PERFECT: the risk (shown to the player) is rolled
+	# with the match's seeded rng and, if it comes up, the ball really goes into the net or out.
+	var risk := serve_risk_for(target, type, pace_k, q)
+	var miss := 0
+	if risk > 0.0 and rng.randf() < risk:
+		miss = _serve_miss_kind(target)
 	player.swing(1, 0.02, bp, Athlete.Style.SERVE)
-	var r := execute_shot(Who.PLAYER, player, bp, target, pace, top, q, err, 1, false, side_spin, false, 0.12, sk["scatter"])
+	var r := execute_shot(Who.PLAYER, player, bp, target, pace, top, q, err, 1, false, side_spin, false, 0.12, sk["scatter"], miss)
 	_after_serve_hit()
 	_gain_xp("serve", label)
 	if label == "PERFECT":
@@ -1726,7 +1824,7 @@ func _player_serve(dir: Vector3, pace_k: float, type: int) -> void:
 		_aim_hold = 0.8
 	var color := Hud.GOLD if label == "PERFECT" else (COLOR_WARN if label == "EARLY" or label == "LATE" else COLOR_GOOD)
 	var kind: String = ["KICK ×%.1f" % _curl_k, "FLAT", "SLICE"][type]
-	hud.popup(label, color, "SERVE %s  ·  %d KM/H" % [kind, roundi(r.speed * 3.6)])
+	hud.popup(label, color, "SERVE %s  ·  %d KM/H%s" % [kind, roundi(r.speed * 3.6), "  ·  РИСК %d%%" % roundi(risk * 100.0) if risk >= 0.04 else ""])
 	cam.impulse(1.0 if label == "PERFECT" else 0.4)
 	_haptic("perfect" if label == "PERFECT" else "medium")
 	last_shot = {
@@ -1736,7 +1834,7 @@ func _player_serve(dir: Vector3, pace_k: float, type: int) -> void:
 	}
 	GameEvents.player_stroke.emit({
 		"type": "SERVE", "label": label, "kmh": r.speed * 3.6, "q": q, "curl_k": _curl_k if type == ShotType.TOPSPIN else 1.0,
-		"volley": false, "smash": false, "diving": false, "serve": true, "skill": "serve", "side": 1,
+		"volley": false, "smash": false, "diving": false, "serve": true, "skill": "serve", "side": 1, "risk": risk, "risk_miss": miss > 0, "risk_kind": miss,
 	})
 
 
@@ -1912,7 +2010,7 @@ func _start_tournament(format_index: int, run_conditions: Array = [], hardcore :
 	if autoplay:
 		_play_match()
 	else:
-		ui.show_bracket(tournament)
+		RunLocker.pre_run(ui, tournament)  # hub spec 16: more in the locker than the run may take = pick first, else the bracket
 
 
 ## Stamina is a short tank: a beginner sprinting flat out is empty in ~15 s, and a long
@@ -2310,8 +2408,9 @@ func _start_bonus() -> void:
 	cpu.velocity = Vector3.ZERO
 	cpu.relax()
 	_runner_timer = 0.0
-	if not tournament.pending_loot.is_empty():
-		cpu.set_racket(tournament.pending_loot)
+	# The runner is the opponent just beaten, in all three of his items; the trophy is the one he
+	# wears in its slot (Tournament.trophy_scene): a racket, shoes or a wristband, not always a racket.
+	cpu.set_gear(AthleteGear.items_of(_trophy_worn()))
 	hud.announcer.item_card(tournament.pending_loot, "НОКАУТИРУЙ И ЗАБЕРИ")
 	hud.announcer.set_hint("Подача по бегущему: попади в него мячом")
 	_bonus_hud()
@@ -2397,17 +2496,19 @@ func _bonus_hit() -> void:
 	_bonus_hits += 1
 	cpu.knockout(ball.state.vel)
 	ball.state.vel = Vector3(-ball.state.vel.x * 0.2, 3.5, -ball.state.vel.z * 0.15)  # pops off the body
-	cpu.set_racket({})
+	var worn := _trophy_worn()
+	worn[AthleteGear.slot_of(tournament.pending_loot)] = {}  # the trophy leaves him: the racket from his hand, the shoes, the band
+	cpu.set_gear(AthleteGear.items_of(worn))
 	sfx.play("hit_perfect", -2.0)
 	cam.impulse(1.0)
 	_haptic("heavy")
 	hud.announcer.moment("KNOCKOUT!", UiTheme.GOLD)
-	# The racket flies out of their hand and lands on the court; go and pick it up.
+	# The trophy flies off him and lands on the court; go and pick it up.
 	_drop_from = cpu.position + Vector3(0.0, 1.1, 0.0)
 	_drop_to = cpu.position + Vector3(rng.randf_range(-1.2, 1.2), 0.04, rng.randf_range(0.6, 1.4))
 	_drop_to.x = clampf(_drop_to.x, -5.0, 5.0)
 	_drop_t = 0.0
-	_drop = _make_drop_racket(tournament.pending_loot)
+	_drop = _make_drop_item(tournament.pending_loot)
 	add_child(_drop)
 	_drop.global_position = _drop_from
 	player.area = Rect2(-8.0, -17.0, 16.0, 31.0)  # no net now: the whole court is open
@@ -2426,7 +2527,7 @@ func _bonus_pickup(delta: float) -> void:
 	if _drop_t < 1.0:
 		_drop.rotate_object_local(Vector3.FORWARD, delta * 14.0)
 	else:
-		_drop.rotation = Vector3(-PI * 0.5, 0.6, 0.0)  # lying flat on the court
+		_drop.rotation = Vector3(-PI * 0.5 if AthleteGear.slot_of(tournament.pending_loot) == "racket" else 0.0, 0.6, 0.0)  # a racket lies flat, shoes and a band stand
 	var to := _drop_to - player.position
 	to.y = 0.0
 	player.move_input = Vector2(to.x, to.z).normalized() * clampf(to.length(), 0.3, 1.0) if to.length() > 0.5 else Vector2.ZERO
@@ -2434,7 +2535,9 @@ func _bonus_pickup(delta: float) -> void:
 		_drop.queue_free()
 		_drop = null
 		player.move_input = Vector2.ZERO
-		player.set_racket(tournament.pending_loot)
+		var mine: Dictionary = tournament.equip.duplicate()
+		mine[AthleteGear.slot_of(tournament.pending_loot)] = tournament.pending_loot  # in the hand / on the feet / on the wrist
+		player.set_gear(AthleteGear.items_of(mine))
 		player.split_step()
 		hud.announcer.item_card(tournament.pending_loot, "ТРОФЕЙ")
 		sfx.play("point", -4.0, 1.25)
@@ -2442,6 +2545,99 @@ func _bonus_pickup(delta: float) -> void:
 		_haptic("perfect")
 		_bonus_state = 2
 		_bonus_wait = 0.4 if autoplay else 1.6
+
+
+## The opponent's three items as the trophy game dresses him: what the beaten one wore (the
+## trophy among them, the same dictionary), or the trophy alone for a test round.
+func _trophy_worn() -> Dictionary:
+	var sc := tournament.trophy_scene()
+	var worn: Dictionary = (sc["worn"] as Dictionary).duplicate()
+	if not tournament.pending_loot.is_empty():
+		worn[String(sc["slot"])] = tournament.pending_loot
+	return worn
+
+
+## The knocked-out item as a thing on the court, by its slot: a racket, a pair of shoes, a wristband.
+func _make_drop_item(item: Dictionary) -> Node3D:
+	match AthleteGear.slot_of(item):
+		"shoes":
+			return _make_drop_shoes(item)
+		"band":
+			return _make_drop_band(item)
+	return _make_drop_racket(item)
+
+
+func _glow_material(c: Color, item: Dictionary) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = c
+	mat.emission_enabled = Gear.glow(item) > 0.0
+	mat.emission = c
+	mat.emission_energy_multiplier = maxf(Gear.glow(item), 0.4)
+	return mat
+
+
+func _make_drop_shoes(item: Dictionary) -> Node3D:
+	var root := Node3D.new()
+	var skin := AthleteGear.skin_of(item, "shoes")
+	var body := Color(String(skin.get("body", "#f2f2f2")))
+	var sole := Color(String(skin.get("sole", "#c9ccd2")))
+	var glow := _glow_material(Gear.color(item), item)
+	for side in [-1.0, 1.0]:
+		var up := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.16, 0.14, 0.4)
+		up.mesh = bm
+		var um := StandardMaterial3D.new()
+		um.albedo_color = body
+		up.material_override = um
+		up.position = Vector3(side * 0.14, 0.12, 0.0)
+		root.add_child(up)
+		var so := MeshInstance3D.new()
+		var sm := BoxMesh.new()
+		sm.size = Vector3(0.18, 0.05, 0.44)
+		so.mesh = sm
+		var smat := StandardMaterial3D.new()
+		smat.albedo_color = sole
+		so.material_override = smat
+		so.position = Vector3(side * 0.14, 0.025, 0.0)
+		root.add_child(so)
+		var stripe := MeshInstance3D.new()
+		var tm := BoxMesh.new()
+		tm.size = Vector3(0.17, 0.03, 0.2)
+		stripe.mesh = tm
+		stripe.material_override = glow  # the rarity's colour on the shoe
+		stripe.position = Vector3(side * 0.14, 0.2, -0.02)
+		root.add_child(stripe)
+	root.add_child(_drop_light(Gear.color(item), Vector3(0.0, 0.3, 0.0)))
+	return root
+
+
+func _make_drop_band(item: Dictionary) -> Node3D:
+	var root := Node3D.new()
+	var skin := AthleteGear.skin_of(item, "band")
+	var ring := MeshInstance3D.new()
+	var tm := TorusMesh.new()
+	tm.inner_radius = 0.1
+	tm.outer_radius = 0.17
+	ring.mesh = tm
+	var m := _glow_material(Color(String(skin.get("color", "#9aa0a8"))), item)
+	m.emission_enabled = true
+	m.emission = Gear.color(item)
+	m.emission_energy_multiplier = maxf(Gear.glow(item), 0.5)
+	ring.material_override = m
+	ring.position = Vector3(0.0, 0.3, 0.0)
+	root.add_child(ring)
+	root.add_child(_drop_light(Gear.color(item), ring.position))
+	return root
+
+
+func _drop_light(c: Color, pos: Vector3) -> OmniLight3D:
+	var light := OmniLight3D.new()
+	light.light_color = c
+	light.light_energy = 1.2
+	light.omni_range = 2.0
+	light.position = pos
+	return light
 
 
 func _make_drop_racket(item: Dictionary) -> Node3D:
@@ -2471,12 +2667,19 @@ func _make_drop_racket(item: Dictionary) -> Node3D:
 	handle.material_override = hm
 	handle.position = Vector3(0, 0.15 * 1.6, 0)
 	root.add_child(handle)
-	var light := OmniLight3D.new()
-	light.light_color = c
-	light.light_energy = 1.2
-	light.omni_range = 2.0
-	light.position = ring.position
-	root.add_child(light)
+	# The glow is a mesh, not a light: a real light would give every body and the court near
+	# it another shader variant, compiled on the spot (a stall of a phone's frames) when
+	# the racket flies out; the gear's own glow material is already compiled (ShaderWarm).
+	var halo := MeshInstance3D.new()
+	var hm2 := TorusMesh.new()
+	hm2.inner_radius = 0.105 * 1.6 - 0.03
+	hm2.outer_radius = 0.128 * 1.6 + 0.03
+	halo.mesh = hm2
+	halo.material_override = AthleteGear.glow_material(3, AthleteGear.GLOW_COLORS[clampi(int(item.get("rarity", 0)), 0, Gear.MYTHIC)], 0.7)
+	halo.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	halo.rotation = ring.rotation
+	halo.position = ring.position
+	root.add_child(halo)
 	return root
 
 
@@ -2485,7 +2688,7 @@ func _bonus_miss() -> void:
 	ball.park()
 	_bonus_hud()
 	if _bonus_balls <= 0:
-		hud.announcer.moment("TROPHY LOST", UiTheme.LOSE, "ракетка осталась у соперника")
+		hud.announcer.moment("TROPHY LOST", UiTheme.LOSE, {"racket": "ракетка осталась у соперника", "shoes": "кроссовки остались у соперника", "band": "напульсник остался у соперника"}[AthleteGear.slot_of(tournament.pending_loot)])
 		_bonus_state = 2
 		_bonus_wait = 0.5 if autoplay else 2.0
 	else:
@@ -2659,7 +2862,10 @@ func _autoplay_tick() -> void:
 		elif game_time >= toss_ideal + _bot_offset:
 			var to_box := Vector3(box_side * bot_serve_x - player.position.x, 0.0, -5.2 - player.position.z).normalized()
 			_curl_k = rng.randf_range(0.9, 1.3)
-			_player_serve(to_box.rotated(Vector3.UP, deg_to_rad(rng.randf_range(-6.0, 6.0))), rng.randf_range(0.3, 1.0), rng.randi_range(0, 2))
+			var jit := rng.randfn(0.0, bot_serve_jitter * 0.5) if bot_serve_gauss else rng.randf_range(-bot_serve_jitter, bot_serve_jitter)
+			var kk := bot_serve_k if bot_serve_k >= 0.0 else rng.randf_range(0.3, 1.0)
+			var ty := bot_serve_type if bot_serve_type >= 0 else rng.randi_range(0, 2)
+			_player_serve(to_box.rotated(Vector3.UP, deg_to_rad(jit)), kk, ty)
 		return
 	if not _player_can_hit():
 		_bot_armed = false
