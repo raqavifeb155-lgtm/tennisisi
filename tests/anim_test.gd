@@ -43,6 +43,7 @@ func run_all() -> void:
 	test_swing_retarget()
 	test_tired_pose()
 	test_racket_smash()
+	test_racket_on_a_fall()
 	print("\n%s (%d failures)" % ["ALL ANIMATION TESTS PASSED" if failures == 0 else "ANIMATION TESTS FAILED", failures])
 	if ath:
 		ath.free()
@@ -668,6 +669,63 @@ func test_high_balls() -> void:
 			check(in_head < 0.03, "%s: the racket stays out of the head (%.2f m in)" % [tag, in_head])
 			if side > 0:
 				check(hand_x >= HIGH_HAND_X, "%s: the hand stays on the racket side of the spine at contact (x %.2f)" % [tag, hand_x])
+
+
+## The racket leaves the hand when the player goes down (a dive that lands, a slip, a
+## knockout), tumbles and lies flat on the court (never under it), and is back in the hand
+## once the player is up.
+func racket_in_hand() -> float:
+	var j := arm("r")
+	return ath._model.to_global(j[2]).distance_to(ath._racket.global_position)
+
+
+func test_racket_on_a_fall() -> void:
+	print("racket on a fall: out of the hand, on the court, back in the hand")
+	for kind in ["dive", "knockout", "dive then restart"]:
+		fresh("hard", Vector3(0, 0, 11))
+		ath.prepare(1)
+		for i in 30:
+			step()
+		var held_before := true
+		var loose := 0
+		var loose_from := -1
+		var sink := 99.0
+		var rest_speed := 0.0
+		var prev := Vector3.ZERO
+		var frames := 0
+		var total := 0
+		if kind == "knockout":
+			ath.knockout(Vector3(0, 2, 8))
+			total = int((Athlete.KO_FLY + Athlete.KO_LIE + 0.8) * 60.0)
+		else:
+			ath.swing(1, 0.2, ath.to_global(Vector3(2.0, 0.6, -0.4)), Athlete.Style.TOPSPIN)
+			ath.dive(ath.to_global(Vector3(2.0, 0.6, -0.4)))
+			total = int((Athlete.DIVE_TIME + Athlete.GROUND_TIME + Athlete.GETUP_TIME + 0.8) * 60.0)
+		var restart_at := int((Athlete.DIVE_TIME + 1.0) * 60.0) if kind == "dive then restart" else -1
+		var back_at := -1
+		for f in total:
+			if f == restart_at:
+				ath.recover()
+			step()
+			var t := float(f) / 60.0
+			var d := racket_in_hand()
+			if t < 0.1 and kind != "knockout" and d > 0.03:
+				held_before = false
+			if ath.racket_loose() and d > 0.12:
+				loose += 1
+				if loose_from < 0:
+					loose_from = f
+				sink = minf(sink, ath.racket_lowest_y())
+				if ath._rk == 1:
+					rest_speed = (ath._racket.global_position - prev).length() * 60.0   # the last one: just before it is picked up
+			elif loose_from >= 0 and back_at < 0 and not ath.racket_loose():
+				back_at = f
+			prev = ath._racket.global_position
+		check(held_before, "%s: the racket stays in the hand through the swing (the first 0.1 s)" % kind)
+		check(loose >= 40, "%s: the racket is out of the hand for a while (%d frames)" % [kind, loose])
+		check(sink > -0.005, "%s: the racket never goes through the court (lowest %.3f m)" % [kind, sink])
+		check(rest_speed < 0.1, "%s: it lies still after sliding (%.2f m/s)" % [kind, rest_speed])
+		check(back_at > 0 and racket_in_hand() < 0.03 and not ath.racket_loose(), "%s: the racket is in the hand again (frame %d, %.3f m off)" % [kind, back_at, racket_in_hand()])
 
 
 ## Changing the stance (forehand <-> backhand) while running back, running in, standing

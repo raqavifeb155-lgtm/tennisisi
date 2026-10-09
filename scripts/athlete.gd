@@ -1425,6 +1425,7 @@ func _process(delta: float) -> void:
 	_head_yaw = lerpf(_head_yaw, yaw_t, 1.0 - exp(-8.0 * delta))
 	_head_pitch = lerpf(_head_pitch, pitch_t, 1.0 - exp(-8.0 * delta))
 
+	_pose_dt = delta
 	amt = AthleteCasual.shape(self, delta, speed, amt)  # the club's walk: no racket (stream H)
 	# The phase gap between the feet is eased, never switched: which foot leads a shuffle
 	# follows the sign of the sideways speed, and a stick held straight shivers around 0.
@@ -1761,7 +1762,113 @@ func _pose(local_v: Vector3, amt: float, near_contact: float) -> void:
 		face = Vector3(0, 1, 0) - y * y.y
 	face = face.normalized()
 	var x := y.cross(face).normalized()
-	_racket.transform = Transform3D(Basis(x, y, x.cross(y)), hand)
+	_racket.transform = _racket_follow(Transform3D(Basis(x, y, x.cross(y)), hand))
+
+
+# --- The racket on a fall -------------------------------------------------------------
+# A dive that lands, a slip, a knockout: the racket leaves the hand, tumbles on and slides
+# over the court until it lies flat, and the player picks it up again while getting up (or
+# when the point restarts). One node, simple physics, in world space; the pose never
+# depends on it (the arm hangs as it did).
+
+const RACKET_LIE_Y := 0.012          # m: how high a racket lying flat on the court sits
+const RACKET_PICKUP := 0.4           # s: from the court back into the hand
+const RACKET_BODY := [Vector3(0.0, -0.14, 0.0), Vector3(0.0, 0.2, 0.0), Vector3(0.0, 0.52, -0.0), Vector3(0.14, 0.52, 0.0), Vector3(-0.14, 0.52, 0.0), Vector3(0.0, 0.38, 0.0), Vector3(0.0, 0.68, 0.0), Vector3(0.11, 0.62, 0.0), Vector3(-0.11, 0.62, 0.0), Vector3(0.11, 0.42, 0.0), Vector3(-0.11, 0.42, 0.0)]
+var _pose_dt := 0.0
+var _rk_used := false                # this fall has already dropped it
+var _rk := 0                         # 0 in the hand, 1 loose on the court, 2 on its way back to the hand
+var _rk_pos := Vector3.ZERO          # world: the grip end
+var _rk_quat := Quaternion.IDENTITY  # world
+var _rk_vel := Vector3.ZERO
+var _rk_yaw := 0.0                   # spin about the vertical (rad/s)
+var _rk_t := 0.0                     # 0..1 through the pick-up
+var _rk_from_pos := Vector3.ZERO
+var _rk_from_quat := Quaternion.IDENTITY
+
+
+## True while the racket is out of the hand (falling, lying, being picked up).
+func racket_loose() -> bool:
+	return _rk != 0
+
+
+## The lowest point of the racket's frame and strings, world space (for the court test).
+func racket_lowest_y() -> float:
+	var tf := _racket.global_transform
+	var low := 99.0
+	for q in RACKET_BODY:
+		low = minf(low, (tf * (q as Vector3)).y)
+	return low
+
+
+## Where the racket is, given where the hand puts it (model space) this frame.
+func _racket_follow(held: Transform3D) -> Transform3D:
+	var dt := clampf(_pose_dt, 0.0, 0.05)
+	var hand_w := _model.global_transform * held
+	var up_late := _down_kind == 1 and _down >= DIVE_TIME + GROUND_TIME + GETUP_TIME * 0.45
+	match _rk:
+		0:
+			if _down < 0.0:
+				_rk_used = false
+			# (a dive lands, or the hand is on its way into the court: the racket goes first)
+			var drops := not _rk_used and _mode != 5 and ((_down_kind == 1 and (_down >= DIVE_TIME or (_down > 0.12 and hand_w.origin.y < 0.2))) or (_down_kind == 3 and _down >= 0.05))
+			if not drops:
+				return held
+			# Lets go: it leaves with the body's speed, a little to the side, and spins.
+			_rk = 1
+			_rk_used = true
+			_rk_pos = hand_w.origin
+			_rk_pos.y = maxf(_rk_pos.y, 0.15)
+			_rk_quat = hand_w.basis.get_rotation_quaternion()
+			_rk_vel = velocity * 0.15 + right() * _down_dir * 0.4 + Vector3.UP * 1.0
+			_rk_yaw = 7.0 * _down_dir
+			return held
+		1:
+			if _down < 0.0 or up_late:
+				_rk = 2
+				_rk_t = 0.0
+				_rk_from_pos = _rk_pos
+				_rk_from_quat = _rk_quat
+				return _racket_follow(held)   # (the same frame: the racket stays where it lies, whatever the body did)
+			_rk_vel.y -= 9.8 * dt
+			_rk_pos += _rk_vel * dt
+			_rk_yaw *= exp(-4.0 * dt)
+			# Settles flat, the strings up (or down, whichever side it is on): the
+			# handle->head line stays horizontal and turns on.
+			var y := _rk_quat * Vector3.UP
+			var z := _rk_quat * Vector3.BACK
+			var heading := Vector3(y.x, 0.0, y.z)
+			heading = heading.normalized() if heading.length() > 0.05 else Vector3(0, 0, -1)
+			heading = heading.rotated(Vector3.UP, _rk_yaw * dt)
+			var zf := Vector3.UP if z.y >= 0.0 else Vector3.DOWN
+			var xf := heading.cross(zf).normalized()
+			var flat := Quaternion(Basis(xf, heading, xf.cross(heading)).orthonormalized())
+			_rk_quat = _rk_quat.slerp(flat, 1.0 - exp(-9.0 * dt)).normalized()
+			var low := 99.0
+			for q in RACKET_BODY:
+				low = minf(low, (_rk_pos + _rk_quat * (q as Vector3)).y)
+			if low < RACKET_LIE_Y:
+				_rk_pos.y += RACKET_LIE_Y - low
+				if _rk_vel.y < 0.0:
+					_rk_vel.y = -_rk_vel.y * 0.3 if _rk_vel.y < -1.0 else 0.0
+				var k := exp(-9.0 * dt)
+				var flat_v := Vector2(_rk_vel.x, _rk_vel.z) * k
+				flat_v = flat_v.move_toward(Vector2.ZERO, 1.5 * dt)
+				_rk_vel.x = flat_v.x
+				_rk_vel.z = flat_v.y
+			return _model.global_transform.affine_inverse() * Transform3D(Basis(_rk_quat), _rk_pos)
+		_:
+			_rk_t = minf(_rk_t + dt / RACKET_PICKUP, 1.0)
+			var e := _rk_t * _rk_t * (3.0 - 2.0 * _rk_t)
+			var pos := _rk_from_pos.lerp(hand_w.origin, e) + Vector3.UP * 0.25 * sin(e * PI)
+			var quat := _rk_from_quat.slerp(hand_w.basis.get_rotation_quaternion(), e).normalized()
+			var low := 99.0
+			for q in RACKET_BODY:
+				low = minf(low, (pos + quat * (q as Vector3)).y)
+			pos.y += maxf(RACKET_LIE_Y - low, 0.0)    # turning up out of the court, never through it
+			if _rk_t >= 1.0:
+				_rk = 0
+				return held
+			return _model.global_transform.affine_inverse() * Transform3D(Basis(quat), pos)
 
 
 ## A hand sits on the end of the forearm and points along it.
