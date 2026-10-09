@@ -53,6 +53,7 @@ const STRONG_KMH := 195.0        # "a strong serve" for the tables (the owner's 
 var serves: Array = []
 var service_pts := [0, 0]
 var oneshot := [0, 0]
+var retfail := [0, 0]             # the receiver got a racket on it and missed (rally 2, the server won): "taken" but lost at once
 var doubles := [0, 0]
 var cpu_serve_games := 0
 var _srv := {}                    # the serve in the air
@@ -109,6 +110,7 @@ func reset() -> void:
 	serves = []
 	service_pts = [0, 0]
 	oneshot = [0, 0]
+	retfail = [0, 0]
 	doubles = [0, 0]
 	cpu_serve_games = 0
 	_srv = {}
@@ -206,6 +208,10 @@ func on_point(info: Dictionary) -> void:
 		service_pts[server] += 1
 		if reason == "DOUBLE FAULT":
 			doubles[server] += 1
+		elif rally == 2 and winner == server:
+			retfail[server] += 1
+			if not serves.is_empty() and int(serves[-1]["who"]) == server:
+				serves[-1]["res"] = "retfail"
 		elif rally == 1 and winner == server:
 			oneshot[server] += 1
 			if not serves.is_empty() and int(serves[-1]["who"]) == server:
@@ -299,7 +305,7 @@ func active_share(who := -1) -> float:
 ## attempt (0 = both). min_kmh: only serves from this speed; label: the player's timing label;
 ## corner: only the wide / T ones by the bounce.
 func serve_stats(who: int, attempt := 1, min_kmh := 0.0, label := "", corner := false) -> Dictionary:
-	var r := {"n": 0, "in": 0, "ace": 0, "unret": 0, "kmh": 0.0}
+	var r := {"n": 0, "in": 0, "ace": 0, "unret": 0, "retfail": 0, "kmh": 0.0}
 	for s in serves:
 		if int(s["who"]) != who or (attempt > 0 and int(s["attempt"]) != attempt):
 			continue
@@ -315,6 +321,8 @@ func serve_stats(who: int, attempt := 1, min_kmh := 0.0, label := "", corner := 
 				r["ace"] += 1
 			elif s["res"] == "unret":
 				r["unret"] += 1
+			elif s["res"] == "retfail":
+				r["retfail"] += 1
 	r["kmh"] = float(r["kmh"]) / maxf(r["n"], 1)
 	return r
 
@@ -324,7 +332,7 @@ static func _pc(a: float, b: float) -> String:
 
 
 func _serve_line(label: String, s: Dictionary) -> String:
-	return "%s n %3d  in %s  avg %d km/h  ace %d (%s of in)  unreturned %d" % [label, s["n"], _pc(s["in"], s["n"]), roundi(s["kmh"]), s["ace"], _pc(s["ace"], s["in"]), s["unret"]]
+	return "%s n %3d  in %s  avg %d km/h  ace %d (%s of in)  unreturned %d  return error %d  one-shot %s of in" % [label, s["n"], _pc(s["in"], s["n"]), roundi(s["kmh"]), s["ace"], _pc(s["ace"], s["in"]), s["unret"], s["retfail"], _pc(s["ace"] + s["unret"] + s["retfail"], s["in"])]
 
 
 ## F-E: the serve tables (the player's first and second serve, strong ones into the corner,
@@ -339,13 +347,13 @@ func serve_report() -> String:
 	lines.append(_serve_line("YOU 1st PERF+strong", serve_stats(WHO_PLAYER, 1, k, "PERFECT")))
 	lines.append(_serve_line("YOU 1st strong corner", serve_stats(WHO_PLAYER, 1, k, "", true)))
 	lines.append(_serve_line("YOU 2nd          ", serve_stats(WHO_PLAYER, 2)))
-	lines.append("YOU one-shot points %d of %d service points (%s), doubles %d" % [oneshot[0], service_pts[0], _pc(oneshot[0], service_pts[0]), doubles[0]])
+	lines.append("YOU won by the serve alone (ace + unreturned) %d, return errors %d of %d service points: one-shot %s, doubles %d" % [oneshot[0], retfail[0], service_pts[0], _pc(oneshot[0] + retfail[0], service_pts[0]), doubles[0]])
 	lines.append(_serve_line("CPU 1st          ", serve_stats(WHO_CPU, 1)))
 	lines.append(_serve_line("CPU 1st corner   ", serve_stats(WHO_CPU, 1, 0.0, "", true)))
 	lines.append(_serve_line("CPU 2nd          ", serve_stats(WHO_CPU, 2)))
 	var g := maxf(cpu_serve_games, 1)
-	lines.append("CPU one-shot points %d of %d service points (%s), aces/game %.2f, doubles %d (%.2f/game) over %d games" % [oneshot[1], service_pts[1], _pc(oneshot[1], service_pts[1]),
-		float(_cpu_aces()) / g, doubles[1], float(doubles[1]) / g, cpu_serve_games])
+	lines.append("CPU won by the serve alone %d, return errors %d of %d service points: one-shot %s, aces/game %.2f, doubles %d (%.2f/game) over %d games" % [oneshot[1], retfail[1], service_pts[1],
+		_pc(oneshot[1] + retfail[1], service_pts[1]), float(_cpu_aces()) / g, doubles[1], float(doubles[1]) / g, cpu_serve_games])
 	return "\n".join(lines)
 
 
