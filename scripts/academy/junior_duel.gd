@@ -47,6 +47,10 @@ func _next_case() -> void:
 		main.get_tree().quit()
 		return
 	_i = 0
+	var tune: Dictionary = cases[_ci].get("tune", {})
+	JuniorBot.lv_a = float(tune.get("lv_a", JuniorBot.lv_a))
+	JuniorBot.lv_b = float(tune.get("lv_b", JuniorBot.lv_b))
+	JuniorBot.sd_max = float(tune.get("sd_max", JuniorBot.sd_max))
 	_acc = {"a_wins": 0, "a_pts": 0, "b_pts": 0, "srv_a": 0, "srv_a_won": 0, "srv_b": 0, "srv_b_won": 0}
 	_match()
 
@@ -71,6 +75,19 @@ func _match() -> void:
 	watch.start(entry, opts)
 
 
+func _emit(line: String) -> void:
+	print(line)
+	var path := ""
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--out="):
+			path = a.substr(a.find("=") + 1)
+	if path != "":
+		var f := FileAccess.open(path, FileAccess.READ_WRITE if FileAccess.file_exists(path) else FileAccess.WRITE)
+		f.seek_end()
+		f.store_line(line)
+		f.close()
+
+
 func _on_done(info: Dictionary) -> void:
 	_acc["a_pts"] += int(info["pa"])
 	_acc["b_pts"] += int(info["pb"])
@@ -80,7 +97,7 @@ func _on_done(info: Dictionary) -> void:
 	_i += 1
 	var c: Dictionary = cases[_ci]
 	if _i >= int(c.get("n", 10)):
-		print("JDUEL id=%s n=%d a_wins=%d a_pts=%d b_pts=%d srv_a=%d srv_a_won=%d srv_b=%d srv_b_won=%d" % [c.get("id", str(_ci)), _i, _acc["a_wins"], _acc["a_pts"], _acc["b_pts"], _acc["srv_a"], _acc["srv_a_won"], _acc["srv_b"], _acc["srv_b_won"]])
+		_emit("JDUEL id=%s n=%d a_wins=%d a_pts=%d b_pts=%d srv_a=%d srv_a_won=%d srv_b=%d srv_b_won=%d" % [c.get("id", str(_ci)), _i, _acc["a_wins"], _acc["a_pts"], _acc["b_pts"], _acc["srv_a"], _acc["srv_a_won"], _acc["srv_b"], _acc["srv_b_won"]])
 		_next_case.call_deferred()
 	else:
 		_match.call_deferred()

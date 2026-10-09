@@ -134,6 +134,7 @@ static func opponent_rating(opp: Dictionary) -> int:
 ## ones no one came to are played out instantly), dropping the matches of those who left.
 ## Returns the results made now (the news).
 static func sync() -> Array:
+	Academy.sync()   # the school first: the runs that were played train the students
 	var d := data()
 	var out: Array = []
 	var played := SaveData.played
@@ -200,7 +201,10 @@ static func complete(m: Dictionary, st: Dictionary, pa: int, pb: int, info := {}
 	var total := maxi(int(info.get("total_points", pa + pb)), 1)
 	var seen := float(int(info.get("watched_points", 0))) / float(total)
 	var watched := seen >= WATCHED and String(info.get("mode", "sim")) != "sim"
-	var focus := String(st.get("focus", "serve"))
+	var focus := Academy.focus_of(st)
+	if focus == Academy.EVEN or not Opponents.STAT_KEYS.has(focus):
+		var leans: Array = st.get("leanings", [])
+		focus = String(leans[0]) if not leans.is_empty() else "serve"   # "Равномерно": the first leaning takes the match's experience
 	var xp := BASE_XP * (WATCH_MULT if watched else 1.0)
 	var grew: Array = Academy.give_xp(st, focus, xp)
 	var bonus := ""

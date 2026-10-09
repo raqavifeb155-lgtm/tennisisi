@@ -20,9 +20,11 @@ const FADE_POINTS := 2
 
 ## stat 1..10 -> level of Skills (0..25). Tuned so that a student against an OpponentAI of the
 ## same stats wins about half of the points (tools: --junior-duel, spec 4 table).
-const LEVEL_OF_STAT := [1, 3, 5, 7, 9, 11, 13, 15, 17, 19]
+## level = LV_A + LV_B x (stat - 1), rounded (static vars: the calibration moves them).
+static var lv_a := 1.0
+static var lv_b := 2.1
 ## The bot's timing error (s): a beginner's thumb .. a pro's.
-const SD_MAX := 0.085
+static var sd_max := 0.085
 const SD_MIN := 0.04
 
 ## The coach's setups. d: additive change of the play style (Opponents.PLAY_STYLES keys);
@@ -78,7 +80,7 @@ static func t_of(stats: Dictionary, key: String) -> float:
 
 
 static func level_of(stat: int) -> int:
-	return int(LEVEL_OF_STAT[clampi(stat, 1, 10) - 1])
+	return clampi(roundi(lv_a + lv_b * float(clampi(stat, 1, 10) - 1)), 0, Skills.MAX_LEVEL)
 
 
 ## Skill levels from the six stats (the spec's mapping: speed = feet, touch = the hands in general).
@@ -99,7 +101,7 @@ static func sd_of(st: Dictionary) -> float:
 	var sum := 0.0
 	for k in Opponents.STAT_KEYS:
 		sum += t_of(st.get("stats", {}), k)
-	return lerpf(SD_MAX, SD_MIN, sum / float(Opponents.STAT_KEYS.size()))
+	return lerpf(sd_max, SD_MIN, sum / float(Opponents.STAT_KEYS.size()))
 
 
 ## The student's own style: the stats lean it, the traits add (Traits.style_of).

@@ -600,7 +600,7 @@ static func give_xp(st: Dictionary, key: String, amount: float) -> Array:
 		return grew
 	var xps: Dictionary = st.get("xp", {})
 	xps[key] = float(xps.get(key, 0.0)) + amount
-	var cap := ceiling(st)
+	var cap := ceiling(st, key)
 	while int(st["stats"][key]) < cap and float(xps[key]) >= cost(int(st["stats"][key])):
 		xps[key] = float(xps[key]) - cost(int(st["stats"][key]))
 		st["stats"][key] = int(st["stats"][key]) + 1

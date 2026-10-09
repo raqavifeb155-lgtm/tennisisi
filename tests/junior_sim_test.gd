@@ -53,8 +53,8 @@ func test_levels() -> void:
 	check(ok, "the profile Main plays with holds exactly those levels")
 	var mono := true
 	for i in range(1, 10):
-		mono = mono and JuniorBot.LEVEL_OF_STAT[i] > JuniorBot.LEVEL_OF_STAT[i - 1]
-	check(mono and JuniorBot.LEVEL_OF_STAT.back() <= Skills.MAX_LEVEL, "a higher stat is a higher level, none past the cap")
+		mono = mono and JuniorBot.level_of(i + 1) > JuniorBot.level_of(i)
+	check(mono and JuniorBot.level_of(10) <= Skills.MAX_LEVEL, "a higher stat is a higher level, none past the cap")
 	check(JuniorBot.sd_of(_student(1)) > JuniorBot.sd_of(_student(10)) and JuniorBot.sd_of(_student(10)) >= JuniorBot.SD_MIN - 0.0001, "a beginner's thumb is shakier than a pro's")
 	var cannon := _student(5, {"traits": [{"id": "bomber", "hidden": false}]})
 	check(float(JuniorBot.style_of(cannon)["aggr"]) > float(JuniorBot.style_of(_student(5))["aggr"]), "the trait «Бомбардир» leans the style")

@@ -130,7 +130,7 @@ func _swap_in() -> void:
 	main.autoplay = true
 	main.autoplay_points = 1000000
 	main._bot_sd = JuniorBot.sd_of(st)
-	main._next_location = "club"
+	main._next_location = "club" if not headless else main._next_location   # the calibration runs on the light park (same hard court, no club scenery)
 	main.me_label = String(st.get("name", "ВЫ")).get_slice(" ", 0).to_upper()
 	main.player.set_look(st.get("look", SaveData.look))
 	if int(st.get("age", 18)) < 18:
