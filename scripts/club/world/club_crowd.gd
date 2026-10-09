@@ -2,9 +2,11 @@ class_name ClubCrowd
 extends Node3D
 ## The club's people and birds (stream H): a few passers-by who stroll the paths and the
 ## promenade, and pigeons that peck on the ground and scatter when the hero comes close.
-## Two MultiMeshes for the people (shirts, then legs and heads), one for the pigeons: three
-## draw calls, moved from here each frame (a dozen transforms). The coach, the stands'
-## fans and the court are others'.
+## The people are ClubPeople figures (a whole body in one mesh, legs and arms walking in the
+## shader), two kinds - short hair in trousers, long hair in shorts - one MultiMesh each, and
+## one for the pigeons: three draw calls, moved from here each frame (a dozen transforms).
+## Person i (the fans first, then the walkers) is of kind i % 2, slot i / 2 in its MultiMesh.
+## The coach and the court are others'.
 
 const WALK_SPEED := 0.75
 const FANS := 8                       # the fence's watchers (the first FANS instances), by the stands' level
@@ -41,8 +43,7 @@ class Pigeon:
 
 var _walkers: Array[Walker] = []
 var _pigeons: Array[Pigeon] = []
-var _body: MultiMeshInstance3D
-var _legs: MultiMeshInstance3D
+var _people: Array[MultiMeshInstance3D] = []
 var _birds: MultiMeshInstance3D
 var _rng := RandomNumberGenerator.new()
 var _high := true
@@ -66,14 +67,11 @@ func _ready() -> void:
 		_lengths.append(l)
 	var shirts := [Color("d9473b"), Color("2a54a3"), Color("f2f0ea"), Color("3fb8af"), Color("ffd642"), Color("f08a3c"), Color("9a5cf0"), Color("3d806a")]
 	var skins: Array = Looks.SKIN
-	var body_xf: Array[Transform3D] = []
 	var body_col: Array[Color] = []
-	var leg_col: Array[Color] = []
 	for f in FANS:   # the watchers first: their instances never move in the list
 		var shirt: Color = shirts[_rng.randi() % shirts.size()]
 		_fan_base.append(shirt)
 		body_col.append(shirt)
-		leg_col.append(Color.WHITE.lerp(skins[_rng.randi() % skins.size()], 0.35))
 	for i in _routes.size():
 		var n := 2 if i < MANUAL.size() else 1
 		for k in n:
@@ -87,10 +85,14 @@ func _ready() -> void:
 			w.lane = 0.45          # everybody keeps to the same hand: two who meet pass 0.9 m apart
 			_walkers.append(w)
 			body_col.append(shirts[_rng.randi() % shirts.size()])
-			var skin: Color = skins[_rng.randi() % skins.size()]
-			leg_col.append(Color.WHITE.lerp(skin, 0.35))
-	_body = _people_mm(_body_mesh(), body_col)
-	_legs = _people_mm(_legs_mesh(), leg_col)
+	for k in 2:
+		var mmi := ClubPeople.instance(k, (body_col.size() + 1 - k) / 2)
+		add_child(mmi)
+		_people.append(mmi)
+	for i in body_col.size():
+		var skin: Color = skins[_rng.randi() % skins.size()]
+		var hair := _rng.randf_range(0.0, 0.35) if _rng.randf() < 0.75 else _rng.randf_range(0.6, 1.0)
+		ClubPeople.paint(_people[i % 2].multimesh, i / 2, body_col[i], skin, hair)
 	for i in 6:
 		var p := Pigeon.new()
 		var spot: Vector2 = [Vector2(-4, 36), Vector2(5, 33), Vector2(10, 31), Vector2(-9, 37), Vector2(17, -6), Vector2(-14, -9)][i]
@@ -105,15 +107,16 @@ func _ready() -> void:
 func refresh(high: bool) -> void:
 	_high = high
 	var n := _walkers.size() + FANS
-	_body.multimesh.visible_instance_count = n if high else mini(n, FANS + 5)
-	_legs.multimesh.visible_instance_count = n if high else mini(n, FANS + 5)
+	var vis := n if high else mini(n, FANS + 5)
+	for k in 2:
+		_people[k].multimesh.visible_instance_count = (vis + 1 - k) / 2
 	_birds.visible = high
 	# the fence's watchers: more of them the higher the stands (ClubBuilds "stands")
 	var lv: int = get_parent().level_of("stands")
 	_fan_n = [0, 2, 4, 6, 7, 8][clampi(lv, 0, 5)]
 	var club := ClubBuilds.club_color()
 	for i in FANS:
-		_body.multimesh.set_instance_color(i, club if lv >= 3 and i % 4 != 3 else _fan_base[i])
+		ClubPeople.shirt(_people[i % 2].multimesh, i / 2, club if lv >= 3 and i % 4 != 3 else _fan_base[i])
 
 
 func _process(delta: float) -> void:
@@ -123,8 +126,6 @@ func _process(delta: float) -> void:
 
 
 func _update(delta: float) -> void:
-	var bm := _body.multimesh
-	var lm := _legs.multimesh
 	# the watchers at the court's west fence, facing it, a small sway and now and then a clap
 	_fan_t += delta
 	for i in FANS:
@@ -132,8 +133,7 @@ func _update(delta: float) -> void:
 		var sc := 1.0 if i < _fan_n else 0.0
 		var cheer := maxf(0.0, sin(_fan_t * 2.2 + float(i) * 1.7)) * 0.05
 		var fb := Basis.from_euler(Vector3(0.0, -PI * 0.5 + 0.1 * sin(float(i)), 0.03 * sin(_fan_t * 1.3 + float(i)))) * Basis.from_scale(Vector3.ONE * sc)
-		bm.set_instance_transform(i, Transform3D(fb, at + Vector3(0, cheer, 0)))
-		lm.set_instance_transform(i, Transform3D(fb, at))
+		_put(i, Transform3D(fb, at + Vector3(0, cheer, 0)), -1.0)
 	for i in _walkers.size():
 		var w := _walkers[i]
 		var slot := FANS + i
@@ -184,11 +184,10 @@ func _update(delta: float) -> void:
 		w.phase += delta * (5.0 + w.speed * 2.0)
 		var bob := absf(sin(w.phase)) * 0.045
 		var yaw := atan2(-tang.x, -tang.y)
-		var sway := sin(w.phase) * 0.05
+		var sway := sin(w.phase) * 0.025   # the hips sway a little (the legs walk in ClubPeople)
 		var gy := ClubLayout.gy(q)
 		var b := Basis.from_euler(Vector3(0.0, yaw, sway))
-		bm.set_instance_transform(slot, Transform3D(b, Vector3(q.x, gy + bob, q.y)))
-		lm.set_instance_transform(slot, Transform3D(b, Vector3(q.x, gy + bob * 0.4, q.y)))
+		_put(slot, Transform3D(b, Vector3(q.x, gy + bob * 0.6, q.y)), w.phase if move > 0.0 else -1.0)
 	# pigeons
 	var hero := _hero_pos()
 	var pm := _birds.multimesh
@@ -264,11 +263,11 @@ func _hero_pos() -> Vector3:
 	return (p as Node3D).position if p is Node3D else Vector3(1000, 0, 1000)
 
 
-func _people_mm(mesh: Mesh, cols: Array[Color]) -> MultiMeshInstance3D:
-	var mmi := _mm_of(mesh, cols.size())
-	for i in cols.size():
-		mmi.multimesh.set_instance_color(i, cols[i])
-	return mmi
+## Person i where it stands, walking at this phase (radians) or standing (< 0).
+func _put(i: int, xf: Transform3D, phase: float) -> void:
+	var mm := _people[i % 2].multimesh
+	mm.set_instance_transform(i / 2, xf)
+	ClubPeople.step(mm, i / 2, phase)
 
 
 func _mm_of(mesh: Mesh, n: int) -> MultiMeshInstance3D:
