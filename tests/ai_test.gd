@@ -509,7 +509,7 @@ func test_opponent_card() -> void:
 	check(inf["mods"] is Array and inf["mods"].size() == t.lineup[0]["mods"].size(), "the mods array comes from the lineup (G fills it)")
 	t.lineup[1]["mods"] = ["fast", "ночной-туман"]
 	var m1: Array = card.info(t, 1)["mods"]
-	check(m1.size() == 2 and String(m1[0]).begins_with("Быстрые ноги") and m1[1] == "ночной-туман", "a known mod gets its name, an unknown id (G's) is shown as it is")
+	check(m1.size() == 2 and String(m1[0]).begins_with("Быстрые ноги") and m1[1] != "ночной-туман" and not String(m1[1]).is_empty(), "a known mod gets its name, an unknown id is never shown as it is (a Russian stand-in)")
 	t.lineup[1]["mods"] = ["net_rusher", "fog"]
 	t.lineup[1]["hidden"] = ["fog"]
 	m1 = card.info(t, 1)["mods"]

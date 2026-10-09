@@ -22,6 +22,19 @@ static func ui_action(m: Node, action: String, arg: int) -> void:
 				t.take_from_locker(arg)
 				SaveData.save()
 				RunBag.show_bag(ui, t)
+		"locker_pick":  # the sheet before the run: a tap takes it; the limit reached (or nothing left) = the bracket
+			var t: Tournament = m.tournament
+			if t == null:
+				return
+			t.take_from_locker(arg)
+			SaveData.save()
+			if Locker.needs_pick(t):
+				show_pick(ui, t)
+			else:
+				ui.show_bracket(t)
+		"locker_pick_skip":
+			if m.tournament != null:
+				ui.show_bracket(m.tournament)
 		"locker_look":
 			m._on_ui("locker", 0)
 
@@ -35,6 +48,7 @@ static func show_locker(ui: TournamentUI) -> void:
 	ui._title("Шкафчик")
 	ui._sub("Ячеек: %d из %d  ·  одну вещь с каждого забега, потолок редкости зависит от круга" % [li.size(), Locker.slots()])
 	RunShop.show_msg(ui)
+	ui._note(Locker.take_text())  # hub spec 16: how many of these ride into one run
 	var goal := Goals.line()
 	if goal != "":
 		ui._note(goal)
@@ -58,15 +72,43 @@ static func show_locker(ui: TournamentUI) -> void:
 	ui._secondary("Внешность и управление", "locker_look")
 
 
+## The run starts: with more things in the locker than the locker room lets in, the player
+## picks first (hub spec 16); with as many or fewer the bracket opens as it always did.
+static func pre_run(ui: TournamentUI, t: Tournament) -> void:
+	if Locker.needs_pick(t):
+		show_pick(ui, t)
+	else:
+		ui.show_bracket(t)
+
+
+## «Что берёшь в забег (1 из N)»: the locker's things as cards, a tap takes one; the rest
+## stays in the locker (insured things keep their mark).
+static func show_pick(ui: TournamentUI, t: Tournament) -> void:
+	var li := Locker.items()
+	var left := Locker.take_left(t)
+	ui._open(t, true)
+	ui._title("Что берёшь в забег")
+	var verb := "Выбери " if t.locker_taken == 0 else "Выбери ещё "
+	ui._sub("%s%s из %d  ·  остальное ждёт в шкафчике" % [verb, "1" if left == 1 else "до %d" % left, li.size()])
+	for i in li.size():
+		RunShop.item_card(ui, li[i], "", "", "locker_pick", i)  # the card itself says «застрахована»
+	ui._note(Locker.take_text())
+	ui._note("Взятую вещь на итоге нужно сохранить заново (застрахованную — бесплатно)")
+	ui._secondary("Идти без вещей из шкафчика", "locker_pick_skip")
+
+
 ## The in-run bag's locker part: the kept things, «Взять в забег» until the first match.
 static func bag_section(ui: TournamentUI, t: Tournament) -> void:
 	var li := Locker.items()
 	if li.is_empty():
 		return
 	var open := t.can_take_locker()
-	ui._sub("Шкафчик  ·  %s" % ("можно взять в забег до первого матча" if open else "после первого матча уже нельзя"))
+	var left := Locker.take_left(t)
+	ui._sub("Шкафчик  ·  %s" % (("в забег ещё %d из %d до первого матча" % [left, Locker.take_limit()] if left > 0 else "в забег взято: %d" % t.locker_taken) if open else "после первого матча уже нельзя"))
+	if open:
+		ui._note(Locker.take_text())
 	for i in li.size():
-		if open:
+		if open and left > 0:
 			RunShop.item_card(ui, li[i], "Взять в забег", "Застрахована: на итоге сохранить бесплатно" if Locker.is_insured(li[i]) else "Под риском: сохранить заново на итоге", "locker_take", i)
 		else:
 			var c := RunShop.item_card(ui, li[i], "Шкафчик", "")

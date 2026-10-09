@@ -220,9 +220,22 @@ func show_ghost(id: String, lv: int) -> void:
 		_ghost.position = (_pavilions[id]["root"] as Node3D).position + Vector3(0, 0.01, 0)
 		var chalk := _chalk
 		_fill_room(id, _ghost, lv)
+		if lv > 0:
+			var prev := Node3D.new()
+			prev.position = _ghost.position
+			add_child(prev)
+			_fill_room(id, prev, lv - 1)
+			_ghost_delta(prev)
+			prev.free()
 		_chalk = chalk
 	else:
 		ClubLevels.build(self, id, _ghost, lv, true)
+		if lv > 0:
+			var prev := Node3D.new()
+			add_child(prev)
+			ClubLevels.build(self, id, prev, lv - 1, true)
+			_ghost_delta(prev)
+			prev.free()
 	_ghostify()
 	_ghost_id = id
 
@@ -263,6 +276,71 @@ func show_lot_ghost(lot_id: String, type: String) -> void:
 		_ghost.add_child(l)
 	_ghostify()
 	_ghost_id = type
+
+
+## Takes out of the ghost what already stands at the level before (`prev`, built the same
+## way): the ghost is only what is new, so it never lies on its twin (z-fighting, two
+## see-through layers and the court "trebled" in colour).
+func _ghost_delta(prev: Node3D) -> void:
+	var seen := {}
+	for n in prev.find_children("*", "GeometryInstance3D", true, false):
+		if n is MultiMeshInstance3D:
+			var mm := (n as MultiMeshInstance3D).multimesh
+			for i in mm.instance_count:
+				seen[_ghost_key(n, prev, mm.get_instance_transform(i))] = true
+		else:
+			seen[_ghost_key(n, prev)] = true
+	for n in _ghost.find_children("*", "GeometryInstance3D", true, false):
+		if n is MultiMeshInstance3D:
+			var mi := n as MultiMeshInstance3D
+			var old := mi.multimesh
+			var keep: Array[int] = []
+			for i in old.instance_count:
+				if not seen.has(_ghost_key(n, _ghost, old.get_instance_transform(i))):
+					keep.append(i)
+			if keep.size() == old.instance_count:
+				continue
+			if keep.is_empty():
+				n.get_parent().remove_child(n)
+				n.free()
+				continue
+			var mm := MultiMesh.new()
+			mm.transform_format = MultiMesh.TRANSFORM_3D
+			mm.use_colors = old.use_colors
+			mm.mesh = old.mesh
+			mm.instance_count = keep.size()
+			for j in keep.size():
+				mm.set_instance_transform(j, old.get_instance_transform(keep[j]))
+				if old.use_colors:
+					mm.set_instance_color(j, old.get_instance_color(keep[j]))
+			mi.multimesh = mm
+		elif seen.has(_ghost_key(n, _ghost)):
+			n.get_parent().remove_child(n)
+			n.free()
+
+
+## What a visual thing is, for telling the same thing at two levels: its kind, size,
+## colour (or text) and place under `root` (`inst`: one instance of a multimesh).
+func _ghost_key(n: GeometryInstance3D, root: Node3D, inst := Transform3D.IDENTITY) -> String:
+	var xf := inst
+	var p: Node = n
+	while p != null and p != root:
+		if p is Node3D:
+			xf = (p as Node3D).transform * xf
+		p = p.get_parent()
+	var what := ""
+	if n is Label3D:
+		what = (n as Label3D).text
+	elif n is MeshInstance3D and (n as MeshInstance3D).mesh:
+		var m := (n as MeshInstance3D).mesh
+		what = "%s %s" % [m.get_class(), m.get_aabb().size.snapped(Vector3.ONE * 0.005)]
+		var bm := (n as MeshInstance3D).material_override as BaseMaterial3D
+		if bm:
+			what += " " + bm.albedo_color.to_html()
+	elif n is MultiMeshInstance3D and (n as MultiMeshInstance3D).multimesh.mesh:
+		what = (n as MultiMeshInstance3D).multimesh.mesh.get_class()
+	var q := Vector3.ONE * 0.005
+	return "%s|%s|%s|%s|%s|%s" % [n.get_class(), what, xf.origin.snapped(q), xf.basis.x.snapped(q), xf.basis.y.snapped(q), xf.basis.z.snapped(q)]
 
 
 func _ghostify() -> void:

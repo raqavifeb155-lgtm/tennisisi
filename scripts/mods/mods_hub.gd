@@ -197,7 +197,7 @@ func _on_point(info: Dictionary) -> void:
 		var hid: Array = lu.get("hidden", [])
 		for id in hid:
 			var e := Modifiers.find(id)
-			_strip("АУРА РАСКРЫТА", e["name"] + "  ·  " + String(e["desc"]).to_lower(), e["color"])
+			_strip("АУРА РАСКРЫТА", Modifiers.human_name(id) + "  ·  " + Modifiers.human_desc(id).to_lower(), e.get("color", Color(0.8, 0.8, 0.85)))
 		lu["hidden"] = []
 
 
@@ -212,7 +212,7 @@ func _announce(list: Array) -> void:
 	for id in list:
 		var e := Modifiers.find(id)
 		if traits.has(id):
-			tn.append(String(e["name"]))
+			tn.append(Modifiers.human_name(id))
 			continue
 		if auras.has(id):
 			var hid: bool = lu.get("hidden", []).has(id)
@@ -226,9 +226,9 @@ func _announce(list: Array) -> void:
 
 
 func _name_now(e: Dictionary) -> String:
-	if e["id"] == "wind" and wind_side != 0.0:
+	if e.get("id", "") == "wind" and wind_side != 0.0:
 		return "Ветер " + ("вправо" if wind_side > 0.0 else "влево")
-	return e["name"]
+	return Modifiers.human_name(String(e.get("id", "")))
 
 
 func _strip(head: String, tail: String, c: Color) -> void:

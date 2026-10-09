@@ -12,6 +12,7 @@ extends SceneTree
 ## smash (the racket smash), slide (sprint sideways on clay and stop), lunge (a wide low forehand), runfh (forehand
 ## hit while running sideways), split (split step and first step), volley (forehand and
 ## backhand volleys at the net), sprint (run forward and stop).
+## --h=1.8 --lat=0.4 --fwd=0.45 put the ball of fh / bh / bh1 / sl there (a high ball for F-D).
 ## --body=0|1|2 draws the player in that body style (Athlete.Body).
 
 const CELL := Vector2i(260, 340)
@@ -35,6 +36,9 @@ var ball_in := Vector3.ZERO       # incoming velocity (m/s)
 var ball_out := Vector3.ZERO      # outgoing velocity (m/s)
 var cells := false                # --cells: also save every view of every shot on its own
 var times_override: Array = []    # --times=0.3,0.6,...: capture at these moments instead
+var ball_h := -1.0                # --h=1.8: the ball height at contact for fh / bh / sl (m), default per stroke
+var ball_lat := -1.0              # --lat=0.4: its distance to the side of the body
+var ball_fwd := -1.0              # --fwd=0.45: its distance in front of the body
 
 
 func _initialize() -> void:
@@ -47,6 +51,12 @@ func _initialize() -> void:
 			cells = true
 		elif a.begins_with("--body="):
 			Athlete.body_style = int(a.get_slice("=", 1))
+		elif a.begins_with("--h="):
+			ball_h = float(a.get_slice("=", 1))
+		elif a.begins_with("--lat="):
+			ball_lat = float(a.get_slice("=", 1))
+		elif a.begins_with("--fwd="):
+			ball_fwd = float(a.get_slice("=", 1))
 		elif a.begins_with("--times="):
 			for t in a.get_slice("=", 1).split(","):
 				times_override.append(float(t))
@@ -139,6 +149,12 @@ func _build_plan() -> void:
 			var c := c_fh if side > 0 else c_bh
 			if stroke == "sl":
 				c.y = 0.8
+			if ball_h > 0.0:
+				c.y = ball_h
+			if ball_lat > 0.0:
+				c.x = ball_lat * side
+			if ball_fwd > 0.0:
+				c.z = -ball_fwd
 			plan.append([_at(0.05), func() -> void: ath.prepare(side, style)])
 			plan.append([_at(0.6), func() -> void: ath.swing(side, 0.3, ath.to_global(c), style)])
 			_ball_path(ath.to_global(c), 0.9, Vector3(0.0, 1.0, 18.0), Vector3(-1.5 * side, 3.0, -25.0))
