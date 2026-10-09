@@ -203,7 +203,7 @@ func _smash_step(vp: Vector2) -> void:
 	# The rallies run on the swipes' wall-clock time (the flick and tap limits are in ms), so how
 	# the points end changes with the speed of the frames: if no point has been lost to an error
 	# by now, this one is (the net), and the button is checked all the same.
-	if smash_state == 0 and not smash_forced and frame >= 1800 and main.phase == main.Phase.RALLY and script_steps.is_empty():
+	if smash_state == 0 and not smash_forced and frame >= 1500 and main.phase == main.Phase.RALLY and script_steps.is_empty():
 		smash_forced = true
 		smash_info["forced"] = true
 		main._end_point(main.Who.CPU, "NET")
