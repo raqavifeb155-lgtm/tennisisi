@@ -1826,7 +1826,7 @@ func _gain_xp(skill: String, label: String, raw := -1.0) -> void:
 	if phase == Phase.IDLE or drill.holds_xp():  # in the drill only counted balls pay (BallMachine)
 		return
 	var amount := raw if raw >= 0.0 else Skills.BASE_XP * float(Skills.TIMING_XP.get(label, 1.0))
-	var lv := Skills.add_xp(skill, amount * _xp_mult())
+	var lv := Skills.add_xp(skill, amount * _xp_mult() * Career.xp_mult())  # L1: age x1.25 .. x0.7
 	if skill != "feet" and skill != "stamina":
 		var pr := Skills.progress(skill)
 		hud.ring.skill_progress(String(Skills.NAMES[skill]).to_upper(), Skills.level(skill), pr.x / maxf(pr.y, 1.0))
