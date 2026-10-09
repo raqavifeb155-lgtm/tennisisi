@@ -143,7 +143,7 @@ func _build_racket(ath: Athlete) -> void:
 	for c in ath._racket.get_children():
 		ath._racket.remove_child(c)
 		c.queue_free()
-	var parts := racket_parts(worn["racket"], ath._body == Athlete.Body.TOON, tint)
+	var parts := racket_parts(worn["racket"], ath._toon(), tint)
 	frame = parts[0]
 	strings = parts[1]
 	halo = parts[2] if parts.size() > 2 else null
@@ -246,7 +246,7 @@ static var _meshes := {}
 
 ## The shoes and the wristbands of this body, rebuilt for what is worn.
 func _dress_limbs(ath: Athlete) -> void:
-	var toon := ath._body == Athlete.Body.TOON
+	var toon := ath._toon()
 	var shoe: Dictionary = worn["shoes"]
 	var band: Dictionary = worn["band"]
 	for i in 2:

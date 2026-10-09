@@ -1462,6 +1462,9 @@ func _end_point(winner: int, reason: String) -> void:
 	if reason == "WINNER" and rally == 1 and winner == server:
 		reason = "ACE"
 	GameEvents.point.emit({"winner": winner, "reason": reason, "rally": rally, "server": server, "close_call": _close_call.duplicate(), "best": rally >= best_rally})
+	# Faces (the SMOOTH body): the winner is glad, a long rally won is shouted about.
+	player.emote(("shout" if rally >= 6 else "joy") if winner == Who.PLAYER else "sad", 1.8)
+	cpu.emote(("shout" if rally >= 6 else "joy") if winner == Who.CPU else "sad", 1.8)
 	var text := Calls.point(winner == Who.PLAYER, reason, cpu_call)
 	if winner == Who.PLAYER and reason == "ACE":
 		_match_stats["aces"] = _match_stats.get("aces", 0) + 1
