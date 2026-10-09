@@ -45,6 +45,7 @@ static var titles_by_loc := {}         # titles won per location id (the islands
 static var academy := {}               # the school (T-2): students, the candidates on offer, the visitor (scripts/academy/academy.gd)
 static var lifetime_xp := 0.0          # every bit of skill experience ever earned (never reset)
 static var camera := "normal"          # the match camera (v0.2 D): "normal" | "tv" (section "view")
+static var career := {}                # the hero's career (L1, Career): season, age, retired heroes (section "career")
 static var mods_freq := 0              # the rate of the opponents' modifiers picked last (section "mods", Modifiers.FREQS)
 static var source := "none"            # where the progress came from: local, old, cloud (telemetry)
 static var _cloud_checked := false
@@ -86,7 +87,13 @@ static func _score(cf: ConfigFile) -> float:
 	# v0.2 A: the shop's and the locker's spending counts too, and experience that was
 	# earned and then reset by a retirement (lifetime_xp) - the score only ever grows.
 	return base + float((cf.get_value("locker", "data", {}) as Dictionary).get("spent", 0)) * 0.1 \
-		+ maxf(0.0, float(cf.get_value("lifetime", "xp", 0.0)) - xp)
+		+ maxf(0.0, float(cf.get_value("lifetime", "xp", 0.0)) - xp) + _career_score(cf)
+
+
+## L1: a retirement resets the skills (lifetime_xp keeps the score) and starts a generation;
+## a save after it must beat the copy from before it, so every generation counts a little.
+static func _career_score(cf: ConfigFile) -> float:
+	return 10.0 * float((cf.get_value("career", "data", {}) as Dictionary).get("gen", 0))
 
 
 static func _apply(cf: ConfigFile) -> void:
@@ -112,6 +119,7 @@ static func _apply(cf: ConfigFile) -> void:
 	lifetime_xp = cf.get_value("lifetime", "xp", 0.0)
 	academy = cf.get_value("academy", "data", {})
 	camera = cf.get_value("view", "camera", "normal")
+	career = Career.migrate(cf.get_value("career", "data", {}), played)  # L1: a save from before the career starts season 1 here
 	mods_freq = cf.get_value("mods", "freq", 0)
 	active = null
 	Skills.xp = cf.get_value("skills", "xp", {})
@@ -225,6 +233,8 @@ static func _to_config() -> ConfigFile:
 		cf.set_value("titles_by_loc", "data", titles_by_loc)
 	if lifetime_xp > 0.0:
 		cf.set_value("lifetime", "xp", lifetime_xp)
+	if not career.is_empty():
+		cf.set_value("career", "data", career)
 	if not academy.is_empty():
 		cf.set_value("academy", "data", academy)
 	if mods_freq != 0:
@@ -264,6 +274,7 @@ static func record_run(t: Tournament) -> void:
 	if t.champion:
 		titles += 1
 	best_round = maxi(best_round, mini(t.stage, t.rounds() - 1))
+	Career.on_run_banked(t)  # L1: the season counter, rating points, the retirement after 20
 	save()
 
 

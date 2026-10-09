@@ -17,24 +17,27 @@ const ITEM_EPIC_CHANCE := 0.2                  # the rest are rare
 const TIER_FALLBACK := {"park": 0, "clay": 1, "grass": 2, "paris": 3}
 
 ## The pool. n: the threshold on island 0 / 1 / 2+. kind "count" adds up, "max" keeps the
-## best value seen. %d / %s in the text is the threshold.
+## best value seen. %d / %s in the text is the threshold. "first" (loop review P1): the
+## template fits ONE match (a newcomer loses in the first round) and this is its threshold
+## in the first NEWCOMER_RUNS runs ("first_text" when the plain text would read wrong).
+const NEWCOMER_RUNS := 3
 const TEMPLATES := [
-	{"id": "aces", "text": "Подай %d эйса за матч", "event": "ace", "kind": "count", "scope": "match", "n": [2, 3, 4], "gold": 40},
+	{"id": "aces", "text": "Подай %d эйса за матч", "event": "ace", "kind": "count", "scope": "match", "n": [2, 3, 4], "gold": 40, "first": 1, "first_text": "Подай эйс за матч"},
 	{"id": "style", "text": "Очко со стилем ×%s", "event": "style", "kind": "max", "scope": "run", "n": [2.0, 2.5, 3.0], "gold": 45},
 	{"id": "drops", "text": "Укороченный навылет: %d раза", "event": "drop_winner", "kind": "count", "scope": "run", "n": [2, 3, 4], "gold": 35},
-	{"id": "net", "text": "Выиграй %d очков у сетки", "event": "net_point", "kind": "count", "scope": "run", "n": [4, 6, 8], "gold": 30},
-	{"id": "rally", "text": "Розыгрыш в %d ударов", "event": "rally", "kind": "max", "scope": "run", "n": [16, 20, 24], "gold": 30},
+	{"id": "net", "text": "Выиграй %d очков у сетки", "event": "net_point", "kind": "count", "scope": "run", "n": [4, 6, 8], "gold": 30, "first": 2, "first_text": "Выиграй 2 очка у сетки"},
+	{"id": "rally", "text": "Розыгрыш в %d ударов", "event": "rally", "kind": "max", "scope": "run", "n": [16, 20, 24], "gold": 30, "first": 10},
 	{"id": "bagel", "text": "Выиграй матч, не отдав ни гейма", "event": "bagel", "kind": "count", "scope": "run", "n": [1, 1, 1], "gold": 60},
 	{"id": "tire", "text": "Загоняй соперника до %d%% выносливости", "event": "tire", "kind": "max", "scope": "run", "n": [80, 83, 86], "gold": 40},
-	{"id": "perfect", "text": "%d ударов PERFECT за матч", "event": "perfect", "kind": "count", "scope": "match", "n": [6, 9, 12], "gold": 30},
-	{"id": "forehand", "text": "%d виннеров форхендом", "event": "fh_winner", "kind": "count", "scope": "run", "n": [3, 5, 7], "gold": 25},
+	{"id": "perfect", "text": "%d ударов PERFECT за матч", "event": "perfect", "kind": "count", "scope": "match", "n": [6, 9, 12], "gold": 30, "first": 4, "first_text": "4 удара PERFECT за матч"},
+	{"id": "forehand", "text": "%d виннеров форхендом", "event": "fh_winner", "kind": "count", "scope": "run", "n": [3, 5, 7], "gold": 25, "first": 2, "first_text": "2 виннера форхендом"},
 	{"id": "lob", "text": "Свеча навылет: %d", "event": "lob_winner", "kind": "count", "scope": "run", "n": [1, 2, 2], "gold": 40},
 	{"id": "smash", "text": "Смэш навылет: %d", "event": "smash_winner", "kind": "count", "scope": "run", "n": [2, 3, 4], "gold": 35},
-	{"id": "serve", "text": "Подача быстрее %d км/ч", "event": "serve_kmh", "kind": "max", "scope": "run", "n": [150, 165, 180], "gold": 25},
-	{"id": "streak", "text": "%d очков подряд", "event": "streak", "kind": "max", "scope": "run", "n": [5, 6, 8], "gold": 35},
+	{"id": "serve", "text": "Подача быстрее %d км/ч", "event": "serve_kmh", "kind": "max", "scope": "run", "n": [150, 165, 180], "gold": 25, "first": 140},
+	{"id": "streak", "text": "%d очков подряд", "event": "streak", "kind": "max", "scope": "run", "n": [5, 6, 8], "gold": 35, "first": 4, "first_text": "4 очка подряд"},
 	{"id": "wins", "text": "Выиграй %d матча в забеге", "event": "wins", "kind": "count", "scope": "run", "n": [2, 3, 3], "gold": 50},
-	{"id": "dive", "text": "Достань %d мяча в прыжке", "event": "dive", "kind": "count", "scope": "run", "n": [2, 3, 4], "gold": 20},
-	{"id": "drill", "text": "Пройди круг на пушке: %d", "event": "drill_circle", "kind": "count", "scope": "run", "n": [1, 1, 2], "gold": 20},
+	{"id": "dive", "text": "Достань %d мяча в прыжке", "event": "dive", "kind": "count", "scope": "run", "n": [2, 3, 4], "gold": 20, "first": 1, "first_text": "Достань мяч в прыжке"},
+	{"id": "drill", "text": "Пройди круг на пушке: %d", "event": "drill_circle", "kind": "count", "scope": "run", "n": [1, 1, 2], "gold": 20, "first": 1},
 ]
 
 
@@ -76,7 +79,8 @@ static func start_run(key: String, tier: int) -> bool:
 			keep.append(q)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(key)
-	var pool: Array = range(TEMPLATES.size())
+	var newbie := SaveData.played < NEWCOMER_RUNS  # loop review P1: «Выиграй 3 матча» is out of a newcomer's reach
+	var pool: Array = range(TEMPLATES.size()).filter(func(i): return not newbie or TEMPLATES[i].has("first"))
 	for i in range(pool.size() - 1, 0, -1):
 		var j := rng.randi_range(0, i)
 		var t = pool[i]
@@ -86,7 +90,7 @@ static func start_run(key: String, tier: int) -> bool:
 	for k in PER_RUN:
 		var tpl: Dictionary = TEMPLATES[pool[k]]
 		st["issued"] = int(st["issued"]) + 1
-		dealt.append(_make(tpl, tier, int(st["issued"]) % ITEM_EVERY == 0))
+		dealt.append(_make(tpl, tier, int(st["issued"]) % ITEM_EVERY == 0, newbie))
 	st["run"] = key
 	st["list"] = dealt + keep
 	return true
@@ -101,10 +105,15 @@ static func end_run() -> void:
 	st["list"] = (st["list"] as Array).filter(func(q): return q["done"] and not q["claimed"])
 
 
-static func _make(tpl: Dictionary, tier: int, item: bool) -> Dictionary:
+static func _make(tpl: Dictionary, tier: int, item: bool, newbie := false) -> Dictionary:
 	var n = tpl["n"][clampi(tier, 0, 2)]
 	var text: String = tpl["text"]
-	if tpl["id"] == "tire":
+	if newbie and tpl.has("first"):
+		n = tpl["first"]
+		text = String(tpl.get("first_text", text))
+	if not text.contains("%"):
+		pass
+	elif tpl["id"] == "tire":
 		text = text % (100 - int(n))
 	elif text.contains("%s"):
 		text = text % str(n)

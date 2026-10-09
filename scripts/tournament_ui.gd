@@ -335,6 +335,7 @@ func show_character(animate := true) -> void:
 	_open(null, animate, "menu")
 	_title("Тренерская")
 	_sub("Навык растёт от того, чем бьёшь. Каждые %d уровней — перк навыка." % Skills.PERK_EVERY)
+	CareerUi.character_extra(self)  # L1: the career's card, «Завершить карьеру» from the 3rd season
 	if Skills.points > 0:
 		var pts := _text("Стартовые очки: %d — нажми +1 у навыка" % Skills.points, UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.GOLD)
 		pts.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -417,6 +418,7 @@ func show_bracket(t: Tournament) -> void:
 	RunMods.bracket_extra(self, t)  # v0.2 G: the run's conditions
 	RunMods.badge(self, t)  # G-6: «ХАРДКОР»
 	RunResult.bracket_quests(self, t)  # the coach's quests are seen while playing
+	CareerUi.bracket_extra(self, t)  # L1: the season's line and calendar
 	for i in t.rounds():
 		_bracket_row(t, i)
 	var opp := t.opponent()
@@ -578,6 +580,7 @@ func show_summary(t: Tournament) -> void:
 		return
 	RunResult.show_summary(self, t)  # v0.2 A-2: income by lines, the locker, the next goal
 	RunMods.badge(self, t, 1)  # G-6: «ХАРДКОР» under the title
+	CareerUi.summary_extra(self, t)  # L1: rating points; a closed season / the farewell leads on
 	if t.gold > 0 and t.banked:  # C-4: the run's gold flies into the bank chip
 		_set_run(t.gold, true)
 		_bank_run(t.gold)

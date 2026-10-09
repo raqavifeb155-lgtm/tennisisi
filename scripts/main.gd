@@ -1826,7 +1826,7 @@ func _gain_xp(skill: String, label: String, raw := -1.0) -> void:
 	if phase == Phase.IDLE or drill.holds_xp():  # in the drill only counted balls pay (BallMachine)
 		return
 	var amount := raw if raw >= 0.0 else Skills.BASE_XP * float(Skills.TIMING_XP.get(label, 1.0))
-	var lv := Skills.add_xp(skill, amount * _xp_mult())
+	var lv := Skills.add_xp(skill, amount * _xp_mult() * Career.xp_mult())  # L1: age x1.25 .. x0.7
 	if skill != "feet" and skill != "stamina":
 		var pr := Skills.progress(skill)
 		hud.ring.skill_progress(String(Skills.NAMES[skill]).to_upper(), Skills.level(skill), pr.x / maxf(pr.y, 1.0))
@@ -1889,6 +1889,8 @@ func _start_practice(board: MatchScore = null) -> void:  # board: AiVsAi plays t
 
 
 func _start_tournament(format_index: int, run_conditions: Array = [], hardcore := false, freq := -1) -> void:
+	if CareerUi.gate(self):  # L1: a due retirement comes first (the ceremony opens instead)
+		return
 	hardcore = hardcore or (autoplay and _bot_hardcore)
 	freq = Modifiers.start_freq(freq)  # hub-economy 14: the rate of the opponents' modifiers (-1: the one picked last)
 	if not autoplay and not Locations.unlocked(_next_location):
@@ -2090,6 +2092,8 @@ func _finish_match() -> void:
 func _on_ui(action: String, arg: int) -> void:
 	if RunShop.route(self, action, arg):  # v0.2 A: the shop, the locker, the summary's choice
 		return
+	if CareerUi.route(self, action, arg):  # L1: the season's summary, the farewell, the heir
+		return
 	if action.begins_with("club_") and club != null:  # T-2: the club's own screens (hiring a student)
 		club.ui_action(action, arg)
 		return
@@ -2279,7 +2283,8 @@ func _autoplay_after_match(won: bool, st: String) -> void:
 		_:
 			tournament.take_chest()  # the final's chest
 			print("\n=== TOURNAMENT ===\n%s  ·  gold %d  ·  matches %d\nskills: %s" % [tournament.finish_text(), tournament.gold, tournament.results.size(), _levels_text()])
-			get_tree().quit()
+			if not CareerBot.next(self):  # L1: --career-runs=N plays on through the seasons and the heir
+				get_tree().quit()
 
 
 # --- Trophy mini-game -------------------------------------------------------------

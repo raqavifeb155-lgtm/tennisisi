@@ -49,3 +49,13 @@ signal racket_smash_offered(info: Dictionary)
 ## RunHub takes the racket's effects off for the rest of the match and arms the
 ## «Психанул» trick; SmashHub gives «Выпустил пар». For style and the coach's quests.
 signal racket_smashed(info: Dictionary)
+
+## L1 (Career): a season of 4 tournaments closed in SaveData.record_run:
+##   season (1..5), pts (rating points), rank (the place, 999 = none), gold (for the place),
+##   retire (true after the 5th: the ceremony is due)
+signal season_over(info: Dictionary)
+
+## L1: the hero retired and the heir took over (Career.retire):
+##   record (the entry added to SaveData.career["retired"]: the future coach, stream T),
+##   heir (the candidate chosen, Career.heir_candidates())
+signal career_retired(info: Dictionary)

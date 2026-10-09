@@ -838,5 +838,73 @@ func _run() -> void:
 	await _tap(await _find(_pause(), "ПРОДОЛЖИТЬ"))
 	await _expect("Трофей → пауза → ПРОДОЛЖИТЬ: игра идёт", func() -> bool: return not paused and not _pause().visible)
 
+	await _career_round()
+
 	print("\nOVERLAYS: %d checks, %d failed" % [checks, fails])
 	quit(1 if fails > 0 else 0)
+
+
+## L1: a career screen over the club: open with its text, shaped for a thumb, the ⚙ over it
+## opens the settings (no exit outside a match).
+func _career_screen(ctx: String, text: String) -> void:
+	await _wait(0.8)
+	await _expect("%s: экран открылся" % ctx, func() -> bool: return main.ui.is_open() and main.ui.root.find_children("*", "Label", true, false).any(func(l): return (l as Label).is_visible_in_tree() and text in (l as Label).text))
+	await _screen_shape(ctx)
+	await _expect("%s: ⚙ видна над экраном" % ctx, func() -> bool: return _gear().is_visible_in_tree())
+	await _tap(_gear())
+	await _settings_round("%s → ⚙" % ctx)
+
+
+## L1: the career's screens by real taps: the Тренерская's quiet «Завершить карьеру», its
+## confirmation, the season's summary, and the farewell (held start -> relic -> heir -> new season).
+func _career_round() -> void:
+	main._show_menu()
+	await _wait(1.5)
+	var career = load("res://scripts/career.gd")  # by path: a -s script compiles before the autoloads
+	SaveData.career = {}
+	career.data()
+	SaveData.career["season"] = 3
+	SaveData.career["age"] = 25
+	main._on_ui("character", 0)
+	await _wait(0.8)
+	await _expect("Карьера → Тренерская: строка сезона", func() -> bool: return main.ui.root.find_children("*", "Label", true, false).any(func(l): return (l as Label).is_visible_in_tree() and "Сезон 3" in (l as Label).text))
+	var early := await _find(main.ui.root, "Завершить карьеру")
+	await _expect("Тренерская: «Завершить карьеру сейчас» не меньше 84 px и на экране", func() -> bool: return early != null and early.size.y >= 84.0 and Rect2(Vector2.ZERO, Vector2(root.size)).grow(2.0).encloses(early.get_global_rect()))
+	_chosen = ""
+	await _tap(early)
+	await _expect("Тренерская → «Завершить карьеру сейчас» нажимается", func() -> bool: return _chosen == "career_early")
+	await _career_screen("Карьера → Завершить?", "Завершить карьеру?")
+	_chosen = ""
+	await _tap(await _find(main.ui.root, "Ещё поиграть"))
+	await _expect("Завершить? → «Ещё поиграть»: назад, карьера идёт", func() -> bool: return _chosen == "character" and not career.retire_due())
+	await _wait(0.6)
+	SaveData.career["seasons"] = [{"season": 2, "pts": 400, "rank": 92, "titles": 0, "gold": 100, "cells": []}]
+	SaveData.career["season_due"] = 2
+	main._on_ui("career_season", 0)
+	await _career_screen("Карьера → Итоги сезона", "ИТОГИ СЕЗОНА")
+	_chosen = ""
+	await _tap(await _find(main.ui.root, "В клуб"))
+	await _expect("Итоги сезона → «В клуб» нажимается", func() -> bool: return _chosen == "menu")
+	await _wait(1.0)
+	SaveData.career["retire_due"] = true
+	main._start_tournament(1)
+	await _career_screen("Пенсия: «Турнир» открывает церемонию", "Конец карьеры")
+	await _tap(await _find(main.ui.root, "ЗАВЕЩАНИЕ"))
+	await _career_screen("Пенсия → Реликвия", "Реликвия")
+	await _tap(await _find(main.ui.root, "Без реликвии"))
+	await _career_screen("Пенсия → Новый игрок клуба", "Новый игрок клуба")
+	var hc: Array = main.ui._box.get_children().filter(func(c): return c is GameCard)
+	_check("Новый игрок клуба: три карточки", hc.size() == 3)
+	if hc.size() > 0:
+		await _tap(hc[0])
+	var go := await _find(main.ui.root, "ИГРАТЬ ЗА")
+	await _expect("Новый игрок клуба: тап по карточке даёт «ИГРАТЬ ЗА»", func() -> bool: return go != null)
+	await _tap(go)
+	await _career_screen("Пенсия → Новый сезон", "Новый сезон")
+	await _expect("Пенсия: поколение 2, сезон 1, ничего не ждёт", func() -> bool: return int(SaveData.career["gen"]) == 2 and int(SaveData.career["season"]) == 1 and not career.retire_due())
+	_chosen = ""
+	await _tap(await _find(main.ui.root, "В КЛУБ"))
+	await _expect("Новый сезон → «В КЛУБ» нажимается", func() -> bool: return _chosen == "career_done")
+	await _wait(1.2)
+	var club = main.get("club")
+	await _expect("Новый сезон → клуб", func() -> bool: return (club != null and club.active) or main.ui.is_open())
