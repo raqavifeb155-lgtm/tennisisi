@@ -13,6 +13,9 @@ func _initialize() -> void:
 	test_sim()
 	test_stances()
 	test_advice_rules()
+	test_schedule()
+	test_result()
+	test_booth()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
 
@@ -178,3 +181,119 @@ func test_advice_rules() -> void:
 			check(opts.size() == 4 and uniq.size() == 4 and (serves or not opts.has("body")), "%s (%s): four different setups%s" % [sit, "serving" if serves else "receiving", "" if serves else ", no serve target"])
 	var sim_adv := JuniorSim.simulate(_student(4), _opp(7), {"seed": 3, "first": 0, "autopilot": true})
 	check((sim_adv["stances"] as Array).size() <= 3, "the autopilot asks at most three times (%d)" % (sim_adv["stances"] as Array).size())
+
+
+func _fresh() -> void:
+	SaveData.club = {}
+	SaveData.academy = {}
+	SaveData.played = 0
+	SaveData.titles = 0
+	SaveData.gold = 0
+	Skills.mods_layer = {}
+
+
+## n students in the academy, all taken for the first run (made directly: the seats and the
+## gold are the school's business, academy_test).
+func _hire(n: int) -> void:
+	_fresh()
+	SaveData.played = 1
+	var list := JuniorGen.candidates(77, maxi(n, 3), 0)
+	for i in n:
+		var st: Dictionary = (list[i] as Dictionary).duplicate(true)
+		st["id"] = "s%d" % (i + 1)
+		st["age0"] = int(st["age"])
+		st["since"] = SaveData.played
+		st["traits"] = []
+		(Academy.data()["students"] as Array).append(st)
+
+
+func test_schedule() -> void:
+	print("the schedule")
+	_hire(1)
+	var made := JuniorMatch.sync()
+	check(JuniorMatch.queue().size() == 1 and made.is_empty(), "a run closed: a match waits in the booth for the student")
+	var m: Dictionary = JuniorMatch.queue()[0]
+	check(JuniorMatch.sync().is_empty() and JuniorMatch.queue().size() == 1, "asked again: nothing new, nothing doubled")
+	var o1 := JuniorMatch.opponent_of(m)
+	var o2 := JuniorMatch.opponent_of(m)
+	check(o1 == o2 and Opponents.stats(o1).size() == 6, "the opponent is the same every time (seed)")
+	var d0: Dictionary = JuniorMatch.data()
+	SaveData.played += 1
+	var out := JuniorMatch.sync()
+	check(out.size() == 1 and JuniorMatch.queue().size() == 1 and int(JuniorMatch.queue()[0]["run"]) == SaveData.played, "the next run: the old match is played out by the sim, the new one waits")
+	check(not JuniorMatch.take_news().is_empty() and JuniorMatch.take_news().is_empty(), "the result is news once")
+	# Several students: all of two, two of three by turns.
+	_hire(3)
+	var seen := {}
+	for r in 6:
+		SaveData.played += 1
+		JuniorMatch.sync()
+		var per_run := 0
+		for q in JuniorMatch.queue():
+			if int(q["run"]) == SaveData.played:
+				per_run += 1
+				seen[q["sid"]] = true
+		check(per_run == 2, "three students: two matches after run %d" % SaveData.played)
+	check(seen.size() == 3, "and everybody gets a turn")
+	_hire(2)
+	SaveData.played += 1
+	JuniorMatch.sync()
+	var cur := 0
+	for q in JuniorMatch.queue():
+		cur += 1 if int(q["run"]) == SaveData.played else 0
+	check(cur == 2, "two students: both play")
+	# Released: his match goes.
+	var sid := String(JuniorMatch.queue()[0]["sid"])
+	Academy.release(sid)
+	JuniorMatch.sync()
+	check(JuniorMatch.of_student(sid).is_empty(), "a student who left has no match")
+
+
+func test_result() -> void:
+	print("the result")
+	_hire(1)
+	JuniorMatch.sync()
+	var m: Dictionary = JuniorMatch.queue()[0]
+	var st := Academy.student(String(m["sid"]))
+	var gold0 := SaveData.gold
+	var r0 := int(st["rating"])
+	var res := JuniorMatch.complete(m, st, 7, 3, {"mode": "live", "watched_points": 10, "total_points": 10, "setups": [], "match_point": true})
+	check(bool(res["won"]) and int(res["delta"]) >= 15 and int(res["delta"]) <= 40, "a win: rating +15...40 (%+d)" % int(res["delta"]))
+	check(SaveData.gold - gold0 >= 10 and SaveData.gold - gold0 <= 25, "and prize gold 10...25 (%d)" % (SaveData.gold - gold0))
+	check(bool(res["watched"]) and is_equal_approx(float(res["xp"]), JuniorMatch.BASE_XP * JuniorMatch.WATCH_MULT), "watched to the end: experience x1.5")
+	check(JuniorMatch.queue().is_empty() and (JuniorMatch.data()["log"] as Array).size() == 1, "the match leaves the queue, the result is kept")
+	check(int(st["rating"]) == r0 + int(res["delta"]) and int(st["matches"]) == 1 and int(st["watched"]) == 1, "the student's record moves")
+	_hire(1)
+	JuniorMatch.sync()
+	m = JuniorMatch.queue()[0]
+	st = Academy.student(String(m["sid"]))
+	r0 = int(st["rating"])
+	gold0 = SaveData.gold
+	res = JuniorMatch.complete(m, st, 4, 7, {"mode": "sim", "watched_points": 0, "total_points": 11, "setups": []})
+	check(not bool(res["won"]) and int(res["delta"]) <= -5 and int(res["delta"]) >= -15 and SaveData.gold == gold0, "a loss: rating -5...-15, no gold (%+d)" % int(res["delta"]))
+	check(not bool(res["watched"]) and is_equal_approx(float(res["xp"]), JuniorMatch.BASE_XP), "not watched: plain experience")
+	# Determinism of the instant result and the academy's rating.
+	var a := _student(5)
+	var b := _opp(5)
+	var x := JuniorSim.simulate(a, b, {"seed": 99, "first": 1})
+	var y := JuniorSim.simulate(a, b, {"seed": 99, "first": 1})
+	check(x["log"] == y["log"], "the same seed: the same tiebreak")
+	var mid := JuniorSim.simulate(a, b, {"seed": 99, "first": 1, "from": [3, 5]})
+	check(int(mid["pa"]) >= 3 and int(mid["pb"]) >= 5, "from the score it stands at it goes on")
+	_hire(3)
+	for i in 3:
+		Academy.students()[i]["rating"] = 1000 + 100 * i
+	check(JuniorMatch.academy_rating() == 3300, "the academy's rating is the sum of the three best (%d)" % JuniorMatch.academy_rating())
+
+
+func test_booth() -> void:
+	print("the booth")
+	var booth := ClubPlaces.find("booth")
+	check(not ClubPlaces.is_open(booth, 0, 0) and ClubPlaces.is_open(booth, 1, 0), "the booth opens after the first run")
+	check(ClubPlaces.state("booth", 0)["action"] == "club_booth", "its button leads to the matches")
+	_hire(2)
+	JuniorMatch.sync()
+	check(JuniorMatch.waiting_line().find(",") > 0, "the coach names those who wait (%s)" % JuniorMatch.waiting_line())
+	var opp := JuniorMatch.opponent_of(JuniorMatch.queue()[0])
+	check(String(opp["name"]) != "" and JuniorMatch.opponent_rating(opp) >= JuniorMatch.RATING_MIN and JuniorMatch.opponent_rating(opp) <= JuniorMatch.RATING_MAX, "the opponent has a name and a rating the Elo can read")
+	_fresh()

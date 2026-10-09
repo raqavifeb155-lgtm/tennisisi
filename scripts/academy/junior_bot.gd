@@ -21,8 +21,8 @@ const FADE_POINTS := 2
 ## stat 1..10 -> level of Skills (0..25). Tuned so that a student against an OpponentAI of the
 ## same stats wins about half of the points (tools: --junior-duel, spec 4 table).
 ## level = LV_A + LV_B x (stat - 1), rounded (static vars: the calibration moves them).
-static var lv_a := 5.3
-static var lv_b := 1.7
+static var lv_a := 5.0
+static var lv_b := 1.4
 ## The bot's timing error (s): a beginner's thumb .. a pro's.
 static var sd_max := 0.075
 const SD_MIN := 0.04
