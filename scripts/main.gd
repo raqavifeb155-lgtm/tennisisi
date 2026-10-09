@@ -271,7 +271,7 @@ func _ready() -> void:
 	hud.touch.swipe_progress.connect(_on_swipe_progress)
 	hud.touch.tapped.connect(_on_tap)
 	hud.touch.held.connect(_on_hold)
-	hud.show_board(scoreboard, ["ВЫ", cpu_label])
+	hud.show_board(scoreboard, [Career.hero_short(), cpu_label])
 	hud.menu_requested.connect(_show_menu)
 
 	ui = TournamentUI.new()
@@ -1500,7 +1500,7 @@ func _end_point(winner: int, reason: String) -> void:
 			sfx.crowd("crowd_ooh", -6.0)
 		elif winner == Who.PLAYER and (rally >= 6 or reason == "ACE" or reason == "WINNER"):
 			sfx.crowd("applause", -8.0 + minf(rally, 12.0) * 0.4)
-	hud.show_board(scoreboard, ["ВЫ", cpu_label])
+	hud.show_board(scoreboard, [Career.hero_short(), cpu_label])
 	smash_hub.point_over(winner, reason, ev != MatchScore.Event.POINT)  # v0.2 R: maybe offers «Разбить ракетку»
 
 	_stats["rallies"].append(rally)
@@ -2061,7 +2061,7 @@ func _begin_match() -> void:
 	player.area = PLAYER_AREA
 	player.position = PLAYER_HOME
 	cpu.position = CPU_HOME
-	hud.show_board(scoreboard, ["ВЫ", cpu_label])
+	hud.show_board(scoreboard, [Career.hero_short(), cpu_label])
 	if not autoplay and not _headless():
 		hud.show_tutorial_once()
 	_reset_point()
