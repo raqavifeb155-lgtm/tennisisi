@@ -18,6 +18,9 @@ var nopack := false     # --nopack: the club as it stands before the model pack 
 var census := false
 var npcviews := false   # --npcviews: H-8, the people of the club at the court, the academy, the paths; a 60 s watch for overlaps and floating
 var ruins := false      # --ruins: H-8, the ruin of a lot (weeds, junk) and what a building on someone else's lot leaves
+var budget_shots := false   # --budget-shots: with --budget, a picture of every place (people on)
+var listing := false    # --list: with --budget, every draw in view at every place (PF)
+var parts := false      # --parts: with --budget, what each node of the world costs at every place (PF)
 var budget := false     # --budget: H-8, draw calls and triangles of the club on the preset given by --gfx, without people and with them
 var npcs := false       # --npc: T-2, the coach's offer, the hire screens, the students, the visitor
 var academy := false    # --academy: T-3, the academy's five levels on its lot, the office, a card, the focus
@@ -56,6 +59,12 @@ func _initialize() -> void:
 			npcviews = true
 		elif a == "--budget":
 			budget = true
+		elif a == "--parts":
+			parts = true
+		elif a == "--list":
+			listing = true
+		elif a == "--budget-shots":
+			budget_shots = true
 		elif a == "--academy":
 			academy = true
 		elif a == "--nopack":
@@ -935,8 +944,12 @@ func _budget() -> void:
 			club.cam.release(0.0)
 			club.cam.snap(false)
 			await create_timer(1.0).timeout
+			club.npc_life._assign_bodies(hero.position)   # (a slow frame must not decide how many bodies the count has)
+			await process_frame
 			await process_frame
 			var all := Vector2(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME), Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME) / 1000.0)
+			if budget_shots and with_people:
+				root.get_texture().get_image().save_png("%sbudget_%s.png" % [out, sp[0]])
 			var bodies := 0
 			for n in people:
 				bodies += 1 if (n.body != null and n.body.visible) else 0
@@ -959,7 +972,109 @@ func _budget() -> void:
 			worst.x = maxf(worst.x, all.x)
 			print("%s %-13s bodies %d: draws %3d  tris %5.1fk   without the bodies: draws %3d  tris %5.1fk" % ["people" if with_people else "empty ", sp[0], bodies, all.x, all.y, w.x, w.y])
 			worst.y = maxf(worst.y, w.x)
+			if (parts or listing) and with_people:
+				_draw_list(String(sp[0]))
+			if parts and with_people:
+				await _parts_at(String(sp[0]), w)
 		print("== %s: worst draws %d, the world alone %d" % ["with people" if with_people else "empty", worst.x, worst.y])
+
+
+## What each node of the world costs from here (--parts): hidden one at a time, the drop in draws and
+## triangles (shadow pass included); a node that costs something is opened up to its children.
+func _parts_at(spot: String, base: Vector2) -> void:
+	print("-- parts at %s (world %d draws, %.1fk tris)" % [spot, base.x, base.y])
+	var roots: Array = []
+	for c in main.scenery.get_children():
+		roots.append(c)
+	roots.append(main.court)
+	var hidden: Array = [main.player, main.cpu]
+	for n in main.club.npc_life.people():
+		if n.body != null:
+			hidden.append(n.body)
+	var was: Array = []
+	for b in hidden:
+		was.append(b.visible)
+		b.visible = false
+	await _parts_walk(roots, base, 0)
+	for i in hidden.size():
+		hidden[i].visible = was[i]
+
+
+## Every visible geometry node in the camera's frustum, with what it is and where (--parts).
+func _draw_list(spot: String) -> void:
+	var cam: Camera3D = get_root().get_camera_3d()
+	var planes := cam.get_frustum()
+	print("-- draw list at %s" % spot)
+	var roots: Array = [main.scenery, main.court]
+	for r in roots:
+		for n in r.find_children("*", "GeometryInstance3D", true, false):
+			var g := n as GeometryInstance3D
+			if not g.is_visible_in_tree():
+				continue
+			var box := g.global_transform * g.get_aabb()
+			var inside := true
+			for pl in planes:
+				var far := box.get_support(-pl.normal)
+				if pl.is_point_over(far):
+					inside = false
+					break
+			if not inside:
+				continue
+			var dist := cam.global_position.distance_to(box.get_center())
+			if g.visibility_range_end > 0.0 and dist > g.visibility_range_end:
+				continue
+			var what := g.get_class()
+			var tr := 0
+			if g is MultiMeshInstance3D:
+				var mm := (g as MultiMeshInstance3D).multimesh
+				what = "MM x%d %s" % [mm.instance_count if mm.visible_instance_count < 0 else mm.visible_instance_count, mm.mesh.get_class() if mm.mesh else "-"]
+				tr = _mesh_tris(mm.mesh) * (mm.instance_count if mm.visible_instance_count < 0 else mm.visible_instance_count) if mm.mesh else 0
+			elif g is MeshInstance3D:
+				var mi := g as MeshInstance3D
+				what = "MI %s surf%d" % [mi.mesh.get_class() if mi.mesh else "-", mi.mesh.get_surface_count() if mi.mesh else 0]
+				tr = _mesh_tris(mi.mesh) if mi.mesh else 0
+			var mat := ""
+			if g.material_override is BaseMaterial3D:
+				var bm := g.material_override as BaseMaterial3D
+				mat = "%s%s%s" % [bm.albedo_color.to_html(false), " tex" if bm.albedo_texture else "", " np" if bm.next_pass else ""]
+			elif g.material_override != null:
+				mat = g.material_override.get_class()
+			var path := str(main.scenery.get_path_to(g)) if main.scenery.is_ancestor_of(g) else "court/" + str(main.court.get_path_to(g))
+			print("   %-26s tris %6d sh%d d%5.1f vr%4.0f mat %-14s c(%6.1f,%5.1f,%6.1f) sz(%5.1f,%5.1f,%5.1f) %s" % [what, tr, g.cast_shadow, dist, g.visibility_range_end, mat, box.get_center().x, box.get_center().y, box.get_center().z, box.size.x, box.size.y, box.size.z, path.right(60)])
+
+
+func _parts_walk(nodes: Array, base: Vector2, depth: int) -> void:
+	var rows: Array = []
+	for n in nodes:
+		if not is_instance_valid(n) or not (n is Node3D) or not (n as Node3D).visible:
+			continue
+		if n is Light3D or n is Camera3D:
+			continue
+		await process_frame
+		await process_frame
+		var b0 := Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
+		var t0 := Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME) / 1000.0
+		(n as Node3D).visible = false
+		await process_frame
+		await process_frame
+		var d := Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
+		var t := Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME) / 1000.0
+		(n as Node3D).visible = true
+		var dd := int(b0 - d)
+		var dt := t0 - t
+		if dd > 0 or dt > 0.5:
+			rows.append([dd, dt, n])
+	rows.sort_custom(func(a, b) -> bool: return a[0] + a[1] * 0.2 > b[0] + b[1] * 0.2)
+	for r in rows:
+		var n: Node = r[2]
+		var what := n.get_class()
+		if n is MultiMeshInstance3D and n.multimesh and n.multimesh.mesh:
+			what += " x%d" % n.multimesh.instance_count
+		elif n is MeshInstance3D and n.mesh:
+			what += " " + n.mesh.get_class()
+		print("%s-%3d draws -%5.1fk  %s (%s)" % ["    ".repeat(depth), r[0], r[1], n.name, what])
+		if depth < 2 and n.get_child_count() > 0 and (r[0] >= 2 or r[1] >= 3.0):
+			await _parts_walk(n.get_children(), base, depth + 1)
 
 
 func world_floor(x: float, z: float) -> float:

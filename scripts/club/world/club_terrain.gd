@@ -12,6 +12,9 @@ const LINE := Color("e6e2d6")
 var _ground: MeshInstance3D     # kerbs, pavement, road; on High also every second lawn patch and the markings
 var _low: ArrayMesh
 var _high: ArrayMesh
+var _kerb: MeshInstance3D
+var _kerb_high: Mesh
+var _kerb_low: Mesh
 
 
 func _ready() -> void:
@@ -35,6 +38,8 @@ func _ready() -> void:
 func refresh(_level_of: Callable, high: bool) -> void:
 	if _ground:
 		_ground.mesh = _high if high else _low
+	if _kerb:
+		_kerb.mesh = _kerb_high if high else _kerb_low
 
 
 ## The club's paving gets its slabs: the world's flat paving colour is replaced by a
@@ -145,7 +150,10 @@ func _build_paths() -> void:
 	add_child(surf)
 	var kerb := MeshInstance3D.new()
 	kerb.name = "path_kerbs"
-	kerb.mesh = meshes["curb"]
+	_kerb = kerb
+	_kerb_high = meshes["curb"]
+	_kerb_low = meshes["curb_low"]
+	kerb.mesh = _kerb_high
 	kerb.material_override = ClubScenery.prop_material()
 	kerb.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(kerb)

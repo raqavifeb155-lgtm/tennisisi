@@ -90,6 +90,8 @@ const Y_LINES := 0.03
 
 
 var _net_root: Node3D
+var _lines: Node3D
+var _line_mat: StandardMaterial3D
 var _net_tween: Tween
 var _surround_mat: StandardMaterial3D
 var _runoff_mat: StandardMaterial3D
@@ -121,6 +123,10 @@ func _ready() -> void:
 	_build_marks()
 
 	var lw := LINE_WIDTH
+	_lines = Node3D.new()
+	_lines.name = "lines"
+	add_child(_lines)
+	_line_mat = _flat(COLOR_LINE)
 	# Baselines (a bit wider, like real courts) + centre marks
 	for s in [-1.0, 1.0]:
 		_line(Vector2(DOUBLES_HALF_WIDTH * 2.0, lw * 1.6), Vector2(0, s * HALF_LENGTH))
@@ -133,6 +139,7 @@ func _ready() -> void:
 	for s in [-1.0, 1.0]:
 		_line(Vector2(SINGLES_HALF_WIDTH * 2.0, lw), Vector2(0, s * SERVICE_LINE))
 	_line(Vector2(lw, SERVICE_LINE * 2.0), Vector2(0, 0))
+	MeshMerge.merge_static(_lines)   # eleven strips of one white: one draw call, not eleven
 
 	# Net: mesh panel, white tape, posts
 	var net_mat := StandardMaterial3D.new()
@@ -307,10 +314,10 @@ func _line(size: Vector2, center: Vector2) -> void:
 	var pm := PlaneMesh.new()
 	pm.size = size
 	mi.mesh = pm
-	mi.material_override = _flat(COLOR_LINE)
+	mi.material_override = _line_mat
 	mi.position = Vector3(center.x, Y_LINES, center.y)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(mi)
+	_lines.add_child(mi)
 
 
 func _flat(color: Color) -> StandardMaterial3D:

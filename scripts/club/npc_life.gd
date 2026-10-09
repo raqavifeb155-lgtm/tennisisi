@@ -51,6 +51,7 @@ var _rng := RandomNumberGenerator.new()
 var _athletes: Array[Athlete] = []   # the pool of real bodies (BODIES at most), reused
 
 const BODIES := 2              # real Athletes near the hero, never more (spec 2.1, the budget)
+const BODIES_LOW := 1          # ...and one on the Low preset: a body is 3-4 draws and ~8k triangles there
 const NEAR_IN := 11.0          # a light figure this close becomes a body...
 const NEAR_OUT := 15.0         # ...and a body this far goes back to a figure
 
@@ -372,16 +373,29 @@ func _assign_bodies(hero: Vector3) -> void:
 	for n in _npcs:
 		if n.body != null and Vector2(n.pos.x - hero.x, n.pos.z - hero.z).length() > NEAR_OUT:
 			_release(n)
-	var free := BODIES
+	var limit := max_bodies()
+	var free := limit
 	for n in _npcs:
 		if n.body != null:
 			free -= 1
+	while free < 0:   # the preset went down: the farthest body goes back to being a figure
+		var far: Npc = null
+		for n in _npcs:
+			if n.body != null and (far == null or Vector2(n.pos.x - hero.x, n.pos.z - hero.z).length() > Vector2(far.pos.x - hero.x, far.pos.z - hero.z).length()):
+				far = n
+		_release(far)
+		free += 1
 	if free <= 0:
 		return
 	var want: Array = _npcs.filter(func(n): return n.body == null and Vector2(n.pos.x - hero.x, n.pos.z - hero.z).length() < NEAR_IN)
 	want.sort_custom(func(a, b): return Vector2(a.pos.x - hero.x, a.pos.z - hero.z).length() < Vector2(b.pos.x - hero.x, b.pos.z - hero.z).length())
 	for n in want.slice(0, free):
 		_take_body(n)
+
+
+## How many real bodies the preset affords (the club's draw budget, docs/PERFORMANCE.md 6).
+func max_bodies() -> int:
+	return BODIES if world == null or world.high_quality() else BODIES_LOW
 
 
 func _take_body(n: Npc) -> void:
@@ -395,7 +409,7 @@ func _take_body(n: Npc) -> void:
 			a = x
 			break
 	if a == null:
-		if _athletes.size() >= BODIES:
+		if _athletes.size() >= BODIES:   # (the pool; max_bodies() is how many are in use)
 			return
 		a = Athlete.new()
 		a.name = "npc_body_%d" % _athletes.size()

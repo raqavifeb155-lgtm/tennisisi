@@ -27,6 +27,8 @@ var windows: MeshInstance3D     # the facades' windows, lit in the evening (thei
 var _window_mat: StandardMaterial3D
 const SHADOW_REACH := 20.0
 const DRAW_RANGE := 80.0
+const LOW_REACH := 0.7      # Low: the world's smaller things are drawn this much of their distance (docs/PERFORMANCE.md 6)
+const LOW_PROPS := 0.6      # ...and the baked props' squares (100 m -> 60: from the gate the north row is a few pixels)
 var _tuning: Node
 var terrain: ClubTerrain
 var fence: ClubFence
@@ -217,11 +219,11 @@ func _refresh(first: bool) -> void:
 				mi = MeshInstance3D.new()
 				mi.name = "props_%d_%d_%s" % [key.x, key.y, k]
 				mi.material_override = prop_material()
-				mi.visibility_range_end = ClubProps.RANGE[k]
 				mi.visibility_range_end_margin = 6.0
 				add_child(mi)
 				_cells[key][k] = mi
 			mi.mesh = d.get(k)
+			mi.visibility_range_end = ClubProps.RANGE[k] * (1.0 if _high else LOW_PROPS)
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if (k == "tall" and _high) else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_scenery_detail()
 	_draw_distance()
@@ -373,6 +375,8 @@ func _scenery_detail() -> void:
 		var mm := mmi.multimesh
 		if mm.instance_count > 20 and mm.instance_count < 120 and mmi.material_override is StandardMaterial3D and (mmi.material_override as StandardMaterial3D).vertex_color_use_as_albedo:
 			mmi.visible = _high   # the old bushes (72) and flowers (32)
+		elif mm.instance_count > 20 and mm.instance_count < 40 and mmi.material_override is StandardMaterial3D and (mmi.material_override as StandardMaterial3D).albedo_color.is_equal_approx(Color(0.86, 0.95, 0.2)):
+			mmi.visible = _high   # the balls in the basket and by the far fence (26 balls, 1.6k triangles)
 	var clouds: Array = world.get("_clouds")
 	for i in clouds.size():
 		(clouds[i] as Node3D).visible = _high or i % 3 == 0
@@ -385,10 +389,9 @@ func _scenery_detail() -> void:
 ## bridge towers, B's constructions) stops being drawn far off: from the gate looking
 ## north the whole club is in view, and what stands 80 m away is a few pixels.
 func _draw_distance() -> void:
+	var reach := 1.0 if _high else LOW_REACH
 	for n in world.find_children("*", "GeometryInstance3D", true, false):
 		var g := n as GeometryInstance3D
-		if g.visibility_range_end > 0.0 or g is Label3D and false:
-			continue
 		var p := g.get_parent()
 		var mine := false
 		while p != null and p != world:
@@ -397,19 +400,31 @@ func _draw_distance() -> void:
 			p = p.get_parent()
 		if mine:
 			continue
-		if g is MultiMeshInstance3D:
-			continue   # a MultiMesh's box is the whole spread of its instances
-		var size := g.get_aabb().size.length()
-		if g is Label3D:
-			g.visibility_range_end = 38.0      # a sign's text can't be read from farther
-		elif size < 3.0:
-			g.visibility_range_end = 48.0
-		elif size < 8.0:
-			g.visibility_range_end = 66.0
-		elif size < 16.0:
-			g.visibility_range_end = DRAW_RANGE
-		else:
-			continue
+		# the distance it is drawn to at the best of the presets (kept, so a preset change rescales it)
+		var base: float = g.get_meta("draw_base", 0.0)
+		if base <= 0.0:
+			if g.visibility_range_end > 0.0:
+				base = g.visibility_range_end      # one it brought (MeshMerge: as far as its parts)
+			elif g is MultiMeshInstance3D:
+				var box := (g as MultiMeshInstance3D).get_aabb().size.length()
+				if box < 8.0:
+					base = 48.0    # a MultiMesh's box is the whole spread of its instances: only the small ones (bottles) get a range
+				else:
+					continue
+			else:
+				var size := g.get_aabb().size.length()
+				if g is Label3D:
+					base = 38.0      # a sign's text can't be read from farther
+				elif size < 3.0:
+					base = 48.0
+				elif size < 8.0:
+					base = 66.0
+				elif size < 16.0:
+					base = DRAW_RANGE
+				else:
+					continue
+			g.set_meta("draw_base", base)
+		g.visibility_range_end = base * reach
 		g.visibility_range_end_margin = 6.0
 
 

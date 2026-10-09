@@ -412,7 +412,7 @@ func _build_environment() -> void:
 const SHADOW_KEEP_RADIUS := 22.0
 
 
-func _trim_shadows(root_node: Node) -> void:
+func _trim_shadows(root_node) -> void:   # untyped: the scenery may be freed by the time this runs
 	if not is_instance_valid(root_node):
 		return
 	for n in root_node.find_children("*", "GeometryInstance3D", true, false):
@@ -437,7 +437,7 @@ func _trim_shadows(root_node: Node) -> void:
 			for e in v:
 				if e is Node3D:
 					keep.append(e)
-	var folded := MeshMerge.merge_static(root_node as Node3D, keep)
+	var folded := MeshMerge.merge_static(root_node as Node3D, keep, root_node is ClubWorld)   # the club's furniture: boxes that look alike go together
 	if autoplay or _profile_t > 0.0:
 		print("scenery: folded %d static meshes" % folded)
 

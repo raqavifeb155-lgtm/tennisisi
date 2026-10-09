@@ -67,16 +67,18 @@ func _marker(l: Dictionary, open: bool) -> Node3D:
 	n.position = c
 	world.add_child(n)
 	world._keep.append(n)
-	var wood := ClubMaterial.pal(ClubMaterial.WOOD, false)
-	var tape_a := ClubMaterial.pal(ClubMaterial.RED if open else ClubMaterial.METAL, false)
-	var tape_b := ClubMaterial.pal(ClubMaterial.WHITE if open else ClubMaterial.STEEL, false)
-	var gravel := ClubMaterial.pal(ClubMaterial.GRAVEL, false)
+	# One mesh with its colours in the vertices (the club's prop material): a lot is one draw call.
+	var wood: Color = ClubMaterial.PALETTE[ClubMaterial.WOOD]
+	var tape_a: Color = ClubMaterial.PALETTE[ClubMaterial.RED if open else ClubMaterial.METAL]
+	var tape_b: Color = ClubMaterial.PALETTE[ClubMaterial.WHITE if open else ClubMaterial.STEEL]
+	var gravel: Color = ClubMaterial.PALETTE[ClubMaterial.GRAVEL]
 	var hx := 4.5
 	var hz := 3.5
-	n.add_child(world._mesh_box(Vector3(hx * 2.0, 0.03, hz * 2.0), Vector3(0, 0.03, 0), gravel))
+	var s := ClubShapes.new()
+	s.box(Vector3(hx * 2.0, 0.03, hz * 2.0), Vector3(0, 0.03, 0), gravel)
 	for sx in [-hx, hx]:
 		for sz in [-hz, hz]:
-			n.add_child(world._mesh_box(Vector3(0.09, 1.0, 0.09), Vector3(sx, 0.5, sz), wood))
+			s.box(Vector3(0.09, 1.0, 0.09), Vector3(sx, 0.5, sz), wood)
 	# The tape along the four sides, in short red and white pieces.
 	var k := 0
 	for side in 4:
@@ -87,7 +89,12 @@ func _marker(l: Dictionary, open: bool) -> Node3D:
 			var t := (float(i) + 0.5) / float(pieces) - 0.5
 			var p := Vector3(t * length, 0.85, (-hz if side == 0 else hz)) if horizontal else Vector3((-hx if side == 1 else hx), 0.85, t * length)
 			var size := Vector3(0.5, 0.05, 0.04) if horizontal else Vector3(0.04, 0.05, 0.5)
-			n.add_child(world._mesh_box(size, p, tape_a if k % 2 == 0 else tape_b))
+			s.box(size, p, tape_a if k % 2 == 0 else tape_b)
 			k += 1
-	MeshMerge.merge_static(n)
+	var mi := MeshInstance3D.new()
+	mi.name = "marks"
+	mi.mesh = s.build()
+	mi.material_override = ClubScenery.prop_material()
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	n.add_child(mi)
 	return n

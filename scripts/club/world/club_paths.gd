@@ -293,7 +293,8 @@ static func furniture(spacing: float, first: float, main_only: bool) -> Array:
 # --- The mesh ---------------------------------------------------------------------------
 
 ## {"surface": ArrayMesh (no UVs: the paving material is laid in world space), "curb": ArrayMesh
-## (vertex colours)}. Also fills the triangle list `covers` looks in.
+## (vertex colours), "curb_low": the same kerb's top strip alone - a third of the triangles, for
+## the Low preset: a 10 cm step is a pixel there}. Also fills the triangle list `covers` looks in.
 static func build_meshes(lawn_y: float) -> Dictionary:
 	_prepare()
 	_tris = PackedVector2Array()
@@ -303,6 +304,9 @@ static func build_meshes(lawn_y: float) -> Dictionary:
 	var cv := PackedVector3Array()          # curb
 	var cn := PackedVector3Array()
 	var cc := PackedColorArray()
+	var lv := PackedVector3Array()          # curb, top strip only
+	var ln := PackedVector3Array()
+	var lc := PackedColorArray()
 	var kerb_col := Color("a8a398")
 	# a surface triangle, wound to face up
 	var tri := func(a: Vector3, b: Vector3, c: Vector3) -> void:
@@ -337,6 +341,10 @@ static func build_meshes(lawn_y: float) -> Dictionary:
 					cv.append(v)
 					cn.append(nrm)
 					cc.append(kerb_col)
+					if nrm == Vector3.UP:
+						lv.append(v)
+						ln.append(nrm)
+						lc.append(kerb_col)
 			var o3 := Vector3(o.x, 0, o.y)
 			var ow3 := Vector3(ow.x, 0, ow.y)
 			# top
@@ -505,6 +513,7 @@ static func build_meshes(lawn_y: float) -> Dictionary:
 	var out := {}
 	out["surface"] = _mesh(sv, sn, PackedColorArray())
 	out["curb"] = _mesh(cv, cn, cc)
+	out["curb_low"] = _mesh(lv, ln, lc)
 	return out
 
 

@@ -55,6 +55,10 @@ var _registered := false
 var _shown := 1000                # how many strollers are drawn now (refresh)
 var _fan_base: Array[Color] = []
 var _fan_t := 0.0
+var _shirts: Array[Color] = []    # person i's colours (painted into his slot, which moves: see _assign)
+var _skins: Array[Color] = []
+var _hairs: Array[float] = []
+var _slot_of: Array[int] = []     # person i -> his slot in the MultiMesh of his kind (-1: not drawn at all)
 
 
 func _ready() -> void:
@@ -89,13 +93,16 @@ func _ready() -> void:
 			_walkers.append(w)
 			body_col.append(shirts[_rng.randi() % shirts.size()])
 	for k in 2:
-		var mmi := ClubPeople.instance(k, (body_col.size() + 1 - k) / 2)
+		var mmi := ClubPeople.instance(k, (body_col.size() + 1 - k) / 2, not _high)
 		add_child(mmi)
 		_people.append(mmi)
 	for i in body_col.size():
 		var skin: Color = skins[_rng.randi() % skins.size()]
 		var hair := _rng.randf_range(0.0, 0.35) if _rng.randf() < 0.75 else _rng.randf_range(0.6, 1.0)
-		ClubPeople.paint(_people[i % 2].multimesh, i / 2, body_col[i], skin, hair)
+		_shirts.append(body_col[i])
+		_skins.append(skin)
+		_hairs.append(hair)
+	_assign()
 	for i in 6:
 		var p := Pigeon.new()
 		var spot: Vector2 = [Vector2(-4, 36), Vector2(5, 33), Vector2(10, 31), Vector2(-9, 37), Vector2(17, -6), Vector2(-14, -9)][i]
@@ -113,14 +120,37 @@ func refresh(high: bool) -> void:
 	var vis := n if high else mini(n, FANS + 5)
 	_shown = maxi(0, vis - FANS)   # the strollers not drawn (the low preset) are not there: nobody bumps into them
 	for k in 2:
-		_people[k].multimesh.visible_instance_count = (vis + 1 - k) / 2
+		var fig := ClubPeople.mesh(k, not high)    # Low: the figure of a quarter of the triangles
+		if _people[k].multimesh.mesh != fig:
+			_people[k].multimesh.mesh = fig
 	_birds.visible = high
 	# the fence's watchers: more of them the higher the stands (ClubBuilds "stands")
 	var lv: int = get_parent().level_of("stands")
 	_fan_n = [0, 2, 4, 6, 7, 8][clampi(lv, 0, 5)]
 	var club := ClubBuilds.club_color()
 	for i in FANS:
-		ClubPeople.shirt(_people[i % 2].multimesh, i / 2, club if lv >= 3 and i % 4 != 3 else _fan_base[i])
+		_shirts[i] = club if lv >= 3 and i % 4 != 3 else _fan_base[i]
+	_assign()
+
+
+## Who is drawn and in which slot: the watchers the stands have not brought yet and the
+## strollers the preset leaves out take no slot (a person scaled to nothing is still sent to the
+## card: a figure is hundreds of triangles), the rest are packed in the MultiMeshes of their
+## kind - kind is the person's own, so nobody changes his hair when a slot moves - and painted.
+func _assign() -> void:
+	_slot_of.resize(_shirts.size())
+	var count := [0, 0]
+	for i in _shirts.size():
+		var drawn := (i < _fan_n) if i < FANS else (i - FANS < _shown)
+		if not drawn:
+			_slot_of[i] = -1
+			continue
+		var k := i % 2
+		_slot_of[i] = count[k]
+		ClubPeople.paint(_people[k].multimesh, count[k], _shirts[i], _skins[i], _hairs[i])
+		count[k] += 1
+	for k in 2:
+		_people[k].multimesh.visible_instance_count = count[k]
 
 
 func _process(delta: float) -> void:
@@ -319,9 +349,12 @@ func _hero_pos() -> Vector3:
 
 ## Person i where it stands, walking at this phase (radians) or standing (< 0).
 func _put(i: int, xf: Transform3D, phase: float) -> void:
+	var slot := _slot_of[i]
+	if slot < 0:
+		return
 	var mm := _people[i % 2].multimesh
-	mm.set_instance_transform(i / 2, xf)
-	ClubPeople.step(mm, i / 2, phase)
+	mm.set_instance_transform(slot, xf)
+	ClubPeople.step(mm, slot, phase)
 
 
 func _mm_of(mesh: Mesh, n: int) -> MultiMeshInstance3D:

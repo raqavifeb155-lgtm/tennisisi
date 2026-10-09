@@ -187,6 +187,7 @@ func set_level(id: String, lv: int) -> void:
 			inside.remove_child(c)
 			c.queue_free()
 		_fill_room(id, inside, lv)
+		MeshMerge.merge_static(inside, [], true)   # a room's things: a few draws, not one a box
 	if ClubLevels.has(id):
 		var root: Node3D = _level_roots.get(id)
 		if root == null:
@@ -200,7 +201,7 @@ func set_level(id: String, lv: int) -> void:
 			c.queue_free()
 		walk.clear_tag("lvl_" + id)
 		ClubLevels.build(self, id, root, lv)
-		MeshMerge.merge_static(root)
+		MeshMerge.merge_static(root, [], true)
 
 
 ## The next level of a construction, see-through gold, while its card is in the middle
@@ -424,7 +425,7 @@ func make_scaffold_at(node_name: String, at: Vector3, sz: Vector2, decks := true
 		n.add_child(_mesh_box(Vector3(seg, 0.08, 0.04), Vector3(-hx + sz.x - along + seg * 0.5, 0.55, hz + 0.1), red if k % 2 == 0 else white))
 		along -= seg
 		k += 1
-	MeshMerge.merge_static(n)
+	MeshMerge.merge_static(n, [], true)
 	var l := Label3D.new()
 	l.text = "СТРОИТСЯ"
 	l.font = UiTheme.display()
@@ -825,6 +826,7 @@ func _pavilion(id: String, c: Vector3) -> void:
 		fade.add_child(front)
 	fade.add_child(_mesh_box(Vector3(door, 0.6, 0.2), Vector3(0, WALL_H - 0.3, hz), wall))
 	fade.add_child(_mesh_box(Vector3(PAVILION.x + 0.8, 0.25, PAVILION.y + 0.8), Vector3(0, WALL_H + 0.12, 0), trim))
+	MeshMerge.merge_static(fade, [], true)   # the front wall and the roof: one draw per colour
 	_pavilions[id] = {"root": root, "fade": fade, "inside": inside}
 	_keep.append_array([fade, inside])
 	# Walls the hero can't walk through (the door stays open).

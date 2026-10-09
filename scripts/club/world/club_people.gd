@@ -24,15 +24,16 @@ const SEGS := 8
 
 static var _meshes := {}
 static var _mat: ShaderMaterial
+const LOW_SEGS := 5
 
 
 ## A MultiMesh of n people of this kind (colours, custom data on), white until painted.
-static func multimesh(kind: int, n: int) -> MultiMesh:
+static func multimesh(kind: int, n: int, low := false) -> MultiMesh:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_colors = true
 	mm.use_custom_data = true
-	mm.mesh = mesh(kind)
+	mm.mesh = mesh(kind, low)
 	mm.instance_count = n
 	for i in n:
 		mm.set_instance_color(i, Color.WHITE)
@@ -40,9 +41,9 @@ static func multimesh(kind: int, n: int) -> MultiMesh:
 	return mm
 
 
-static func instance(kind: int, n: int) -> MultiMeshInstance3D:
+static func instance(kind: int, n: int, low := false) -> MultiMeshInstance3D:
 	var mmi := MultiMeshInstance3D.new()
-	mmi.multimesh = multimesh(kind, n)
+	mmi.multimesh = multimesh(kind, n, low)
 	mmi.material_override = material()
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return mmi
@@ -79,9 +80,16 @@ static func material() -> ShaderMaterial:
 
 # --- The mesh ------------------------------------------------------------------------------
 
-static func mesh(kind: int) -> ArrayMesh:
-	if _meshes.has(kind):
-		return _meshes[kind]
+## `low`: the Low preset's figure - the same body from a quarter of the triangles (five-sided limbs,
+## a head of a few facets, no eyes, nose, hands or belt line): a stroller is a few pixels tall there,
+## and the whole crowd is drawn whether he is in view or not (docs/PERFORMANCE.md 6).
+static func mesh(kind: int, low := false) -> ArrayMesh:
+	var cache_key := kind + (10 if low else 0)
+	if _meshes.has(cache_key):
+		return _meshes[cache_key]
+	if low:
+		_meshes[cache_key] = _low_mesh(kind)
+		return _meshes[cache_key]
 	var b := _Builder.new()
 	var white := Color.WHITE
 	var shoe := Color("e9e6df")
@@ -126,8 +134,38 @@ static func mesh(kind: int) -> ArrayMesh:
 		b.ball(Vector3(0, 1.6, 0.06), Vector3(0.115, 0.17, 0.08), 3, 0, white, 10, 6)
 		b.ball(Vector3(0, 1.77, -0.07), Vector3(0.095, 0.035, 0.05), 3, 0, white, 8, 4)
 	var m := b.commit()
-	_meshes[kind] = m
+	_meshes[cache_key] = m
 	return m
+
+
+static func _low_mesh(kind: int) -> ArrayMesh:
+	var b := _Builder.new()
+	var white := Color.WHITE
+	var shoe := Color("e9e6df")
+	var long := kind == Kind.LONG_HAIR
+	var leg := [[0.0, 0.0], [0.03, 0.086], [0.48, 0.066], [0.93, 0.047], [1.0, 0.0]]
+	for side in [-1.0, 1.0]:
+		var limb := 1 if side < 0.0 else 2
+		var hip := Vector3(0.095 * side, HIP, 0.0)
+		if long:
+			b.lathe(_cut(leg, 0.0, 0.32), hip, Vector3.DOWN, HIP - 0.07, 4, limb, white, LOW_SEGS)
+			b.lathe(_cut(leg, 0.32, 1.0), hip, Vector3.DOWN, HIP - 0.07, 2, limb, white, LOW_SEGS)
+		else:
+			b.lathe(leg, hip, Vector3.DOWN, HIP - 0.07, 4, limb, white, LOW_SEGS)
+		b.ball(Vector3(0.095 * side, 0.045, -0.04), Vector3(0.05, 0.045, 0.11), 0, limb, shoe, 5, 2)
+		var sh := Vector3(0.2 * side, SHOULDER, 0.0)
+		var dir := Vector3(0.12 * side, -1.0, 0.0).normalized()
+		b.lathe([[0.0, 0.0], [0.05, 0.058], [0.4, 0.056], [0.4, 0.0]], sh, dir, 0.52, 1, limb + 2, white, LOW_SEGS)
+		b.lathe([[0.38, 0.0], [0.38, 0.044], [1.0, 0.0]], sh, dir, 0.52, 2, limb + 2, white, LOW_SEGS)
+	b.lathe([[0.0, 0.0], [0.0, 0.15], [0.35, 0.145], [0.82, 0.18], [1.0, 0.07], [1.0, 0.0]],
+		Vector3(0, HIP - 0.06, 0), Vector3.UP, SHOULDER + 0.08 - HIP, 1, 0, white, 8, Vector3(1.0, 1.0, 0.68))
+	b.lathe([[0.0, 0.0], [0.0, 0.055], [1.0, 0.05], [1.0, 0.0]], Vector3(0, SHOULDER + 0.02, 0), Vector3.UP, 0.18, 2, 0, white, LOW_SEGS)
+	b.ball(Vector3(0, 1.69, 0), Vector3(0.115, 0.132, 0.122), 2, 0, white, 8, 4)
+	b.ball(Vector3(0, 1.728, 0.012), Vector3(0.123, 0.115, 0.128), 3, 0, white, 8, 3, 0.0)
+	b.ball(Vector3(0, 1.69, 0.045), Vector3(0.112, 0.11, 0.09), 3, 0, white, 6, 3)
+	if long:
+		b.ball(Vector3(0, 1.6, 0.06), Vector3(0.115, 0.17, 0.08), 3, 0, white, 6, 3)
+	return b.commit()
 
 
 ## The rows of a profile between t0 and t1, re-spread over 0..1 of that part, with a closed
