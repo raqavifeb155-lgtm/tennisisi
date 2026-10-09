@@ -79,7 +79,9 @@ const CHEST_CHANCE := [0.35, 0.35, 0.55, 0.55, 1.0]
 const CHEST_PITY := 2
 const CHEST_GOLD := [15, 22, 32, 48, 80]                # x the prize multiplier, 0.7..1.3
 ## Item rarity by the round: common, rare, epic, legendary (no mythics from a chest).
-const CHEST_RARITY := [[20.0, 36.0, 32.0, 12.0], [16.0, 34.0, 36.0, 14.0], [12.0, 32.0, 40.0, 16.0], [7.0, 28.0, 45.0, 20.0], [3.0, 20.0, 48.0, 29.0]]
+## Loop review P1 (10.10): a legendary at most 8% even in the final (was 12..29%: a champion
+## run gave ~0.6 legendaries and the boutique's 1188 meant nothing); the share went to rares.
+const CHEST_RARITY := [[20.0, 45.0, 32.0, 3.0], [16.0, 44.0, 36.0, 4.0], [12.0, 40.0, 43.0, 5.0], [7.0, 40.0, 47.0, 6.0], [3.0, 39.0, 50.0, 8.0]]
 const BAG_SIZE := 6
 const SKILL_PER_RARITY := 0.01    # his gear makes him a little stronger
 

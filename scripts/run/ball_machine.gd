@@ -24,6 +24,9 @@ const DAILY_CIRCLES := 3            # laps a day at full pay
 const XP_MULT := 0.5                # of a match's experience for a counted ball
 const XP_MULT_CAPPED := 0.1         # after the daily laps
 const GOLD_BASE := 10               # a lap's gold, times the island's multiplier
+## Loop review P1 (decided 10.10, stream A): the lap's gold stays OFF Tournament.income_scale -
+## it is the daily hook, capped at DAILY_CIRCLES laps (30..60 a day, ~5% of the club over 60 h),
+## while everything paid per run (prizes, style, chests, the coach's quests) is on the scale.
 const PER_TYPE := 3
 const PER_TYPE_FIRST := 1           # the first lap is short
 const FEED_GAP := 1.35              # seconds from a verdict to the next ball

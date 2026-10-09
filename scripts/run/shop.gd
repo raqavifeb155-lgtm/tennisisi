@@ -106,7 +106,7 @@ static func buy(i: int) -> String:
 		return why
 	var it: Dictionary = stock()[i]
 	Locker.spend(Items.price(it))
-	Locker.next_items().append(it)
+	Locker.next_items().append(Locker.insure(it.duplicate(true)))  # spec 15: the full price covers the insurance
 	(_state()["sold"] as Array).append(i)
 	return ""
 
