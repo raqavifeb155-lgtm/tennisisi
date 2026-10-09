@@ -10,15 +10,11 @@ const WALK_SPEED := 0.75
 const FANS := 8                       # the fence's watchers (the first FANS instances), by the stands' level
 
 ## Routes the strollers walk back and forth along (x, z points), with their lane offset.
-const ROUTES := [
+const MANUAL := [        # the promenade and the street's pavement (not in the path graph)
 	[Vector2(-46, -42.3), Vector2(46, -42.3)],
 	[Vector2(-46, -40.9), Vector2(46, -40.9)],
-	[Vector2(0.4, 46.0), Vector2(0.4, 31.0), Vector2(-14.0, 31.0)],
-	[Vector2(17.0, 31.0), Vector2(14.6, 29.0), Vector2(14.6, -26.0)],
-	[Vector2(-12.9, -25.0), Vector2(-12.9, -0.5), Vector2(-20.0, 0.0)],
 	[Vector2(-60, 47.5), Vector2(60, 47.5)],
 	[Vector2(60, 48.2), Vector2(-60, 48.2)],
-	[Vector2(16.0, 6.2), Vector2(23.0, 6.2)],
 ]
 
 class Walker:
@@ -30,6 +26,9 @@ class Walker:
 	var lane := 0.0
 	var length := 0.0
 	var cool := 0.0           # after turning away from the hero
+	var pos := Vector2(1.0e5, 1.0e5)   # where he stood last frame (the others look at it)
+	var heading := Vector2.ZERO
+	var waiting := 0.0        # how long he has been held up
 
 class Pigeon:
 	var home := Vector3.ZERO
@@ -48,14 +47,19 @@ var _birds: MultiMeshInstance3D
 var _rng := RandomNumberGenerator.new()
 var _high := true
 var _lengths: Array[float] = []
+var _routes: Array = []
 var _fan_n := 0
+var _registered := false
 var _fan_base: Array[Color] = []
 var _fan_t := 0.0
 
 
 func _ready() -> void:
 	_rng.seed = 55
-	for r in ROUTES:
+	_routes = MANUAL.duplicate()
+	for i in ClubPaths.WALKS.size():   # the others walk the path graph's own chains
+		_routes.append(ClubPaths.walk_points(i))
+	for r in _routes:
 		var l := 0.0
 		for i in range(1, (r as Array).size()):
 			l += (r[i - 1] as Vector2).distance_to(r[i])
@@ -70,8 +74,8 @@ func _ready() -> void:
 		_fan_base.append(shirt)
 		body_col.append(shirt)
 		leg_col.append(Color.WHITE.lerp(skins[_rng.randi() % skins.size()], 0.35))
-	for i in ROUTES.size():
-		var n := 2 if i < 2 or i > 4 else 1
+	for i in _routes.size():
+		var n := 2 if i < MANUAL.size() else 1
 		for k in n:
 			var w := Walker.new()
 			w.route = i
@@ -80,7 +84,7 @@ func _ready() -> void:
 			w.dir = 1.0 if _rng.randf() < 0.5 else -1.0
 			w.speed = _rng.randf_range(0.8, 1.4)
 			w.phase = _rng.randf_range(0.0, TAU)
-			w.lane = _rng.randf_range(-0.25, 0.25)
+			w.lane = 0.45          # everybody keeps to the same hand: two who meet pass 0.9 m apart
 			_walkers.append(w)
 			body_col.append(shirts[_rng.randi() % shirts.size()])
 			var skin: Color = skins[_rng.randi() % skins.size()]
@@ -114,6 +118,8 @@ func refresh(high: bool) -> void:
 
 func _process(delta: float) -> void:
 	_update(delta)
+	if not _registered:
+		_register()
 
 
 func _update(delta: float) -> void:
@@ -144,6 +150,20 @@ func _update(delta: float) -> void:
 				if to_hero.length() < 1.5 and w.cool <= 0.0:
 					w.dir = -w.dir
 					w.cool = 3.0
+		# nor through each other: one with somebody close ahead waits; held up too long, he turns round
+		for j in _walkers.size():
+			if j != i:
+				var od := _walkers[j].pos - w.pos
+				if od.length() < 0.85 and od.dot(w.heading) > 0.0:
+					move = 0.0
+		if move == 0.0:
+			w.waiting += delta
+			if w.waiting > 3.0 and w.cool <= 0.0:
+				w.dir = -w.dir
+				w.cool = 3.0
+				w.waiting = 0.0
+		else:
+			w.waiting = 0.0
 		w.s += w.dir * w.speed * WALK_SPEED * delta * move
 		if w.s > w.length:
 			w.s = w.length
@@ -159,6 +179,8 @@ func _update(delta: float) -> void:
 		tang = tang.normalized()
 		var side := Vector2(-tang.y, tang.x) * w.lane
 		var q := at + side
+		w.pos = q
+		w.heading = tang
 		w.phase += delta * (5.0 + w.speed * 2.0)
 		var bob := absf(sin(w.phase)) * 0.045
 		var yaw := atan2(-tang.x, -tang.y)
@@ -193,8 +215,40 @@ func _update(delta: float) -> void:
 		pm.set_instance_transform(i, Transform3D(b, p.pos + Vector3(0, lift, 0)))
 
 
+## Where stroller `i` stands, and where fan `i` does (Vector3.INF = not there).
+func walker_pos(i: int) -> Vector3:
+	var w := _walkers[i]
+	return Vector3(w.pos.x, 0.0, w.pos.y) if w.pos.x < 1.0e4 else Vector3.INF
+
+
+func fan_pos(i: int) -> Vector3:
+	if i >= _fan_n:
+		return Vector3.INF
+	return Vector3(-ClubLayout.HX - 1.3 - 0.25 * float(i % 2), 0.0, -9.5 + float(i) * 2.55)
+
+
+func walker_count() -> int:
+	return _walkers.size()
+
+
+## Everybody here is somebody the hero can bump into and greet (ClubNpc).
+func _register() -> void:
+	var main: Node = get_parent().world.get_parent()
+	var club = main.get("club") if main != null else null
+	if club == null or club.get("npc") == null:
+		return
+	_registered = true
+	var npc: ClubNpc = club.npc
+	for i in _walkers.size():
+		npc.register("walker_%d" % i, [self, "walker_pos", i], "", "", [
+			"Добрый день!", "Хорошая погода сегодня", "Играете? Удачи!", "Говорят, скоро здесь всё починят"], {"auto": true, "head": 1.95})
+	for i in FANS:
+		npc.register("fan_%d" % i, [self, "fan_pos", i], "", "", [
+			"Давай, чемпион!", "Мы за тебя!", "Отсюда лучший вид на корт", "Ещё один такой удар!"], {"auto": true, "head": 1.95})
+
+
 func _point(route: int, s: float) -> Vector2:
-	var r: Array = ROUTES[route]
+	var r: Array = _routes[route]
 	var d := s
 	for i in range(1, r.size()):
 		var seg: float = (r[i - 1] as Vector2).distance_to(r[i])

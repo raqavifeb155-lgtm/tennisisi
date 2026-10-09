@@ -12,6 +12,7 @@ func _initialize() -> void:
 	test_pack()
 	test_layout()
 	test_daytime()
+	test_paths()
 	await test_in_the_club()
 	print("\n%s (%d failures)" % ["ALL TESTS PASSED" if failures == 0 else "TESTS FAILED", failures])
 	quit(1 if failures > 0 else 0)
@@ -81,6 +82,13 @@ func test_layout() -> void:
 				in_court += 1
 	check(on_place == 0, "no solid prop stands in a place's circle (%d)" % on_place)
 	check(in_court == 0, "no solid prop stands inside the court's fence (%d)" % in_court)
+	var on_path := []
+	for p in ruin:
+		if p.solid > 0.0:
+			var q2 := Vector2(p.xf.origin.x, p.xf.origin.z)
+			if ClubPaths.near(q2, p.solid * 0.5):
+				on_path.append("%s@(%.0f,%.0f)" % [p.id, q2.x, q2.y])
+	check(on_path.is_empty(), "no solid prop stands on a path (%s)" % ", ".join(on_path.slice(0, 8)))
 	# every owner is a real place or construction, and a ruin goes by a real level
 	var owners := {}
 	for p in props.props:
@@ -101,6 +109,72 @@ func test_layout() -> void:
 		for cls in low_cells[k]:
 			classes_low[cls] = true
 	check(classes_low.keys() == ["big"], "Low folds a square into one mesh (%s)" % str(classes_low.keys()))
+
+
+func test_paths() -> void:
+	print("the paths")
+	check(ClubPaths.connected(), "the path graph is one piece")
+	var ids := ClubPaths.ids()
+	var unreachable := []
+	for a in ids:
+		var r := ClubPaths.route(ClubPaths.node(a), ClubPaths.node("gate"))
+		if r.is_empty():
+			unreachable.append(a)
+	check(unreachable.is_empty(), "every node has a way to the gate (%s)" % ", ".join(unreachable))
+	var missing := []
+	for pl in ClubPlaces.LIST:
+		if not ClubPaths.PLACE_NODE.has(pl["id"]):
+			missing.append(pl["id"])
+	check(missing.is_empty(), "every place has its path (%s)" % ", ".join(missing))
+	var no_way := []
+	for a in ClubPlaces.LIST:
+		for b in ClubPlaces.LIST:
+			var na := ClubPaths.node(ClubPaths.PLACE_NODE[a["id"]])
+			var nb := ClubPaths.node(ClubPaths.PLACE_NODE[b["id"]])
+			if na != nb and ClubPaths.route(na, nb).is_empty():
+				no_way.append("%s>%s" % [a["id"], b["id"]])
+	check(no_way.is_empty(), "from every place to every place along paths (%s)" % ", ".join(no_way))
+	var meshes := ClubPaths.build_meshes(-0.25)
+	check((meshes["surface"] as ArrayMesh).get_surface_count() == 1 and (meshes["curb"] as ArrayMesh).get_surface_count() == 1, "one surface mesh and one kerb mesh")
+	var holes := []
+	var wide := []
+	var steps := []
+	for i in ClubPaths.EDGES.size():
+		var e: Array = ClubPaths.EDGES[i]
+		var a := ClubPaths.node(e[0])
+		var b := ClubPaths.node(e[1])
+		var w: float = e[2]
+		var l := a.distance_to(b)
+		var d := (b - a) / l
+		var nrm := Vector2(-d.y, d.x)
+		var s := 0.0
+		var prev_y := NAN
+		while s <= l:
+			var c := a + d * s
+			if s > 0.0 and s < l:
+				for off: float in [0.0, w * 0.5 - 0.12, -(w * 0.5 - 0.12)]:
+					if not ClubPaths.covers(c + nrm * off):
+						holes.append("%d@%.0f" % [i, s])
+				# beyond the edge of the path: bare, unless another path is there
+				if s > 2.2 and s < l - 2.2:
+					for off: float in [w * 0.5 + 0.3, -(w * 0.5 + 0.3)]:
+						var q := c + nrm * off
+						var other := false
+						for j in ClubPaths.EDGES.size():
+							if j != i:
+								var ej: Array = ClubPaths.EDGES[j]
+								if q.distance_to(Geometry2D.get_closest_point_to_segment(q, ClubPaths.node(ej[0]), ClubPaths.node(ej[1]))) < float(ej[2]) * 0.5 + 0.9:
+									other = true
+						if not other and ClubPaths.covers(q):
+							wide.append("%d@%.0f" % [i, s])
+			var y := ClubPaths.surface_y(c)
+			if not is_nan(prev_y) and absf(y - prev_y) > 0.09:
+				steps.append("%d@%.0f" % [i, s])
+			prev_y = y
+			s += 0.5
+	check(holes.is_empty(), "the path mesh covers every edge, centre and sides, without a gap (%s)" % ", ".join(holes.slice(0, 6)))
+	check(wide.is_empty(), "and no wider than its width (%s)" % ", ".join(wide.slice(0, 6)))
+	check(steps.is_empty(), "the ground along every path rises smoothly, no step (%s)" % ", ".join(steps.slice(0, 6)))
 
 
 func test_daytime() -> void:
@@ -274,6 +348,13 @@ func test_in_the_club() -> void:
 		if c is MultiMeshInstance3D:
 			fence_draws += 1
 	check(fence_draws == 4, "the fence costs four draws (%d)" % fence_draws)
+	# the graph's nodes are free to stand on
+	var blocked_nodes := []
+	for id in ClubPaths.ids():
+		var pn := ClubPaths.node(id)
+		if id != "prom" and id != "street" and w.walk.blocked(pn, 0.3):
+			blocked_nodes.append(id)
+	check(blocked_nodes.is_empty(), "every node of the path graph is walkable (%s)" % ", ".join(blocked_nodes))
 	# the routes between the places are still there with all the props
 	var from := Vector2(0, 14)
 	for id in ["coach", "gate", "locker", "shop", "trophy", "bar", "arena"]:
@@ -322,6 +403,123 @@ func test_in_the_club() -> void:
 		if bad:
 			hits.append("%d@%s" % [i, str(views[i])])
 	check(hits.is_empty(), "nothing stands between the camera and the hero in any view (%s)" % ", ".join(hits))
+	# people: a person to talk to, and nobody to walk through
+	var npc: ClubNpc = club.npc
+	check(npc.has("coach") and (npc.entry("coach")["lines"] as Array).size() >= 3, "the coach is registered as a person with lines")
+	var acted := []
+	npc.acted.connect(func(id: String, action: String) -> void: acted.append([id, action]))
+	npc.register("t_guest", Vector3(30.0, 0.0, 30.0), "Поговорить", "club_t_guest", ["один", "два", "три"])
+	club._travel("court")
+	await _frames(3)
+	hero.position = Vector3(30.0, 0.0, 31.0)
+	await _frames(6)
+	print("   (place %s, npc %s, auto %s, ui %s)" % [club._place, club._npc_btn, club._auto, main.ui.is_open()])
+	check(club.hud.current_place() == "npc_t_guest", "a person within 1.2 m: the button (%s)" % club.hud.current_place())
+	var said := []
+	for k in 4:
+		club._on_choice("club_npc_t_guest", 0)
+		said.append(club.hud._bubble_label.text)
+	check(said[0] == "один" and said[1] == "два" and said[2] == "три" and said[3] == "один", "the lines go round: %s" % str(said))
+	check(acted.size() == 4 and acted[0][1] == "club_t_guest", "and each press does the action")
+	hero.position = Vector3(30.0, 0.0, 34.0)
+	await _frames(4)
+	check(club.hud.current_place() != "npc_t_guest", "a step away: the button goes")
+	# a body is solid: whoever is put inside it is pushed out to the edge
+	var pushed := w.walk.resolve(Vector2(30.0, 30.4), Vector2(30.0, 30.4), 0.35, npc.agent_list())
+	var gap := pushed.distance_to(Vector2(30.0, 30.0))
+	check(gap > 0.74 and gap < 0.8, "the hero can't stand inside a person's body (%.2f m)" % gap)
+	npc.unregister("t_guest")
+	# the coach is solid too
+	var coach_body: Node3D = main.cpu
+	hero.position = coach_body.position + Vector3(0, 0, 3.0)
+	cam.snap()
+	hero.position = coach_body.position + Vector3(0, 0, 3.0)
+	main.hud.touch._stick_vector = Vector2(0, -1)
+	for i in 100:
+		await physics_frame
+	main.hud.touch._stick_vector = Vector2.ZERO
+	var cgap := Vector2(hero.position.x - coach_body.position.x, hero.position.z - coach_body.position.z).length()
+	check(cgap > 0.6, "and so is the coach (%.2f m)" % cgap)
+	# 60 seconds of strolling: nobody gets stuck, nobody walks through anybody
+	var crowd: ClubCrowd = scenery.crowd
+	var worst_wait := 0.0
+	var closest := 9.0
+	hero.position = Vector3(0, 0, 36)
+	for i in 3600:
+		hero.position = Vector3(0, 0, 36.0 - float(i % 1800) / 1800.0 * 20.0)    # the hero walks the main alley and back
+		crowd._update(1.0 / 60.0)
+		for a in crowd.walker_count():
+			worst_wait = maxf(worst_wait, crowd._walkers[a].waiting)
+			for b in range(a + 1, crowd.walker_count()):
+				var d := (crowd._walkers[a].pos - crowd._walkers[b].pos).length()
+				if d < 1.0e4:
+					closest = minf(closest, d)
+	check(worst_wait < 6.0, "60 s of strolling: nobody is held up for long (%.1f s)" % worst_wait)
+	check(closest > 0.55, "and nobody walks through anybody (closest %.2f m)" % closest)
+	# the bodies: juniors and the old coach
+	var kid := Athlete.new()
+	root.add_child(kid)
+	kid.setup(-1.0, Color(0.2, 0.5, 0.9), Rect2(-9, -18, 18, 36))
+	AthleteCasual.set_junior(kid, 0.7)
+	var old := Athlete.new()
+	root.add_child(old)
+	old.setup(-1.0, Color(0.5, 0.5, 0.5), Rect2(-9, -18, 18, 36))
+	AthleteCasual.make_elder(old)
+	await _frames(40)
+	check(kid._model.scale.y < 0.7 and kid._model.scale.y > 0.6 and kid._head.scale.x > 1.28 * 1.4, "a junior is 0.7 of the adult, his head bigger (%.2f, head x%.2f)" % [kid._model.scale.y, kid._head.scale.x / 1.28])
+	check(old._pitch > 0.1 and (old._bones["chest"] as Node3D).get_child_count() >= 2, "the old coach stoops and wears a whistle on a cord (%.2f)" % old._pitch)
+	check(old.look["hair_color"] == 10 and old.look["beard"] == 2, "grey hair, a moustache")
+	kid.queue_free()
+	old.queue_free()
+	# in a room the hero stands on its floor, not under it
+	for id in ["locker", "shop", "coach"]:
+		var rc: Vector3 = ClubPlaces.find(id)["pos"]
+		hero.position = Vector3(rc.x, 0.0, rc.z)
+		for i in 30:
+			await physics_frame
+		check(hero.position.y >= w.walk.floor_at(Vector2(rc.x, rc.z)) - 0.01 and hero.position.y > 0.1, "in the %s room his feet are on the floor (y %.2f)" % [id, hero.position.y])
+	# the ground under the feet, everywhere: on the grid, along every path, in a few places for real
+	var bad_ground := []
+	var count := 0
+	for gx in range(-52, 53, 6):
+		for gz in range(-38, 41, 4):
+			var gp := Vector2(gx, gz)
+			var gh := w.walk.floor_at(gp)
+			count += 1
+			if gh < -0.26 or gh > 0.16:
+				bad_ground.append("%d,%d" % [gx, gz])
+			elif absf(gx) < 11 and absf(gz) < 19 and absf(gh) > 0.001:
+				bad_ground.append("apron %d,%d" % [gx, gz])
+	for i in ClubPaths.EDGES.size():
+		var ee: Array = ClubPaths.EDGES[i]
+		var ea := ClubPaths.node(ee[0])
+		var eb := ClubPaths.node(ee[1])
+		for k in 8:
+			var q := ea.lerp(eb, (k + 0.5) / 8.0)
+			count += 1
+			if absf(w.walk.floor_at(q) - ClubPaths.surface_y(q)) > 0.01 and w.walk.floor_at(q) < 0.1:
+				bad_ground.append("edge %d" % i)
+	check(bad_ground.is_empty() and count >= 300, "%d points: the ground has a height everywhere, flat in the court, as the paths say along them (%s)" % [count, ", ".join(bad_ground.slice(0, 5))])
+	for gp3 in [Vector3(30, 0, 20), Vector3(0, 0, 36), Vector3(0, 0, 10), Vector3(45, 0, -20), Vector3(-3, 0, -30), Vector3(0, 0, 44)]:
+		hero.position = gp3
+		for i in 60:
+			await physics_frame
+		var want := w.walk.floor_at(Vector2(gp3.x, gp3.z))
+		check(absf(hero.position.y - want) <= 0.01, "his feet are on the ground at (%.0f, %.0f): %.2f / %.2f" % [gp3.x, gp3.z, hero.position.y, want])
+	# the auto-run from the gate to the court, frame by frame: no jump over 3 cm
+	club._travel("gate")
+	await _frames(3)
+	club.travel_run("court")
+	var last_y := hero.position.y
+	var jump := 0.0
+	for i in 400:
+		await physics_frame
+		jump = maxf(jump, absf(hero.position.y - last_y))
+		last_y = hero.position.y
+		if club.running_to() == "":
+			break
+	check(jump <= 0.03, "running from the gate to the court, no jump in the ground over 3 cm (%.3f)" % jump)
+	hero.position = Vector3(0, 0, 14)
 	# a match takes the racket back
 	club._on_choice("practice", 0)
 	await _frames(4)

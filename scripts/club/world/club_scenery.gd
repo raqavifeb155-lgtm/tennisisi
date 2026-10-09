@@ -62,6 +62,11 @@ static func prop_material() -> StandardMaterial3D:
 ## river. The club plants its own (ClubLayout), where its paths and places leave room.
 static func _thin_park(w: ClubWorld) -> void:
 	for c in w.get_children():
+		# the old path from the court to the promenade (a box 2.4 m wide, 10 cm thick): the graph has it
+		var mib := c as MeshInstance3D
+		if mib != null and mib.mesh is BoxMesh and absf((mib.mesh as BoxMesh).size.x - 2.4) < 0.01 and absf((mib.mesh as BoxMesh).size.y - 0.1) < 0.01:
+			mib.queue_free()
+			continue
 		var mmi := c as MultiMeshInstance3D
 		if mmi == null or mmi.multimesh == null or mmi.multimesh.mesh == null:
 			continue
@@ -105,6 +110,15 @@ func _ready() -> void:
 	daytime = ClubDaytime.new()
 	daytime.name = "daytime"
 	add_child(daytime)
+	world.walk.ground = ground_height
+	# the rooms' floors stand above the ground: the walker stands on them (ClubWalk.floor_at)
+	for id in ["locker", "shop", "coach"]:
+		var c: Vector3 = ClubPlaces.find(id)["pos"]
+		world.walk.floors.append([Rect2(c.x - 3.2, c.z - 2.7, 6.4, 5.4), 0.15])
+	var bt: Vector3 = ClubPlaces.find("bar")["pos"]
+	world.walk.floors.append([Rect2(bt.x - 3.0, bt.z - 3.2 - 2.9, 6.0, 5.0), 0.12])      # the roulette's deck
+	world.walk.floors.append([Rect2(ClubLevels.TROPHY.x - 2.0, ClubLevels.TROPHY.z - 0.6, 4.0, 2.0), 0.12])
+	world.walk.floors.append([Rect2(ClubLevels.BAR.x - 6.5, ClubLevels.BAR.z - 4.9, 13.0, 3.0), 0.10])   # the bar's terrace
 	ClubPack.request(self)
 	_build_signs()
 	_refresh(true)
@@ -495,3 +509,18 @@ func window_glow(lit: float) -> void:
 		return
 	windows.visible = lit > 0.01 and windows.mesh != null
 	_window_mat.albedo_color = Color(1, 1, 1) * lerpf(0.4, 1.1, lit)
+
+
+## How high the ground is at `p`, whatever it is made of (the walkers stand on it exactly).
+func ground_height(p: Vector2) -> float:
+	if absf(p.x) < ClubLayout.HX + 3.0 and absf(p.y) < ClubLayout.HZ + 3.0:
+		return 0.0                                    # the court's apron
+	if ClubPaths.near(p, 0.0):
+		return ClubPaths.surface_y(p)
+	if p.x > -50.0 and p.x < -26.0 and p.y > -16.0 and p.y < 16.0:
+		return 0.02                                   # the arena's gravel
+	if p.y > 41.6:
+		return 0.05                                   # the pavement behind the gate
+	if p.y < -41.0:
+		return -0.15                                  # the promenade
+	return ClubLayout.LAWN
