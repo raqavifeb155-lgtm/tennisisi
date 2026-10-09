@@ -2279,7 +2279,8 @@ func _autoplay_after_match(won: bool, st: String) -> void:
 		_:
 			tournament.take_chest()  # the final's chest
 			print("\n=== TOURNAMENT ===\n%s  ·  gold %d  ·  matches %d\nskills: %s" % [tournament.finish_text(), tournament.gold, tournament.results.size(), _levels_text()])
-			get_tree().quit()
+			if not CareerBot.next(self):  # L1: --career-runs=N plays on through the seasons and the heir
+				get_tree().quit()
 
 
 # --- Trophy mini-game -------------------------------------------------------------
