@@ -105,6 +105,7 @@ func setup(m: Node) -> void:
 ## Into the club (from the start, a match, a run) or back to it (from a room's screen).
 func open() -> bool:
 	ClubLots.ensure()  # the first visit after the lots update writes the layout
+	Academy.sync()     # the students train for the runs played since (T-3)
 	var fresh: bool = not active or main.location_id != "club"
 	if fresh:
 		main.set_location("club")
@@ -156,6 +157,8 @@ func open() -> bool:
 		SaveData.club["hire_hint"] = true
 		SaveData.save()
 		coach.say("hire", true)
+	else:
+		_academy_news()
 	return true
 
 
@@ -262,6 +265,15 @@ func _sync_scaffolds() -> void:
 
 ## The runs are played: scaffolding comes down, the levels go up (the saved data now, the
 ## build moment one by one in _next_finished).
+## The students trained over the runs played (Academy.sync): the coach tells what grew.
+func _academy_news() -> void:
+	Academy.sync()
+	var news := Academy.take_news()
+	if not news.is_empty():
+		coach.say("Подросли! " + Academy.news_text(news), true)
+		SaveData.save()
+
+
 func _finish_builds() -> void:
 	for id in ClubBuilds.complete_ready():
 		if not _finished.has(id):
@@ -455,7 +467,7 @@ func _show_place(id: String) -> void:
 ## Продолжить stay alone there; the court is built at the foreman's).
 func upgrade_price(place_id: String) -> int:
 	var b: String = ClubPlaces.find(place_id).get("build", "")
-	if b == "" or place_id in ["gate", "court"] or not ClubBuilds.can_afford(b):
+	if b == "" or place_id in ["gate", "court"] or not ClubBuilds.TABLE.has(b) or not ClubBuilds.can_afford(b):
 		return 0
 	return ClubBuilds.next_price(b)
 
@@ -550,12 +562,9 @@ func _on_choice(action: String, arg: int) -> void:
 ## ones that come from TournamentUI screens here too ("club_*").
 func ui_action(action: String, arg: int) -> void:
 	var id := _place if _place != "" else hud.current_place()
-	if action.begins_with("club_train:") or action == "club_guest_hire":
-		_npc_action(action)
+	if AcademyRoom.route(self, action, arg):   # the academy's screens and the students (T-2/T-3)
 		return
 	match action:
-		"club_hire", "club_hire_pick", "club_hire_confirm", "club_hire_reroll":
-			_hire_action(action, arg)
 		"club_shop":
 			if not _hand_to("RunShop", action, arg):
 				ClubScreens.shop(main.ui, ClubPlaces.state("shop"))
@@ -581,7 +590,7 @@ func ui_action(action: String, arg: int) -> void:
 		"club_quests":
 			ClubScreens.quests(main.ui)
 		"club_locations":
-			ClubScreens.locations(main.ui)
+			RunIslands.show_locations(main.ui)  # the one islands screen
 		"club_mods":
 			# The run's conditions, then the run in the remembered place and format.
 			if SaveData.club.has("last_location"):
@@ -895,6 +904,7 @@ const BUILD_VIEW := {
 	"locker": [Vector3(-14.0, 11.0, 37.0), Vector3(-14.0, 0.0, 28.6)],
 	"bar": [Vector3(20.0, 17.0, -9.0), Vector3(20.0, 0.0, -27.5)],
 	"coach": [Vector3(16.0, 11.0, 37.0), Vector3(16.0, 0.0, 28.6)],
+	"academy": [Vector3(32.0, 15.0, 33.0), Vector3(32.0, 0.0, 15.0)],
 }
 const BUILD_TIME := 2.0
 
@@ -1293,49 +1303,32 @@ func _end_lot_build(_lot: String, type: String) -> void:
 	hud.hide_foreman()
 	if ClubLots.is_placed("stands") and ClubBuilds.level("stands") >= 1 and main.sfx.has("applause"):
 		main.sfx.play("applause", -10.0)
-	coach.say(ClubBuilds.line(type, ClubBuilds.level(type)), true)
+	coach.say(ClubLots.line(type, ClubBuilds.level(type)), true)
 	cam.release()
 	_place = ""
 	_refresh()
 	_update_place()
 
 
-# --- People: talking, training, hiring (T-2) ----------------------------------------------------
+# --- The academy (T-3) --------------------------------------------------------------------------
 
-## A person's button did its talking (ClubNpc.talk), this is the rest: «club_train:<student id>»
-## opens his card, «club_guest_hire» the visitor's card with «Взять».
-func _npc_action(action: String) -> void:
-	if action.begins_with("club_train:"):
-		var st := Academy.student(action.get_slice(":", 1))
-		if not st.is_empty():
-			AcademyStudent.show(main.ui, st, "card")
-	elif action == "club_guest_hire":
-		var g := Academy.guest_candidate()
-		if not g.is_empty():
-			AcademyHire.picked = "guest"
-			AcademyStudent.show(main.ui, g, "guest")
-
-
-## The hire screens: the list, a candidate's card, «Взять», a new set.
-func _hire_action(action: String, arg: int) -> void:
-	match action:
-		"club_hire":
-			AcademyHire.show(main.ui)
-		"club_hire_pick":
-			var list := Academy.candidates()
-			if arg >= 0 and arg < list.size():
-				AcademyHire.picked = String(list[arg]["id"])
-				AcademyStudent.show(main.ui, list[arg], "hire")
-		"club_hire_reroll":
-			if Academy.reroll():
-				hud.set_gold(SaveData.gold)
-			AcademyHire.show(main.ui)
-		"club_hire_confirm":
-			var st := Academy.hire(AcademyHire.picked)
-			if st.is_empty():
-				return
-			AcademyHire.picked = ""
-			hud.set_gold(SaveData.gold)
-			main._on_ui("menu", 0)   # back to the club, where the new student arrives
-			_refresh()
-			coach.say("%s теперь в клубе. Растить будем вместе" % String(st["name"]).get_slice(" ", 0), true)
+## A level of the academy was bought from the coach's office: it rises on its lot (the level's
+## root grows with a bounce), the coach says its line.
+func academy_built() -> void:
+	_refresh()
+	var lv := Academy.level()
+	for r in world.lot_roots("academy"):
+		r.scale = Vector3(1.0, 0.05, 1.0)
+		var tw := r.create_tween()
+		tw.tween_property(r, "scale", Vector3(1.0, 1.08, 1.0), 0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		tw.tween_property(r, "scale", Vector3.ONE, 0.2)
+	var p := ClubPlaces.find("academy")
+	if not p.is_empty():
+		var v := build_view("academy")
+		cam.frame(v[0], v[1])
+		get_tree().create_timer(2.2).timeout.connect(func() -> void:
+			if active and not _foreman_on:
+				cam.release())
+	if main.sfx.has("club_build"):
+		main.sfx.play("club_build", -6.0)
+	coach.say(Academy.level_line(lv), true)

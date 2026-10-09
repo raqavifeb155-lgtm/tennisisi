@@ -38,6 +38,8 @@ func _ready() -> void:
 	look = Looks.sanitize(look)
 	add_theme_constant_override("separation", 12)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if ui != null:
+		add_child(CareerUi.name_row(ui, 1))  # the hero's name and its (paid) change
 	_build_preview()
 	_tabs_box = GridContainer.new()
 	_tabs_box.columns = 4

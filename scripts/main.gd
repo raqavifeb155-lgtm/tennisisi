@@ -65,7 +65,7 @@ var tournament_mode := false
 var autoplay_tournament := false
 var cpu_label := "CPU"
 var cpu_call := "CPU"            # the same in Latin, for the court calls (Calls, UI_FLOW_TZ 5.6)
-var me_label := "ВЫ"             # the near player's name on the score bug (T-4: a student's, in his match)
+var me_label := ""               # the near player's name on the score bug while a student's match is on (T-4); else the hero's (Career)
 var spectate: Node               # T-4: the student's match being watched (JuniorWatch): it plays the near side, nothing is earned
 var _match_over := false
 var _match_stats := {}
@@ -181,6 +181,11 @@ var _drop_from := Vector3.ZERO
 var _drop_to := Vector3.ZERO
 var _drop_t := 0.0
 
+## The near player's name on the score bug: the student's in his match, else the hero's.
+func me_name() -> String:
+	return me_label if me_label != "" else Career.hero_short()
+
+
 func _ready() -> void:
 	rng.randomize()
 	for a in OS.get_cmdline_user_args():
@@ -273,7 +278,7 @@ func _ready() -> void:
 	hud.touch.swipe_progress.connect(_on_swipe_progress)
 	hud.touch.tapped.connect(_on_tap)
 	hud.touch.held.connect(_on_hold)
-	hud.show_board(scoreboard, [me_label, cpu_label])
+	hud.show_board(scoreboard, [me_name(), cpu_label])
 	hud.menu_requested.connect(_show_menu)
 
 	ui = TournamentUI.new()
@@ -1506,7 +1511,7 @@ func _end_point(winner: int, reason: String) -> void:
 			sfx.crowd("crowd_ooh", -6.0)
 		elif winner == Who.PLAYER and (rally >= 6 or reason == "ACE" or reason == "WINNER"):
 			sfx.crowd("applause", -8.0 + minf(rally, 12.0) * 0.4)
-	hud.show_board(scoreboard, [me_label, cpu_label])
+	hud.show_board(scoreboard, [me_name(), cpu_label])
 	smash_hub.point_over(winner, reason, ev != MatchScore.Event.POINT)  # v0.2 R: maybe offers «Разбить ракетку»
 
 	_stats["rallies"].append(rally)
@@ -2069,7 +2074,7 @@ func _begin_match() -> void:
 	player.area = PLAYER_AREA
 	player.position = PLAYER_HOME
 	cpu.position = CPU_HOME
-	hud.show_board(scoreboard, [me_label, cpu_label])
+	hud.show_board(scoreboard, [me_name(), cpu_label])
 	if not autoplay and not _headless():
 		hud.show_tutorial_once()
 	_reset_point()

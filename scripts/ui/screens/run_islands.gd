@@ -1,5 +1,5 @@
 class_name RunIslands
-## «Где играем» (v0.2 A-4, spec 4): the islands in the order they open, each with its level
+## «Куда едем?» (v0.2 A-4, spec 4; one screen with the club's old «Куда едем?», loop review P2): the islands in the order they open, each with its level
 ## (stronger opponents, richer prizes, better gear); a closed one is dark with a drawn lock
 ## and what opens it, and can't be pressed. TournamentUI.show_locations hands over here;
 ## a pick is Main's "location" action with the index in Locations.LIST.
@@ -31,9 +31,17 @@ static func level_text(id: String) -> String:
 	return s + "  ·  вещи уровня %d" % (t + 1)
 
 
-static func show_locations(ui: TournamentUI) -> void:
+## The one islands screen (the 2D menu, the result's «Острова» and the club's «Другое место» all
+## come here): a card for each island in the order they open, a closed one dark with a drawn
+## lock and «за титул в …», its prize multiplier under every name. A pick is Main's "location".
+## `unlocked(id) -> bool` and `hint(id) -> String`: for tests, default to Locations.
+static func show_locations(ui: TournamentUI, unlocked := Callable(), hint := Callable()) -> void:
+	if not unlocked.is_valid():
+		unlocked = Locations.unlocked
+	if not hint.is_valid():
+		hint = Locations.unlock_hint
 	ui._open(null, true, "menu")
-	ui._title("Где играем")
+	ui._title("Куда едем?")
 	ui._sub("Каждый остров сильнее и щедрее предыдущего. Новый открывается за титул")
 	for id in Locations.ORDER:
 		var i := -1
@@ -41,14 +49,14 @@ static func show_locations(ui: TournamentUI) -> void:
 			if Locations.LIST[k]["id"] == id:
 				i = k
 		var l: Dictionary = Locations.LIST[i]
-		var open := Locations.unlocked(id)
+		var open: bool = unlocked.call(id)
 		var color: Color = SURFACE_COLORS.get(l["surface"], UiTheme.LINE)
 		var tag := "%s  ·  %s  %s" % [String(l["surface_name"]).capitalize(), "остров %d из %d" % [Locations.tier(id) + 1, Locations.ORDER.size()], stars(id)]
 		if open:
 			ui._card({"tag": tag, "title": l["name"], "desc": "%s\n%s" % [l["desc"], level_text(id)]}, "location", i, color)
 		else:
-			var hint := Locations.unlock_hint(id)
-			var c := ui._card({"tag": "Закрыто  ·  %s" % hint, "title": l["name"], "desc": "%s\n%s" % [l["desc"], level_text(id)]}, "", i, UiTheme.MUTED)
+			var h: String = hint.call(id)
+			var c := ui._card({"tag": ("Закрыто  ·  %s" % h) if h != "" else "Закрыто", "title": l["name"], "desc": "%s\n%s" % [l["desc"], level_text(id)]}, "", i, UiTheme.MUTED)
 			c.modulate = Color(0.6, 0.6, 0.66, 0.9)
 			var lock := Lock.new()
 			lock.set_anchors_preset(Control.PRESET_TOP_RIGHT)

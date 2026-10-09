@@ -314,6 +314,10 @@ func _player_plate() -> Control:
 	info.add_theme_constant_override("separation", 4)
 	h.add_child(info)
 	var best: String = "пока нет" if SaveData.best_round < 0 else Opponents.ROUND_NAMES[SaveData.best_round]
+	var hn := _left(_text(Career.hero_name(), UiTheme.display(), UiTheme.T_BODY + 2, UiTheme.GOLD))
+	hn.clip_text = true
+	hn.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	info.add_child(hn)  # the hero's name tops the plate
 	info.add_child(_left(_text("Титулов: %d" % SaveData.titles, UiTheme.text_bold(), UiTheme.T_BODY, UiTheme.INK)))
 	info.add_child(_left(_text("Лучший результат: %s" % best, UiTheme.text(), UiTheme.T_SMALL + 2, UiTheme.MUTED)))
 	info.add_child(_left(_text("Турниров сыграно: %d" % SaveData.played, UiTheme.text(), UiTheme.T_SMALL + 2, UiTheme.MUTED)))
@@ -325,6 +329,7 @@ func show_locker(animate := true) -> void:
 	_open(null, animate, "menu")
 	_title("Раздевалка")
 	_row("Внешность", "причёска, форма, цвет", "look")
+	_row("Имя героя", Career.hero_name(), "career_rename")  # the hero's name (CareerUi), its change is paid
 	_row("Бэкхенд", "одноручный" if Tuning.one_handed_bh else "двуручный", "bh_style")
 	_note("Одноручный — мощнее по линии (+6% силы), окно PERFECT чуть уже (−10%)")
 	_row("Управление", "тапы по корту" if Tuning.tap_controls else "джойстик", "controls_menu")

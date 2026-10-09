@@ -106,7 +106,7 @@ func start(entry: Dictionary, opts := {}) -> bool:
 	main.cpu_call = String(opp.get("short_en", label))
 	main.cpu.set_look(opp.get("look", Looks.from_shirt(Color(0.22, 0.28, 0.42))))
 	Tuning.ai_skill = float(opp.get("skill", 0.5))
-	main.hud.show_board(main.scoreboard, [main.me_label, main.cpu_label])
+	main.hud.show_board(main.scoreboard, [main.me_name(), main.cpu_label])
 	if not headless:
 		_build_ui()
 		_apply_camera()

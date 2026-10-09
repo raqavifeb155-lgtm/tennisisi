@@ -65,6 +65,7 @@ const SCAFFOLD_AT := {
 	"coach": [Vector3(20.4, 0, 26.0), Vector2(2.2, 4.0)],
 	"trophy": [Vector3(-27.5, 0, -28.4), Vector2(2.6, 3.0)],
 	"bar": [Vector3(11.0, 0, -34.0), Vector2(2.6, 3.6)],
+	"academy": [Vector3(37.0, 0, 7.6), Vector2(3.0, 2.2)],
 }
 
 
