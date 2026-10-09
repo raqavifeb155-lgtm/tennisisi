@@ -151,6 +151,21 @@ func _run() -> void:
 	await _shot("bracket_locker", 0.7)
 	main._on_ui("bag", 0)
 	await _shot("bag_locker", 0.6)
+	# Hub spec 16: the sheet before the first match (limit 2 of 4; limit 1 of 2), the locker room's caption.
+	_reset(80)
+	SaveData.club = {"levels": {"locker": 4}}
+	SaveData.locker = {"items": [Gear._affix_item(Gear.RARE, rng, "shoes"), Gear._affix_item(Gear.EPIC, rng, "racket"),
+		Locker.insure(Gear._affix_item(Gear.LEGENDARY, rng, "band")), Gear._affix_item(Gear.RARE, rng, "racket")]}
+	var tp := Tournament.new(1, 33)
+	main.tournament = tp
+	RunLocker.pre_run(main.ui, tp)
+	await _shot("pick_locker_4", 0.7)
+	SaveData.club = {"levels": {"locker": 1}}
+	SaveData.locker["items"] = (SaveData.locker["items"] as Array).slice(0, 2)
+	RunLocker.pre_run(main.ui, Tournament.new(1, 34))
+	await _shot("pick_locker_2", 0.7)
+	main._on_ui("club_locker", 0)
+	await _shot("locker_room_limit", 0.6)
 	# The chest by the net: closed, then opened (gold, an epic, a wildcard).
 	_reset(40)
 	var tc := Tournament.new(1, 21)
@@ -266,6 +281,23 @@ func _flow() -> void:
 	RunBag.show_bag(main.ui, t2)
 	main._on_ui("locker_take", 0)
 	check(t2.equip["racket"]["slot"] == "racket" and Locker.items().is_empty(), "locker_take: into the run")
+	# hub spec 16: the sheet before a run
+	SaveData.club = {"levels": {"locker": 1}}
+	SaveData.locker = {"items": [Gear._affix_item(Gear.RARE, rng, "shoes"), Gear._affix_item(Gear.EPIC, rng, "racket")]}
+	var tp := Tournament.new(1, 7)
+	main.tournament = tp
+	RunLocker.pre_run(main.ui, tp)
+	var pick_blocks := _cards()
+	main._on_ui("locker_pick", 1)
+	check(tp.locker_taken == 1 and tp.equip["racket"]["rarity"] == Gear.EPIC and Locker.items().size() == 1, "locker_pick: the tapped one is taken, the other stays")
+	check(_cards() != pick_blocks and not Locker.needs_pick(tp), "limit reached: the sheet gives way to the bracket")
+	main._on_ui("locker_take", 0)
+	check(tp.locker_taken == 1 and Locker.items().size() == 1, "locker_take over the limit: refused")
+	var tq := Tournament.new(1, 8)
+	main.tournament = tq
+	RunLocker.pre_run(main.ui, tq)
+	main._on_ui("locker_pick_skip", 0)
+	check(tq.locker_taken == 0 and Locker.items().size() == 1, "«Идти без вещей»: nothing taken, nothing lost")
 	main.ui.show_locations()
 	check(_cards() >= 5, "the islands screen")
 	_reset(0)

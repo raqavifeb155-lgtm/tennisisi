@@ -132,10 +132,20 @@ static func ghost() -> StandardMaterial3D:
 	var m: StandardMaterial3D = _cache.get("ghost")
 	if m == null:
 		m = StandardMaterial3D.new()
-		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		# Lit (a flat unshaded colour lost every edge: boxes in boxes read as one blot), with
+		# a glow of its own so it stays gold at dusk; back faces culled (they drew a second,
+		# crooked outline); a hair larger than the thing, so it never fights the real
+		# surface it lies on for the depth.
 		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		m.albedo_color = Color(UiTheme.GOLD, 0.35)
-		m.cull_mode = BaseMaterial3D.CULL_DISABLED
+		m.albedo_color = Color(UiTheme.GOLD, 0.45)
+		m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
+		m.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+		m.emission_enabled = true
+		m.emission = UiTheme.GOLD
+		m.emission_energy_multiplier = 0.35
+		m.cull_mode = BaseMaterial3D.CULL_BACK
+		m.grow = true
+		m.grow_amount = 0.015
 		m.no_depth_test = false
 		_cache["ghost"] = m
 	return m

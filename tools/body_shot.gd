@@ -28,7 +28,7 @@ func _initialize() -> void:
 		{"skin": 1, "hair": Looks.Hair.PONYTAIL, "hair_color": 6, "beard": 0, "head": Looks.Head.VISOR, "shirt": 14, "shorts": 0, "accent": 15},
 		{"skin": 4, "hair": Looks.Hair.CURLY, "hair_color": 2, "beard": Looks.Beard.STUBBLE, "head": Looks.Head.NONE, "shirt": 8, "shorts": 3, "accent": 0},
 	]
-	for style in [Athlete.Body.CLASSIC, Athlete.Body.ATHLETE, Athlete.Body.TOON]:
+	for style in [Athlete.Body.CLASSIC, Athlete.Body.ATHLETE, Athlete.Body.TOON, Athlete.Body.SMOOTH]:
 		var row: Array = []
 		for i in looks.size():
 			row.append(_cell(style, looks[i], "ready"))

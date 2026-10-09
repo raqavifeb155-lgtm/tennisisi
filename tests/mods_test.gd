@@ -24,7 +24,86 @@ func _initialize() -> void:
 	test_rotation()
 	test_freq()
 	test_card_traits()
+	test_human_names()
 	_live.call_deferred()
+
+
+## Owner, 10.10: «иногда пишется на английском кодовое слово». Every id of every catalog has a
+## Russian name and description from Modifiers.human_name / human_desc, and an id nobody knows
+## still never shows itself.
+func test_human_names() -> void:
+	print("human names")
+	var rx := RegEx.new()
+	rx.compile("[a-z]+_[a-z_]+")  # a code word: serve_cannon, net_rusher
+	var cyr := RegEx.new()
+	cyr.compile("[А-Яа-яЁё]")
+	var OC: GDScript = load("res://scripts/ui/screens/opponent_card.gd")  # loaded, not named: it reaches the autoloads
+	var all_ids: Array = []
+	for id in Modifiers.ids():
+		all_ids.append(String(id))  # auras, run conditions, old modifiers, item affixes
+	for id in Tournament.MODIFIERS.keys():
+		all_ids.append(String(id))
+	for id in Traits.ids():
+		all_ids.append(String(id))  # the opponents' traits
+	for id in Traits.student_ids():
+		all_ids.append(String(id))  # the students' traits
+	var bad := PackedStringArray()
+	var seen := {}
+	for id in all_ids:
+		if seen.has(id):
+			continue
+		seen[id] = true
+		var n := Modifiers.human_name(id)
+		var d := Modifiers.human_desc(id)
+		if n == "" or d == "" or rx.search(n) != null or rx.search(d) != null or cyr.search(n) == null or cyr.search(d) == null:
+			bad.append("%s -> «%s» / «%s»" % [id, n, d])
+		if Modifiers.name(id) != n or Modifiers.label(id) != n or OC.mod_name(id) != n:
+			bad.append("%s: the entry points disagree" % id)
+		var line: String = OC.mod_text(id)
+		if rx.search(line) != null or cyr.search(line) == null:
+			bad.append("%s: card line «%s»" % [id, line])
+	check(bad.is_empty(), "%d ids of the catalogs all have a Russian name and description %s" % [seen.size(), str(bad)])
+	for id in ["no_such_mod", "net_rusher_x", "", "ZZ"]:
+		var lines: Array = [Modifiers.human_name(id), Modifiers.human_desc(id), Modifiers.label(id), OC.mod_text(id), OC.mod_name(id), Traits.name(id), Traits.text(id)]
+		check(lines.all(func(l: String) -> bool: return l != id or id == ""), "an unknown id «%s» never shows itself" % id)
+		check(lines.all(func(l: String) -> bool: return rx.search(l) == null), "an unknown id «%s»: no code word in %s" % [id, str(lines)])
+	check(Modifiers.is_code_word("net_rusher") and not Modifiers.is_code_word("Атакует сетку") and not Modifiers.is_code_word("PERFECT"), "code word detector")
+	# Traits and auras of a whole tournament lineup, as the bracket and the card print them.
+	var n_lines := 0
+	for k in 12:
+		var t := Tournament.new(1, 100 + k)
+		for lu in t.lineup:
+			for id in lu.get("mods", []):
+				n_lines += 1
+				if rx.search(OC.mod_text(String(id), lu)) != null:
+					bad.append("lineup mod " + String(id))
+			if rx.search(Modifiers.bracket_text(lu)) != null:
+				bad.append("bracket " + Modifiers.bracket_text(lu))
+	check(bad.is_empty(), "no code word in the lineups' card lines and bracket lines %s" % str(bad))
+	# The things: the unique items' names and descriptions, and the affix lines of the generated ones.
+	var item_bad := PackedStringArray()
+	for e in Items.LIST:
+		if rx.search(String(e["name"])) != null or rx.search(String(e.get("desc", ""))) != null:
+			item_bad.append(String(e["id"]))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	for slot in ["racket", "shoes", "band"]:
+		for r in 5:
+			var it := Gear.roll(r, rng, slot)
+			if rx.search(String(it["name"]) + Items.describe(it)) != null:
+				item_bad.append("%s/%d" % [slot, r])
+	check(item_bad.is_empty(), "no code word in item names, descriptions and affix lines %s" % str(item_bad))
+	check(n_lines > 0, "the lineup carried mods to check (%d)" % n_lines)
+	# The perks (the build line, the bracket's «Перки»): a Russian title and description each.
+	var perk_bad := PackedStringArray()
+	var perks: Array = []
+	for sk in Skills.PERKS:
+		perks.append_array(Skills.PERKS[sk])
+	perks.append_array(Rewards.PERKS)
+	for p in perks:
+		if cyr.search(String(p.get("title", ""))) == null or cyr.search(String(p.get("desc", ""))) == null or rx.search(String(p["title"]) + String(p["desc"])) != null:
+			perk_bad.append(String(p.get("id", "?")))
+	check(perk_bad.is_empty() and perks.size() > 10, "%d perks have a Russian title and description %s" % [perks.size(), str(perk_bad)])
 
 
 func check(cond: bool, msg: String) -> void:
@@ -272,7 +351,7 @@ func test_card() -> void:
 	check(c.size() == 3 and c[2]["name"] == "???" and c[1]["name"] == "Туман", "the card: names, «???» for the hidden one")
 	check(Modifiers.bracket_text(lu).contains("???") and Modifiers.bracket_text(lu).contains("×"), "bracket line: %s" % Modifiers.bracket_text(lu))
 	check(Modifiers.match_set(null) == [], "no tournament, nothing forced: no modifiers")
-	check(Modifiers.name("fog") == "Туман" and Modifiers.desc("fast") == "Бегает на 12% быстрее" and Modifiers.name("nope") == "nope" and Modifiers.desc("nope") == "",
+	check(Modifiers.name("fog") == "Туман" and Modifiers.desc("fast") == "Бегает на 12% быстрее" and Modifiers.name("nope") == Modifiers.UNKNOWN_NAME and Modifiers.desc("nope") == Modifiers.UNKNOWN_DESC,
 		"Modifiers.name / desc: new, old and unknown ids (for the opponent card)")
 
 
