@@ -46,6 +46,7 @@ static var academy := {}               # the school (T-2): students, the candida
 static var lifetime_xp := 0.0          # every bit of skill experience ever earned (never reset)
 static var camera := "normal"          # the match camera (v0.2 D): "normal" | "tv" (section "view")
 static var career := {}                # the hero's career (L1, Career): season, age, retired heroes (section "career")
+static var house := {}                 # the academy's house (AH-1): room levels, the build, the gold spent (section "house", AcademyHouse)
 static var mods_freq := 0              # the rate of the opponents' modifiers picked last (section "mods", Modifiers.FREQS)
 static var source := "none"            # where the progress came from: local, old, cloud (telemetry)
 static var _cloud_checked := false
@@ -84,6 +85,11 @@ static func _score(cf: ConfigFile) -> float:
 		+ float((cf.get_value("club", "data", {}) as Dictionary).get("spent", 0)) * 0.1  # v0.2 B: gold built into the club still counts
 	# T-2: a student hired locally must not lose to a cloud copy from before
 	base += float(((cf.get_value("academy", "data", {}) as Dictionary).get("students", []) as Array).size()) * 50.0
+	# AH-1: the gold built into the house and its levels count too (the score only ever grows)
+	var hs: Dictionary = cf.get_value("house", "data", {})
+	base += float(hs.get("spent", 0)) * 0.1
+	for lv in (hs.get("levels", {}) as Dictionary).values():
+		base += 50.0 * float(lv)
 	# v0.2 A: the shop's and the locker's spending counts too, and experience that was
 	# earned and then reset by a retirement (lifetime_xp) - the score only ever grows.
 	return base + float((cf.get_value("locker", "data", {}) as Dictionary).get("spent", 0)) * 0.1 \
@@ -118,6 +124,7 @@ static func _apply(cf: ConfigFile) -> void:
 	titles_by_loc = cf.get_value("titles_by_loc", "data", {})
 	lifetime_xp = cf.get_value("lifetime", "xp", 0.0)
 	academy = cf.get_value("academy", "data", {})
+	house = cf.get_value("house", "data", {})
 	camera = cf.get_value("view", "camera", "normal")
 	career = Career.migrate(cf.get_value("career", "data", {}), played)  # L1: a save from before the career starts season 1 here
 	mods_freq = cf.get_value("mods", "freq", 0)
@@ -237,6 +244,8 @@ static func _to_config() -> ConfigFile:
 		cf.set_value("career", "data", career)
 	if not academy.is_empty():
 		cf.set_value("academy", "data", academy)
+	if not house.is_empty():
+		cf.set_value("house", "data", house)
 	if mods_freq != 0:
 		cf.set_value("mods", "freq", mods_freq)
 	if active != null and not active.banked and active.state != Tournament.State.OVER:
